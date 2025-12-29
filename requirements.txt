@@ -1,0 +1,7 @@
+python-nmap==0.7.1
+python-whois==0.9.6
+dnspython==2.8.0
+PySocks>=1.7.1
+PyGithub>=2.1.1
+knock-subdomains @ git+https://github.com/guelfoweb/knock.git
+python-dotenv>=1.0.0

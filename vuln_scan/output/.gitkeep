@@ -1,0 +1,3 @@
+# This directory contains vulnerability scan output files
+# Output format: vuln_<domain>.json
+
