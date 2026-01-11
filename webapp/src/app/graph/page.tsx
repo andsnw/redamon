@@ -21,7 +21,7 @@ export default function GraphPage() {
   const { selectedNode, drawerOpen, selectNode, clearSelection } = useNodeSelection()
   const dimensions = useDimensions(contentRef)
   const { isDark } = useTheme()
-  const { sessionId, resetSession, mounted } = useSession()
+  const { sessionId, resetSession } = useSession()
 
   const handleToggleAI = useCallback(() => {
     setIsAIOpen((prev) => !prev)
@@ -65,17 +65,15 @@ export default function GraphPage() {
             isDark={isDark}
           />
         </div>
-
-        {mounted && (
-          <AIAssistantDrawer
-            isOpen={isAIOpen}
-            onClose={handleCloseAI}
-            projectId={projectId}
-            sessionId={sessionId}
-            onResetSession={resetSession}
-          />
-        )}
       </div>
+
+      <AIAssistantDrawer
+        isOpen={isAIOpen}
+        onClose={handleCloseAI}
+        projectId={projectId}
+        sessionId={sessionId || ''}
+        onResetSession={resetSession}
+      />
 
       <PageBottomBar data={data} is3D={is3D} showLabels={showLabels} />
     </div>
