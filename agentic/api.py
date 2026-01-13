@@ -122,6 +122,27 @@ class ApprovalRequest(BaseModel):
     }
 
 
+class AnswerRequest(BaseModel):
+    """Request model for user answer to agent question."""
+    session_id: str = Field(..., description="Session identifier")
+    user_id: str = Field(..., description="User identifier")
+    project_id: str = Field(..., description="Project identifier")
+    answer: str = Field(..., description="User's answer to the agent's question", min_length=1)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "session_id": "session-001",
+                    "user_id": "user1",
+                    "project_id": "project1",
+                    "answer": "Use the apache_normalize_path_rce exploit"
+                }
+            ]
+        }
+    }
+
+
 # =============================================================================
 # RESPONSE MODELS
 # =============================================================================
@@ -193,6 +214,16 @@ class QueryResponse(BaseModel):
         description="Phase transition request details if awaiting approval"
     )
 
+    # Q&A flow fields
+    awaiting_question: bool = Field(
+        False,
+        description="True if agent is paused waiting for user answer to a question"
+    )
+    question_request: Optional[dict] = Field(
+        None,
+        description="Question request details if awaiting_question is True"
+    )
+
 
 class HealthResponse(BaseModel):
     """Response model for health check."""
@@ -255,6 +286,8 @@ async def query(request: QueryRequest):
             execution_trace_summary=result.execution_trace_summary,
             awaiting_approval=result.awaiting_approval,
             approval_request=result.approval_request,
+            awaiting_question=result.awaiting_question,
+            question_request=result.question_request,
         )
 
     except Exception as e:
@@ -309,10 +342,64 @@ async def approve(request: ApprovalRequest):
             execution_trace_summary=result.execution_trace_summary,
             awaiting_approval=result.awaiting_approval,
             approval_request=result.approval_request,
+            awaiting_question=result.awaiting_question,
+            question_request=result.question_request,
         )
 
     except Exception as e:
         logger.error(f"Error processing approval: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/answer", response_model=QueryResponse, tags=["Agent"])
+async def answer(request: AnswerRequest):
+    """
+    Respond to an agent's question.
+
+    When the agent needs clarification during execution (e.g., which exploit to use,
+    which session to interact with), it pauses and asks the user a question.
+    Use this endpoint to provide the answer.
+
+    The response follows the same format as `/query`, allowing the frontend
+    to continue displaying the conversation.
+    """
+    if not orchestrator:
+        raise HTTPException(status_code=503, detail="Orchestrator not initialized")
+
+    logger.info(f"Answer from {request.user_id}/{request.project_id}/{request.session_id}: {request.answer[:50]}...")
+
+    try:
+        result = await orchestrator.resume_after_answer(
+            session_id=request.session_id,
+            user_id=request.user_id,
+            project_id=request.project_id,
+            answer=request.answer,
+        )
+
+        message_count = get_message_count(
+            request.user_id, request.project_id, request.session_id
+        )
+
+        return QueryResponse(
+            answer=result.answer,
+            tool_used=result.tool_used,
+            tool_output=result.tool_output,
+            session_id=request.session_id,
+            message_count=message_count,
+            error=result.error,
+            current_phase=result.current_phase,
+            iteration_count=result.iteration_count,
+            task_complete=result.task_complete,
+            todo_list=result.todo_list,
+            execution_trace_summary=result.execution_trace_summary,
+            awaiting_approval=result.awaiting_approval,
+            approval_request=result.approval_request,
+            awaiting_question=result.awaiting_question,
+            question_request=result.question_request,
+        )
+
+    except Exception as e:
+        logger.error(f"Error processing answer: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

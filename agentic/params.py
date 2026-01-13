@@ -23,7 +23,7 @@ MCP_METASPLOIT_URL = "http://host.docker.internal:8003/sse"
 # =============================================================================
 
 # Maximum iterations before forcing completion
-MAX_ITERATIONS = 30
+MAX_ITERATIONS = 100
 
 # Phase transition approval requirements
 REQUIRE_APPROVAL_FOR_EXPLOITATION = True
@@ -63,7 +63,14 @@ TOOL_PHASE_MAP = {
     "query_graph": ["informational", "exploitation", "post_exploitation"],
     "execute_curl": ["informational", "exploitation", "post_exploitation"],
     "execute_naabu": ["informational", "exploitation", "post_exploitation"],
-    "metasploit_console": ["exploitation", "post_exploitation"],
+    # Metasploit tools (all stateful, sharing the same persistent msfconsole)
+    "metasploit_console": ["exploitation", "post_exploitation"],  # Legacy name, delegates to msf_execute
+    "msf_execute": ["exploitation", "post_exploitation"],  # Primary stateful command execution
+    "msf_sessions_list": ["exploitation", "post_exploitation"],  # List active sessions
+    "msf_session_run": ["exploitation", "post_exploitation"],  # Run command on session
+    "msf_session_interact": ["exploitation", "post_exploitation"],  # Get session info
+    "msf_session_close": ["exploitation", "post_exploitation"],  # Close a session
+    "msf_status": ["exploitation", "post_exploitation"],  # Get msfconsole status
 }
 
 

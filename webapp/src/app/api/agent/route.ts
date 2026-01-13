@@ -49,6 +49,16 @@ export interface PhaseTransitionRequest {
   risks: string[]
 }
 
+export interface UserQuestionRequest {
+  question_id: string
+  question: string
+  context: string
+  format: 'text' | 'single_choice' | 'multi_choice'
+  options: string[]
+  default_value: string | null
+  phase: string
+}
+
 export interface QueryResponse {
   // Core response fields
   answer: string
@@ -72,6 +82,10 @@ export interface QueryResponse {
   // Approval flow fields
   awaiting_approval: boolean
   approval_request: PhaseTransitionRequest | null
+
+  // Q&A flow fields
+  awaiting_question: boolean
+  question_request: UserQuestionRequest | null
 }
 
 // =============================================================================

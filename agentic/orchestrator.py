@@ -21,16 +21,18 @@ from state import (
     AgentState,
     InvokeResponse,
     ExecutionStep,
-    TodoItem,
     TargetInfo,
     PhaseTransitionRequest,
     PhaseHistoryEntry,
     LLMDecision,
     OutputAnalysis,
     ExtractedTargetInfo,
-    create_initial_state,
+    UserQuestionRequest,
+    UserQuestionAnswer,
+    QAHistoryEntry,
     format_todo_list,
     format_execution_trace,
+    format_qa_history,
     summarize_trace_for_response,
     utc_now,
 )
@@ -54,6 +56,7 @@ from prompts import (
     REACT_SYSTEM_PROMPT,
     OUTPUT_ANALYSIS_PROMPT,
     PHASE_TRANSITION_MESSAGE,
+    USER_QUESTION_MESSAGE,
     FINAL_REPORT_PROMPT,
     get_phase_tools,
 )
@@ -152,17 +155,20 @@ class AgentOrchestrator:
         builder.add_node("analyze_output", self._analyze_output_node)
         builder.add_node("await_approval", self._await_approval_node)
         builder.add_node("process_approval", self._process_approval_node)
+        builder.add_node("await_question", self._await_question_node)
+        builder.add_node("process_answer", self._process_answer_node)
         builder.add_node("generate_response", self._generate_response_node)
 
         # Entry point
         builder.add_edge(START, "initialize")
 
-        # Route after initialize - either process approval or continue to think
+        # Route after initialize - process approval, process answer, or continue to think
         builder.add_conditional_edges(
             "initialize",
             self._route_after_initialize,
             {
                 "process_approval": "process_approval",
+                "process_answer": "process_answer",
                 "think": "think",
             }
         )
@@ -174,6 +180,7 @@ class AgentOrchestrator:
             {
                 "execute_tool": "execute_tool",
                 "await_approval": "await_approval",
+                "await_question": "await_question",
                 "generate_response": "generate_response",
             }
         )
@@ -198,6 +205,19 @@ class AgentOrchestrator:
         builder.add_conditional_edges(
             "process_approval",
             self._route_after_approval,
+            {
+                "think": "think",
+                "generate_response": "generate_response",
+            }
+        )
+
+        # Q&A flow - pause for user input
+        builder.add_edge("await_question", END)
+
+        # Process answer routes back to think or ends
+        builder.add_conditional_edges(
+            "process_answer",
+            self._route_after_answer,
             {
                 "think": "think",
                 "generate_response": "generate_response",
@@ -295,16 +315,38 @@ class AgentOrchestrator:
         set_phase_context(phase)
 
         # Build the prompt with current state
+        execution_trace_formatted = format_execution_trace(state.get("execution_trace", []))
+        todo_list_formatted = format_todo_list(state.get("todo_list", []))
+        target_info_formatted = json.dumps(state.get("target_info", {}), indent=2)
+        qa_history_formatted = format_qa_history(state.get("qa_history", []))
+
         system_prompt = REACT_SYSTEM_PROMPT.format(
             current_phase=phase,
             available_tools=get_phase_tools(phase),
             iteration=iteration,
             max_iterations=state.get("max_iterations", MAX_ITERATIONS),
             objective=state.get("original_objective", "No objective specified"),
-            execution_trace=format_execution_trace(state.get("execution_trace", [])),
-            todo_list=format_todo_list(state.get("todo_list", [])),
-            target_info=json.dumps(state.get("target_info", {}), indent=2),
+            execution_trace=execution_trace_formatted,
+            todo_list=todo_list_formatted,
+            target_info=target_info_formatted,
+            qa_history=qa_history_formatted,
         )
+
+        # Log the full prompt for debugging
+        logger.info(f"\n{'#'*80}")
+        logger.info(f"# THINK NODE PROMPT - Iteration {iteration} - Phase: {phase}")
+        logger.info(f"{'#'*80}")
+        logger.info(f"\n--- EXECUTION TRACE ---\n{execution_trace_formatted}")
+        logger.info(f"\n--- TODO LIST ---\n{todo_list_formatted}")
+        logger.info(f"\n--- TARGET INFO ---\n{target_info_formatted}")
+        logger.info(f"\n--- Q&A HISTORY ---\n{qa_history_formatted}")
+        logger.info(f"\n--- FULL SYSTEM PROMPT ({len(system_prompt)} chars) ---")
+        # Log full prompt in chunks to avoid log line limits
+        chunk_size = 4000
+        for i in range(0, len(system_prompt), chunk_size):
+            chunk = system_prompt[i:i+chunk_size]
+            logger.info(f"PROMPT[{i}:{i+len(chunk)}]:\n{chunk}")
+        logger.info(f"{'#'*80}\n")
 
         # Get LLM decision
         messages = [
@@ -314,6 +356,13 @@ class AgentOrchestrator:
 
         response = await self.llm.ainvoke(messages)
         response_text = response.content.strip()
+
+        # Log the raw LLM response
+        logger.info(f"\n{'='*60}")
+        logger.info(f"LLM RAW RESPONSE - Iteration {iteration}")
+        logger.info(f"{'='*60}")
+        logger.info(f"{response_text}")
+        logger.info(f"{'='*60}\n")
 
         # Parse the JSON response into Pydantic model
         decision = self._parse_llm_decision(response_text)
@@ -347,6 +396,28 @@ class AgentOrchestrator:
                 logger.info(f"  {status_icon} {priority_marker} {todo.description}")
         else:
             logger.info(f"TODO LIST: (no updates)")
+
+        # Log Q&A history if present
+        qa_history = state.get("qa_history", [])
+        if qa_history:
+            logger.info(f"Q&A HISTORY ({len(qa_history)} entries):")
+            for i, entry in enumerate(qa_history, 1):
+                q = entry.get("question", {})
+                a = entry.get("answer", {})
+                logger.info(f"  Q{i}: {q.get('question', 'N/A')[:80]}...")
+                logger.info(f"      Answer: {a.get('answer', 'N/A')[:80] if a else '(unanswered)'}...")
+        else:
+            logger.info(f"Q&A HISTORY: (none)")
+
+        # Log user_question if action is ask_user
+        if decision.action == "ask_user" and decision.user_question:
+            logger.info(f"USER_QUESTION:")
+            logger.info(f"  Question: {decision.user_question.question}")
+            logger.info(f"  Context: {decision.user_question.context}")
+            logger.info(f"  Format: {decision.user_question.format}")
+            if decision.user_question.options:
+                logger.info(f"  Options: {decision.user_question.options}")
+
         logger.info(f"{'='*60}\n")
 
         # Create execution step
@@ -445,6 +516,23 @@ class AgentOrchestrator:
                 updates["phase_history"] = state.get("phase_history", []) + [
                     PhaseHistoryEntry(phase=to_phase).model_dump()
                 ]
+
+        elif decision.action == "ask_user":
+            # Handle ask_user action - agent wants to ask user a question
+            user_q = decision.user_question
+            if user_q:
+                logger.info(f"[{user_id}/{project_id}/{session_id}] Asking user: {user_q.question[:50]}...")
+                updates["pending_question"] = UserQuestionRequest(
+                    question=user_q.question,
+                    context=user_q.context,
+                    format=user_q.format,
+                    options=user_q.options,
+                    default_value=user_q.default_value,
+                    phase=phase,
+                ).model_dump()
+                updates["awaiting_user_question"] = True
+            else:
+                logger.warning(f"[{user_id}/{project_id}/{session_id}] ask_user action but no user_question provided")
 
         return updates
 
@@ -706,6 +794,69 @@ class AgentOrchestrator:
                 "messages": [AIMessage(content="Phase transition cancelled. Ending session.")],
             }
 
+    async def _await_question_node(self, state: AgentState, config = None) -> dict:
+        """Pause and request user answer to a question."""
+        user_id, project_id, session_id = get_identifiers(state, config)
+
+        question = state.get("pending_question", {})
+
+        logger.info(f"[{user_id}/{project_id}/{session_id}] Awaiting answer: {question.get('question', '')[:50]}...")
+
+        # Format options for display
+        options_text = ""
+        if question.get("options"):
+            options_text = "\n".join(f"- {opt}" for opt in question.get("options", []))
+        else:
+            options_text = "Free text response"
+
+        # Format the question message
+        message = USER_QUESTION_MESSAGE.format(
+            question=question.get("question", ""),
+            context=question.get("context", ""),
+            format=question.get("format", "text"),
+            options=options_text,
+            default=question.get("default_value") or "None",
+        )
+
+        return {
+            "awaiting_user_question": True,
+            "messages": [AIMessage(content=message)],
+        }
+
+    async def _process_answer_node(self, state: AgentState, config = None) -> dict:
+        """Process user's answer to a question."""
+        user_id, project_id, session_id = get_identifiers(state, config)
+
+        answer = state.get("user_question_answer")
+        question = state.get("pending_question", {})
+
+        logger.info(f"[{user_id}/{project_id}/{session_id}] Processing answer: {answer[:50] if answer else 'None'}...")
+
+        # Create Q&A history entry
+        qa_entry = QAHistoryEntry(
+            question=UserQuestionRequest(**question),
+            answer=UserQuestionAnswer(
+                question_id=question.get("question_id", ""),
+                answer=answer or "",
+            ),
+            answered_at=utc_now(),
+        )
+
+        # Update Q&A history
+        qa_history = state.get("qa_history", []) + [qa_entry.model_dump()]
+
+        # Clear Q&A state and add to messages
+        return {
+            "awaiting_user_question": False,
+            "pending_question": None,
+            "user_question_answer": None,
+            "qa_history": qa_history,
+            "messages": [
+                HumanMessage(content=f"User answer: {answer}"),
+                AIMessage(content="Thank you for the clarification. Continuing with the task..."),
+            ],
+        }
+
     async def _generate_response_node(self, state: AgentState, config = None) -> dict:
         """Generate final response summarizing the session."""
         user_id, project_id, session_id = get_identifiers(state, config)
@@ -735,11 +886,16 @@ class AgentOrchestrator:
     # =========================================================================
 
     def _route_after_initialize(self, state: AgentState) -> str:
-        """Route after initialization - process approval if pending, else think."""
+        """Route after initialization - process approval, process answer, or think."""
         # If we have an approval response pending, go to process_approval
         if state.get("user_approval_response") and state.get("phase_transition_pending"):
             logger.info("Routing to process_approval - approval response pending")
             return "process_approval"
+
+        # If we have a question answer pending, go to process_answer
+        if state.get("user_question_answer") and state.get("pending_question"):
+            logger.info("Routing to process_answer - question answer pending")
+            return "process_answer"
 
         return "think"
 
@@ -758,6 +914,10 @@ class AgentOrchestrator:
         if state.get("awaiting_user_approval"):
             return "await_approval"
 
+        # Check if awaiting question answer
+        if state.get("awaiting_user_question"):
+            return "await_question"
+
         # Check decision action (may have been modified by _think_node when ignoring transitions)
         decision = state.get("_decision", {})
         action = decision.get("action", "use_tool")
@@ -765,6 +925,13 @@ class AgentOrchestrator:
 
         if action == "complete":
             return "generate_response"
+        elif action == "ask_user":
+            # If question is pending, await user answer
+            if state.get("pending_question"):
+                return "await_question"
+            else:
+                logger.warning("ask_user action but no pending_question, continuing to think")
+                return "generate_response"
         elif action == "transition_phase":
             # If transition is pending, await approval
             if state.get("phase_transition_pending"):
@@ -802,6 +969,15 @@ class AgentOrchestrator:
         # Otherwise continue to think node
         return "think"
 
+    def _route_after_answer(self, state: AgentState) -> str:
+        """Route after processing user's answer to a question."""
+        # If task is complete, generate response
+        if state.get("task_complete"):
+            return "generate_response"
+
+        # Otherwise continue to think node with the answer in context
+        return "think"
+
     # =========================================================================
     # HELPER FUNCTIONS
     # =========================================================================
@@ -820,7 +996,19 @@ class AgentOrchestrator:
         try:
             json_str = self._extract_json(response_text)
             if json_str:
-                return LLMDecision.model_validate_json(json_str)
+                # Pre-process JSON to handle empty nested objects that would fail validation
+                # LLM sometimes outputs empty objects like user_question: {} or phase_transition: {}
+                data = json.loads(json_str)
+
+                # Remove empty user_question object (would fail validation due to required fields)
+                if "user_question" in data and (not data["user_question"] or data["user_question"] == {}):
+                    data["user_question"] = None
+
+                # Remove empty phase_transition object
+                if "phase_transition" in data and (not data["phase_transition"] or data["phase_transition"] == {}):
+                    data["phase_transition"] = None
+
+                return LLMDecision.model_validate(data)
         except Exception as e:
             logger.warning(f"Failed to parse LLM decision: {e}")
 
@@ -923,6 +1111,45 @@ class AgentOrchestrator:
             logger.error(f"[{user_id}/{project_id}/{session_id}] Resume error: {e}")
             return InvokeResponse(error=str(e))
 
+    async def resume_after_answer(
+        self,
+        session_id: str,
+        user_id: str,
+        project_id: str,
+        answer: str
+    ) -> InvokeResponse:
+        """Resume execution after user provides answer to a question."""
+        if not self._initialized:
+            raise RuntimeError("Orchestrator not initialized. Call initialize() first.")
+
+        logger.info(f"[{user_id}/{project_id}/{session_id}] Resuming with answer: {answer[:50]}...")
+
+        try:
+            config = create_config(user_id, project_id, session_id)
+
+            # Get current state from checkpointer
+            current_state = await self.graph.aget_state(config)
+
+            if not current_state or not current_state.values:
+                return InvokeResponse(error="No pending session found")
+
+            # Update state with user's answer
+            update_data = {
+                "user_question_answer": answer,
+            }
+
+            # Resume execution with the answer
+            final_state = await self.graph.ainvoke(
+                update_data,
+                config,
+            )
+
+            return self._build_response(final_state)
+
+        except Exception as e:
+            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume error: {e}")
+            return InvokeResponse(error=str(e))
+
     def _build_response(self, state: dict) -> InvokeResponse:
         """Build InvokeResponse from final state."""
         # Extract final answer from messages
@@ -955,6 +1182,8 @@ class AgentOrchestrator:
             ),
             awaiting_approval=state.get("awaiting_user_approval", False),
             approval_request=state.get("phase_transition_pending"),
+            awaiting_question=state.get("awaiting_user_question", False),
+            question_request=state.get("pending_question"),
         )
 
     async def close(self) -> None:

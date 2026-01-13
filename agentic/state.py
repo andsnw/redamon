@@ -9,6 +9,8 @@ from typing import Annotated, TypedDict, Optional, List, Literal
 from datetime import datetime, timezone
 import uuid
 
+from params import MAX_ITERATIONS
+
 
 def utc_now() -> datetime:
     """Get current UTC time as timezone-aware datetime."""
@@ -26,6 +28,7 @@ Phase = Literal["informational", "exploitation", "post_exploitation"]
 TodoStatus = Literal["pending", "in_progress", "completed", "blocked"]
 Priority = Literal["high", "medium", "low"]
 ApprovalDecision = Literal["approve", "modify", "abort"]
+QuestionFormat = Literal["text", "single_choice", "multi_choice"]
 
 
 # =============================================================================
@@ -121,10 +124,39 @@ class PhaseHistoryEntry(BaseModel):
 
 
 # =============================================================================
+# USER Q&A MODELS
+# =============================================================================
+
+class UserQuestionRequest(BaseModel):
+    """Request for user clarification from the agent."""
+    question_id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    question: str  # The question text to display to user
+    context: str  # Why the agent needs this information
+    format: QuestionFormat = "text"  # How user should respond
+    options: List[str] = Field(default_factory=list)  # For choice formats
+    default_value: Optional[str] = None  # Suggested default
+    phase: Phase = "informational"  # Phase where question was asked
+
+
+class UserQuestionAnswer(BaseModel):
+    """User's answer to an agent question."""
+    question_id: str
+    answer: str  # The actual answer text
+    timestamp: datetime = Field(default_factory=utc_now)
+
+
+class QAHistoryEntry(BaseModel):
+    """Combined Q&A entry for history tracking."""
+    question: UserQuestionRequest
+    answer: Optional[UserQuestionAnswer] = None
+    answered_at: Optional[datetime] = None
+
+
+# =============================================================================
 # LLM RESPONSE MODELS (for structured parsing)
 # =============================================================================
 
-ActionType = Literal["use_tool", "transition_phase", "complete"]
+ActionType = Literal["use_tool", "transition_phase", "complete", "ask_user"]
 
 
 class PhaseTransitionDecision(BaseModel):
@@ -133,6 +165,15 @@ class PhaseTransitionDecision(BaseModel):
     reason: str = ""
     planned_actions: List[str] = Field(default_factory=list)
     risks: List[str] = Field(default_factory=list)
+
+
+class UserQuestionDecision(BaseModel):
+    """Question details from LLM decision when action=ask_user."""
+    question: str
+    context: str
+    format: QuestionFormat = "text"
+    options: List[str] = Field(default_factory=list)
+    default_value: Optional[str] = None
 
 
 class TodoItemUpdate(BaseModel):
@@ -162,6 +203,9 @@ class LLMDecision(BaseModel):
 
     # Completion fields (when action="complete")
     completion_reason: Optional[str] = Field(default=None, description="Why task is complete")
+
+    # User question fields (when action="ask_user")
+    user_question: Optional[UserQuestionDecision] = Field(default=None, description="Question to ask user")
 
     # Todo list updates (always present)
     updated_todo_list: List[TodoItemUpdate] = Field(default_factory=list)
@@ -235,6 +279,12 @@ class AgentState(TypedDict):
     user_approval_response: Optional[ApprovalDecision]
     user_modification: Optional[str]  # User's modification if they chose "modify"
 
+    # User Q&A control
+    awaiting_user_question: bool
+    pending_question: Optional[dict]  # UserQuestionRequest.model_dump() or None
+    user_question_answer: Optional[str]  # User's answer text
+    qa_history: List[dict]  # List of QAHistoryEntry.model_dump() for context
+
     # Internal fields for inter-node communication (not persisted long-term)
     _current_step: Optional[dict]  # Current ExecutionStep being processed
     _decision: Optional[dict]  # LLM decision from think node
@@ -275,6 +325,13 @@ class InvokeResponse(BaseModel):
         description="Phase transition request details if awaiting approval"
     )
 
+    # Q&A flow
+    awaiting_question: bool = Field(default=False, description="True if waiting for user answer")
+    question_request: Optional[dict] = Field(
+        default=None,
+        description="Question request details if awaiting_question is True"
+    )
+
 
 class ApprovalRequest(BaseModel):
     """Request model for user approval endpoint."""
@@ -294,7 +351,7 @@ def create_initial_state(
     project_id: str,
     session_id: str,
     objective: str,
-    max_iterations: int = 15
+    max_iterations: int = MAX_ITERATIONS
 ) -> dict:
     """Create initial state for a new agent session."""
     return {
@@ -316,6 +373,11 @@ def create_initial_state(
         "awaiting_user_approval": False,
         "user_approval_response": None,
         "user_modification": None,
+        # Q&A fields
+        "awaiting_user_question": False,
+        "pending_question": None,
+        "user_question_answer": None,
+        "qa_history": [],
         # Internal fields
         "_current_step": None,
         "_decision": None,
@@ -348,8 +410,13 @@ def format_todo_list(todo_list: List[dict]) -> str:
     return "\n".join(lines)
 
 
-def format_execution_trace(trace: List[dict], last_n: int = 5) -> str:
-    """Format execution trace for display in prompts."""
+def format_execution_trace(trace: List[dict], last_n: int = 10) -> str:
+    """Format execution trace for display in prompts.
+
+    IMPORTANT: This function provides context to the LLM for subsequent decisions.
+    Tool outputs must be included so the agent can reference previous results
+    (e.g., module paths from 'search CVE-XXX', options from 'info exploit/...').
+    """
     if not trace:
         return "No steps executed yet."
 
@@ -359,16 +426,42 @@ def format_execution_trace(trace: List[dict], last_n: int = 5) -> str:
     for step in recent:
         iteration = step.get("iteration", "?")
         phase = step.get("phase", "unknown")
-        thought = step.get("thought", "No thought recorded")[:100]
+        thought = step.get("thought", "No thought recorded")
         tool = step.get("tool_name", "none")
+        tool_args = step.get("tool_args", {})
         success = "OK" if step.get("success", True) else "FAILED"
+        error_msg = step.get("error_message")
 
-        lines.append(f"Step {iteration} [{phase}] - {success}")
-        lines.append(f"  Thought: {thought}...")
-        if tool != "none":
-            lines.append(f"  Tool: {tool}")
+        lines.append(f"=== Step {iteration} [{phase}] - {success} ===")
+        lines.append(f"Thought: {thought[:10000]}..." if len(thought) > 10000 else f"Thought: {thought}")
+
+        if tool and tool != "none":
+            lines.append(f"Tool: {tool}")
+            if tool_args:
+                # Show full tool arguments (important for seeing what was executed)
+                args_str = str(tool_args)
+                lines.append(f"Args: {args_str[:10000]}..." if len(args_str) > 10000 else f"Args: {args_str}")
+
+            # CRITICAL: Include full tool output so agent can reference results
+            # This is essential for exploitation workflows where search/info results
+            # must be used in subsequent exploit commands
+            tool_output = step.get("tool_output", "")
+            if tool_output:
+                # Limit output to avoid token explosion, but keep enough for useful context
+                max_output_len = 10000
+                if len(tool_output) > max_output_len:
+                    lines.append(f"Output (truncated):\n{tool_output[:max_output_len]}...\n[{len(tool_output) - max_output_len} more chars]")
+                else:
+                    lines.append(f"Output:\n{tool_output}")
+
+            # Also include the analysis if available
             if step.get("output_analysis"):
-                lines.append(f"  Result: {step['output_analysis'][:100]}...")
+                analysis = step["output_analysis"]
+                lines.append(f"Analysis: {analysis[:10000]}..." if len(analysis) > 10000 else f"Analysis: {analysis}")
+
+        if error_msg:
+            lines.append(f"Error: {error_msg}")
+
         lines.append("")
 
     return "\n".join(lines)
@@ -382,10 +475,33 @@ def summarize_trace_for_response(trace: List[dict], last_n: int = 10) -> List[di
         {
             "iteration": step.get("iteration"),
             "phase": step.get("phase"),
-            "thought": step.get("thought", "")[:200],
+            "thought": step.get("thought", "")[:10000],
             "tool_name": step.get("tool_name"),
             "success": step.get("success", True),
-            "output_summary": (step.get("output_analysis") or "")[:200]
+            "output_summary": (step.get("output_analysis") or "")[:10000]
         }
         for step in recent
     ]
+
+
+def format_qa_history(qa_history: List[dict]) -> str:
+    """Format Q&A history for display in prompts."""
+    if not qa_history:
+        return "No previous questions asked."
+
+    lines = []
+    for i, entry in enumerate(qa_history, 1):
+        q = entry.get("question", {})
+        a = entry.get("answer")
+
+        lines.append(f"Q{i}: {q.get('question', 'Unknown question')}")
+        lines.append(f"   Context: {q.get('context', 'No context')}")
+        lines.append(f"   Phase: {q.get('phase', 'unknown')}")
+
+        if a:
+            lines.append(f"   Answer: {a.get('answer', 'No answer')}")
+        else:
+            lines.append(f"   Answer: (unanswered)")
+        lines.append("")
+
+    return "\n".join(lines)

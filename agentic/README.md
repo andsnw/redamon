@@ -1,3 +1,6 @@
+exploit CVE-2021-42013 attack 15.160.68.117 with port 8080 im sending the request with a server that cannot receive revers_bash because no port listening... for exploitation use bind_tcp LPORT 4444 RPORT 8080
+
+
 # RedAmon Agent Orchestrator
 
 LangGraph-based AI agent for penetration testing reconnaissance with MCP tools and Neo4j integration.

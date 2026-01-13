@@ -8,6 +8,7 @@ Includes session management, config creation, and response extraction.
 from typing import Dict, Any, List, TYPE_CHECKING
 
 from state import AgentState
+from params import MAX_ITERATIONS
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.memory import MemorySaver
@@ -154,6 +155,9 @@ def create_config(
     thread_id = get_thread_id(user_id, project_id, session_id)
 
     return {
+        # LangGraph recursion limit - must be higher than MAX_ITERATIONS
+        # Each iteration may have multiple graph transitions (think -> execute -> analyze)
+        "recursion_limit": MAX_ITERATIONS * 5,
         "configurable": {
             "thread_id": thread_id,
             "user_id": user_id,

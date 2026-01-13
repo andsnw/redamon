@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, Sparkles, RotateCcw, Shield, Target, Zap } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, Sparkles, RotateCcw, Shield, Target, Zap, HelpCircle } from 'lucide-react'
 import styles from './AIAssistantDrawer.module.css'
-import type { QueryResponse, PhaseTransitionRequest } from '@/app/api/agent/route'
+import type { QueryResponse, PhaseTransitionRequest, UserQuestionRequest } from '@/app/api/agent/route'
 
 type Phase = 'informational' | 'exploitation' | 'post_exploitation'
 
@@ -65,6 +65,12 @@ export function AIAssistantDrawer({
   const [approvalRequest, setApprovalRequest] = useState<PhaseTransitionRequest | null>(null)
   const [modificationText, setModificationText] = useState('')
 
+  // Q&A state
+  const [awaitingQuestion, setAwaitingQuestion] = useState(false)
+  const [questionRequest, setQuestionRequest] = useState<UserQuestionRequest | null>(null)
+  const [answerText, setAnswerText] = useState('')
+  const [selectedOptions, setSelectedOptions] = useState<string[]>([])
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -89,6 +95,10 @@ export function AIAssistantDrawer({
     setIterationCount(0)
     setAwaitingApproval(false)
     setApprovalRequest(null)
+    setAwaitingQuestion(false)
+    setQuestionRequest(null)
+    setAnswerText('')
+    setSelectedOptions([])
   }, [sessionId])
 
   const handleResponse = (response: QueryResponse) => {
@@ -97,6 +107,8 @@ export function AIAssistantDrawer({
     setIterationCount(response.iteration_count)
     setAwaitingApproval(response.awaiting_approval)
     setApprovalRequest(response.approval_request)
+    setAwaitingQuestion(response.awaiting_question)
+    setQuestionRequest(response.question_request)
 
     const assistantMessage: Message = {
       id: `assistant-${Date.now()}`,
@@ -114,7 +126,7 @@ export function AIAssistantDrawer({
 
   const handleSend = async () => {
     const question = inputValue.trim()
-    if (!question || isLoading || awaitingApproval) return
+    if (!question || isLoading || awaitingApproval || awaitingQuestion) return
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
@@ -216,6 +228,64 @@ export function AIAssistantDrawer({
     }
   }
 
+  const handleAnswer = async () => {
+    if (!questionRequest) return
+
+    // Close the question dialog immediately
+    setAwaitingQuestion(false)
+    setQuestionRequest(null)
+    setIsLoading(true)
+
+    // Build the answer based on format
+    const answer = questionRequest.format === 'text'
+      ? answerText
+      : selectedOptions.join(', ')
+
+    // Add a message showing the user's answer
+    const answerMessage: Message = {
+      id: `answer-${Date.now()}`,
+      role: 'user',
+      content: `Answer: ${answer}`,
+      timestamp: new Date(),
+    }
+    setMessages((prev) => [...prev, answerMessage])
+
+    try {
+      const res = await fetch('/api/agent/answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          user_id: userId,
+          project_id: projectId,
+          answer,
+        }),
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.error || `Answer error: ${res.status}`)
+      }
+
+      const response: QueryResponse = await res.json()
+      setAnswerText('')
+      setSelectedOptions([])
+      handleResponse(response)
+    } catch (error) {
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: 'Error processing answer.',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date(),
+      }
+
+      setMessages((prev) => [...prev, errorMessage])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -236,6 +306,10 @@ export function AIAssistantDrawer({
     setIterationCount(0)
     setAwaitingApproval(false)
     setApprovalRequest(null)
+    setAwaitingQuestion(false)
+    setQuestionRequest(null)
+    setAnswerText('')
+    setSelectedOptions([])
     onResetSession?.()
   }
 
@@ -456,6 +530,77 @@ export function AIAssistantDrawer({
         </div>
       )}
 
+      {/* Q&A Dialog */}
+      {awaitingQuestion && questionRequest && (
+        <div className={styles.questionDialog}>
+          <div className={styles.questionHeader}>
+            <HelpCircle size={16} />
+            <span>Agent Question</span>
+          </div>
+          <div className={styles.questionContent}>
+            <p className={styles.questionText}>{questionRequest.question}</p>
+            <p className={styles.questionContext}>{questionRequest.context}</p>
+
+            {questionRequest.format === 'text' && (
+              <textarea
+                className={styles.answerInput}
+                placeholder={questionRequest.default_value || "Type your answer..."}
+                value={answerText}
+                onChange={(e) => setAnswerText(e.target.value)}
+              />
+            )}
+
+            {questionRequest.format === 'single_choice' && questionRequest.options.length > 0 && (
+              <div className={styles.optionsList}>
+                {questionRequest.options.map((option, i) => (
+                  <label key={i} className={styles.optionRadio}>
+                    <input
+                      type="radio"
+                      name="question-option"
+                      value={option}
+                      checked={selectedOptions[0] === option}
+                      onChange={() => setSelectedOptions([option])}
+                    />
+                    <span>{option}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {questionRequest.format === 'multi_choice' && questionRequest.options.length > 0 && (
+              <div className={styles.optionsList}>
+                {questionRequest.options.map((option, i) => (
+                  <label key={i} className={styles.optionCheckbox}>
+                    <input
+                      type="checkbox"
+                      value={option}
+                      checked={selectedOptions.includes(option)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedOptions([...selectedOptions, option])
+                        } else {
+                          setSelectedOptions(selectedOptions.filter(o => o !== option))
+                        }
+                      }}
+                    />
+                    <span>{option}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className={styles.questionActions}>
+            <button
+              className={`${styles.answerButton} ${styles.answerButtonSubmit}`}
+              onClick={handleAnswer}
+              disabled={isLoading || (questionRequest.format === 'text' ? !answerText.trim() : selectedOptions.length === 0)}
+            >
+              Submit Answer
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Input */}
       <div className={styles.inputContainer}>
         <div className={styles.inputWrapper}>
@@ -465,14 +610,20 @@ export function AIAssistantDrawer({
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={awaitingApproval ? "Respond to the approval request above..." : "Ask a question..."}
+            placeholder={
+              awaitingApproval
+                ? "Respond to the approval request above..."
+                : awaitingQuestion
+                ? "Answer the question above..."
+                : "Ask a question..."
+            }
             rows={1}
-            disabled={isLoading || awaitingApproval}
+            disabled={isLoading || awaitingApproval || awaitingQuestion}
           />
           <button
             className={styles.sendButton}
             onClick={handleSend}
-            disabled={!inputValue.trim() || isLoading || awaitingApproval}
+            disabled={!inputValue.trim() || isLoading || awaitingApproval || awaitingQuestion}
             aria-label="Send message"
           >
             {isLoading ? <Loader2 size={16} className={styles.spinner} /> : <Send size={16} />}
