@@ -18,18 +18,19 @@ RedAmon/
 │
 ├── recon/                # Reconnaissance Module (Phase 1)
 │   ├── main.py           # Main entry point
-│   ├── params.py         # Default configuration parameters
 │   ├── project_settings.py  # Fetches settings from webapp API
 │   ├── domain_recon.py   # Subdomain discovery (crt.sh, HackerTarget, Knockpy)
 │   ├── port_scan.py      # Port scanning (naabu)
 │   ├── http_probe.py     # HTTP probing (httpx, headers, tech detection)
+│   ├── resource_enum.py  # URL discovery (Katana, GAU, Kiterunner)
 │   ├── vuln_scan.py      # Vulnerability scanning (nuclei)
 │   ├── whois_recon.py    # WHOIS lookups
 │   ├── github_secret_hunt.py  # GitHub secret hunting
 │   ├── add_mitre.py      # MITRE ATT&CK mapping
-│   ├── helpers/          # Utility modules
-│   ├── data/             # Static data files
-│   ├── output/           # Scan results (JSON)
+│   ├── helpers/          # Utility modules (katana, gau, kiterunner helpers)
+│   ├── data/             # Static data files (MITRE DB, IANA services)
+│   ├── output/           # Scan results (combined JSON per project)
+│   ├── readmes/          # Module documentation
 │   ├── Dockerfile        # Kali-based container
 │   └── docker-compose.yml
 │
@@ -74,10 +75,12 @@ RedAmon/
 ├── agentic/              # AI Agent Orchestrator
 │   ├── orchestrator.py   # LangGraph-based agent orchestration
 │   ├── api.py            # FastAPI REST endpoints
+│   ├── websocket_api.py  # WebSocket API for real-time chat
 │   ├── state.py          # LangGraph state definitions
-│   ├── prompts.py        # System prompts for AI
+│   ├── tools.py          # MCP tool definitions and execution
 │   ├── utils.py          # Utility functions
 │   ├── params.py         # Configuration
+│   ├── logging_config.py # Logging configuration
 │   ├── Dockerfile
 │   └── docker-compose.yml
 │
@@ -99,7 +102,10 @@ RedAmon/
 │   ├── apache_2.4.25/    # CVE test environment
 │   └── apache_2.4.49/    # CVE test environment
 │
-└── README.recon_to_add.md  # Additional recon tools to integrate
+├── start.sh              # Start entire stack (all containers)
+├── stop.sh               # Stop entire stack
+├── DISCLAIMER.md         # Legal disclaimer
+└── README.md             # Project documentation
 ```
 
 ---
@@ -113,18 +119,28 @@ Automated OSINT and scanning framework. Runs entirely in Docker (Kali-based).
 **Scan Pipeline:**
 ```
 Domain → Subdomain Discovery → DNS Resolution → Port Scanning
-       → HTTP Probing → Tech Detection → Vulnerability Scanning
-       → MITRE Mapping → JSON Output → Neo4j Import
+       → HTTP Probing → Tech Detection → Resource Enumeration
+       → Vulnerability Scanning → MITRE Mapping → JSON Output → Neo4j Import
 ```
+
+**Modules:**
+| Module | File | Tools Used |
+|--------|------|------------|
+| domain_discovery | `domain_recon.py` | crt.sh, HackerTarget, Knockpy |
+| port_scan | `port_scan.py` | naabu |
+| http_probe | `http_probe.py` | httpx |
+| resource_enum | `resource_enum.py` | Katana (active crawl), GAU (passive), Kiterunner (API brute) |
+| vuln_scan | `vuln_scan.py` | nuclei |
+| github | `github_secret_hunt.py` | trufflehog |
 
 **Configuration Sources (in order of precedence):**
 1. **Webapp API** - When `PROJECT_ID` and `WEBAPP_API_URL` env vars are set, settings are fetched from PostgreSQL via the webapp API
 2. **Environment Variables** - Override individual settings
-3. **params.py** - Default fallback values
+3. **DEFAULT_SETTINGS** in `project_settings.py` - Default fallback values for CLI usage
 
 **Key Commands:**
 ```bash
-# From CLI (uses params.py defaults)
+# From CLI (uses DEFAULT_SETTINGS fallback)
 cd recon/
 docker-compose build --network=host
 docker-compose run --rm recon python /app/recon/main.py
@@ -162,7 +178,7 @@ curl http://localhost:8010/health
 
 ### 3. PostgreSQL Database (`postgres_db/`)
 
-Stores project configurations with 169+ configurable parameters.
+Stores project configurations with 180+ configurable parameters.
 
 **Key Features:**
 - Prisma ORM integration with webapp
@@ -212,20 +228,25 @@ Model Context Protocol servers exposing security tools to AI agents.
 
 ### 7. Agent Orchestrator (`agentic/`)
 
-LangGraph-based AI agent with REST API for autonomous pentesting.
+LangGraph-based AI agent with REST and WebSocket APIs for autonomous pentesting.
 
 **Features:**
-- MCP tool execution (curl, naabu, nuclei)
+- MCP tool execution (curl, naabu, nuclei, metasploit)
 - Neo4j text-to-Cypher queries
 - Conversation memory (LangGraph MemorySaver)
+- Real-time streaming via WebSocket
 
-**API Endpoint:**
+**API Endpoints:**
 ```
+# REST API
 POST /chat
 {
   "question": "What vulnerabilities exist on port 443?",
   "session_id": "optional-session-id"
 }
+
+# WebSocket API
+WS /ws/{session_id}
 ```
 
 ### 8. Webapp (`webapp/`)
@@ -255,45 +276,66 @@ docker-compose build
 docker-compose up -d
 ```
 
-### Configuration Pattern
+### Adding New Configuration Fields
 
-**Recon Module** uses a hierarchical configuration system:
+When adding a new configurable setting (e.g., tool enable/disable toggle), update these 4 files:
 
-1. **Webapp API (Primary)** - When started from webapp, settings are fetched from PostgreSQL:
-```python
-# recon/project_settings.py
-# Automatically fetches from: GET /api/projects/{projectId}
-# Includes 169+ configurable parameters stored in Project model
-```
+| Step | File | Action |
+|------|------|--------|
+| 1 | `webapp/prisma/schema.prisma` | Add field with `@default()` value |
+| 2 | `recon/project_settings.py` | Add to `DEFAULT_SETTINGS` dict AND mapping in `get_project_settings()` |
+| 3 | `webapp/src/components/projects/ProjectForm/sections/*.tsx` | Add UI control (Toggle/Input) |
+| 4 | `recon/<module>.py` | Load with `settings.get('SETTING_NAME', default)` |
 
-2. **Environment Variables** - Override individual settings:
+Then run:
 ```bash
-TARGET_DOMAIN=target.com docker-compose run --rm recon python /app/recon/main.py
+cd webapp && npx prisma db push && npx prisma generate
 ```
 
-3. **params.py (Fallback)** - Default values for CLI usage:
-```python
-# recon/params.py
-TARGET_DOMAIN = "example.com"
-SCAN_MODULES = ["domain_discovery", "port_scan", "http_probe"]
-USE_TOR = False
+**Note:** Frontend defaults are fetched from backend via `/api/projects/defaults` endpoint (which proxies to `recon_orchestrator/defaults`). No need to hardcode defaults in `ProjectForm.tsx`.
+
+### File Relationships
+
+**Defaults flow (single source of truth):**
+```
+recon/project_settings.py (DEFAULT_SETTINGS)
+         ↓
+recon_orchestrator /defaults endpoint
+         ↓
+webapp /api/projects/defaults
+         ↓
+ProjectForm.tsx (fetches on create)
 ```
 
-**Other Modules** use `params.py` for configuration:
-```bash
-# Override with environment variables
-TARGET_DOMAIN=target.com docker-compose run --rm recon python /app/recon/main.py
-```
+**Settings flow:** Prisma Schema → Webapp API → project_settings.py → recon modules
+
+| Frontend Section | Schema Prefix | Recon Module |
+|-----------------|---------------|--------------|
+| KatanaSection.tsx | `katana*` | resource_enum.py |
+| GauSection.tsx | `gau*` | resource_enum.py |
+| KiterunnerSection.tsx | `kiterunner*` | resource_enum.py |
+| NucleiSection.tsx | `nuclei*` | vuln_scan.py |
+| NaabuSection.tsx | `naabu*` | port_scan.py |
+| HttpxSection.tsx | `httpx*` | http_probe.py |
 
 ### Output Format
 
-All modules output JSON to `<module>/output/`:
+Recon outputs a single combined JSON file per project:
 ```
 recon/output/
-├── domain_discovery.json
-├── port_scan.json
-├── http_probe.json
-└── vuln_scan.json
+└── recon_{PROJECT_ID}.json    # Combined results from all modules
+```
+
+The JSON structure contains nested objects for each module:
+```json
+{
+  "metadata": { "target_domain": "...", "modules_executed": [...] },
+  "domain_discovery": { ... },
+  "port_scan": { ... },
+  "http_probe": { ... },
+  "resource_enum": { "discovered_urls": [...], "by_base_url": {...} },
+  "vuln_scan": { ... }
+}
 ```
 
 ### Neo4j Connection

@@ -144,20 +144,20 @@ export function KiterunnerSection({ data, updateField }: KiterunnerSectionProps)
                     className="textInput"
                     value={data.kiterunnerIgnoreStatus.join(', ')}
                     onChange={(e) => updateField('kiterunnerIgnoreStatus', e.target.value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)))}
-                    placeholder="404, 400, 502, 503"
+                    placeholder="(empty = use whitelist only)"
                   />
                   <span className={styles.fieldHint}>Blacklist: filter out noise from common errors</span>
                 </div>
-                <div className={styles.fieldGroup}>
+                <div className={styles.fieldGroup} style={{ marginTop: '1rem' }}>
                   <label className={styles.fieldLabel}>Match Status Codes</label>
                   <input
                     type="text"
                     className="textInput"
                     value={data.kiterunnerMatchStatus.join(', ')}
                     onChange={(e) => updateField('kiterunnerMatchStatus', e.target.value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)))}
-                    placeholder="200, 201 (empty = all except ignored)"
+                    placeholder="200, 201, 204, 301, 302, 401, 403, 405"
                   />
-                  <span className={styles.fieldHint}>Whitelist: only show endpoints with these status codes</span>
+                  <span className={styles.fieldHint}>Whitelist: only show endpoints with these status codes (includes auth-protected)</span>
                 </div>
               </div>
 

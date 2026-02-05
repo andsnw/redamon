@@ -85,6 +85,62 @@
   flex: 1;
 }
 
+/* Target Domain & Subdomain List */
+.targetSection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.targetDomain {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+}
+
+.subdomainWrapper {
+  position: relative;
+  transform: translateY(2px);
+}
+
+.subdomainList {
+  display: inline-block;
+  max-width: 130px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.subdomainTooltip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: var(--space-1);
+  padding: var(--space-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--transition-default), visibility var(--transition-default);
+}
+
+.subdomainWrapper:hover .subdomainTooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
 .projectBadge {
   display: flex;
   align-items: center;

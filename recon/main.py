@@ -625,6 +625,20 @@ def main():
         print(f"[*] Mode: FULL DISCOVERY (all subdomains)")
     print()
 
+    # Clear previous graph data for this project before starting new scan
+    if UPDATE_GRAPH_DB:
+        print("[*] Clearing previous graph data for this project...")
+        try:
+            from graph_db import Neo4jClient
+            with Neo4jClient() as graph_client:
+                if graph_client.verify_connection():
+                    clear_stats = graph_client.clear_project_data(USER_ID, PROJECT_ID)
+                    print(f"[+] Previous data cleared: {clear_stats['nodes_deleted']} nodes removed\n")
+                else:
+                    print("[!] Could not connect to Neo4j - skipping clear\n")
+        except Exception as e:
+            print(f"[!] Failed to clear previous graph data: {e}\n")
+
     # Check anonymity status if Tor is enabled
     if USE_TOR_FOR_RECON:
         try:

@@ -6,16 +6,33 @@ API endpoint bruteforcing using Kiterunner.
 
 import json
 import platform
+import shutil
 import subprocess
 import tarfile
-import tempfile
 import urllib.request
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from .classification import classify_endpoint
+
+
+def _create_temp_dir(prefix: str = "kr") -> Path:
+    """Create a temp directory under /tmp/redamon for Docker-in-Docker compatibility."""
+    temp_dir = Path(f"/tmp/redamon/.{prefix}_{uuid.uuid4().hex[:8]}")
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    return temp_dir
+
+
+def _cleanup_temp_dir(temp_dir: Path):
+    """Clean up a temp directory."""
+    try:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+    except Exception:
+        pass
 
 
 def ensure_kiterunner_binary(wordlist_name: str) -> Tuple[Optional[str], Optional[str]]:
@@ -223,9 +240,9 @@ def run_kiterunner_discovery(
         print(f"    [!] Kiterunner wordlist not found: {wordlist_path}")
         return discovered_endpoints
 
-    # Create temp directory for targets file
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
+    # Create temp directory for targets file (use /tmp/redamon for Docker-in-Docker compatibility)
+    temp_path = _create_temp_dir("kr_scan")
+    try:
         targets_file = temp_path / "targets.txt"
 
         # Write targets to file (one per line)
@@ -260,16 +277,16 @@ def run_kiterunner_discovery(
             if delay_ms > 0:
                 cmd.extend(["--delay", f"{delay_ms}ms"])
 
-        # Status code filters (correct flags from kr scan --help)
+        # Status code filters (kiterunner expects comma-separated values)
         if ignore_status:
-            # --fail-status-codes blacklists status codes
-            for code in ignore_status:
-                cmd.extend(["--fail-status-codes", str(code)])
+            # --fail-status-codes blacklists status codes (comma-separated)
+            codes_str = ",".join(str(code) for code in ignore_status)
+            cmd.extend(["--fail-status-codes", codes_str])
 
         if match_status:
-            # --success-status-codes whitelists status codes
-            for code in match_status:
-                cmd.extend(["--success-status-codes", str(code)])
+            # --success-status-codes whitelists status codes (comma-separated)
+            codes_str = ",".join(str(code) for code in match_status)
+            cmd.extend(["--success-status-codes", codes_str])
 
         # Content length filter
         if min_content_length > 0:
@@ -391,6 +408,8 @@ def run_kiterunner_discovery(
             print(f"    [!] Kiterunner timeout after {scan_timeout}s")
         except Exception as e:
             print(f"    [!] Kiterunner error: {e}")
+    finally:
+        _cleanup_temp_dir(temp_path)
 
     print(f"    [+] Kiterunner discovered {len(discovered_endpoints)} API endpoints")
     return discovered_endpoints
@@ -579,9 +598,9 @@ def detect_kiterunner_methods(
             if method not in url_methods[url]:
                 url_methods[url].append(method)
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-
+    # Use /tmp/redamon for Docker-in-Docker compatibility (avoids paths with spaces)
+    temp_path = _create_temp_dir("kr_methods")
+    try:
         if mode == "options":
             # OPTIONS probe mode - same as GAU method detection
             urls_file = temp_path / "urls.txt"
@@ -593,7 +612,7 @@ def detect_kiterunner_methods(
 
             cmd = [
                 "docker", "run", "--rm",
-                "-v", f"{temp_dir}:/data",
+                "-v", f"{temp_path}:/data",
                 verify_docker_image,
                 "-l", "/data/urls.txt",
                 "-o", "/data/options_output.json",
@@ -668,7 +687,7 @@ def detect_kiterunner_methods(
 
                 cmd = [
                     "docker", "run", "--rm",
-                    "-v", f"{temp_dir}:/data",
+                    "-v", f"{temp_path}:/data",
                     verify_docker_image,
                     "-l", f"/data/urls_{method.lower()}.txt",
                     "-o", f"/data/output_{method.lower()}.json",
@@ -713,6 +732,8 @@ def detect_kiterunner_methods(
                     print(f"    [!] {method} probe timeout")
                 except Exception as e:
                     print(f"    [!] {method} probe error: {e}")
+    finally:
+        _cleanup_temp_dir(temp_path)
 
     # Count statistics
     with_multiple = sum(1 for methods in url_methods.values() if len(methods) > 1)

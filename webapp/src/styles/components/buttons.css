@@ -208,6 +208,11 @@
   cursor: not-allowed;
 }
 
+.primaryButton svg {
+  color: var(--text-on-accent);
+  stroke: var(--text-on-accent);
+}
+
 /* =============================================================================
    SECONDARY BUTTON
    Outlined button for secondary actions

@@ -16,6 +16,18 @@ from models import ReconState, ReconStatus, ReconLogEvent
 
 logger = logging.getLogger(__name__)
 
+# ANSI escape code pattern for stripping terminal colors from logs
+ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*m|\033\[[0-9;]*m')
+
+# Sub-container images spawned by recon (Docker-in-Docker sibling containers)
+SUB_CONTAINER_IMAGES = [
+    "projectdiscovery/naabu",
+    "projectdiscovery/httpx",
+    "projectdiscovery/katana",
+    "projectdiscovery/nuclei",
+    "sxcurity/gau",
+]
+
 # Phase patterns to detect from logs
 # Order matters - more specific patterns should come first within each phase
 PHASE_PATTERNS = [
@@ -63,9 +75,19 @@ class ContainerManager:
                             state.status = ReconStatus.ERROR
                             state.error = f"Container exited with code {exit_code}"
                             state.completed_at = datetime.utcnow()
+
+                        # Auto-cleanup: remove finished container
+                        try:
+                            container.remove()
+                            logger.info(f"Auto-removed finished container for project {project_id}")
+                        except Exception as e:
+                            logger.warning(f"Failed to auto-remove container: {e}")
                 except NotFound:
-                    state.status = ReconStatus.ERROR
-                    state.error = "Container not found"
+                    # Only set error if not already in a terminal state
+                    # (container may have been auto-removed after completion)
+                    if state.status not in (ReconStatus.COMPLETED, ReconStatus.ERROR):
+                        state.status = ReconStatus.ERROR
+                        state.error = "Container not found"
 
             return state
 
@@ -148,8 +170,13 @@ class ContainerManager:
                 },
                 volumes={
                     "/var/run/docker.sock": {"bind": "/var/run/docker.sock", "mode": "ro"},
-                    f"{recon_path}/output": {"bind": "/app/recon/output", "mode": "rw"},
-                    f"{recon_path}/data": {"bind": "/app/recon/data", "mode": "rw"},
+                    # Mount source code for development (no rebuild needed)
+                    # Note: rw needed because output/data are subdirectories
+                    f"{recon_path}": {"bind": "/app/recon", "mode": "rw"},
+                    # Mount graph_db module
+                    f"{Path(recon_path).parent}/graph_db": {"bind": "/app/graph_db", "mode": "ro"},
+                    # Mount /tmp for Docker-in-Docker temp files (avoids spaces in paths)
+                    "/tmp/redamon": {"bind": "/tmp/redamon", "mode": "rw"},
                 },
                 command="python /app/recon/main.py",
             )
@@ -164,6 +191,47 @@ class ContainerManager:
             logger.error(f"Failed to start recon for {project_id}: {e}")
 
         return state
+
+    def _cleanup_sub_containers(self) -> int:
+        """Stop and remove any running sub-containers (naabu, httpx, nuclei, etc.)
+
+        Returns the count of containers cleaned up.
+        """
+        cleaned = 0
+        try:
+            # Find all running containers
+            containers = self.client.containers.list(all=True)
+            for container in containers:
+                try:
+                    # Check if container image matches any sub-container image
+                    image_tags = container.image.tags if container.image.tags else []
+                    image_name = container.attrs.get("Config", {}).get("Image", "")
+
+                    for sub_image in SUB_CONTAINER_IMAGES:
+                        # Match by image name or tags
+                        if (sub_image in image_name or
+                            any(sub_image in tag for tag in image_tags)):
+                            container_name = container.name
+                            container_status = container.status
+
+                            # Stop if running
+                            if container_status == "running":
+                                logger.info(f"Stopping sub-container: {container_name} ({sub_image})")
+                                container.stop(timeout=5)
+
+                            # Remove container
+                            logger.info(f"Removing sub-container: {container_name} ({sub_image})")
+                            container.remove(force=True)
+                            cleaned += 1
+                            break
+
+                except Exception as e:
+                    logger.warning(f"Error cleaning up container {container.name}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error listing containers for cleanup: {e}")
+
+        return cleaned
 
     async def stop_recon(self, project_id: str, timeout: int = 10) -> ReconState:
         """Stop a running recon process"""
@@ -188,6 +256,11 @@ class ContainerManager:
                 state.status = ReconStatus.ERROR
                 state.error = f"Failed to stop: {e}"
 
+        # Clean up any sub-containers (naabu, httpx, nuclei, etc.)
+        cleaned = self._cleanup_sub_containers()
+        if cleaned > 0:
+            logger.info(f"Cleaned up {cleaned} sub-container(s) for project {project_id}")
+
         # Clean up state
         if project_id in self.running_states:
             del self.running_states[project_id]
@@ -202,14 +275,17 @@ class ContainerManager:
         is_phase_start = False
         level = "info"
 
-        # Detect log level
-        line_lower = line.lower()
-        if "error" in line_lower or "failed" in line_lower:
-            level = "error"
-        elif "warning" in line_lower or "warn" in line_lower:
-            level = "warning"
-        elif "success" in line_lower or "complete" in line_lower or "done" in line_lower:
-            level = "success"
+        # Strip ANSI escape codes (terminal colors) from log line
+        line = ANSI_ESCAPE.sub('', line)
+
+        # Detect log level based on prefix symbols only
+        # [!] = error (red), [+]/[✓] = success (green), [*] = action (blue), no symbol = info (gray)
+        if "[!]" in line:
+            level = "error"  # Red
+        elif "[+]" in line or "[✓]" in line:
+            level = "success"  # Green
+        elif "[*]" in line:
+            level = "action"  # Blue
 
         # Detect phase changes
         for pattern, phase_name, num in PHASE_PATTERNS:

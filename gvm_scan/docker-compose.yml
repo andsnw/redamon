@@ -166,6 +166,8 @@ services:
       - gvmd_socket:/run/gvmd:ro
       - ../recon/output:/app/recon/output:ro
       - ./output:/app/gvm_scan/output
+      # Mount source code for development (no rebuild needed)
+      - .:/app/gvm_scan:ro
     depends_on:
       - gvmd
       - ospd-openvas

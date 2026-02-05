@@ -19,7 +19,7 @@ export default function GraphPage() {
   const { projectId, userId, currentProject, isLoading: projectLoading } = useProject()
 
   const [is3D, setIs3D] = useState(true)
-  const [showLabels, setShowLabels] = useState(false)
+  const [showLabels, setShowLabels] = useState(true)
   const [isAIOpen, setIsAIOpen] = useState(false)
   const [isReconModalOpen, setIsReconModalOpen] = useState(false)
   const [isLogsOpen, setIsLogsOpen] = useState(false)
@@ -164,6 +164,9 @@ export default function GraphPage() {
         onToggleLabels={setShowLabels}
         onToggleAI={handleToggleAI}
         isAIOpen={isAIOpen}
+        // Target info
+        targetDomain={currentProject?.targetDomain}
+        subdomainList={currentProject?.subdomainList}
         // Recon props
         onStartRecon={handleStartRecon}
         onDownloadJSON={handleDownloadJSON}

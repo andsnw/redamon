@@ -504,7 +504,13 @@ def get_host_path(container_path: str) -> str:
 
     When running inside a container with mounted volumes, sibling containers
     need host paths, not container paths.
+
+    /tmp/redamon is mounted to the same path inside and outside, so no translation needed.
     """
+    # /tmp/redamon paths are the same inside and outside the container
+    if container_path.startswith("/tmp/redamon"):
+        return container_path
+
     host_output_path = os.environ.get("HOST_RECON_OUTPUT_PATH", "")
     container_output_path = "/app/recon/output"
 
@@ -1393,7 +1399,8 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
         return recon_data
 
     # Create temp directory for scan files
-    scan_temp_dir = Path(__file__).parent / "output" / ".httpx_temp"
+    # Use /tmp/redamon to avoid spaces in paths (snap Docker issue)
+    scan_temp_dir = Path("/tmp/redamon/.httpx_temp")
     scan_temp_dir.mkdir(parents=True, exist_ok=True)
 
     try:

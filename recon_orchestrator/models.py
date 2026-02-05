@@ -45,7 +45,7 @@ class ReconLogEvent(BaseModel):
     phase_number: Optional[int] = None
     is_phase_start: bool = False
     is_phase_end: bool = False
-    level: str = "info"  # info, warning, error, success
+    level: str = "info"  # info, warning, error, success, action
 
 
 class HealthResponse(BaseModel):

@@ -76,6 +76,53 @@ async def health_check():
     )
 
 
+@app.get("/defaults")
+async def get_defaults():
+    """
+    Get default project settings from recon module.
+
+    Returns DEFAULT_SETTINGS dict with camelCase keys for frontend compatibility.
+    """
+    import sys
+    from pathlib import Path
+
+    # Add recon path to sys.path to import project_settings
+    recon_path = Path("/app/recon")
+    if str(recon_path) not in sys.path:
+        sys.path.insert(0, str(recon_path))
+
+    try:
+        # Import DEFAULT_SETTINGS from project_settings.py
+        from project_settings import DEFAULT_SETTINGS
+
+        # Runtime-only settings that should NOT be sent to frontend/database
+        # These are used by recon module at runtime, not stored in PostgreSQL
+        RUNTIME_ONLY_KEYS = {
+            'PROJECT_ID',
+            'USER_ID',
+            'TARGET_DOMAIN',  # Provided by user, not a default
+        }
+
+        # Convert snake_case keys to camelCase for frontend
+        def to_camel_case(snake_str: str) -> str:
+            components = snake_str.lower().split('_')
+            return components[0] + ''.join(x.title() for x in components[1:])
+
+        camel_case_defaults = {
+            to_camel_case(k): v
+            for k, v in DEFAULT_SETTINGS.items()
+            if k not in RUNTIME_ONLY_KEYS
+        }
+
+        return camel_case_defaults
+    except ImportError as e:
+        logger.error(f"Failed to import project_settings: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load defaults: {e}")
+    except Exception as e:
+        logger.error(f"Error getting defaults: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/recon/{project_id}/start", response_model=ReconState)
 async def start_recon(project_id: str, request: ReconStartRequest):
     """

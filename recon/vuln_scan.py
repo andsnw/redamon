@@ -224,12 +224,9 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         print(f"  Tags: {', '.join(NUCLEI_TAGS)}")
     print("=" * 70 + "\n")
     
-    # Create a temporary directory for nuclei files in a location Docker can access
-    # Using the project's output directory to avoid permission/access issues
-    output_dir = Path(__file__).parent / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    nuclei_temp_dir = output_dir / ".nuclei_temp"
+    # Create a temporary directory for nuclei files
+    # Use /tmp/redamon to avoid spaces in paths (snap Docker issue)
+    nuclei_temp_dir = Path("/tmp/redamon/.nuclei_temp")
     nuclei_temp_dir.mkdir(parents=True, exist_ok=True)
     
     # Create targets file

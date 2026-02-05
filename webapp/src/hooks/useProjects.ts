@@ -10,6 +10,7 @@ export interface ProjectListItem {
   name: string
   description: string | null
   targetDomain: string
+  subdomainList?: string[]
   createdAt: string
   updatedAt: string
   user: {

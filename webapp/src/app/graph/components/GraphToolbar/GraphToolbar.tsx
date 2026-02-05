@@ -14,6 +14,9 @@ interface GraphToolbarProps {
   onToggleLabels: (value: boolean) => void
   onToggleAI?: () => void
   isAIOpen?: boolean
+  // Target info
+  targetDomain?: string
+  subdomainList?: string[]
   // Recon props
   onStartRecon?: () => void
   onDownloadJSON?: () => void
@@ -31,6 +34,9 @@ export function GraphToolbar({
   onToggleLabels,
   onToggleAI,
   isAIOpen = false,
+  // Target info
+  targetDomain,
+  subdomainList = [],
   // Recon props
   onStartRecon,
   onDownloadJSON,
@@ -73,6 +79,25 @@ export function GraphToolbar({
           aria-label="Toggle labels"
         />
       </div>
+
+      {targetDomain && (
+        <>
+          <div className={styles.divider} />
+          <div className={styles.targetSection}>
+            {subdomainList.length > 0 && (
+              <div className={styles.subdomainWrapper}>
+                <span className={styles.subdomainList}>
+                  {subdomainList.join(', ')}
+                </span>
+                <div className={styles.subdomainTooltip}>
+                  {subdomainList.join(', ')}
+                </div>
+              </div>
+            )}
+            <span className={styles.targetDomain}>{targetDomain}</span>
+          </div>
+        </>
+      )}
 
       <div className={styles.spacer} />
 

@@ -85,6 +85,8 @@ export function ReconLogsDrawer({
         return styles.logWarning
       case 'success':
         return styles.logSuccess
+      case 'action':
+        return styles.logAction
       default:
         return styles.logInfo
     }

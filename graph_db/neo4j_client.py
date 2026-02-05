@@ -122,6 +122,42 @@ class Neo4jClient:
                 if "already exists" not in str(e).lower():
                     print(f"[!] Schema warning: {e}")
 
+    def clear_project_data(self, user_id: str, project_id: str) -> dict:
+        """
+        Delete all nodes and relationships for a specific project.
+
+        This should be called before re-running a recon scan to ensure
+        old data is removed and replaced with fresh results.
+
+        Args:
+            user_id: User identifier
+            project_id: Project identifier
+
+        Returns:
+            dict with counts of deleted nodes and relationships
+        """
+        stats = {"nodes_deleted": 0, "relationships_deleted": 0}
+
+        with self.driver.session() as session:
+            # Delete all nodes and relationships for this project
+            # DETACH DELETE removes the node and all its relationships
+            result = session.run(
+                """
+                MATCH (n)
+                WHERE n.user_id = $user_id AND n.project_id = $project_id
+                DETACH DELETE n
+                RETURN count(n) as deleted_count
+                """,
+                user_id=user_id, project_id=project_id
+            )
+            record = result.single()
+            if record:
+                stats["nodes_deleted"] = record["deleted_count"]
+
+            print(f"[*] Cleared project data: {stats['nodes_deleted']} nodes deleted")
+
+        return stats
+
     def update_graph_from_domain_discovery(self, recon_data: dict, user_id: str, project_id: str) -> dict:
         """
         Initialize the Neo4j graph database with reconnaissance data after domain_discovery.

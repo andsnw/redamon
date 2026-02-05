@@ -26,6 +26,7 @@ export default function ProjectSettingsPage() {
         id: updated.id,
         name: updated.name,
         targetDomain: updated.targetDomain,
+        subdomainList: updated.subdomainList,
         description: updated.description || undefined,
         createdAt: updated.createdAt.toString(),
         updatedAt: updated.updatedAt.toString()

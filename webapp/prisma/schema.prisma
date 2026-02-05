@@ -139,6 +139,7 @@ model Project {
   nucleiDockerImage           String   @default("projectdiscovery/nuclei:latest") @map("nuclei_docker_image")
 
   // ========== KATANA WEB CRAWLER ==========
+  katanaEnabled               Boolean  @default(true) @map("katana_enabled")
   katanaDockerImage           String   @default("projectdiscovery/katana:latest") @map("katana_docker_image")
   katanaDepth                 Int      @default(3) @map("katana_depth")
   katanaMaxUrls               Int      @default(500) @map("katana_max_urls")
@@ -180,9 +181,9 @@ model Project {
   kiterunnerTimeout           Int      @default(10) @map("kiterunner_timeout")
   kiterunnerScanTimeout       Int      @default(1000) @map("kiterunner_scan_timeout")
   kiterunnerThreads           Int      @default(50) @map("kiterunner_threads")
-  kiterunnerIgnoreStatus      Int[]    @default([404, 400, 502, 503]) @map("kiterunner_ignore_status")
+  kiterunnerIgnoreStatus      Int[]    @default([]) @map("kiterunner_ignore_status")
   kiterunnerMinContentLength  Int      @default(0) @map("kiterunner_min_content_length")
-  kiterunnerMatchStatus       Int[]    @default([]) @map("kiterunner_match_status")
+  kiterunnerMatchStatus       Int[]    @default([200, 201, 204, 301, 302, 401, 403, 405]) @map("kiterunner_match_status")
   kiterunnerHeaders           String[] @default([]) @map("kiterunner_headers")
   kiterunnerDetectMethods     Boolean  @default(true) @map("kiterunner_detect_methods")
   kiterunnerMethodDetectionMode String @default("bruteforce") @map("kiterunner_method_detection_mode")

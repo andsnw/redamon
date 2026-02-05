@@ -92,6 +92,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
 
     # Extract settings from passed dict
     # Katana settings
+    KATANA_ENABLED = settings.get('KATANA_ENABLED', True)
     KATANA_DOCKER_IMAGE = settings.get('KATANA_DOCKER_IMAGE', 'projectdiscovery/katana:latest')
     KATANA_DEPTH = settings.get('KATANA_DEPTH', 3)
     KATANA_MAX_URLS = settings.get('KATANA_MAX_URLS', 5000)
@@ -161,13 +162,15 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     kr_binary_path = None
 
     with ThreadPoolExecutor(max_workers=3) as executor:
-        katana_future = executor.submit(pull_katana_docker_image, KATANA_DOCKER_IMAGE)
+        if KATANA_ENABLED:
+            katana_future = executor.submit(pull_katana_docker_image, KATANA_DOCKER_IMAGE)
         if GAU_ENABLED:
             gau_future = executor.submit(pull_gau_docker_image, GAU_DOCKER_IMAGE)
         if KITERUNNER_ENABLED and KITERUNNER_WORDLISTS:
             # Ensure binary is available
             kr_future = executor.submit(ensure_kiterunner_binary, KITERUNNER_WORDLISTS[0])
-        katana_future.result()
+        if KATANA_ENABLED:
+            katana_future.result()
         if GAU_ENABLED:
             gau_future.result()
         if KITERUNNER_ENABLED and KITERUNNER_WORDLISTS:
@@ -223,8 +226,10 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
 
     print(f"\n  Target URLs: {len(target_urls)}")
     print(f"  Target domains (for GAU): {len(target_domains)}")
-    print(f"  Katana crawl depth: {KATANA_DEPTH}")
-    print(f"  Katana max URLs: {KATANA_MAX_URLS}")
+    print(f"  Katana enabled: {KATANA_ENABLED}")
+    if KATANA_ENABLED:
+        print(f"  Katana crawl depth: {KATANA_DEPTH}")
+        print(f"  Katana max URLs: {KATANA_MAX_URLS}")
     print(f"  GAU enabled: {GAU_ENABLED}")
     if GAU_ENABLED:
         print(f"  GAU providers: {', '.join(GAU_PROVIDERS)}")
@@ -242,28 +247,37 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     gau_urls_by_domain = {}
     kr_results = []
 
-    # Run Katana and GAU in parallel first
-    print("\n[*] Running URL discovery (Katana + GAU in parallel)...")
+    # Run Katana and GAU in parallel first (if enabled)
+    if KATANA_ENABLED or GAU_ENABLED:
+        tools_running = []
+        if KATANA_ENABLED:
+            tools_running.append("Katana")
+        if GAU_ENABLED:
+            tools_running.append("GAU")
+        print(f"\n[*] Running URL discovery ({' + '.join(tools_running)})...")
+    elif not KITERUNNER_ENABLED:
+        print("\n[*] All URL discovery tools disabled (Katana, GAU, Kiterunner)")
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {}
 
-        # Submit Katana crawler
-        futures['katana'] = executor.submit(
-            run_katana_crawler,
-            target_urls,
-            KATANA_DOCKER_IMAGE,
-            KATANA_DEPTH,
-            KATANA_MAX_URLS,
-            KATANA_RATE_LIMIT,
-            KATANA_TIMEOUT,
-            KATANA_JS_CRAWL,
-            KATANA_PARAMS_ONLY,
-            KATANA_SCOPE,
-            KATANA_CUSTOM_HEADERS,
-            KATANA_EXCLUDE_PATTERNS,
-            use_proxy
-        )
+        # Submit Katana crawler if enabled
+        if KATANA_ENABLED:
+            futures['katana'] = executor.submit(
+                run_katana_crawler,
+                target_urls,
+                KATANA_DOCKER_IMAGE,
+                KATANA_DEPTH,
+                KATANA_MAX_URLS,
+                KATANA_RATE_LIMIT,
+                KATANA_TIMEOUT,
+                KATANA_JS_CRAWL,
+                KATANA_PARAMS_ONLY,
+                KATANA_SCOPE,
+                KATANA_CUSTOM_HEADERS,
+                KATANA_EXCLUDE_PATTERNS,
+                use_proxy
+            )
 
         # Submit GAU discovery if enabled
         if GAU_ENABLED and target_domains:
@@ -330,8 +344,9 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             except Exception as e:
                 print(f"    [!] Kiterunner failed for {wordlist_name}: {e}")
 
-    # Mark Katana endpoints with sources array
-    print("\n[*] Organizing Katana endpoints...")
+    # Organize discovered endpoints
+    if katana_urls:
+        print("\n[*] Organizing Katana endpoints...")
     organized_data = organize_endpoints(katana_urls, use_proxy=use_proxy)
 
     # Mark all Katana endpoints with sources=['katana'] (array format)
@@ -479,13 +494,14 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             'scan_timestamp': start_time.isoformat(),
             'scan_duration_seconds': duration,
             # Katana metadata
-            'katana_docker_image': KATANA_DOCKER_IMAGE,
-            'katana_crawl_depth': KATANA_DEPTH,
-            'katana_max_urls': KATANA_MAX_URLS,
-            'katana_rate_limit': KATANA_RATE_LIMIT,
-            'katana_js_crawl': KATANA_JS_CRAWL,
-            'katana_params_only': KATANA_PARAMS_ONLY,
-            'katana_urls_found': len(katana_urls),
+            'katana_enabled': KATANA_ENABLED,
+            'katana_docker_image': KATANA_DOCKER_IMAGE if KATANA_ENABLED else None,
+            'katana_crawl_depth': KATANA_DEPTH if KATANA_ENABLED else None,
+            'katana_max_urls': KATANA_MAX_URLS if KATANA_ENABLED else None,
+            'katana_rate_limit': KATANA_RATE_LIMIT if KATANA_ENABLED else None,
+            'katana_js_crawl': KATANA_JS_CRAWL if KATANA_ENABLED else None,
+            'katana_params_only': KATANA_PARAMS_ONLY if KATANA_ENABLED else None,
+            'katana_urls_found': len(katana_urls) if KATANA_ENABLED else 0,
             # GAU metadata
             'gau_enabled': GAU_ENABLED,
             'gau_docker_image': GAU_DOCKER_IMAGE if GAU_ENABLED else None,
@@ -563,7 +579,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     print(f"[+] RESOURCE ENUMERATION COMPLETE")
     print(f"[+] Duration: {duration:.2f} seconds")
     print(f"[+] Total URLs discovered: {len(all_discovered_urls)}")
-    print(f"    - Katana (active crawl): {len(katana_urls)}")
+    print(f"    - Katana (active crawl): {len(katana_urls) if KATANA_ENABLED else 'disabled'}")
     print(f"    - GAU (passive archive): {len(gau_urls) if GAU_ENABLED else 'disabled'}")
     if GAU_ENABLED and gau_urls:
         print(f"      - GAU new endpoints: {gau_stats['gau_new']}")

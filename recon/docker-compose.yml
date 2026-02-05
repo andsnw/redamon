@@ -26,6 +26,9 @@ services:
       # Mount entire recon directory for development (no rebuild needed for code changes)
       - .:/app/recon
 
+      # Mount graph_db module for Neo4j integration
+      - ../graph_db:/app/graph_db:ro
+
       # Docker socket for running Naabu, httpx, Nuclei, etc.
       - /var/run/docker.sock:/var/run/docker.sock:ro
 

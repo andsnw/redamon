@@ -147,6 +147,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'NUCLEI_DOCKER_IMAGE': 'projectdiscovery/nuclei:latest',
 
     # Katana Web Crawler
+    'KATANA_ENABLED': True,
     'KATANA_DOCKER_IMAGE': 'projectdiscovery/katana:latest',
     'KATANA_DEPTH': 3,
     'KATANA_MAX_URLS': 500,
@@ -237,9 +238,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'KITERUNNER_TIMEOUT': 10,
     'KITERUNNER_SCAN_TIMEOUT': 1000,
     'KITERUNNER_THREADS': 50,
-    'KITERUNNER_IGNORE_STATUS': [404, 400, 502, 503],
+    'KITERUNNER_IGNORE_STATUS': [],
     'KITERUNNER_MIN_CONTENT_LENGTH': 0,
-    'KITERUNNER_MATCH_STATUS': [],
+    'KITERUNNER_MATCH_STATUS': [200, 201, 204, 301, 302, 401, 403, 405],
     'KITERUNNER_HEADERS': [],
     'KITERUNNER_DETECT_METHODS': True,
     'KITERUNNER_METHOD_DETECTION_MODE': 'bruteforce',
@@ -448,6 +449,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['NUCLEI_DOCKER_IMAGE'] = project.get('nucleiDockerImage', DEFAULT_SETTINGS['NUCLEI_DOCKER_IMAGE'])
 
     # Katana Web Crawler
+    settings['KATANA_ENABLED'] = project.get('katanaEnabled', DEFAULT_SETTINGS['KATANA_ENABLED'])
     settings['KATANA_DOCKER_IMAGE'] = project.get('katanaDockerImage', DEFAULT_SETTINGS['KATANA_DOCKER_IMAGE'])
     settings['KATANA_DEPTH'] = project.get('katanaDepth', DEFAULT_SETTINGS['KATANA_DEPTH'])
     settings['KATANA_MAX_URLS'] = project.get('katanaMaxUrls', DEFAULT_SETTINGS['KATANA_MAX_URLS'])

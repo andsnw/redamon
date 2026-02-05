@@ -66,7 +66,10 @@ export function useReconSSE({
     // Handle named 'log' events
     eventSource.addEventListener('log', (event) => {
       try {
-        const data = JSON.parse(event.data)
+        const eventData = (event as MessageEvent).data
+        if (!eventData) return
+
+        const data = JSON.parse(eventData)
 
         const logEvent: ReconLogEvent = {
           log: data.log,
@@ -91,10 +94,14 @@ export function useReconSSE({
       }
     })
 
-    // Handle named 'error' events
+    // Handle named 'error' events (from server, not connection errors)
     eventSource.addEventListener('error', (event) => {
       try {
-        const data = JSON.parse((event as MessageEvent).data)
+        const eventData = (event as MessageEvent).data
+        // Connection errors don't have data - ignore them (handled by onerror)
+        if (!eventData) return
+
+        const data = JSON.parse(eventData)
         if (data.error) {
           setError(data.error)
           onError?.(data.error)
@@ -107,7 +114,10 @@ export function useReconSSE({
     // Handle named 'complete' events
     eventSource.addEventListener('complete', (event) => {
       try {
-        const data = JSON.parse((event as MessageEvent).data)
+        const eventData = (event as MessageEvent).data
+        if (!eventData) return
+
+        const data = JSON.parse(eventData)
         onComplete?.(data.status, data.error)
         // Close connection after completion
         eventSource.close()
@@ -120,6 +130,7 @@ export function useReconSSE({
     // Handle generic messages (fallback)
     eventSource.onmessage = (event) => {
       try {
+        if (!event.data) return
         const data = JSON.parse(event.data)
 
         // Handle error events

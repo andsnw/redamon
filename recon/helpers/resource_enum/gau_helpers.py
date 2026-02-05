@@ -5,13 +5,31 @@ Passive URL discovery from web archives using GAU.
 """
 
 import json
+import os
+import shutil
 import subprocess
-import tempfile
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse, parse_qs
 
 from .classification import classify_parameter, classify_endpoint
+
+
+def _create_temp_dir(prefix: str = "gau") -> Path:
+    """Create a temp directory under /tmp/redamon for Docker-in-Docker compatibility."""
+    temp_dir = Path(f"/tmp/redamon/.{prefix}_{uuid.uuid4().hex[:8]}")
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    return temp_dir
+
+
+def _cleanup_temp_dir(temp_dir: Path):
+    """Clean up a temp directory."""
+    try:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+    except Exception:
+        pass
 
 
 def pull_gau_docker_image(docker_image: str) -> bool:
@@ -283,11 +301,11 @@ def verify_gau_urls(
 
     print(f"\n[*] Verifying {len(urls)} GAU URLs...")
 
-    # Create temp directory for httpx input/output
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        urls_file = temp_path / "urls.txt"
-        output_file = temp_path / "verified.json"
+    # Create temp directory for httpx input/output (Docker-in-Docker compatible)
+    temp_dir = _create_temp_dir("gau_verify")
+    try:
+        urls_file = temp_dir / "urls.txt"
+        output_file = temp_dir / "verified.json"
 
         # Write URLs to file
         with open(urls_file, 'w') as f:
@@ -339,6 +357,8 @@ def verify_gau_urls(
 
         print(f"    [+] Verified: {len(live_urls)}/{len(urls)} URLs are live")
         return live_urls
+    finally:
+        _cleanup_temp_dir(temp_dir)
 
 
 def detect_gau_methods(
@@ -372,10 +392,11 @@ def detect_gau_methods(
 
     url_methods: Dict[str, List[str]] = {}
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        urls_file = temp_path / "urls.txt"
-        output_file = temp_path / "options_output.json"
+    # Create temp directory (Docker-in-Docker compatible)
+    temp_dir = _create_temp_dir("gau_methods")
+    try:
+        urls_file = temp_dir / "urls.txt"
+        output_file = temp_dir / "options_output.json"
 
         with open(urls_file, 'w') as f:
             for url in urls:
@@ -453,8 +474,8 @@ def detect_gau_methods(
         if urls_needing_get_check and filter_dead:
             print(f"    [*] Checking {len(urls_needing_get_check)} endpoints with GET fallback...")
 
-            get_urls_file = temp_path / "get_urls.txt"
-            get_output_file = temp_path / "get_output.json"
+            get_urls_file = temp_dir / "get_urls.txt"
+            get_output_file = temp_dir / "get_output.json"
 
             with open(get_urls_file, 'w') as f:
                 for url in urls_needing_get_check:
@@ -501,16 +522,18 @@ def detect_gau_methods(
             for url in urls_needing_get_check:
                 url_methods[url] = ["GET"]
 
-    with_methods = sum(1 for methods in url_methods.values() if len(methods) > 1)
-    filtered_out = len(urls) - len(url_methods)
+        with_methods = sum(1 for methods in url_methods.values() if len(methods) > 1)
+        filtered_out = len(urls) - len(url_methods)
 
-    print(f"    [+] Method detection complete:")
-    print(f"        - Endpoints with multiple methods: {with_methods}")
-    print(f"        - Endpoints with GET only: {len(url_methods) - with_methods}")
-    if filter_dead:
-        print(f"        - Dead endpoints filtered out: {filtered_out}")
+        print(f"    [+] Method detection complete:")
+        print(f"        - Endpoints with multiple methods: {with_methods}")
+        print(f"        - Endpoints with GET only: {len(url_methods) - with_methods}")
+        if filter_dead:
+            print(f"        - Dead endpoints filtered out: {filtered_out}")
 
-    return url_methods
+        return url_methods
+    finally:
+        _cleanup_temp_dir(temp_dir)
 
 
 def merge_gau_into_by_base_url(

@@ -34,6 +34,19 @@ export function KatanaSection({ data, updateField }: KatanaSectionProps) {
           <p className={styles.sectionDescription}>
             Active web crawling using Katana from ProjectDiscovery. Discovers URLs, endpoints, and parameters by following links and parsing JavaScript. Found URLs with parameters feed into Nuclei DAST mode for vulnerability fuzzing.
           </p>
+          <div className={styles.toggleRow}>
+            <div>
+              <span className={styles.toggleLabel}>Enable Katana</span>
+              <p className={styles.toggleDescription}>Active web crawling to discover endpoints and parameters for DAST vulnerability fuzzing</p>
+            </div>
+            <Toggle
+              checked={data.katanaEnabled}
+              onChange={(checked) => updateField('katanaEnabled', checked)}
+            />
+          </div>
+
+          {data.katanaEnabled && (
+            <>
           <div className={styles.fieldRow}>
             <div className={styles.fieldGroup}>
               <label className={styles.fieldLabel}>Crawl Depth</label>
@@ -164,6 +177,8 @@ export function KatanaSection({ data, updateField }: KatanaSectionProps) {
               disabled
             />
           </div>
+            </>
+          )}
         </div>
       )}
     </div>

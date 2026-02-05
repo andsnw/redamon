@@ -25,6 +25,9 @@ import sys
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# Import IANA service lookup (15,000+ services from official registry)
+from helpers.iana_services import get_service_name_friendly as get_service_name
+
 # Settings are passed from main.py to avoid multiple database queries
 
 
@@ -166,7 +169,13 @@ def get_host_path(container_path: str) -> str:
 
     The recon container mounts: ./output:/app/recon/output
     So /app/recon/output/* inside the container maps to <host>/recon/output/* on host.
+
+    /tmp/redamon is mounted to the same path inside and outside, so no translation needed.
     """
+    # /tmp/redamon paths are the same inside and outside the container
+    if container_path.startswith("/tmp/redamon"):
+        return container_path
+
     host_output_path = os.environ.get("HOST_RECON_OUTPUT_PATH", "")
     container_output_path = "/app/recon/output"
 
@@ -289,7 +298,20 @@ def parse_naabu_output(output_file: str) -> Dict:
     all_ports = set()
 
     if not Path(output_file).exists():
-        return {"by_host": {}, "by_ip": {}, "all_ports": [], "summary": {}}
+        return {
+            "by_host": {},
+            "by_ip": {},
+            "all_ports": [],
+            "summary": {
+                "hosts_scanned": 0,
+                "ips_scanned": 0,
+                "hosts_with_open_ports": 0,
+                "total_open_ports": 0,
+                "unique_ports": [],
+                "unique_port_count": 0,
+                "cdn_hosts": 0
+            }
+        }
 
     with open(output_file, 'r') as f:
         for line in f:
@@ -378,40 +400,6 @@ def parse_naabu_output(output_file: str) -> Dict:
         "all_ports": all_ports_sorted,
         "summary": summary
     }
-
-
-def get_service_name(port: int) -> str:
-    """Map common ports to service names."""
-    port_services = {
-        21: "ftp",
-        22: "ssh",
-        23: "telnet",
-        25: "smtp",
-        53: "dns",
-        80: "http",
-        110: "pop3",
-        111: "rpcbind",
-        135: "msrpc",
-        139: "netbios-ssn",
-        143: "imap",
-        443: "https",
-        445: "microsoft-ds",
-        993: "imaps",
-        995: "pop3s",
-        1433: "ms-sql",
-        1521: "oracle",
-        3306: "mysql",
-        3389: "ms-wbt-server",
-        5432: "postgresql",
-        5900: "vnc",
-        6379: "redis",
-        8080: "http-proxy",
-        8443: "https-alt",
-        8888: "http-alt",
-        9200: "elasticsearch",
-        27017: "mongodb",
-    }
-    return port_services.get(port, "unknown")
 
 
 # =============================================================================
@@ -511,7 +499,8 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
     print(f"    [*] Total targets to scan: {len(all_targets)}")
 
     # Create temp directory for scan files
-    scan_temp_dir = Path(__file__).parent / "output" / ".naabu_temp"
+    # Use /tmp/redamon to avoid spaces in paths (snap Docker issue)
+    scan_temp_dir = Path("/tmp/redamon/.naabu_temp")
     scan_temp_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -537,21 +526,53 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
 
         start_time = datetime.now()
 
-        # Execute scan
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
+        # Execute scan with fallback mechanism
+        scan_succeeded = False
+        actual_scan_type = NAABU_SCAN_TYPE
 
-        _, stderr = process.communicate(timeout=1800)  # 30 min timeout
+        for attempt, scan_type in enumerate([NAABU_SCAN_TYPE, 'c'] if NAABU_SCAN_TYPE == 's' else [NAABU_SCAN_TYPE]):
+            if attempt > 0:
+                # Retry with CONNECT scan after SYN scan failed
+                print(f"\n    [*] Retrying with CONNECT scan...")
+                settings_copy = settings.copy()
+                settings_copy['NAABU_SCAN_TYPE'] = 'c'
+                cmd = build_naabu_command(str(targets_file), str(naabu_output), settings_copy, use_proxy)
+                actual_scan_type = 'c'
+
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+
+            _, stderr = process.communicate(timeout=1800)  # 30 min timeout
+
+            # Check for SIGSEGV crash (common in SYN mode)
+            if 'SIGSEGV' in stderr or 'segmentation' in stderr.lower():
+                print(f"    [!] Scan crashed (SIGSEGV) - naabu binary error")
+                if scan_type == 's' and attempt == 0:
+                    print(f"    [*] SYN scan requires raw sockets - will try CONNECT scan")
+                    continue  # Try CONNECT scan
+                else:
+                    break  # No more fallbacks
+
+            if process.returncode == 0 or naabu_output.exists():
+                scan_succeeded = True
+                break
+
+            if stderr and attempt == 0 and scan_type == 's':
+                print(f"    [!] SYN scan failed: {stderr[:150] if stderr else 'Unknown error'}")
+                continue  # Try CONNECT scan
+
+            print(f"    [!] Scan failed: {stderr[:200] if stderr else 'Unknown error'}")
+            break
 
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
 
-        if process.returncode != 0 and not naabu_output.exists():
-            print(f"    [!] Scan failed: {stderr[:200] if stderr else 'Unknown error'}")
+        if not scan_succeeded and not naabu_output.exists():
+            print(f"    [!] All scan attempts failed")
             return recon_data
 
         # Parse results
@@ -564,7 +585,8 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                 "scan_timestamp": start_time.isoformat(),
                 "scan_duration_seconds": round(duration, 2),
                 "docker_image": NAABU_DOCKER_IMAGE,
-                "scan_type": "syn" if NAABU_SCAN_TYPE == "s" else "connect",
+                "scan_type": "syn" if actual_scan_type == "s" else "connect",
+                "scan_type_fallback": actual_scan_type != NAABU_SCAN_TYPE,
                 "ports_config": NAABU_CUSTOM_PORTS if NAABU_CUSTOM_PORTS else f"top-{NAABU_TOP_PORTS}",
                 "rate_limit": NAABU_RATE_LIMIT,
                 "passive_mode": NAABU_PASSIVE_MODE,
@@ -582,6 +604,8 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         # Print summary
         summary = results["summary"]
         print(f"\n[✓] Scan completed in {duration:.1f} seconds")
+        if actual_scan_type != NAABU_SCAN_TYPE:
+            print(f"    [*] Note: Used CONNECT scan (SYN scan crashed)")
         print(f"    [*] Hosts with open ports: {summary['hosts_with_open_ports']}")
         print(f"    [*] Total open ports found: {summary['total_open_ports']}")
         print(f"    [*] Unique ports: {summary['unique_port_count']}")

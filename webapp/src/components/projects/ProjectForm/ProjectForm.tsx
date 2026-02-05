@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Save, X } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Save, X, Loader2, AlertTriangle } from 'lucide-react'
 import type { Project } from '@prisma/client'
 import styles from './ProjectForm.module.css'
 
@@ -21,8 +21,21 @@ import { GithubSection } from './sections/GithubSection'
 
 type ProjectFormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
 
+interface ConflictResult {
+  hasConflict: boolean
+  conflictType: 'full_scan_exists' | 'full_scan_requested' | 'subdomain_overlap' | null
+  conflictingProject: {
+    id: string
+    name: string
+    targetDomain: string
+    subdomainList: string[]
+  } | null
+  overlappingSubdomains: string[]
+  message: string | null
+}
+
 interface ProjectFormProps {
-  initialData?: Partial<ProjectFormData>
+  initialData?: Partial<ProjectFormData> & { id?: string }
   onSubmit: (data: ProjectFormData) => Promise<void>
   onCancel: () => void
   isSubmitting?: boolean
@@ -42,282 +55,32 @@ const TABS = [
 
 type TabId = typeof TABS[number]['id']
 
-// Default values matching params.py
-const getDefaultValues = (): ProjectFormData => ({
+// Minimal fallback defaults - only required fields
+// Full defaults are fetched from /api/projects/defaults (served by recon backend)
+const MINIMAL_DEFAULTS: Partial<ProjectFormData> = {
   name: '',
   description: '',
   targetDomain: '',
   subdomainList: [],
-  verifyDomainOwnership: false,
-  ownershipToken: 'your-secret-token-here',
-  ownershipTxtPrefix: '_redamon-verify',
   scanModules: ['domain_discovery', 'port_scan', 'http_probe', 'resource_enum', 'vuln_scan'],
-  updateGraphDb: true,
-  useTorForRecon: false,
-  useBruteforceForSubdomains: true,
-  whoisMaxRetries: 6,
-  dnsMaxRetries: 3,
-  githubAccessToken: '',
-  githubTargetOrg: '',
-  githubScanMembers: false,
-  githubScanGists: true,
-  githubScanCommits: true,
-  githubMaxCommits: 100,
-  githubOutputJson: true,
-  naabuDockerImage: 'projectdiscovery/naabu:latest',
-  naabuTopPorts: '1000',
-  naabuCustomPorts: '',
-  naabuRateLimit: 1000,
-  naabuThreads: 25,
-  naabuTimeout: 10000,
-  naabuRetries: 1,
-  naabuScanType: 's',
-  naabuExcludeCdn: false,
-  naabuDisplayCdn: true,
-  naabuSkipHostDiscovery: true,
-  naabuVerifyPorts: true,
-  naabuPassiveMode: false,
-  httpxDockerImage: 'projectdiscovery/httpx:latest',
-  httpxThreads: 50,
-  httpxTimeout: 10,
-  httpxRetries: 2,
-  httpxRateLimit: 50,
-  httpxFollowRedirects: true,
-  httpxMaxRedirects: 10,
-  httpxProbeStatusCode: true,
-  httpxProbeContentLength: true,
-  httpxProbeContentType: true,
-  httpxProbeTitle: true,
-  httpxProbeServer: true,
-  httpxProbeResponseTime: true,
-  httpxProbeWordCount: true,
-  httpxProbeLineCount: true,
-  httpxProbeTechDetect: true,
-  httpxProbeIp: true,
-  httpxProbeCname: true,
-  httpxProbeTlsInfo: true,
-  httpxProbeTlsGrab: true,
-  httpxProbeFavicon: true,
-  httpxProbeJarm: true,
-  httpxProbeHash: 'sha256',
-  httpxIncludeResponse: true,
-  httpxIncludeResponseHeaders: true,
-  httpxProbeAsn: true,
-  httpxProbeCdn: true,
-  httpxPaths: [],
-  httpxCustomHeaders: [
-    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language: en-US,en;q=0.9',
-    'Accept-Encoding: gzip, deflate',
-    'Connection: keep-alive',
-    'Upgrade-Insecure-Requests: 1',
-    'Sec-Fetch-Dest: document',
-    'Sec-Fetch-Mode: navigate',
-    'Sec-Fetch-Site: none',
-    'Sec-Fetch-User: ?1',
-    'Cache-Control: max-age=0',
-  ],
-  httpxMatchCodes: [],
-  httpxFilterCodes: [],
-  wappalyzerEnabled: true,
-  wappalyzerMinConfidence: 50,
-  wappalyzerRequireHtml: true,
-  wappalyzerAutoUpdate: true,
-  wappalyzerNpmVersion: '6.10.56',
-  wappalyzerCacheTtlHours: 24,
-  bannerGrabEnabled: true,
-  bannerGrabTimeout: 5,
-  bannerGrabThreads: 20,
-  bannerGrabMaxLength: 500,
-  nucleiSeverity: ['critical', 'high', 'medium', 'low'],
-  nucleiTemplates: [],
-  nucleiExcludeTemplates: [],
-  nucleiCustomTemplates: [],
-  nucleiRateLimit: 100,
-  nucleiBulkSize: 25,
-  nucleiConcurrency: 25,
-  nucleiTimeout: 10,
-  nucleiRetries: 1,
-  nucleiTags: [],
-  nucleiExcludeTags: [],
-  nucleiDastMode: true,
-  nucleiAutoUpdateTemplates: true,
-  nucleiNewTemplatesOnly: false,
-  nucleiHeadless: false,
-  nucleiSystemResolvers: true,
-  nucleiFollowRedirects: true,
-  nucleiMaxRedirects: 10,
-  nucleiScanAllIps: false,
-  nucleiInteractsh: true,
-  nucleiDockerImage: 'projectdiscovery/nuclei:latest',
-  katanaDockerImage: 'projectdiscovery/katana:latest',
-  katanaDepth: 2,
-  katanaMaxUrls: 500,
-  katanaRateLimit: 50,
-  katanaTimeout: 900,
-  katanaJsCrawl: true,
-  katanaParamsOnly: false,
-  katanaExcludePatterns: [
-    // Next.js / React
-    '/_next/image', '/_next/static', '/_next/data', '/__nextjs',
-    // Nuxt.js / Vue.js
-    '/_nuxt/', '/__nuxt',
-    // Angular
-    '/runtime.', '/polyfills.', '/vendor.',
-    // Webpack / Build Tools
-    '/webpack', '/chunk.', '.chunk.js', '.bundle.js', 'hot-update',
-    // Static Files / CDN
-    '/static/', '/public/', '/dist/', '/build/', '/lib/', '/vendor/', '/node_modules/',
-    // Images
-    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.avif',
-    '.bmp', '.tiff', '.tif', '.heic', '.heif', '.raw',
-    '/images/', '/img/', '/image/', '/pics/', '/pictures/',
-    '/thumbnails/', '/thumb/', '/thumbs/',
-    // CSS / Stylesheets
-    '.css', '.scss', '.sass', '.less', '.styl', '.css.map',
-    '/css/', '/styles/', '/style/', '/stylesheet/',
-    // JavaScript (non-application)
-    '.js.map', '.min.js', '/js/lib/', '/js/vendor/', '/js/plugins/',
-    'jquery', 'bootstrap.js', 'popper.js',
-    // Fonts
-    '.woff', '.woff2', '.ttf', '.eot', '.otf', '/fonts/', '/font/', '/webfonts/',
-    // Documents / Downloads
-    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-    '.txt', '.rtf', '.odt', '.ods', '.odp',
-    '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
-    // Audio / Video
-    '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv',
-    '.wav', '.ogg', '.aac', '.m4a', '.flac',
-    '/video/', '/videos/', '/audio/', '/music/', '/sounds/',
-    // WordPress
-    '/wp-content/uploads/', '/wp-content/themes/', '/wp-includes/',
-    // Drupal
-    '/sites/default/files/', '/core/assets/',
-    // Magento
-    '/pub/static/', '/pub/media/',
-    // Laravel / PHP
-    '/storage/',
-    // Django / Python
-    '/staticfiles/',
-    // Ruby on Rails
-    '/packs/',
-    // CDN / External Resources
-    'cdn.', 'cdnjs.', 'cloudflare.', 'akamai.', 'fastly.',
-    'googleapis.com', 'gstatic.com', 'cloudfront.net',
-    'unpkg.com', 'jsdelivr.net', 'bootstrapcdn.com',
-    // Analytics / Tracking
-    'google-analytics', 'googletagmanager', 'gtag/',
-    'facebook.com/tr', 'facebook.net',
-    'analytics.', 'tracking.', 'pixel.',
-    'hotjar.', 'mouseflow.', 'clarity.',
-    // Ads
-    'googlesyndication', 'doubleclick', 'adservice',
-    // Social Media Widgets
-    'platform.twitter', 'connect.facebook', 'platform.linkedin',
-    // Maps
-    'maps.google', 'maps.googleapis', 'openstreetmap', 'mapbox',
-    // Captcha / Security
-    'recaptcha', 'hcaptcha', 'captcha',
-    // Manifest / Service Workers / Config
-    'manifest.json', 'sw.js', 'service-worker',
-    'browserconfig.xml', 'robots.txt', 'sitemap.xml', '.well-known/',
-    // Favicon / Icons
-    'favicon', 'apple-touch-icon', 'android-chrome', '/icons/', '/icon/',
-  ],
-  katanaScope: 'dn',
-  katanaCustomHeaders: [
-    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-    'Accept-Language: en-US,en;q=0.9',
-  ],
-  gauEnabled: false,
-  gauDockerImage: 'sxcurity/gau:latest',
-  gauProviders: ['wayback', 'commoncrawl', 'otx', 'urlscan'],
-  gauMaxUrls: 1000,
-  gauTimeout: 60,
-  gauThreads: 5,
-  gauBlacklistExtensions: [
-    'png', 'jpg', 'jpeg', 'gif', 'svg', 'ico', 'webp', 'avif',
-    'css', 'woff', 'woff2', 'ttf', 'eot', 'otf',
-    'mp3', 'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm',
-    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-    'zip', 'rar', '7z', 'tar', 'gz',
-  ],
-  gauYearRange: [],
-  gauVerbose: false,
-  gauVerifyUrls: true,
-  gauVerifyDockerImage: 'projectdiscovery/httpx:latest',
-  gauVerifyTimeout: 5,
-  gauVerifyRateLimit: 100,
-  gauVerifyThreads: 50,
-  gauVerifyAcceptStatus: [200, 201, 301, 302, 307, 308, 401, 403],
-  gauDetectMethods: true,
-  gauMethodDetectTimeout: 5,
-  gauMethodDetectRateLimit: 50,
-  gauMethodDetectThreads: 25,
-  gauFilterDeadEndpoints: true,
-  kiterunnerEnabled: true,
-  kiterunnerWordlists: ['routes-large'],
-  kiterunnerRateLimit: 100,
-  kiterunnerConnections: 100,
-  kiterunnerTimeout: 10,
-  kiterunnerScanTimeout: 1000,
-  kiterunnerThreads: 50,
-  kiterunnerIgnoreStatus: [404, 400, 502, 503],
-  kiterunnerMinContentLength: 0,
-  kiterunnerMatchStatus: [],
-  kiterunnerHeaders: [],
-  kiterunnerDetectMethods: true,
-  kiterunnerMethodDetectionMode: 'bruteforce',
-  kiterunnerBruteforceMethods: ['POST', 'PUT', 'DELETE', 'PATCH'],
-  kiterunnerMethodDetectTimeout: 5,
-  kiterunnerMethodDetectRateLimit: 50,
-  kiterunnerMethodDetectThreads: 25,
-  cveLookupEnabled: true,
-  cveLookupSource: 'nvd',
-  cveLookupMaxCves: 20,
-  cveLookupMinCvss: 0.0,
-  vulnersApiKey: '',
-  nvdApiKey: '',
-  mitreAutoUpdateDb: true,
-  mitreIncludeCwe: true,
-  mitreIncludeCapec: true,
-  mitreEnrichRecon: true,
-  mitreEnrichGvm: true,
-  mitreCacheTtlHours: 24,
-  securityCheckEnabled: true,
-  securityCheckDirectIpHttp: true,
-  securityCheckDirectIpHttps: true,
-  securityCheckIpApiExposed: true,
-  securityCheckWafBypass: true,
-  securityCheckTlsExpiringSoon: true,
-  securityCheckTlsExpiryDays: 30,
-  securityCheckMissingReferrerPolicy: true,
-  securityCheckMissingPermissionsPolicy: true,
-  securityCheckMissingCoop: true,
-  securityCheckMissingCorp: true,
-  securityCheckMissingCoep: true,
-  securityCheckCacheControlMissing: true,
-  securityCheckLoginNoHttps: true,
-  securityCheckSessionNoSecure: true,
-  securityCheckSessionNoHttponly: true,
-  securityCheckBasicAuthNoTls: true,
-  securityCheckSpfMissing: true,
-  securityCheckDmarcMissing: true,
-  securityCheckDnssecMissing: true,
-  securityCheckZoneTransfer: true,
-  securityCheckAdminPortExposed: true,
-  securityCheckDatabaseExposed: true,
-  securityCheckRedisNoAuth: true,
-  securityCheckKubernetesApiExposed: true,
-  securityCheckSmtpOpenRelay: true,
-  securityCheckCspUnsafeInline: true,
-  securityCheckInsecureFormAction: true,
-  securityCheckNoRateLimiting: true,
-  securityCheckTimeout: 10,
-  securityCheckMaxWorkers: 10,
-})
+}
+
+// Fetch defaults from the recon backend (single source of truth)
+async function fetchDefaults(): Promise<Partial<ProjectFormData>> {
+  try {
+    const response = await fetch('/api/projects/defaults')
+    if (!response.ok) {
+      console.warn('Failed to fetch defaults, using minimal fallback')
+      return MINIMAL_DEFAULTS
+    }
+    const defaults = await response.json()
+    // Merge with minimal defaults to ensure required fields exist
+    return { ...MINIMAL_DEFAULTS, ...defaults }
+  } catch (error) {
+    console.warn('Error fetching defaults:', error)
+    return MINIMAL_DEFAULTS
+  }
+}
 
 export function ProjectForm({
   initialData,
@@ -327,10 +90,67 @@ export function ProjectForm({
   mode
 }: ProjectFormProps) {
   const [activeTab, setActiveTab] = useState<TabId>('target')
+  const [isLoadingDefaults, setIsLoadingDefaults] = useState(mode === 'create')
   const [formData, setFormData] = useState<ProjectFormData>(() => ({
-    ...getDefaultValues(),
+    ...MINIMAL_DEFAULTS,
     ...initialData
-  }))
+  } as ProjectFormData))
+
+  // Domain conflict checking
+  const [conflict, setConflict] = useState<ConflictResult | null>(null)
+  const [isCheckingConflict, setIsCheckingConflict] = useState(false)
+
+  // Extract project ID for edit mode (to exclude from conflict check)
+  const projectId = (initialData as { id?: string } | undefined)?.id
+
+  // Check for domain conflicts when targetDomain or subdomainList changes
+  const checkConflict = useCallback(async (targetDomain: string, subdomainList: string[]) => {
+    if (!targetDomain.trim()) {
+      setConflict(null)
+      return
+    }
+
+    setIsCheckingConflict(true)
+    try {
+      const response = await fetch('/api/projects/check-conflict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetDomain,
+          subdomainList,
+          excludeProjectId: mode === 'edit' ? projectId : undefined,
+        }),
+      })
+
+      if (response.ok) {
+        const result: ConflictResult = await response.json()
+        setConflict(result.hasConflict ? result : null)
+      }
+    } catch (error) {
+      console.error('Failed to check conflict:', error)
+    } finally {
+      setIsCheckingConflict(false)
+    }
+  }, [mode, projectId])
+
+  // Debounced conflict check when form data changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      checkConflict(formData.targetDomain || '', formData.subdomainList || [])
+    }, 500) // 500ms debounce
+
+    return () => clearTimeout(timer)
+  }, [formData.targetDomain, formData.subdomainList, checkConflict])
+
+  // Fetch defaults from backend on mount (only for create mode)
+  useEffect(() => {
+    if (mode === 'create') {
+      fetchDefaults().then(defaults => {
+        setFormData(prev => ({ ...defaults, ...prev, ...initialData } as ProjectFormData))
+        setIsLoadingDefaults(false)
+      })
+    }
+  }, [mode, initialData])
 
   const updateField = <K extends keyof ProjectFormData>(
     field: K,
@@ -352,8 +172,17 @@ export function ProjectForm({
       return
     }
 
+    // Block submission if there's a domain conflict
+    if (conflict?.hasConflict) {
+      alert('Cannot save project: ' + conflict.message)
+      return
+    }
+
     await onSubmit(formData)
   }
+
+  // Determine if form can be submitted
+  const canSubmit = !isSubmitting && !isLoadingDefaults && !conflict?.hasConflict && !isCheckingConflict
 
   return (
     <form onSubmit={handleSubmit} className={styles.form}>
@@ -374,29 +203,69 @@ export function ProjectForm({
           <button
             type="submit"
             className="primaryButton"
-            disabled={isSubmitting}
+            disabled={!canSubmit}
           >
-            <Save size={14} />
-            {isSubmitting ? 'Saving...' : 'Save Project'}
+            {isLoadingDefaults ? (
+              <>
+                <Loader2 size={14} className={styles.spinner} />
+                Loading...
+              </>
+            ) : isCheckingConflict ? (
+              <>
+                <Loader2 size={14} className={styles.spinner} />
+                Checking...
+              </>
+            ) : (
+              <>
+                <Save size={14} />
+                {isSubmitting ? 'Saving...' : 'Save Project'}
+              </>
+            )}
           </button>
         </div>
       </div>
 
-      <div className={styles.tabs}>
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            type="button"
-            className={`tab ${activeTab === tab.id ? 'tabActive' : ''}`}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {/* Domain conflict warning banner */}
+      {conflict?.hasConflict && (
+        <div className={styles.conflictBanner}>
+          <AlertTriangle size={20} className={styles.conflictIcon} />
+          <div className={styles.conflictContent}>
+            <div className={styles.conflictTitle}>Domain Conflict Detected</div>
+            <div className={styles.conflictMessage}>{conflict.message}</div>
+            {conflict.conflictingProject && (
+              <div className={styles.conflictProject}>
+                Conflicting project: <strong>{conflict.conflictingProject.name}</strong>
+                {conflict.overlappingSubdomains.length > 0 && (
+                  <> (subdomains: {conflict.overlappingSubdomains.join(', ')})</>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-      <div className={styles.content}>
-        {activeTab === 'target' && (
+      {isLoadingDefaults ? (
+        <div className={styles.loadingContainer}>
+          <Loader2 size={24} className={styles.spinner} />
+          <p>Loading configuration defaults...</p>
+        </div>
+      ) : (
+        <>
+          <div className={styles.tabs}>
+            {TABS.map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`tab ${activeTab === tab.id ? 'tabActive' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className={styles.content}>
+            {activeTab === 'target' && (
           <>
             <TargetSection data={formData} updateField={updateField} />
             <ScanModulesSection data={formData} updateField={updateField} />
@@ -437,7 +306,9 @@ export function ProjectForm({
         {activeTab === 'integrations' && (
           <GithubSection data={formData} updateField={updateField} />
         )}
-      </div>
+          </div>
+        </>
+      )}
     </form>
   )
 }

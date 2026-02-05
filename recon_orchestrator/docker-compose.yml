@@ -7,6 +7,9 @@ services:
     volumes:
       # Docker socket for container management
       - /var/run/docker.sock:/var/run/docker.sock
+      # Mount orchestrator source code for development (no rebuild needed)
+      # Note: not :ro because nested mounts need to create mountpoints
+      - .:/app
       # Recon module path (for building image and accessing output)
       - ${HOST_RECON_PATH:-../recon}:/app/recon:ro
       # Recon output directory (read-write for download)

@@ -7,6 +7,7 @@ export interface ProjectSummary {
   id: string
   name: string
   targetDomain: string
+  subdomainList?: string[]
   description?: string
   createdAt: string
   updatedAt: string
@@ -56,6 +57,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
               id: project.id,
               name: project.name,
               targetDomain: project.targetDomain,
+              subdomainList: project.subdomainList,
               description: project.description,
               createdAt: project.createdAt,
               updatedAt: project.updatedAt

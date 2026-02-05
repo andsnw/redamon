@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { ChevronDown, FolderOpen, Plus, Settings } from 'lucide-react'
 import { useProject } from '@/providers/ProjectProvider'
 import { useProjects, type ProjectListItem } from '@/hooks/useProjects'
@@ -9,6 +9,7 @@ import styles from './ProjectSelector.module.css'
 
 export function ProjectSelector() {
   const router = useRouter()
+  const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const { currentProject, setCurrentProject, userId } = useProject()
@@ -30,11 +31,17 @@ export function ProjectSelector() {
       id: project.id,
       name: project.name,
       targetDomain: project.targetDomain,
+      subdomainList: project.subdomainList,
       description: project.description || undefined,
       createdAt: project.createdAt,
       updatedAt: project.updatedAt
     })
     setIsOpen(false)
+
+    // If on a project settings page, navigate to the new project's settings
+    if (pathname.match(/\/projects\/[^/]+\/settings/)) {
+      router.push(`/projects/${project.id}/settings`)
+    }
   }
 
   const handleSettings = (e: React.MouseEvent) => {
