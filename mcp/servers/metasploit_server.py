@@ -158,7 +158,12 @@ class PersistentMsfConsole:
         Prompt redraws and cursor movements shouldn't reset the quiet period timer.
         """
         # Strip ANSI escape codes for checking
-        clean = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', line).strip()
+        # Includes private mode sequences like \x1b[?25h (show cursor) / \x1b[?25l (hide cursor)
+        clean = re.sub(r'\x1b\[[\?]?[0-9;]*[a-zA-Z]', '', line)
+        # Also strip OSC sequences and other escape types
+        clean = re.sub(r'\x1b\][^\x07]*\x07', '', clean)
+        clean = re.sub(r'\x1b[()][AB012]', '', clean)
+        clean = clean.strip()
 
         # Empty after stripping = noise
         if not clean:
@@ -166,6 +171,10 @@ class PersistentMsfConsole:
 
         # Just the msf prompt = noise (variations: "msf >", "msf6 >", "msf exploit(...) >")
         if re.match(r'^msf\d?\s*([\w\(\)/]+\s*)?>?\s*$', clean, re.IGNORECASE):
+            return False
+
+        # Shell prompt noise ($ or # alone, possibly with hostname)
+        if re.match(r'^[\$#>]\s*$', clean):
             return False
 
         # Just cursor positioning or escape sequences = noise
@@ -368,8 +377,8 @@ def _get_timing_for_command(command: str) -> tuple[float, float]:
 
 def _clean_ansi_output(text: str) -> str:
     """Remove ANSI escape codes and control characters from msfconsole output."""
-    # Remove ANSI escape sequences
-    text = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', text)
+    # Remove ANSI escape sequences (including private mode like \x1b[?25h cursor show/hide)
+    text = re.sub(r'\x1b\[[\?]?[0-9;]*[a-zA-Z]', '', text)
     text = re.sub(r'\x1b\][^\x07]*\x07', '', text)
     text = re.sub(r'\x1b[()][AB012]', '', text)
 

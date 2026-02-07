@@ -123,35 +123,66 @@ def fetch_agent_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
 
 def get_settings() -> dict[str, Any]:
     """
-    Get agent settings from webapp API.
+    Get current agent settings.
 
-    REQUIRES PROJECT_ID and WEBAPP_API_URL environment variables to be set.
-    Falls back to DEFAULT_AGENT_SETTINGS only for standalone usage without env vars.
+    Returns cached settings if loaded for a project, otherwise defaults.
+    Use load_project_settings() to fetch settings for a specific project.
 
     Returns:
         Dictionary of settings in SCREAMING_SNAKE_CASE format
     """
-    project_id = os.environ.get('PROJECT_ID')
-    webapp_url = os.environ.get('WEBAPP_API_URL')
-
-    if project_id and webapp_url:
-        try:
-            settings = fetch_agent_settings(project_id, webapp_url)
-            logger.info(f"Loaded {len(settings)} agent settings from API for project {project_id}")
-            return settings
-
-        except Exception as e:
-            logger.error(f"Failed to fetch agent settings: {e}")
-            logger.warning("Falling back to DEFAULT_AGENT_SETTINGS")
-            return DEFAULT_AGENT_SETTINGS.copy()
-
-    # Fallback to DEFAULT_AGENT_SETTINGS for standalone usage
-    logger.info("Using DEFAULT_AGENT_SETTINGS (no PROJECT_ID/WEBAPP_API_URL set)")
+    global _settings
+    if _settings is not None:
+        return _settings
+    # Return defaults until a project is loaded
+    logger.info("Using DEFAULT_AGENT_SETTINGS (no project loaded yet)")
     return DEFAULT_AGENT_SETTINGS.copy()
 
 
 # Singleton settings instance
 _settings: Optional[dict[str, Any]] = None
+_current_project_id: Optional[str] = None
+
+
+def load_project_settings(project_id: str) -> dict[str, Any]:
+    """
+    Fetch and cache settings for a specific project from webapp API.
+
+    Called by the orchestrator when it receives a project_id from the frontend.
+    Skips reload if settings are already loaded for the same project.
+
+    Args:
+        project_id: The project ID received from the frontend
+
+    Returns:
+        Dictionary of settings in SCREAMING_SNAKE_CASE format
+    """
+    global _settings, _current_project_id
+
+    # Skip if already loaded for this project
+    if _current_project_id == project_id and _settings is not None:
+        return _settings
+
+    webapp_url = os.environ.get('WEBAPP_API_URL')
+
+    if not webapp_url:
+        logger.warning("WEBAPP_API_URL not set, using DEFAULT_AGENT_SETTINGS")
+        _settings = DEFAULT_AGENT_SETTINGS.copy()
+        _current_project_id = project_id
+        return _settings
+
+    try:
+        _settings = fetch_agent_settings(project_id, webapp_url)
+        _current_project_id = project_id
+        logger.info(f"Loaded {len(_settings)} agent settings from API for project {project_id}")
+        return _settings
+
+    except Exception as e:
+        logger.error(f"Failed to fetch agent settings for project {project_id}: {e}")
+        logger.warning("Falling back to DEFAULT_AGENT_SETTINGS")
+        _settings = DEFAULT_AGENT_SETTINGS.copy()
+        _current_project_id = project_id
+        return _settings
 
 
 def get_setting(key: str, default: Any = None) -> Any:
@@ -165,17 +196,18 @@ def get_setting(key: str, default: Any = None) -> Any:
     Returns:
         Setting value or default
     """
-    global _settings
-    if _settings is None:
-        _settings = get_settings()
-    return _settings.get(key, default)
+    return get_settings().get(key, default)
 
 
-def reload_settings() -> dict[str, Any]:
-    """Force reload of settings (useful for testing)"""
-    global _settings
-    _settings = get_settings()
-    return _settings
+def reload_settings(project_id: Optional[str] = None) -> dict[str, Any]:
+    """Force reload of settings for a project."""
+    global _settings, _current_project_id
+    if project_id:
+        _current_project_id = None  # Force refetch
+        return load_project_settings(project_id)
+    _settings = None
+    _current_project_id = None
+    return get_settings()
 
 
 # =============================================================================

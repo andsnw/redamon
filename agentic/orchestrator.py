@@ -39,7 +39,7 @@ from state import (
     summarize_trace_for_response,
     utc_now,
 )
-from project_settings import get_setting
+from project_settings import get_setting, load_project_settings
 from tools import (
     MCPToolsManager,
     Neo4jToolManager,
@@ -92,37 +92,48 @@ class AgentOrchestrator:
 
     def __init__(self):
         """Initialize the orchestrator with configuration."""
-        self.model_name = get_setting('OPENAI_MODEL', 'gpt-5.2')
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         self.neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
         self.neo4j_user = os.getenv("NEO4J_USER", "neo4j")
         self.neo4j_password = os.getenv("NEO4J_PASSWORD")
 
+        self.model_name: Optional[str] = None
         self.llm: Optional[BaseChatModel] = None
         self.tool_executor: Optional[PhaseAwareToolExecutor] = None
+        self.neo4j_manager: Optional[Neo4jToolManager] = None
         self.graph = None
 
         self._initialized = False
         self._streaming_callback = None  # Set during invoke_with_streaming
 
     async def initialize(self) -> None:
-        """Initialize all components asynchronously."""
+        """Initialize tools and graph (LLM setup deferred until project_id is known)."""
         if self._initialized:
             logger.warning("Orchestrator already initialized")
             return
 
         logger.info("Initializing AgentOrchestrator...")
 
-        self._setup_llm()
         await self._setup_tools()
         self._build_graph()
         self._initialized = True
 
-        if get_setting('CREATE_GRAPH_IMAGE_ON_INIT', False):
-            save_graph_image(self.graph)
+        logger.info("AgentOrchestrator initialized (LLM deferred until project settings loaded)")
 
-        logger.info("AgentOrchestrator initialized with ReAct pattern")
+    def _apply_project_settings(self, project_id: str) -> None:
+        """Load project settings from webapp API and reconfigure LLM if model changed."""
+        settings = load_project_settings(project_id)
+        new_model = settings.get('OPENAI_MODEL', 'gpt-5.2')
+
+        if new_model != self.model_name:
+            logger.info(f"Model changed: {self.model_name} -> {new_model}")
+            self.model_name = new_model
+            self._setup_llm()
+            # Update Neo4j tool's LLM for text-to-Cypher queries
+            if self.neo4j_manager:
+                self.neo4j_manager.llm = self.llm
+                logger.info("Updated Neo4j tool LLM")
 
     def _setup_llm(self) -> None:
         """Initialize the LLM based on model name (OpenAI or Anthropic)."""
@@ -158,14 +169,14 @@ class AgentOrchestrator:
         mcp_manager = MCPToolsManager()
         mcp_tools = await mcp_manager.get_tools()
 
-        # Setup Neo4j graph query tool
-        neo4j_manager = Neo4jToolManager(
+        # Setup Neo4j graph query tool (LLM is None until project settings are loaded)
+        self.neo4j_manager = Neo4jToolManager(
             uri=self.neo4j_uri,
             user=self.neo4j_user,
             password=self.neo4j_password,
             llm=self.llm
         )
-        graph_tool = neo4j_manager.get_tool()
+        graph_tool = self.neo4j_manager.get_tool()
 
         # Setup Tavily web search tool
         web_search_manager = WebSearchToolManager()
@@ -1273,6 +1284,7 @@ class AgentOrchestrator:
         if not self._initialized:
             raise RuntimeError("Orchestrator not initialized. Call initialize() first.")
 
+        self._apply_project_settings(project_id)
         logger.info(f"[{user_id}/{project_id}/{session_id}] Invoking with: {question[:10000]}")
 
         try:
@@ -1301,6 +1313,7 @@ class AgentOrchestrator:
         if not self._initialized:
             raise RuntimeError("Orchestrator not initialized. Call initialize() first.")
 
+        self._apply_project_settings(project_id)
         logger.info(f"[{user_id}/{project_id}/{session_id}] Resuming with approval: {decision}")
 
         try:
@@ -1342,6 +1355,7 @@ class AgentOrchestrator:
         if not self._initialized:
             raise RuntimeError("Orchestrator not initialized. Call initialize() first.")
 
+        self._apply_project_settings(project_id)
         logger.info(f"[{user_id}/{project_id}/{session_id}] Resuming with answer: {answer[:10000]}")
 
         try:
@@ -1434,6 +1448,7 @@ class AgentOrchestrator:
         if not self._initialized:
             raise RuntimeError("Orchestrator not initialized. Call initialize() first.")
 
+        self._apply_project_settings(project_id)
         logger.info(f"[{user_id}/{project_id}/{session_id}] Invoking with streaming: {question[:10000]}")
 
         # Store streaming callback for use in _execute_tool_node
@@ -1484,6 +1499,7 @@ class AgentOrchestrator:
         if not self._initialized:
             raise RuntimeError("Orchestrator not initialized. Call initialize() first.")
 
+        self._apply_project_settings(project_id)
         logger.info(f"[{user_id}/{project_id}/{session_id}] Resuming with streaming approval: {decision}")
 
         # Store streaming callback for use in _execute_tool_node
@@ -1541,6 +1557,7 @@ class AgentOrchestrator:
         if not self._initialized:
             raise RuntimeError("Orchestrator not initialized. Call initialize() first.")
 
+        self._apply_project_settings(project_id)
         logger.info(f"[{user_id}/{project_id}/{session_id}] Resuming with streaming answer: {answer[:10000]}")
 
         # Store streaming callback for use in _execute_tool_node
