@@ -39,7 +39,7 @@ That's it. No Node.js, Python, or security tools needed on your host.
 ### 1. Clone & Configure
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/RedAmon.git
+git clone https://github.com/samugit83/redamon.git
 cd RedAmon
 cp .env.example .env
 ```
