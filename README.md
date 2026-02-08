@@ -40,7 +40,7 @@ That's it. No Node.js, Python, or security tools needed on your host.
 
 ```bash
 git clone https://github.com/samugit83/redamon.git
-cd RedAmon
+cd redamon
 cp .env.example .env
 ```
 
@@ -98,6 +98,9 @@ docker compose logs -f recon-orchestrator   # Recon orchestrator
 docker compose logs -f kali-sandbox         # MCP tool servers
 docker compose logs -f neo4j                # Neo4j graph database
 docker compose logs -f postgres             # PostgreSQL database
+
+# Full cleanup: remove all containers, images, and volumes
+docker compose --profile tools down --rmi local --volumes --remove-orphans
 ```
 
 ### Running Reconnaissance

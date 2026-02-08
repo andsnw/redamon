@@ -14,8 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -68,7 +68,7 @@ env/
 # IDE / Editor settings
 .idea/
 .vscode/
-.claude/
+# .claude/ is intentionally tracked for project guidelines
 *.swp
 *.swo
 *~
