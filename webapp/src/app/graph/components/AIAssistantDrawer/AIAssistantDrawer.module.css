@@ -81,6 +81,41 @@
   line-height: 1;
 }
 
+.stealthToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+  color: var(--text-tertiary);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1;
+  cursor: pointer;
+  transition: var(--transition-all);
+}
+
+.stealthToggle:hover {
+  color: #a78bfa;
+  border-color: rgba(139, 92, 246, 0.4);
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.stealthToggleActive {
+  color: #a78bfa;
+  background: rgba(139, 92, 246, 0.12);
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+.stealthToggleActive:hover {
+  background: rgba(139, 92, 246, 0.2);
+}
+
 .modelBadge {
   font-size: 10px;
   font-weight: var(--font-medium);

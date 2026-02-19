@@ -592,6 +592,7 @@ def main():
     print(f"  SUBDOMAIN_LIST:    {SUBDOMAIN_LIST if SUBDOMAIN_LIST else '[] (full discovery)'}")
     print(f"  SCAN_MODULES:      {','.join(SCAN_MODULES) if isinstance(SCAN_MODULES, list) else SCAN_MODULES}")
     print(f"  USE_TOR_FOR_RECON: {USE_TOR_FOR_RECON}")
+    print(f"  STEALTH_MODE:      {_settings.get('STEALTH_MODE', False)}")
     print(f"  UPDATE_GRAPH_DB:   {UPDATE_GRAPH_DB}")
     print(f"  USER_ID:           {USER_ID}")
     print(f"  PROJECT_ID:        {PROJECT_ID}")
@@ -601,6 +602,15 @@ def main():
     else:
         print(f"  MODE:              FULL DISCOVERY (all subdomains)")
     print("═" * 63)
+
+    if _settings.get('STEALTH_MODE', False):
+        print()
+        print("  ╔══════════════════════════════════════════════════════════╗")
+        print("  ║  STEALTH MODE ACTIVE — passive/low-noise only           ║")
+        print("  ║  Kiterunner: OFF | Banner Grab: OFF | Brute Force: OFF  ║")
+        print("  ║  Naabu: passive | httpx: 2 req/s | Nuclei: no DAST     ║")
+        print("  ╚══════════════════════════════════════════════════════════╝")
+
     print()
 
     # Clear previous graph data for this project before starting new scan

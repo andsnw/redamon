@@ -69,6 +69,7 @@ interface AIAssistantDrawerProps {
   modelName?: string
   toolPhaseMap?: Record<string, string[]>
   stealthMode?: boolean
+  onToggleStealth?: (newValue: boolean) => void
 }
 
 const PHASE_CONFIG = {
@@ -119,6 +120,7 @@ export function AIAssistantDrawer({
   modelName,
   toolPhaseMap,
   stealthMode = false,
+  onToggleStealth,
 }: AIAssistantDrawerProps) {
   const [chatItems, setChatItems] = useState<ChatItem[]>([])
   const [inputValue, setInputValue] = useState('')
@@ -976,11 +978,23 @@ export function AIAssistantDrawer({
           <span className={styles.iterationCount}>Step {iterationCount}</span>
         )}
 
-        {stealthMode && (
+        {onToggleStealth ? (
+          <button
+            className={`${styles.stealthToggle} ${stealthMode ? styles.stealthToggleActive : ''}`}
+            onClick={() => onToggleStealth(!stealthMode)}
+            title={stealthMode
+              ? 'Stealth Mode ON — click to disable'
+              : 'Stealth Mode OFF — click to enable passive-only techniques'
+            }
+          >
+            <EyeOff size={11} />
+            <span>STEALTH</span>
+          </button>
+        ) : stealthMode ? (
           <span className={styles.stealthBadge} title="Stealth Mode — passive/low-noise techniques only">
             <EyeOff size={11} />
           </span>
-        )}
+        ) : null}
 
         {modelName && (
           <span className={styles.modelBadge}>{formatModelDisplay(modelName)}</span>

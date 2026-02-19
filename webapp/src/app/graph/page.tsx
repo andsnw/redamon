@@ -18,7 +18,7 @@ import styles from './page.module.css'
 
 export default function GraphPage() {
   const router = useRouter()
-  const { projectId, userId, currentProject, isLoading: projectLoading } = useProject()
+  const { projectId, userId, currentProject, setCurrentProject, isLoading: projectLoading } = useProject()
 
   const [is3D, setIs3D] = useState(true)
   const [showLabels, setShowLabels] = useState(true)
@@ -239,6 +239,22 @@ export default function GraphPage() {
     setIsAIOpen(false)
   }, [])
 
+  const handleToggleStealth = useCallback(async (newValue: boolean) => {
+    if (!projectId) return
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stealthMode: newValue }),
+      })
+      if (res.ok && currentProject) {
+        setCurrentProject({ ...currentProject, stealthMode: newValue })
+      }
+    } catch (error) {
+      console.error('Failed to toggle stealth mode:', error)
+    }
+  }, [projectId, currentProject, setCurrentProject])
+
   const handleStartRecon = useCallback(() => {
     setIsReconModalOpen(true)
   }, [])
@@ -438,6 +454,7 @@ export default function GraphPage() {
         modelName={currentProject?.agentOpenaiModel}
         toolPhaseMap={currentProject?.agentToolPhaseMap}
         stealthMode={currentProject?.stealthMode}
+        onToggleStealth={handleToggleStealth}
       />
 
       <ReconConfirmModal
