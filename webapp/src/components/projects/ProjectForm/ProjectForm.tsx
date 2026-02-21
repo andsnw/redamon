@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Save, X, Loader2, AlertTriangle } from 'lucide-react'
+import { Save, X, Loader2, AlertTriangle, Download } from 'lucide-react'
 import type { Project } from '@prisma/client'
 import styles from './ProjectForm.module.css'
 
@@ -207,6 +207,16 @@ export function ProjectForm({
             <X size={14} />
             Cancel
           </button>
+          {mode === 'edit' && projectId && (
+            <button
+              type="button"
+              className="secondaryButton"
+              onClick={() => window.open(`/api/projects/${projectId}/export`)}
+            >
+              <Download size={14} />
+              Export
+            </button>
+          )}
           <button
             type="submit"
             className="primaryButton"
@@ -274,7 +284,7 @@ export function ProjectForm({
           <div className={styles.content}>
             {activeTab === 'target' && (
           <>
-            <TargetSection data={formData} updateField={updateField} />
+            <TargetSection data={formData} updateField={updateField} mode={mode} />
             <ScanModulesSection data={formData} updateField={updateField} />
           </>
         )}

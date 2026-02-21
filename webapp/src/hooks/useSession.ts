@@ -31,9 +31,15 @@ export function useSession() {
     return newSessionId
   }, [])
 
+  const switchSession = useCallback((existingSessionId: string) => {
+    setSessionId(existingSessionId)
+    sessionStorage.setItem(SESSION_STORAGE_KEY, existingSessionId)
+  }, [])
+
   return {
     sessionId,
     resetSession,
+    switchSession,
     mounted,
   }
 }

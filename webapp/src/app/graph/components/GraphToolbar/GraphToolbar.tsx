@@ -1,7 +1,6 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
-import { Bot, Play, Download, Loader2, Terminal, Settings, Shield, Github } from 'lucide-react'
+import { Bot, Play, Download, Loader2, Terminal, Shield, Github, Target, Zap, MessageSquare } from 'lucide-react'
 import { StealthIcon } from '@/components/icons/StealthIcon'
 import { Toggle } from '@/components/ui'
 import type { ReconStatus, GvmStatus, GithubHuntStatus } from '@/lib/recon-types'
@@ -9,7 +8,6 @@ import styles from './GraphToolbar.module.css'
 
 interface GraphToolbarProps {
   projectId: string
-  projectName?: string
   is3D: boolean
   showLabels: boolean
   onToggle3D: (value: boolean) => void
@@ -42,11 +40,20 @@ interface GraphToolbarProps {
   isGithubHuntLogsOpen?: boolean
   // Stealth mode
   stealthMode?: boolean
+  // Agent status
+  agentActiveCount?: number
+  agentConversations?: Array<{
+    id: string
+    title: string
+    currentPhase: string
+    iterationCount: number
+    agentRunning: boolean
+    sessionId: string
+  }>
 }
 
 export function GraphToolbar({
   projectId,
-  projectName,
   is3D,
   showLabels,
   onToggle3D,
@@ -79,16 +86,22 @@ export function GraphToolbar({
   isGithubHuntLogsOpen = false,
   // Stealth mode
   stealthMode = false,
+  // Agent status
+  agentActiveCount = 0,
+  agentConversations = [],
 }: GraphToolbarProps) {
-  const router = useRouter()
   const isReconRunning = reconStatus === 'running' || reconStatus === 'starting'
   const isGvmRunning = gvmStatus === 'running' || gvmStatus === 'starting'
   const isGithubHuntRunning = githubHuntStatus === 'running' || githubHuntStatus === 'starting'
 
-  const handleOpenSettings = () => {
-    if (projectId) {
-      router.push(`/projects/${projectId}/settings`)
-    }
+  // Agent status derived values
+  const runningAgent = agentConversations.find(c => c.agentRunning)
+  const totalConversations = agentConversations.length
+
+  const PHASE_STYLES: Record<string, { color: string; bg: string; icon: typeof Shield }> = {
+    informational: { color: 'var(--accent-primary)', bg: 'rgba(59, 130, 246, 0.1)', icon: Shield },
+    exploitation: { color: 'var(--status-warning)', bg: 'rgba(245, 158, 11, 0.1)', icon: Target },
+    post_exploitation: { color: 'var(--status-error)', bg: 'rgba(239, 68, 68, 0.1)', icon: Zap },
   }
 
   return (
@@ -275,18 +288,38 @@ export function GraphToolbar({
           </>
         )}
 
-        <div className={styles.projectBadge}>
-          <span className={styles.projectLabel}>Project:</span>
-          <span className={styles.projectId}>{projectName || projectId}</span>
-          <button
-            className={styles.settingsButton}
-            onClick={handleOpenSettings}
-            title="Project Settings"
-            aria-label="Open project settings"
-          >
-            <Settings size={14} />
-          </button>
-        </div>
+        {/* Agent Status Indicators */}
+        {totalConversations > 0 && (
+          <div className={styles.agentStatus}>
+            {agentActiveCount > 0 ? (
+              <div className={styles.agentActiveBadge}>
+                <span className={styles.agentDot} />
+                <span>{agentActiveCount} active</span>
+              </div>
+            ) : (
+              <div className={styles.agentIdleBadge}>
+                <MessageSquare size={10} />
+                <span>{totalConversations} chat{totalConversations !== 1 ? 's' : ''}</span>
+              </div>
+            )}
+            {runningAgent && (() => {
+              const phase = PHASE_STYLES[runningAgent.currentPhase] || PHASE_STYLES.informational
+              const PhaseIcon = phase.icon
+              return (
+                <div
+                  className={styles.agentPhaseBadge}
+                  style={{ color: phase.color, backgroundColor: phase.bg, borderColor: phase.color }}
+                >
+                  <PhaseIcon size={10} />
+                  <span>{runningAgent.currentPhase.replace('_', ' ')}</span>
+                  {runningAgent.iterationCount > 0 && (
+                    <span className={styles.agentStep}>Step {runningAgent.iterationCount}</span>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+        )}
 
         <button
           className={`${styles.aiButton} ${isAIOpen ? styles.aiButtonActive : ''}`}

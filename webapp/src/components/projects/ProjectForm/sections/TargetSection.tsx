@@ -11,6 +11,7 @@ type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'use
 interface TargetSectionProps {
   data: FormData
   updateField: <K extends keyof FormData>(field: K, value: FormData[K]) => void
+  mode?: 'create' | 'edit'
 }
 
 // Helper to convert stored format (with dots) to display format (without dots)
@@ -36,7 +37,8 @@ function toStoredPrefixes(displayValue: string, includeRoot: boolean): string[] 
   return prefixes
 }
 
-export function TargetSection({ data, updateField }: TargetSectionProps) {
+export function TargetSection({ data, updateField, mode = 'create' }: TargetSectionProps) {
+  const isLocked = mode === 'edit'
   const [isOpen, setIsOpen] = useState(true)
 
   // Check if root domain is included in the list
@@ -95,6 +97,8 @@ export function TargetSection({ data, updateField }: TargetSectionProps) {
                 value={data.targetDomain}
                 onChange={(e) => updateField('targetDomain', e.target.value)}
                 placeholder="example.com"
+                disabled={isLocked}
+                title={isLocked ? 'Target domain cannot be changed after creation. Create a new project instead.' : undefined}
               />
             </div>
           </div>
@@ -118,9 +122,13 @@ export function TargetSection({ data, updateField }: TargetSectionProps) {
               value={displayPrefixes}
               onChange={(e) => handlePrefixesChange(e.target.value)}
               placeholder="www, api, admin (comma-separated)"
+              disabled={isLocked}
+              title={isLocked ? 'Subdomain list cannot be changed after creation. Create a new project instead.' : undefined}
             />
             <span className={styles.fieldHint}>
-              Leave empty to discover all subdomains. Enter prefixes without dots (e.g., "www, api, gpigs").
+              {isLocked
+                ? 'Target domain and subdomains are locked after project creation to keep graph data consistent. To change them, create a new project.'
+                : 'Leave empty to discover all subdomains. Enter prefixes without dots (e.g., "www, api, gpigs").'}
             </span>
           </div>
 
@@ -134,6 +142,7 @@ export function TargetSection({ data, updateField }: TargetSectionProps) {
             <Toggle
               checked={includesRootDomain}
               onChange={handleRootDomainToggle}
+              disabled={isLocked}
             />
           </div>
 

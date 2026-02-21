@@ -163,6 +163,8 @@ docker compose restart kali-sandbox       # MCP tool servers
 
 No rebuild needed — just restart.
 
+> If you need to update RedAmon to a new version, see [Updating to a New Version](#updating-to-a-new-version).
+
 ---
 
 ## Table of Contents
@@ -202,6 +204,8 @@ No rebuild needed — just restart.
   - [Protocols & Communication](#protocols--communication)
 - [Development Mode](#development-mode)
 - [Documentation](#documentation)
+- [Data Export & Import](#data-export--import)
+- [Updating to a New Version](#updating-to-a-new-version)
 - [Legal](#legal)
 
 ---
@@ -681,350 +685,29 @@ All queries are automatically scoped to the current user and project via regex-b
 
 ### Project Settings
 
-Every project in RedAmon has **180+ configurable parameters** that control the behavior of each reconnaissance module and the AI agent. These settings are managed through the webapp's project form UI, stored in PostgreSQL via Prisma ORM, and fetched by the recon container and agent at runtime.
+Every project in RedAmon has **180+ configurable parameters** across 11 setting categories that control the behavior of each reconnaissance module and the AI agent. These settings are managed through the webapp's project form UI, stored in PostgreSQL via Prisma ORM, and fetched by the recon container and agent at runtime.
 
 <p align="center">
   <img src="assets/new_project.gif" alt="RedAmon Project Settings" width="100%"/>
 </p>
 
-#### Target Configuration
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Target Domain | — | The root domain to assess |
-| Subdomain List | [] | Specific subdomain prefixes to scan (empty = discover all) |
-| Verify Domain Ownership | false | Require DNS TXT record proof before scanning |
-| Use Tor | false | Route all recon traffic through the Tor network |
-| Use Bruteforce | true | Enable Knockpy active subdomain bruteforcing |
-
-#### Scan Module Toggles
-
-Modules can be individually enabled/disabled with automatic dependency resolution — disabling a parent module automatically disables all children:
-
-```
-domain_discovery (root)
-  └── port_scan
-       └── http_probe
-            ├── resource_enum
-            └── vuln_scan
-```
-
-#### Port Scanner (Naabu)
-
-Controls how ports are discovered on target hosts. Key settings include scan type (SYN vs. CONNECT), top-N port selection or custom port ranges, rate limiting, thread count, CDN exclusion, passive mode via Shodan InternetDB, and host discovery skip.
-
-#### HTTP Prober (httpx)
-
-Controls what metadata is extracted from live HTTP services. Over 25 toggles for individual probe types: status codes, content analysis, technology detection, TLS/certificate inspection, favicon hashing, JARM fingerprinting, ASN/CDN detection, response body inclusion, and custom header injection. Also configures redirect following depth and rate limiting.
-
-#### Technology Detection (Wappalyzer)
-
-Controls the second-pass technology fingerprinting engine. Settings include enable/disable toggle, minimum confidence threshold (0-100%), HTML requirement filter, auto-update from npm, and cache TTL.
-
-#### Banner Grabbing
-
-Controls raw socket banner extraction for non-HTTP ports (SSH, FTP, SMTP, MySQL, Redis). Settings include enable/disable toggle, connection timeout, thread count, and maximum banner length.
-
-#### Web Crawler (Katana)
-
-Active web crawling using Katana from ProjectDiscovery. Discovers URLs, endpoints, and parameters by following links and parsing JavaScript. Found URLs with parameters feed into Nuclei DAST mode for vulnerability fuzzing.
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Enable Katana | true | Master toggle for active web crawling |
-| Crawl Depth | 2 | How many links deep to follow (1-10). Each level adds ~50% time |
-| Max URLs | 300 | Maximum URLs to collect per domain. 300: ~1-2 min/domain, 1000+: scales linearly |
-| Rate Limit | 50 | Requests per second to avoid overloading target |
-| Timeout | 3600 | Overall crawl timeout in seconds (default: 60 minutes) |
-| JavaScript Crawling | false | Parse JS files to find hidden endpoints and API calls. Uses headless browser (+50-100% time) |
-| Parameters Only | false | Only keep URLs with query parameters (?key=value) for DAST fuzzing |
-| Exclude Patterns | [...] | URL patterns to skip — static assets, images, CDN URLs. 100+ default patterns pre-configured |
-| Custom Headers | [] | Browser-like request headers to avoid detection during DAST crawling (e.g., User-Agent) |
-| Docker Image | (locked) | Katana Docker image used for crawling (system-managed) |
-
-#### Passive URL Discovery (GAU)
-
-Passive URL discovery using GetAllUrls (GAU). Retrieves historical URLs from web archives and threat intelligence sources without touching the target directly. Complements Katana's active crawling with archived data (~20-60 sec per domain).
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Enable GAU | false | Master toggle for passive URL discovery |
-| Providers | wayback, commoncrawl, otx, urlscan | Data sources to query for archived URLs |
-| Max URLs | 1000 | Maximum URLs to fetch per domain (0 = unlimited) |
-| Timeout | 60 | Request timeout per provider (seconds) |
-| Threads | 5 | Parallel fetch threads (1-20) |
-| Year Range | [] | Filter Wayback Machine by year (e.g., "2020, 2024"). Empty = all years |
-| Verbose Output | false | Enable detailed logging for debugging |
-| Blacklist Extensions | [...] | File extensions to exclude (e.g., png, jpg, css, pdf, zip) |
-
-**URL Verification** — when enabled, GAU verifies each discovered URL is still live using httpx, filtering out dead links. This doubles or triples GAU time but eliminates false leads:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Verify URLs | false | HTTP check to confirm archived URLs still exist |
-| Verify Timeout | 5 | Seconds per URL check |
-| Verify Rate Limit | 100 | Verification requests per second |
-| Verify Threads | 50 | Concurrent verification threads (1-100) |
-| Accept Status Codes | [200, 201, 301, ...] | Status codes that indicate a live URL. Include 401/403 for auth-protected endpoints |
-| Filter Dead Endpoints | true | Exclude URLs returning 404/500/timeout from final results |
-
-**HTTP Method Detection** — when URL verification is enabled, GAU can additionally discover allowed HTTP methods (GET, POST, PUT, DELETE) via OPTIONS probes (+30-50% time on top of verification):
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Detect Methods | false | Send OPTIONS request to discover allowed methods |
-| Method Detect Timeout | 5 | Seconds per OPTIONS request |
-| Method Detect Rate Limit | 50 | Requests per second |
-| Method Detect Threads | 25 | Concurrent threads |
-
-#### API Discovery (Kiterunner)
-
-API endpoint bruteforcing using Kiterunner from Assetnote. Discovers hidden REST API routes by testing against comprehensive wordlists derived from real-world Swagger/OpenAPI specifications (~5-30 min per endpoint).
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Enable Kiterunner | true | Master toggle for API route bruteforcing |
-| Wordlist | routes-large | API route wordlist: `routes-large` (~100k routes, 10-30 min) or `routes-small` (~20k routes, 5-10 min) |
-| Rate Limit | 100 | Requests per second. Lower is stealthier |
-| Connections | 100 | Concurrent connections per target |
-| Timeout | 10 | Per-request timeout (seconds) |
-| Scan Timeout | 1000 | Overall scan timeout (seconds). Large wordlists need more time |
-| Threads | 50 | Parallel scanning threads |
-| Min Content Length | 0 | Ignore responses smaller than this (bytes). Filters empty or trivial responses |
-
-**Status Code Filters** — control which HTTP responses are kept:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Ignore Status Codes | [] | Blacklist: filter out noise from common errors (e.g., 404, 500) |
-| Match Status Codes | [200, 201, ...] | Whitelist: only show endpoints with these codes. Includes auth-protected (401, 403) |
-| Custom Headers | [] | Request headers for authenticated API scanning (e.g., Authorization: Bearer token) |
-
-**Method Detection** — Kiterunner wordlists only contain GET routes. This feature discovers POST/PUT/DELETE methods on found endpoints (+30-50% scan time):
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Detect Methods | true | Find additional HTTP methods beyond GET |
-| Detection Mode | bruteforce | `bruteforce` — try each method (slower, more accurate) or `options` — parse Allow header (faster) |
-| Bruteforce Methods | POST, PUT, DELETE, PATCH | Methods to try in bruteforce mode |
-| Method Detect Timeout | 5 | Seconds per request |
-| Method Detect Rate Limit | 50 | Requests per second |
-| Method Detect Threads | 25 | Concurrent threads |
-
-#### Vulnerability Scanner (Nuclei)
-
-Template-based vulnerability scanning using ProjectDiscovery's Nuclei. Runs thousands of security checks against discovered endpoints to identify CVEs, misconfigurations, exposed panels, and other security issues.
-
-**Performance Settings:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Severity Levels | critical, high, medium, low, info | Filter vulnerabilities by severity. Excluding "info" is ~70% faster |
-| Rate Limit | 100 | Requests per second. 100-150 for most targets, lower for sensitive systems |
-| Bulk Size | 25 | Number of hosts to process in parallel |
-| Concurrency | 25 | Templates to execute in parallel |
-| Timeout | 10 | Request timeout per template check (seconds) |
-| Retries | 1 | Retry attempts for failed requests (0-10) |
-| Max Redirects | 10 | Maximum redirect chain to follow (0-50) |
-
-**Template Configuration:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Template Folders | [] | Template directories to include: cves, vulnerabilities, misconfiguration, exposures, technologies, default-logins, takeovers. Empty = all |
-| Exclude Template Paths | [] | Exclude specific directories or template files by path (e.g., http/vulnerabilities/generic/) |
-| Custom Template Paths | [] | Add your own templates in addition to the official repository |
-| Include Tags | [] | Filter by functionality tags: cve, xss, sqli, rce, lfi, ssrf, xxe, ssti. Empty = all |
-| Exclude Tags | [] | Exclude tags — recommended: dos, fuzz for production |
-
-**Template Options:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Auto Update Templates | true | Download latest templates before scan. Adds ~10-30 seconds |
-| New Templates Only | false | Only run templates added since last update. Good for daily scans |
-| DAST Mode | true | Active fuzzing for XSS, SQLi, RCE. More aggressive, requires URLs with parameters (+50-100% time) |
-
-**Advanced Options:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Headless Mode | false | Use headless browser for JavaScript-rendered pages (+100-200% time) |
-| System DNS Resolvers | false | Use OS DNS instead of Nuclei defaults. Better for internal networks |
-| Interactsh | true | Detect blind vulnerabilities (SSRF, XXE, RCE) via out-of-band callback servers. Requires internet |
-| Follow Redirects | true | Follow HTTP redirects during template execution |
-| Scan All IPs | false | Scan all resolved IPs, not just hostnames. May find duplicate vulnerabilities |
-
-#### CVE Enrichment
-
-Enrich vulnerability findings with detailed CVE data from NVD and other sources. Provides CVSS scores, affected versions, exploitation status, and remediation guidance (~1-5 min depending on technologies found).
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Enable CVE Lookup | true | Master toggle for CVE enrichment |
-| CVE Source | nvd | Data source: `nvd` (National Vulnerability Database) or `vulners` |
-| Max CVEs per Finding | 20 | Maximum CVE entries to retrieve per technology/vulnerability (1-100) |
-| Min CVSS Score | 0 | Only include CVEs at or above this CVSS score (0-10, step 0.1) |
-| NVD API Key | — | Free key from nist.gov — without key: rate-limited (10 req/min), with key: ~80x faster |
-| Vulners API Key | — | API key for Vulners data source |
-
-#### MITRE Mapping
-
-Controls CWE/CAPEC enrichment of CVE findings. Settings include auto-update toggle, CWE/CAPEC inclusion toggles, and cache TTL.
-
-#### Security Checks
-
-25+ individual toggle-controlled checks grouped into six categories:
-
-- **Network Exposure** — direct IP access (HTTP/HTTPS), IP-based API exposure, WAF bypass detection.
-- **TLS/Certificate** — certificate expiry warning (configurable days threshold).
-- **Security Headers** — missing Referrer-Policy, Permissions-Policy, COOP, CORP, COEP, Cache-Control, CSP unsafe-inline.
-- **Authentication** — login forms over HTTP, session cookies without Secure/HttpOnly flags, Basic Auth without TLS.
-- **DNS Security** — missing SPF, DMARC, DNSSEC records, zone transfer enabled.
-- **Exposed Services** — admin ports, databases, Redis without auth, Kubernetes API, SMTP open relay.
-- **Application** — insecure form actions, missing rate limiting.
-
-#### GVM Vulnerability Scan
-
-Configure GVM/OpenVAS network-level vulnerability scanning. These settings control scan depth, target strategy, and timeouts for the Greenbone vulnerability scanner. Requires the GVM stack to be running (starts automatically with `docker compose up -d`).
-
-**Scan Configuration:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Scan Profile | Full and fast | GVM scan configuration preset — see [Scan Profiles & Time Estimates](#scan-profiles--time-estimates) for the full comparison of all 7 profiles |
-| Scan Targets Strategy | both | Which targets from recon data to scan: `both` (IPs and hostnames), `ips_only`, or `hostnames_only`. "Both" doubles the target count |
-
-**Timeouts & Polling:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Task Timeout | 14400 | Maximum seconds to wait for a single scan task. 0 = unlimited. Default: 4 hours |
-| Poll Interval | 5 | Seconds between scan status checks (5-300). Lower values give faster log updates |
-
-**Post-Scan:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Cleanup After Scan | true | Remove scan targets and tasks from GVM's internal database after results are extracted. Keeps GVM clean across multiple scans. Results are always saved to JSON and Neo4j regardless |
-
-#### GitHub Secret Hunting
-
-Search GitHub repositories for exposed secrets, API keys, and credentials related to your target domain. GitHub Secret Hunting runs as an **independent module** (separate from the recon pipeline), triggered from the Graph page toolbar after reconnaissance completes — exactly like the GVM vulnerability scanner.
-
-The scanner uses **40+ regex patterns** and **Shannon entropy analysis** to detect leaked credentials including AWS keys, Google Cloud credentials, database connection strings, JWT tokens, private RSA/SSH keys, Slack/Discord/Stripe tokens, and many more. Results are stored in the Neo4j graph and can be downloaded as JSON.
-
-> **Important:** The GitHub token is used **exclusively for read-only scanning**. It accesses the GitHub API to list repositories and read file contents — it never creates, modifies, or deletes anything on GitHub.
-
-**How to Create a GitHub Personal Access Token:**
-
-1. Go to **GitHub.com** → click your profile picture (top-right) → **Settings**
-2. In the left sidebar, scroll to the bottom and click **Developer settings**
-3. Click **Personal access tokens** → **Tokens (classic)**
-4. Click **Generate new token** → **Generate new token (classic)**
-5. Give it a descriptive name (e.g., `redamon-secret-scan`)
-6. Set an expiration (recommended: 30 or 90 days)
-7. Select the following scopes:
-   - **`repo`** — Full control of private repositories. Required to read repository contents and search through code. This is the minimum required scope.
-   - **`read:org`** — Read organization membership. Required to list organization repositories and discover member accounts when "Scan Member Repositories" is enabled.
-   - **`gist`** — Access gists. Required only if you enable "Scan Gists" to search for secrets in public and private gists.
-8. Click **Generate token** and copy the token immediately (it starts with `ghp_`). You won't be able to see it again.
-9. Paste the token into the **GitHub Access Token** field in your project settings.
-
-**Parameters:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| GitHub Access Token | — | The Personal Access Token (PAT) that authenticates API requests to GitHub. Without this token, no scanning can occur — all other options remain disabled until a valid token is provided. The token format is `ghp_xxxxxxxxxxxx`. See the step-by-step guide above for creating one with the correct scopes |
-| Target Organization | — | The GitHub **organization name** or **username** to scan. This is the account whose repositories will be searched for leaked secrets. For example, if your target domain is `example.com` and their GitHub organization is `example-inc`, enter `example-inc` here. You can also enter a personal GitHub username to scan that user's public repositories. The scanner will enumerate all accessible repositories under this account and search their contents for secret patterns |
-| Target Repositories | — | Comma-separated list of **repository names** to scan (e.g., `repo1, repo2, repo3`). When specified, only the listed repositories are scanned instead of all repositories under the target organization/user. Matching is **case-insensitive** and uses the repository name only (not `owner/repo`). Leave empty to scan **all** accessible repositories — which is the default behavior |
-| Scan Member Repositories | false | When enabled, the scanner also discovers and scans repositories belonging to **individual members** of the target organization — not just the organization's own repos. This is useful because developers often store work-related code (including secrets) in their personal accounts. Requires the `read:org` scope on your token. Significantly increases scan scope and time |
-| Scan Gists | false | When enabled, the scanner searches **GitHub Gists** (code snippets) created by the organization and its members. Developers frequently paste configuration files, API keys, and connection strings into gists without realizing they're public. Requires the `gist` scope on your token |
-| Scan Commits | false | When enabled, the scanner examines **commit history** — not just the current state of files, but also previous versions. This catches secrets that were committed and later removed (but remain in git history). **This is the most expensive operation** — disabling it saves 50%+ of total scan time. Each commit requires a separate API call to retrieve and analyze the diff |
-| Max Commits to Scan | 100 | The maximum number of commits to examine **per repository**. Only visible when "Scan Commits" is enabled. Scan time scales linearly with this value: 100 commits (default) provides a reasonable balance between coverage and speed; 500 covers more history at ~5x the time; 1000 is thorough but ~10x slower. Valid range: 1–1000 |
-| Output as JSON | false | When enabled, saves the complete scan results as a structured JSON file (`github_hunt_{project_id}.json`) that can be downloaded from the Graph page. The JSON includes every detected secret with its file path, line number, matched pattern, repository name, and entropy score |
-
-#### Agent Behavior
-
-Configure the AI agent orchestrator that performs autonomous pentesting. Controls LLM model, phase transitions, payload settings, tool access, and safety gates.
-
-**LLM & Phase Configuration:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| LLM Model | claude-opus-4-6 | The language model powering the agent. Supports five providers: **OpenAI** (GPT-5.2, GPT-5, GPT-4.1), **Anthropic** (Claude Opus 4.6, Sonnet 4.5, Haiku 4.5), **OpenAI-Compatible** (for example Ollama via a custom base URL), **OpenRouter** (300+ models — Llama, Gemini, Mistral, etc.), and **AWS Bedrock** (Claude, Titan, Llama, etc.). Models are **dynamically fetched** from each configured provider — the dropdown updates automatically. |
-| Post-Exploitation Type | statefull | `statefull` — keeps Meterpreter sessions between turns. `stateless` — executes one-shot commands |
-| Activate Post-Exploitation Phase | true | Whether post-exploitation is available at all. When disabled, the agent stops after exploitation |
-| Informational Phase System Prompt | — | Custom instructions injected during the informational/recon phase. Leave empty for default |
-| Exploitation Phase System Prompt | — | Custom instructions injected during the exploitation phase. Leave empty for default |
-| Post-Exploitation Phase System Prompt | — | Custom instructions injected during the post-exploitation phase. Leave empty for default |
-
-**Payload Direction:**
-
-Controls how reverse/bind shell payloads connect. **Reverse**: target connects back to you (LHOST + LPORT). **Bind**: you connect to the target (leave LPORT empty).
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| LHOST (Attacker IP) | — | Your IP address for reverse shell callbacks. Leave empty for bind mode |
-| LPORT | — | Your listening port for reverse shells. Leave empty for bind mode |
-| Bind Port on Target | — | Port the target opens when using bind shell payloads. Leave empty if unsure (agent will ask) |
-| Payload Use HTTPS | false | Use `reverse_https` instead of `reverse_tcp` for reverse payloads |
-
-**Agent Limits:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Max Iterations | 100 | Maximum LLM reasoning-action loops per objective |
-| Trace Memory Steps | 100 | Number of past steps kept in the agent's working context |
-| Tool Output Max Chars | 20000 | Truncation limit for tool output passed to the LLM (min: 1000) |
-
-**Approval Gates:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Require Approval for Exploitation | true | User confirmation before transitioning to exploitation phase |
-| Require Approval for Post-Exploitation | true | User confirmation before transitioning to post-exploitation phase |
-
-**Hydra Brute Force:**
-
-Configure THC Hydra brute force password cracking settings. Hydra supports 50+ protocols including SSH, FTP, RDP, SMB, HTTP forms, databases, and more.
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Hydra Enabled | true | Enable/disable Hydra brute force tool for exploitation and post-exploitation phases |
-| Threads (-t) | 16 | Parallel connections per target. Protocol limits: SSH max 4, RDP max 1, VNC max 4 |
-| Wait Between Connections (-W) | 0 | Seconds between each connection per task. 0 = no delay |
-| Connection Timeout (-w) | 32 | Max seconds to wait for a response from the target |
-| Stop On First Found (-f) | true | Stop immediately when valid credentials are found |
-| Extra Password Checks (-e) | nsr | Additional password variations: n=null/empty, s=username-as-password, r=reversed username |
-| Verbose Output (-V) | true | Show each login attempt in output for progress tracking |
-| Max Wordlist Attempts | 3 | How many wordlist strategies to try before giving up (1-10) |
-
-**Retries, Logging & Debug:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Cypher Max Retries | 3 | Neo4j query retry attempts on failure (0-10) |
-| Log Max MB | 10 | Maximum log file size before rotation |
-| Log Backups | 5 | Number of rotated log backups to keep |
-| Create Graph Image on Init | false | Generate a LangGraph visualization when the agent starts. Useful for debugging |
-
-**Tool Phase Restrictions:**
-
-A matrix that controls which tools the agent can use in each operational phase. Each tool can be enabled/disabled independently per phase:
-
-| Tool | Informational | Exploitation | Post-Exploitation |
-|------|:---:|:---:|:---:|
-| query_graph | ✓ | ✓ | ✓ |
-| web_search | ✓ | ✓ | ✓ |
-| execute_curl | ✓ | ✓ | ✓ |
-| execute_naabu | ✓ | ✓ | ✓ |
-| execute_nmap | ✓ | ✓ | ✓ |
-| execute_nuclei | ✓ | ✓ | ✓ |
-| kali_shell | ✓ | ✓ | ✓ |
-| execute_code | — | ✓ | ✓ |
-| metasploit_console | — | ✓ | ✓ |
-| msf_restart | — | ✓ | ✓ |
+| Category | Key Settings |
+|----------|-------------|
+| **Target & Modules** | Target domain, subdomain list, stealth mode, scan module toggles, Tor routing |
+| **Port Scanning** | Naabu scan type, top-N ports, rate limiting, CDN exclusion, passive mode |
+| **HTTP Probing** | httpx 25+ probe toggles, TLS inspection, redirect following |
+| **Resource Enumeration** | Katana depth/max URLs, GAU passive discovery, Kiterunner API brute-forcing |
+| **Vulnerability Scanning** | Nuclei severity filters, DAST mode, template management, Interactsh |
+| **CVE & MITRE** | CVE enrichment from NVD/Vulners, CWE/CAPEC mapping |
+| **Security Checks** | 25+ individual checks: headers, TLS, DNS, exposed services |
+| **GVM Scan** | Scan profiles, target strategy, timeouts |
+| **Integrations** | GitHub secret hunting with 40+ regex patterns |
+| **Agent Behaviour** | LLM model (400+), phases, payloads, approval gates, limits |
+| **Attack Paths** | Hydra brute force, tool phase restriction matrix |
+
+> **Full parameter reference:** See the **[Project Settings Reference](https://github.com/samugit83/redamon/wiki/9.-Project-Settings-Reference)** in the Wiki for all 180+ parameters with defaults and descriptions.
+>
+> **Complete user guide:** See the **[RedAmon Wiki](https://github.com/samugit83/redamon/wiki)** for step-by-step instructions on creating users, projects, running scans, and using the AI agent.
 
 ---
 
@@ -1783,6 +1466,118 @@ These containers are designed to be deployed alongside the main stack so the AI 
 | Changelog | [CHANGELOG.md](CHANGELOG.md) |
 | Full Disclaimer | [DISCLAIMER.md](DISCLAIMER.md) |
 | License | [LICENSE](LICENSE) |
+
+---
+
+## Data Export & Import
+
+RedAmon supports full project backup and restore through the web interface. Each export produces a portable ZIP archive containing all project data, which can be imported on any RedAmon instance.
+
+### What's Included in an Export
+
+| Data | Source | Description |
+|------|--------|-------------|
+| **Project Settings** | PostgreSQL | All 300+ configuration fields (scan modules, tool parameters, agent behaviour, attack paths) |
+| **Agent Conversations** | PostgreSQL | Complete chat history with the AI agent, including tool calls and responses |
+| **Attack Surface Graph** | Neo4j | All nodes (domains, subdomains, IPs, ports, services, URLs, vulnerabilities, CVEs, etc.) and their relationships |
+| **Recon Output** | Filesystem | Raw JSON output from the reconnaissance pipeline |
+| **GVM Results** | Filesystem | Raw JSON output from OpenVAS/GVM vulnerability scans |
+| **GitHub Hunt Results** | Filesystem | Raw JSON output from GitHub secret scanning |
+
+### Export a Project
+
+1. Navigate to **Projects** and select a project
+2. Open **Project Settings** (gear icon)
+3. Click the **Export** button in the header
+4. A ZIP file will download automatically
+
+### Import a Project
+
+1. Navigate to **Projects**
+2. Select the **user** who will own the imported project
+3. Click the **Import Project** button
+4. Select a previously exported ZIP file
+5. The project will be created under the selected user with all data restored
+
+> **Note**: Imported projects receive new internal IDs. The original project name, settings, conversations, and graph data are fully preserved. You can import the same backup multiple times or under different users.
+
+---
+
+## Updating to a New Version
+
+When updating RedAmon to a new version, all Docker images and volumes are rebuilt from scratch. Follow these steps to preserve your data across updates.
+
+> **Warning**: Step 4 removes all database volumes. Any data not exported will be permanently lost.
+
+### Step-by-Step Update Process
+
+**1. Export all projects**
+
+Before updating, go to the web interface and export every project you want to keep:
+- Open each project's **Settings** page
+- Click **Export** to download the backup ZIP
+- Save all ZIP files in a safe location outside the project directory
+
+**2. Stop all containers**
+
+```bash
+docker compose down
+```
+
+**3. Pull the latest version**
+
+```bash
+git pull origin master
+```
+
+**4. Remove old images, containers, and volumes**
+
+```bash
+docker compose down --rmi all --volumes
+```
+
+This removes all containers, images, and data volumes for a clean rebuild.
+
+**5. Rebuild everything from scratch**
+
+Build the core services and the on-demand tool images (recon scanner, vulnerability scanner, GitHub secret hunter):
+
+```bash
+docker compose build --no-cache
+docker compose --profile tools build --no-cache
+```
+
+**6. Start the new version**
+
+**Full stack** (with GVM/OpenVAS vulnerability scanner):
+
+```bash
+docker compose up -d
+```
+
+**Core services only** (without GVM — faster startup, lower resource usage):
+
+```bash
+docker compose up -d postgres neo4j recon-orchestrator kali-sandbox agent webapp
+```
+
+> Use the core-only option if you don't need network vulnerability scanning (GVM/OpenVAS). You can always start the GVM services later with `docker compose up -d`.
+
+**7. Wait for initialization**
+
+Wait for all services to become healthy. If using the full stack with GVM, the first launch requires ~30 minutes for vulnerability feed synchronization.
+
+```bash
+docker compose ps   # check service status
+```
+
+**8. Import your projects**
+
+Once all services are running:
+1. Open the web interface at `http://localhost:3000`
+2. Create or select a user
+3. Click **Import Project** and upload each exported ZIP file
+4. Verify that your projects, graph data, and conversations are restored
 
 ---
 

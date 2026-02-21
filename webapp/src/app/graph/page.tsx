@@ -57,7 +57,36 @@ export default function GraphPage() {
     return () => { ro.disconnect(); window.removeEventListener('resize', update) }
   }, [])
   const { isDark } = useTheme()
-  const { sessionId, resetSession } = useSession()
+  const { sessionId, resetSession, switchSession } = useSession()
+
+  // Agent status polling — lightweight fetch every 5s for toolbar indicators
+  const [agentSummary, setAgentSummary] = useState<{
+    activeCount: number
+    conversations: Array<{
+      id: string
+      title: string
+      currentPhase: string
+      iterationCount: number
+      agentRunning: boolean
+      sessionId: string
+    }>
+  }>({ activeCount: 0, conversations: [] })
+
+  useEffect(() => {
+    if (!projectId || !userId) return
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch(`/api/conversations?projectId=${projectId}&userId=${userId}`)
+        if (!res.ok) return
+        const convs = await res.json()
+        const active = convs.filter((c: any) => c.agentRunning)
+        setAgentSummary({ activeCount: active.length, conversations: convs })
+      } catch { /* ignore fetch errors */ }
+    }
+    fetchStatus()
+    const interval = setInterval(fetchStatus, 5000)
+    return () => clearInterval(interval)
+  }, [projectId, userId])
 
   // Recon status hook - must be before useGraphData to provide isReconRunning
   const {
@@ -434,7 +463,6 @@ export default function GraphPage() {
     <div className={styles.page}>
       <GraphToolbar
         projectId={projectId || ''}
-        projectName={currentProject?.name}
         is3D={is3D}
         showLabels={showLabels}
         onToggle3D={setIs3D}
@@ -467,6 +495,9 @@ export default function GraphPage() {
         isGithubHuntLogsOpen={activeLogsDrawer === 'githubHunt'}
         // Stealth mode
         stealthMode={currentProject?.stealthMode}
+        // Agent status
+        agentActiveCount={agentSummary.activeCount}
+        agentConversations={agentSummary.conversations}
       />
 
       <ViewTabs
@@ -561,6 +592,7 @@ export default function GraphPage() {
         projectId={projectId || ''}
         sessionId={sessionId || ''}
         onResetSession={resetSession}
+        onSwitchSession={switchSession}
         modelName={currentProject?.agentOpenaiModel}
         toolPhaseMap={currentProject?.agentToolPhaseMap}
         stealthMode={currentProject?.stealthMode}

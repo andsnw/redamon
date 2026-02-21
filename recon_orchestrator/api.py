@@ -8,7 +8,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
@@ -372,6 +372,45 @@ async def delete_project_files(project_id: str):
         "deleted": deleted_files,
         "errors": errors,
     }
+
+
+@app.post("/project/{project_id}/artifacts/{artifact_type}")
+async def upload_artifact(project_id: str, artifact_type: str, file: UploadFile):
+    """
+    Upload a scan output artifact (recon, gvm, github_hunt) for a project.
+
+    Used by the import feature to restore scan output JSON files.
+    """
+    from pathlib import Path
+
+    ALLOWED_TYPES = {
+        "recon": Path("/app/recon/output") / f"recon_{project_id}.json",
+        "gvm": Path("/app/gvm_scan/output") / f"gvm_{project_id}.json",
+        "github_hunt": Path("/app/github_secret_hunt/output") / f"github_hunt_{project_id}.json",
+    }
+
+    if artifact_type not in ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid artifact type: {artifact_type}. Allowed: {list(ALLOWED_TYPES.keys())}",
+        )
+
+    target_path = ALLOWED_TYPES[artifact_type]
+
+    try:
+        content = await file.read()
+        # Validate it's valid JSON
+        json.loads(content)
+        # Ensure parent directory exists
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(content)
+        logger.info(f"Uploaded {artifact_type} artifact for project {project_id}: {target_path}")
+        return {"success": True, "path": str(target_path), "size": len(content)}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Uploaded file is not valid JSON")
+    except Exception as e:
+        logger.error(f"Failed to upload artifact: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # =============================================================================

@@ -9,7 +9,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, Sparkles, RotateCcw, Shield, Target, Zap, HelpCircle, WifiOff, Wifi, Square, Play, Download, Wrench } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, Sparkles, Plus, Shield, Target, Zap, HelpCircle, WifiOff, Wifi, Square, Play, Download, Wrench, History } from 'lucide-react'
 import { StealthIcon } from '@/components/icons/StealthIcon'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -27,6 +27,10 @@ import {
 } from '@/lib/websocket-types'
 import { AgentTimeline } from './AgentTimeline'
 import { TodoListWidget } from './TodoListWidget'
+import { ConversationHistory } from './ConversationHistory'
+import { useConversations } from '@/hooks/useConversations'
+import { useChatPersistence } from '@/hooks/useChatPersistence'
+import type { Conversation } from '@/hooks/useConversations'
 import { Tooltip } from '@/components/ui/Tooltip/Tooltip'
 import type { ThinkingItem, ToolExecutionItem } from './AgentTimeline'
 
@@ -70,7 +74,8 @@ interface AIAssistantDrawerProps {
   userId: string
   projectId: string
   sessionId: string
-  onResetSession?: () => void
+  onResetSession?: () => string
+  onSwitchSession?: (sessionId: string) => void
   modelName?: string
   toolPhaseMap?: Record<string, string[]>
   stealthMode?: boolean
@@ -122,6 +127,7 @@ export function AIAssistantDrawer({
   projectId,
   sessionId,
   onResetSession,
+  onSwitchSession,
   modelName,
   toolPhaseMap,
   stealthMode = false,
@@ -145,6 +151,21 @@ export function AIAssistantDrawer({
   const [selectedOptions, setSelectedOptions] = useState<string[]>([])
 
   const [todoList, setTodoList] = useState<TodoItem[]>([])
+
+  // Conversation history state
+  const [showHistory, setShowHistory] = useState(false)
+  const [conversationId, setConversationId] = useState<string | null>(null)
+
+  // Conversation hooks
+  const {
+    conversations,
+    fetchConversations,
+    createConversation,
+    deleteConversation,
+    loadConversation,
+  } = useConversations(projectId, userId)
+
+  const { saveMessage, updateConversation: updateConvMeta } = useChatPersistence(conversationId)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -189,8 +210,22 @@ export function AIAssistantDrawer({
     }
   }, [isOpen, awaitingApproval, scrollToBottom])
 
-  // Reset state when session changes
+  // Fetch conversations when history panel opens, auto-refresh every 5s
   useEffect(() => {
+    if (showHistory && projectId && userId) {
+      fetchConversations()
+      const interval = setInterval(fetchConversations, 5000)
+      return () => clearInterval(interval)
+    }
+  }, [showHistory, projectId, userId, fetchConversations])
+
+  // Reset state when session changes (skip if switching to a loaded conversation)
+  const isRestoringConversation = useRef(false)
+  useEffect(() => {
+    if (isRestoringConversation.current) {
+      isRestoringConversation.current = false
+      return
+    }
     setChatItems([])
     setCurrentPhase('informational')
     setAttackPathType('cve_exploit')
@@ -426,9 +461,18 @@ export function AIAssistantDrawer({
     },
   })
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const question = inputValue.trim()
     if (!question || !isConnected || awaitingApproval || awaitingQuestion) return
+
+    // Auto-create conversation on first user message
+    if (!conversationId && projectId && userId && sessionId) {
+      const conv = await createConversation(sessionId)
+      if (conv) {
+        setConversationId(conv.id)
+        // Title will be set by the backend persistence layer
+      }
+    }
 
     if (isLoading) {
       // Agent is working → send as guidance
@@ -442,6 +486,7 @@ export function AIAssistantDrawer({
       setChatItems(prev => [...prev, guidanceMessage])
       setInputValue('')
       sendGuidance(question)
+      saveMessage('guidance', { content: question, isGuidance: true })
     } else {
       // Normal query
       const userMessage: Message = {
@@ -454,13 +499,19 @@ export function AIAssistantDrawer({
       setInputValue('')
       setIsLoading(true)
 
+      // Set title from first user message
+      const hasUserMessage = chatItems.some((item: ChatItem) => 'role' in item && item.role === 'user')
+      if (!hasUserMessage) {
+        updateConvMeta({ title: question.substring(0, 100) })
+      }
+
       try {
         sendQuery(question)
       } catch (error) {
         setIsLoading(false)
       }
     }
-  }, [inputValue, isConnected, isLoading, awaitingApproval, awaitingQuestion, sendQuery, sendGuidance])
+  }, [inputValue, isConnected, isLoading, awaitingApproval, awaitingQuestion, sendQuery, sendGuidance, conversationId, projectId, userId, sessionId, createConversation, saveMessage, updateConvMeta, chatItems])
 
   const handleApproval = useCallback((decision: 'approve' | 'modify' | 'abort') => {
     // Prevent double submission using ref (immediate check, not async state)
@@ -729,10 +780,8 @@ export function AIAssistantDrawer({
   }, [chatItems, currentPhase, iterationCount, modelName, todoList])
 
   const handleNewChat = () => {
-    // Cancel any running backend task before resetting
-    if (isLoading) {
-      sendStop()
-    }
+    // Don't stop the running agent — let it continue in background
+    // and persist messages via the backend persistence layer
     setChatItems([])
     setCurrentPhase('informational')
     setAttackPathType('cve_exploit')
@@ -750,9 +799,164 @@ export function AIAssistantDrawer({
     isProcessingApproval.current = false
     awaitingQuestionRef.current = false
     isProcessingQuestion.current = false
-    shouldAutoScroll.current = true // Reset to auto-scroll on new chat
+    shouldAutoScroll.current = true
+    setConversationId(null)
+    setShowHistory(false)
     onResetSession?.()
   }
+
+  // Switch to a different conversation from history
+  const handleSelectConversation = useCallback(async (conv: Conversation) => {
+    const full = await loadConversation(conv.id)
+    if (!full) return
+
+    // Restore chat items from persisted messages
+    let lastTodoList: TodoItem[] = []
+    let lastApprovalRequest: any = null
+    let lastQuestionRequest: any = null
+    // Track whether the agent did actual WORK after the last approval/question.
+    // assistant_message doesn't count (it's the phase transition description that
+    // arrives alongside the approval_request). Only thinking/tool_start indicate
+    // the user already responded and the agent continued.
+    let hasWorkAfterApproval = false
+    let hasWorkAfterQuestion = false
+
+    const restored: ChatItem[] = full.messages.map((msg: { id: string; type: string; data: unknown; createdAt: string }) => {
+      const data = msg.data as any
+
+      // Track agent work after approval/question requests
+      if (msg.type === 'thinking' || msg.type === 'tool_start' || msg.type === 'tool_complete') {
+        if (lastApprovalRequest) hasWorkAfterApproval = true
+        if (lastQuestionRequest) hasWorkAfterQuestion = true
+      }
+
+      if (msg.type === 'user_message' || msg.type === 'assistant_message') {
+        return {
+          id: msg.id,
+          role: msg.type === 'user_message' ? 'user' : 'assistant',
+          content: data.content || '',
+          phase: data.phase,
+          timestamp: new Date(msg.createdAt),
+          isGuidance: data.isGuidance || false,
+          isReport: data.isReport || data.task_complete || false,
+          error: data.error || null,
+        } as Message
+      } else if (msg.type === 'thinking') {
+        return {
+          type: 'thinking',
+          id: msg.id,
+          timestamp: new Date(msg.createdAt),
+          thought: data.thought || '',
+          reasoning: data.reasoning || '',
+          action: 'thinking',
+          updated_todo_list: [],
+        } as ThinkingItem
+      } else if (msg.type === 'tool_start') {
+        // Skip tool_start — full data is in tool_complete
+        return null
+      } else if (msg.type === 'tool_complete') {
+        // Reconstruct full ToolExecutionItem with raw output and tool_args
+        const rawOutput = data.raw_output || ''
+        return {
+          type: 'tool_execution',
+          id: msg.id,
+          timestamp: new Date(msg.createdAt),
+          tool_name: data.tool_name || '',
+          tool_args: data.tool_args || {},
+          status: data.success ? 'success' : 'error',
+          output_chunks: rawOutput ? [rawOutput] : [],
+          final_output: data.output_summary,
+          actionable_findings: data.actionable_findings || [],
+          recommended_next_steps: data.recommended_next_steps || [],
+        } as ToolExecutionItem
+      } else if (msg.type === 'error') {
+        return {
+          id: msg.id,
+          role: 'assistant',
+          content: 'An error occurred while processing your request.',
+          error: data.message,
+          timestamp: new Date(msg.createdAt),
+        } as Message
+      } else if (msg.type === 'task_complete') {
+        return {
+          id: msg.id,
+          role: 'assistant',
+          content: data.message || '',
+          phase: data.final_phase,
+          timestamp: new Date(msg.createdAt),
+        } as Message
+      } else if (msg.type === 'guidance') {
+        return {
+          id: msg.id,
+          role: 'user',
+          content: data.content || '',
+          isGuidance: true,
+          timestamp: new Date(msg.createdAt),
+        } as Message
+      } else if (msg.type === 'todo_update') {
+        // Track last todo list for state restoration (not a chat item)
+        lastTodoList = data.todo_list || []
+        return null
+      } else if (msg.type === 'phase_update') {
+        // Phase updates are metadata, not chat items
+        return null
+      } else if (msg.type === 'approval_request') {
+        lastApprovalRequest = data
+        hasWorkAfterApproval = false
+        return null
+      } else if (msg.type === 'question_request') {
+        lastQuestionRequest = data
+        hasWorkAfterQuestion = false
+        return null
+      }
+      // Skip unknown types
+      return null
+    }).filter((item): item is ChatItem => item !== null)
+
+    // Apply state
+    setChatItems(restored)
+    setConversationId(conv.id)
+    setCurrentPhase((conv.currentPhase || 'informational') as Phase)
+    setIterationCount(conv.iterationCount || 0)
+    setIsLoading(conv.agentRunning)
+    setIsStopped(false)
+    setTodoList(lastTodoList)
+    shouldAutoScroll.current = true
+    setShowHistory(false)
+
+    // Restore pending approval/question state if not yet acted upon.
+    // The agent is NOT "running" while waiting — it finishes its task and waits
+    // for the user to respond. So we check for agent work, not agentRunning.
+    if (lastApprovalRequest && !hasWorkAfterApproval) {
+      setAwaitingApproval(true)
+      setApprovalRequest(lastApprovalRequest)
+      awaitingApprovalRef.current = true
+    } else {
+      setAwaitingApproval(false)
+      setApprovalRequest(null)
+    }
+    if (lastQuestionRequest && !hasWorkAfterQuestion) {
+      setAwaitingQuestion(true)
+      setQuestionRequest(lastQuestionRequest)
+      awaitingQuestionRef.current = true
+    } else {
+      setAwaitingQuestion(false)
+      setQuestionRequest(null)
+    }
+
+    // Switch WebSocket session — flag to prevent the sessionId useEffect from clearing state
+    isRestoringConversation.current = true
+    onSwitchSession?.(conv.sessionId)
+  }, [loadConversation, onSwitchSession])
+
+  const handleHistoryNewChat = () => {
+    setShowHistory(false)
+    handleNewChat()
+  }
+
+  const handleDeleteConversation = useCallback(async (id: string) => {
+    await deleteConversation(id)
+  }, [deleteConversation])
 
   const PhaseIcon = PHASE_CONFIG[currentPhase].icon
 
@@ -899,12 +1103,11 @@ export function AIAssistantDrawer({
         <div className={styles.headerActions}>
           <button
             className={styles.iconButton}
-            onClick={handleDownloadMarkdown}
-            title="Download chat as Markdown"
-            aria-label="Download chat as Markdown"
-            disabled={chatItems.length === 0}
+            onClick={() => setShowHistory(!showHistory)}
+            title="Conversation history"
+            aria-label="Conversation history"
           >
-            <Download size={14} />
+            <History size={14} />
           </button>
           <button
             className={styles.iconButton}
@@ -912,7 +1115,16 @@ export function AIAssistantDrawer({
             title="New conversation"
             aria-label="Start new conversation"
           >
-            <RotateCcw size={14} />
+            <Plus size={14} />
+          </button>
+          <button
+            className={styles.iconButton}
+            onClick={handleDownloadMarkdown}
+            title="Download chat as Markdown"
+            aria-label="Download chat as Markdown"
+            disabled={chatItems.length === 0}
+          >
+            <Download size={14} />
           </button>
           <button
             className={styles.closeButton}
@@ -923,6 +1135,18 @@ export function AIAssistantDrawer({
           </button>
         </div>
       </div>
+
+      {/* Conversation History Panel */}
+      {showHistory && (
+        <ConversationHistory
+          conversations={conversations}
+          currentSessionId={sessionId}
+          onBack={() => setShowHistory(false)}
+          onSelect={handleSelectConversation}
+          onDelete={handleDeleteConversation}
+          onNewChat={handleHistoryNewChat}
+        />
+      )}
 
       {/* Phase Indicator */}
       <div className={styles.phaseIndicator}>
