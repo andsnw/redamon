@@ -65,12 +65,9 @@ from prompts import (
 from orchestrator_helpers import (
     json_dumps_safe,
     normalize_content,
-    extract_json,
-    parse_llm_decision,
     try_parse_llm_decision,
     classify_attack_path,
     determine_phase_for_new_objective,
-    save_graph_image,
     set_checkpointer,
     create_config,
     get_config_values,

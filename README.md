@@ -22,11 +22,17 @@
   <img src="https://img.shields.io/badge/Docker-Compose-1A7EC2?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"/>
   <img src="https://img.shields.io/badge/Stealth-Mode-5B21B6?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MDAgNjAwIiBmaWxsPSJ3aGl0ZSI+PHBvbHlnb24gcG9pbnRzPSI0MDAsODAgODAwLDQyMCA3MjAsNDIwIDY4MCwzODAgNjIwLDQyMCA1NjAsMzgwIDUwMCw0MjAgNDQwLDM4MCAzODAsNDIwIDMyMCwzODAgMjYwLDQyMCAyMDAsMzgwIDEyMCw0MjAgMCw0MjAiLz48L3N2Zz4=&logoColor=white" alt="Stealth Mode"/>
   <img src="https://img.shields.io/badge/30+-SECURITY%20TOOLS-CC8F00?style=for-the-badge&logo=hack-the-box&logoColor=white" alt="30+ Security Tools"/>
-  <img src="https://img.shields.io/badge/9,000+-VULN%20TEMPLATES-8B1142?style=for-the-badge" alt="9,000+ Vuln Templates"/>
-  <img src="https://img.shields.io/badge/170K+-NETWORK%20NVTs-8E3FA0?style=for-the-badge" alt="170K+ NVTs"/>
+  <img src="https://img.shields.io/badge/185,000+-DETECTION%20RULES-8B1142?style=for-the-badge" alt="185,000+ Detection Rules"/>
   <img src="https://img.shields.io/badge/180+-PROJECT%20SETTINGS-00899B?style=for-the-badge" alt="180+ Settings"/>
   <img src="https://img.shields.io/badge/400+-AI%20MODELS-04A878?style=for-the-badge&logo=huggingface&logoColor=white" alt="400+ AI Models"/>
   <img src="https://img.shields.io/badge/%F0%9F%96%A5%EF%B8%8F_LOCAL%20MODELS-OLLAMA%20%7C%20vLLM%20%7C%20LM%20Studio-B85C00?style=for-the-badge" alt="Local Models Support"/>
+  <br/>
+  <img src="https://img.shields.io/badge/Metasploit-Framework-1A6DAA?style=for-the-badge" alt="Metasploit Framework"/>
+  <img src="https://img.shields.io/badge/OpenVAS-Scanner-66B245?style=for-the-badge" alt="OpenVAS Scanner"/>
+  <img src="https://img.shields.io/badge/Nmap-Scanner-4682B4?style=for-the-badge" alt="Nmap Scanner"/>
+  <img src="https://img.shields.io/badge/Nuclei-Scanner-7B42BC?style=for-the-badge" alt="Nuclei Scanner"/>
+  <img src="https://img.shields.io/badge/SQLMap-Injection-C0392B?style=for-the-badge" alt="SQLMap"/>
+  <img src="https://img.shields.io/badge/Hydra-Brute%20Force-E67E22?style=for-the-badge" alt="Hydra Brute Force"/>
   <br/>
   <a href="https://github.com/samugit83/redamon/wiki"><img src="https://img.shields.io/badge/📖_WIKI-FULL%20DOCUMENTATION-1A73E8?style=for-the-badge" alt="Wiki Documentation"/></a>
 </p>
