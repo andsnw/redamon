@@ -118,8 +118,10 @@ class AgentOrchestrator:
         self.graph = None
 
         self._initialized = False
-        self._streaming_callback = None  # Set during invoke_with_streaming
-        self._guidance_queue = None  # Set during invoke_with_streaming
+        # Per-session maps — keyed by session_id so concurrent sessions
+        # don't overwrite each other's callback / guidance queue.
+        self._streaming_callbacks: dict[str, object] = {}
+        self._guidance_queues: dict[str, asyncio.Queue] = {}
 
         # Metasploit prewarm: background restart tasks keyed by session_key
         self._prewarm_tasks: dict[str, asyncio.Task] = {}
@@ -746,12 +748,13 @@ class AgentOrchestrator:
             system_prompt = system_prompt + "\n" + output_section
             logger.info(f"[{user_id}/{project_id}/{session_id}] Injected output analysis section for tool: {pending_step.get('tool_name')}")
 
-        # Drain pending guidance messages from user
+        # Drain pending guidance messages from user (per-session queue)
         guidance_messages = []
-        if self._guidance_queue:
-            while not self._guidance_queue.empty():
+        guidance_queue = self._guidance_queues.get(session_id)
+        if guidance_queue:
+            while not guidance_queue.empty():
                 try:
-                    guidance_messages.append(self._guidance_queue.get_nowait())
+                    guidance_messages.append(guidance_queue.get_nowait())
                 except asyncio.QueueEmpty:
                     break
 
@@ -1320,21 +1323,22 @@ class AgentOrchestrator:
         is_long_running_hydra = (tool_name == "execute_hydra")
 
         # Execute the tool (with progress streaming for long-running commands)
-        if is_long_running_msf and self._streaming_callback:
+        streaming_cb = self._streaming_callbacks.get(session_id)
+        if is_long_running_msf and streaming_cb:
             logger.info(f"[{user_id}/{project_id}/{session_id}] Using execute_with_progress for long-running MSF command")
             result = await self.tool_executor.execute_with_progress(
                 tool_name,
                 tool_args,
                 phase,
-                progress_callback=self._streaming_callback.on_tool_output_chunk
+                progress_callback=streaming_cb.on_tool_output_chunk
             )
-        elif is_long_running_hydra and self._streaming_callback:
+        elif is_long_running_hydra and streaming_cb:
             logger.info(f"[{user_id}/{project_id}/{session_id}] Using execute_with_progress for Hydra brute force")
             result = await self.tool_executor.execute_with_progress(
                 tool_name,
                 tool_args,
                 phase,
-                progress_callback=self._streaming_callback.on_tool_output_chunk,
+                progress_callback=streaming_cb.on_tool_output_chunk,
                 progress_url=os.environ.get('MCP_HYDRA_PROGRESS_URL', 'http://kali-sandbox:8014/progress')
             )
         else:
@@ -1601,9 +1605,10 @@ class AgentOrchestrator:
         logger.info(f"[{user_id}/{project_id}/{session_id}] Generating final response...")
 
         # Emit a thinking event so the frontend shows a loading indicator
-        if self._streaming_callback:
+        streaming_cb = self._streaming_callbacks.get(session_id)
+        if streaming_cb:
             try:
-                await self._streaming_callback.on_thinking(
+                await streaming_cb.on_thinking(
                     state.get("current_iteration", 0),
                     state.get("current_phase", "informational"),
                     "Generating final summary report...",
@@ -1933,9 +1938,9 @@ class AgentOrchestrator:
         self._apply_project_settings(project_id)
         logger.info(f"[{user_id}/{project_id}/{session_id}] Invoking with streaming: {question[:10000]}")
 
-        # Store streaming callback and guidance queue for use in nodes
-        self._streaming_callback = streaming_callback
-        self._guidance_queue = guidance_queue
+        # Store streaming callback and guidance queue per-session
+        self._streaming_callbacks[session_id] = streaming_callback
+        self._guidance_queues[session_id] = guidance_queue
 
         try:
             config = create_config(user_id, project_id, session_id)
@@ -1967,8 +1972,8 @@ class AgentOrchestrator:
             await streaming_callback.on_error(str(e), recoverable=False)
             return InvokeResponse(error=str(e))
         finally:
-            self._streaming_callback = None
-            self._guidance_queue = None
+            self._streaming_callbacks.pop(session_id, None)
+            self._guidance_queues.pop(session_id, None)
 
     async def resume_after_approval_with_streaming(
         self,
@@ -1987,9 +1992,9 @@ class AgentOrchestrator:
         self._apply_project_settings(project_id)
         logger.info(f"[{user_id}/{project_id}/{session_id}] Resuming with streaming approval: {decision}")
 
-        # Store streaming callback and guidance queue for use in nodes
-        self._streaming_callback = streaming_callback
-        self._guidance_queue = guidance_queue
+        # Store streaming callback and guidance queue per-session
+        self._streaming_callbacks[session_id] = streaming_callback
+        self._guidance_queues[session_id] = guidance_queue
 
         try:
             config = create_config(user_id, project_id, session_id)
@@ -2029,8 +2034,8 @@ class AgentOrchestrator:
             await streaming_callback.on_error(str(e), recoverable=False)
             return InvokeResponse(error=str(e))
         finally:
-            self._streaming_callback = None
-            self._guidance_queue = None
+            self._streaming_callbacks.pop(session_id, None)
+            self._guidance_queues.pop(session_id, None)
 
     async def resume_after_answer_with_streaming(
         self,
@@ -2048,9 +2053,9 @@ class AgentOrchestrator:
         self._apply_project_settings(project_id)
         logger.info(f"[{user_id}/{project_id}/{session_id}] Resuming with streaming answer: {answer[:10000]}")
 
-        # Store streaming callback and guidance queue for use in nodes
-        self._streaming_callback = streaming_callback
-        self._guidance_queue = guidance_queue
+        # Store streaming callback and guidance queue per-session
+        self._streaming_callbacks[session_id] = streaming_callback
+        self._guidance_queues[session_id] = guidance_queue
 
         try:
             config = create_config(user_id, project_id, session_id)
@@ -2089,8 +2094,8 @@ class AgentOrchestrator:
             await streaming_callback.on_error(str(e), recoverable=False)
             return InvokeResponse(error=str(e))
         finally:
-            self._streaming_callback = None
-            self._guidance_queue = None
+            self._streaming_callbacks.pop(session_id, None)
+            self._guidance_queues.pop(session_id, None)
 
     async def resume_execution_with_streaming(
         self,
@@ -2107,8 +2112,8 @@ class AgentOrchestrator:
         self._apply_project_settings(project_id)
         logger.info(f"[{user_id}/{project_id}/{session_id}] Resuming execution from checkpoint")
 
-        self._streaming_callback = streaming_callback
-        self._guidance_queue = guidance_queue
+        self._streaming_callbacks[session_id] = streaming_callback
+        self._guidance_queues[session_id] = guidance_queue
 
         try:
             config = create_config(user_id, project_id, session_id)
@@ -2141,8 +2146,8 @@ class AgentOrchestrator:
             await streaming_callback.on_error(str(e), recoverable=False)
             return InvokeResponse(error=str(e))
         finally:
-            self._streaming_callback = None
-            self._guidance_queue = None
+            self._streaming_callbacks.pop(session_id, None)
+            self._guidance_queues.pop(session_id, None)
 
     async def _emit_streaming_events(self, state: dict, callback):
         """Emit appropriate streaming events based on state changes."""
