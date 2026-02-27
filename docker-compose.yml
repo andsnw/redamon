@@ -354,6 +354,7 @@ services:
     volumes:
       - ./agentic:/app
       - ./agentic/logs:/app/logs
+      - cypherfix-repos:/tmp/cypherfix-repos
     depends_on:
       neo4j:
         condition: service_healthy
@@ -463,3 +464,4 @@ volumes:
     name: redamon_gvmd_socket
   ospd_socket:
     name: redamon_ospd_socket
+  cypherfix-repos:  # Temp storage for cloned GitHub repos (CodeFix agent)

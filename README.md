@@ -2,16 +2,17 @@
   <img src="assets/logo.png" alt="RedAmon Logo" width="120"/>
   <br/>
   <img src="assets/title.svg" alt="RedAmon" width="340"/>
+  <br/>
+  <b><i><big><big>Unmask the hidden before the world does.</big></big></i></b>
+</p>
+<p align="center" style="font-size: 120%;">
+  An autonomous AI framework that chains reconnaissance, exploitation, and post-exploitation into a single pipeline,<br/>then goes further by triaging every finding, implementing code fixes, and opening pull requests on your repository.<br/>From first packet to merged patch, no human intervention required.
 </p>
 
-<h3 align="center">Unmask the hidden before the world does.</h3>
+<br/>
 
 <p align="center">
-  An AI-powered agentic red team framework that automates offensive security operations, from reconnaissance to exploitation to post-exploitation, with zero human intervention.
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/v2.0.0-release-2E8B57?style=for-the-badge" alt="Version 2.0.0"/>
+  <img src="https://img.shields.io/badge/v2.1.0-release-2E8B57?style=for-the-badge" alt="Version 2.1.0"/>
   <img src="https://img.shields.io/badge/WARNING-SECURITY%20TOOL-B22222?style=for-the-badge" alt="Security Tool Warning"/>
   <img src="https://img.shields.io/badge/LICENSE-MIT-4169A1?style=for-the-badge" alt="MIT License"/>
   <br/>
@@ -33,6 +34,7 @@
   <img src="https://img.shields.io/badge/Nuclei-Scanner-7B42BC?style=for-the-badge" alt="Nuclei Scanner"/>
   <img src="https://img.shields.io/badge/SQLMap-Injection-C0392B?style=for-the-badge" alt="SQLMap"/>
   <img src="https://img.shields.io/badge/Hydra-Brute%20Force-E67E22?style=for-the-badge" alt="Hydra Brute Force"/>
+  <img src="https://img.shields.io/badge/CypherFix-Auto%20Remediation-00B894?style=for-the-badge" alt="CypherFix Auto Remediation"/>
   <br/>
   <a href="https://github.com/samugit83/redamon/wiki"><img src="https://img.shields.io/badge/📖_WIKI-FULL%20DOCUMENTATION-1A73E8?style=for-the-badge" alt="Wiki Documentation"/></a>
 </p>
@@ -47,6 +49,19 @@
 </p>
 <p align="center">
   <em>Three AI agents attack simultaneously — one brute-forces SSH credentials with Hydra, one chains a CVE to escalate to root and defaces the homepage, one hunts down every XSS vulnerability on the frontend.</em>
+</p>
+
+<br/>
+
+<h1 align="center"><span style="color:#D48A8A">Offense</span> meets <span style="color:#8AAED4">defense</span>, one pipeline, zero handoffs.</h1>
+<p align="center">
+<b><samp><big>Reconnaissance ➜ Exploitation ➜ Post-Exploitation ➜ AI Triage ➜ CodeFix Agent ➜ GitHub PR</big></samp></b>
+<br/><br/>
+RedAmon doesn't stop at finding vulnerabilities, it fixes them. The pipeline starts with a 6-phase reconnaissance engine that maps your target's entire attack surface, then hands control to an autonomous AI agent that exploits CVEs, brute-forces credentials, and pivots through networks. Every finding is recorded in a Neo4j knowledge graph. When the offensive phase completes, CypherFix takes over: an AI triage agent correlates hundreds of findings, deduplicates them, and ranks them by exploitability. Then a CodeFix agent clones your repository, navigates the codebase with 11 code-aware tools, implements targeted fixes, and opens a GitHub pull request, ready for review and merge.
+</p>
+
+<p align="center">
+<img src="assets/cypherfix.gif" alt="CypherFix demo" width="100%"/>
 </p>
 
 ---
@@ -106,17 +121,19 @@ NVD_API_KEY=...                # NIST NVD API — higher rate limits for CVE loo
 
 ### 2. Build & Start
 
+**Without GVM (lighter, faster startup):**
+```bash
+docker compose --profile tools build          # Build all images
+docker compose up -d postgres neo4j recon-orchestrator kali-sandbox agent webapp   # Start core services only
+```
+
+**Complete, With GVM:**
 ```bash
 docker compose --profile tools build          # Build all images (recon + vuln-scanner + services)
 docker compose up -d                          # Start all services (first GVM run takes ~30 min for feed sync)
                                               # Total image size: ~15 GB
 ```
 
-**Without GVM (lighter, faster startup):**
-```bash
-docker compose --profile tools build          # Build all images
-docker compose up -d postgres neo4j recon-orchestrator kali-sandbox agent webapp   # Start core services only
-```
 
 ### 3. Open the Webapp
 
@@ -195,6 +212,7 @@ No rebuild needed — just restart.
   - [Attack Surface Graph](#attack-surface-graph)
   - [EvoGraph — Attack Chain Evolution](#evograph--attack-chain-evolution)
   - [Multi-Session Parallel Attack Chains](#multi-session-parallel-attack-chains)
+  - [CypherFix — Automated Vulnerability Remediation](#cypherfix--automated-vulnerability-remediation)
   - [Project Settings](#project-settings)
 - [System Architecture](#system-architecture)
   - [High-Level Architecture](#high-level-architecture)
@@ -232,7 +250,7 @@ No rebuild needed — just restart.
 
 RedAmon is a modular, containerized penetration testing framework that chains automated reconnaissance, AI-driven exploitation, and graph-powered intelligence into a single, end-to-end offensive security pipeline. Every component runs inside Docker — no tools installed on your host — and communicates through well-defined APIs so each layer can evolve independently.
 
-The platform is built around five pillars:
+The platform is built around six pillars:
 
 | Pillar | What it does |
 |--------|-------------|
@@ -240,6 +258,7 @@ The platform is built around five pillars:
 | **AI Agent Orchestrator** | A LangGraph-based autonomous agent that reasons about the graph, selects security tools via MCP, transitions through informational / exploitation / post-exploitation phases, and can be steered in real-time via chat. |
 | **Attack Surface Graph** | A Neo4j knowledge graph with 17 node types and 20+ relationship types that serves as the single source of truth for every finding — and the primary data source the AI agent queries before every decision. |
 | **EvoGraph** | A persistent, evolutionary attack chain graph in Neo4j that tracks every step, finding, decision, and failure across the attack lifecycle — bridging the recon graph and enabling cross-session intelligence accumulation. |
+| **CypherFix** | Automated vulnerability remediation pipeline — an AI triage agent correlates and prioritizes findings from the graph, then a CodeFix agent clones the target repository, implements fixes using a ReAct loop with 11 code tools, and opens a GitHub pull request. |
 | **Project Settings Engine** | 180+ per-project parameters — exposed through the webapp UI — that control every tool's behavior, from Naabu thread counts to Nuclei severity filters to agent approval gates. |
 
 ---
@@ -500,7 +519,7 @@ The architecture supports **10 attack path categories** (CVE exploitation, brute
 | 2 | **Hydra Brute Force** | Password guessing attacks against 50+ authentication protocols (SSH, FTP, RDP, SMB, MySQL, HTTP forms, and more). The agent uses THC Hydra (`execute_hydra`) with configurable threads, timeouts, and retry strategies. After credentials are discovered, the agent establishes access via `sshpass` (SSH), database clients, or Metasploit psexec (SMB). | `execute_hydra` | Sometimes (SSH, SMB) |
 | 3 | **Unclassified Fallback** | Dynamic classification for techniques that don't match CVE or brute force (e.g., `sql_injection-unclassified`, `ssrf-unclassified`). The agent uses all available tools generically without a mandatory workflow. | Any available | Depends on technique |
 
-For full details on all 10 attack path categories, the intent router architecture, chain-specific workflows, and the implementation roadmap, see the **[Attack Paths Documentation](agentic/README.ATTACK_PATHS.md)**.
+For full details on all 10 attack path categories, the intent router architecture, chain-specific workflows, and the implementation roadmap, see the **[Attack Paths Documentation](agentic/readmes/README.ATTACK_PATHS.md)**.
 
 ---
 
@@ -773,7 +792,7 @@ This means the agent **never starts from zero**. Session B knows that Session A 
 
 EvoGraph uses a dual-recording pattern — every event is written to both **in-memory lists** (for instant LLM context via `format_chain_context()`) and **Neo4j** (for persistent cross-session queries via `query_prior_chains()`). The in-memory working memory never depends on graph availability, ensuring zero-latency agent reasoning.
 
-> **Deep dive:** See the [Agentic System Documentation](agentic/README.AGENTIC.md#evograph--evolutive-attack-chain-graph) for full node taxonomy, relationship diagrams, dual memory architecture, orchestrator integration, and the complete comparison of the old flat execution trace vs. the new semantic chain context.
+> **Deep dive:** See the [Agentic System Documentation](agentic/readmes/README.PENTEST_AGENT.md#evograph--evolutive-attack-chain-graph) for full node taxonomy, relationship diagrams, dual memory architecture, orchestrator integration, and the complete comparison of the old flat execution trace vs. the new semantic chain context.
 
 ---
 
@@ -789,6 +808,60 @@ This means you can:
 - **Track everything persistently** — all attack chains, tool executions, findings, and decisions are stored permanently in Neo4j. Nothing is lost when you close the browser or restart the containers. The full attack history is always available for querying and visualization on the graph dashboard.
 
 Each session's attack chain is visually represented on the [graph dashboard](#attack-surface-graph) with distinct coloring — inactive chains render in grey, the active session's chain pulses in orange, and per-session visibility can be toggled from the bottom bar controls.
+
+---
+
+### CypherFix — Automated Vulnerability Remediation
+
+CypherFix closes the loop between **finding vulnerabilities** and **fixing them**. After reconnaissance, exploitation, and pentesting populate the attack surface graph with hundreds of findings, CypherFix takes over — triaging, prioritizing, and generating code fixes automatically.
+
+The pipeline consists of two AI agents:
+
+#### Triage Agent — Analyze & Prioritize
+
+The triage agent uses a **hybrid architecture**: it first runs 9 hardcoded Cypher queries against the Neo4j graph to deterministically collect all vulnerability data (DAST findings, CVE chains, secrets, exploits, attack chain results, certificates, security checks), then hands the raw data to an LLM for correlation, deduplication, and prioritization.
+
+The LLM applies a weighted scoring algorithm where attack chain exploit successes (1200 pts), confirmed exploits (1000 pts), and CISA KEV entries (800 pts) rank highest — ensuring that proven, exploitable vulnerabilities are fixed first. The output is a prioritized list of **remediation entries** saved to the database, each with severity, CVE/CWE/CAPEC references, affected assets, evidence, and an AI-suggested solution.
+
+During the analysis phase, the LLM can optionally call tools to enrich its understanding:
+- **`query_graph`** — run follow-up Cypher queries for additional context
+- **`web_search`** — check CISA KEV catalog, exploit databases, or CVE details
+
+#### CodeFix Agent — Fix & Ship
+
+The CodeFix agent takes a single remediation entry and autonomously implements the fix. It replicates **Claude Code's exact agentic design** — a pure ReAct while-loop where the LLM is the sole controller:
+
+1. **Clone** the target repository and create a fix branch (`cypherfix/{remediation_id}`)
+2. **Explore** the codebase using 11 tools: `github_read`, `github_grep`, `github_glob`, `github_symbols`, `github_find_definition`, `github_find_references`, `github_repo_map`, `github_edit`, `github_write`, `github_bash`, `github_list_dir`
+3. **Implement** the fix — the LLM reads files, searches for patterns, navigates the AST, and makes targeted edits. Each edit generates a **diff block** streamed to the frontend for user review (accept/reject)
+4. **Verify** — the agent can run tests, linters, and builds using the full runtime environment (Node.js, Python, Go, Java, Ruby, PHP, .NET, build tools)
+5. **Ship** — commit all accepted changes, push to GitHub, and open a pull request
+
+```mermaid
+flowchart LR
+    subgraph Triage["Triage Agent"]
+        NEO4J[(Neo4j\nAttack Surface)] --> COLLECT[9 Cypher\nQueries]
+        COLLECT --> LLM_T[LLM Analysis\nCorrelate + Prioritize]
+        LLM_T --> REMS[Remediation\nEntries]
+    end
+
+    subgraph CodeFix["CodeFix Agent"]
+        REMS --> CLONE[Clone Repo\nCreate Branch]
+        CLONE --> REACT[ReAct Loop\n11 Code Tools]
+        REACT --> DIFF[Diff Blocks\nUser Review]
+        DIFF --> PR[Commit + Push\nGitHub PR]
+    end
+```
+
+#### Key Design Decisions
+
+- **Deterministic collection + LLM analysis** — the triage agent always collects the same data (reproducible); only the analysis varies
+- **No hardcoded state machine** — the CodeFix agent's LLM decides tool order, retries, and when to stop
+- **User approval gate** — every code edit can require user acceptance before the agent continues
+- **Re-run safe** — branches use full remediation IDs; PRs are updated (not duplicated) on re-runs
+- **Multi-provider LLM** — both agents support OpenAI, Anthropic, Bedrock, OpenRouter, and custom OpenAI-compatible endpoints
+
+> **Deep dive:** See the [CypherFix Agents Documentation](agentic/readmes/README.CYPHERFIX_AGENTS.md) for complete architecture diagrams, WebSocket protocols, tool specifications, state models, and configuration reference.
 
 ---
 
@@ -1358,8 +1431,8 @@ LangGraph-based autonomous agent with ReAct pattern.
 - **Live Guidance**: Send steering messages to the agent while it works
 - **Stop & Resume**: Interrupt execution and resume from the last checkpoint
 
-📖 **[Read Agentic Documentation](agentic/README.AGENTIC.md)**
-📖 **[Attack Paths Architecture](agentic/README.ATTACK_PATHS.md)**
+📖 **[Read Agentic Documentation](agentic/readmes/README.PENTEST_AGENT.md)**
+📖 **[Attack Paths Architecture](agentic/readmes/README.ATTACK_PATHS.md)**
 
 ---
 
@@ -1564,9 +1637,9 @@ These containers are designed to be deployed alongside the main stack so the AI 
 | Graph Schema | [graph_db/readmes/GRAPH.SCHEMA.md](graph_db/readmes/GRAPH.SCHEMA.md) |
 | PostgreSQL Database | [postgres_db/README.md](postgres_db/README.md) |
 | MCP Servers | [mcp/README.MCP.md](mcp/README.MCP.md) |
-| AI Agent | [agentic/README.AGENTIC.md](agentic/README.AGENTIC.md) |
-| EvoGraph | [agentic/README.EVOGRAPH.md](agentic/README.EVOGRAPH.md) |
-| Attack Paths | [agentic/README.ATTACK_PATHS.md](agentic/README.ATTACK_PATHS.md) |
+| AI Agent | [agentic/readmes/README.PENTEST_AGENT.md](agentic/readmes/README.PENTEST_AGENT.md) |
+| Attack Paths | [agentic/readmes/README.ATTACK_PATHS.md](agentic/readmes/README.ATTACK_PATHS.md) |
+| CypherFix Agents | [agentic/readmes/README.CYPHERFIX_AGENTS.md](agentic/readmes/README.CYPHERFIX_AGENTS.md) |
 | Webapp | [webapp/README.WEBAPP.md](webapp/README.WEBAPP.md) |
 | GVM Scanner | [gvm_scan/README.GVM.md](gvm_scan/README.GVM.md) |
 | GitHub Secret Hunter | [github_secret_hunt/README.md](github_secret_hunt/README.md) |

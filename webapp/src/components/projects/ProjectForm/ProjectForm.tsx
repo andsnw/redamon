@@ -22,6 +22,7 @@ import { AgentBehaviourSection } from './sections/AgentBehaviourSection'
 import { CveExploitSection } from './sections/CveExploitSection'
 import { HydraSection } from './sections/BruteForceSection'
 import { GvmScanSection } from './sections/GvmScanSection'
+import { CypherFixSettingsSection } from './sections/CypherFixSettingsSection'
 
 type ProjectFormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
 
@@ -58,6 +59,7 @@ const TABS = [
   { id: 'integrations', label: 'Integrations' },
   { id: 'agent', label: 'Agent Behaviour' },
   { id: 'attack', label: 'Attack Paths' },
+  { id: 'cypherfix', label: 'CypherFix' },
 ] as const
 
 type TabId = typeof TABS[number]['id']
@@ -337,6 +339,10 @@ export function ProjectForm({
             <CveExploitSection data={formData} updateField={updateField} />
             <HydraSection data={formData} updateField={updateField} />
           </>
+        )}
+
+        {activeTab === 'cypherfix' && (
+          <CypherFixSettingsSection data={formData} updateField={updateField} />
         )}
           </div>
         </>

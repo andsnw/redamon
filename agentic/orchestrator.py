@@ -237,6 +237,7 @@ class AgentOrchestrator:
                 api_key=self.openai_compat_api_key or "ollama",
                 base_url=self.openai_compat_base_url,
                 temperature=0,
+                max_tokens=16384,
             )
 
         elif provider == "openrouter":
@@ -249,6 +250,7 @@ class AgentOrchestrator:
                 api_key=self.openrouter_api_key,
                 base_url="https://openrouter.ai/api/v1",
                 temperature=0,
+                max_tokens=16384,
                 default_headers={
                     "HTTP-Referer": "https://redamon.dev",
                     "X-Title": "RedAmon Agent",
@@ -265,7 +267,7 @@ class AgentOrchestrator:
                 model=api_model,
                 region_name=self.aws_region,
                 temperature=0,
-                max_tokens=4096,
+                max_tokens=16384,
             )
 
         elif provider == "anthropic":
@@ -277,7 +279,7 @@ class AgentOrchestrator:
                 model=api_model,
                 api_key=self.anthropic_api_key,
                 temperature=0,
-                max_tokens=4096,
+                max_tokens=16384,
             )
 
         else:  # openai
@@ -289,6 +291,7 @@ class AgentOrchestrator:
                 model=api_model,
                 api_key=self.openai_api_key,
                 temperature=0,
+                max_tokens=16384,
             )
 
         logger.info(f"LLM provider: {provider}, model: {api_model}")
@@ -1008,10 +1011,10 @@ class AgentOrchestrator:
                     iteration=step_iteration, phase=phase,
                     tool_name=pending_step.get("tool_name"),
                     tool_args_summary=str(pending_step.get("tool_args", {}))[:500],
-                    thought=pending_step.get("thought", "")[:2000],
-                    reasoning=pending_step.get("reasoning", "")[:1000],
-                    output_summary=(pending_step.get("tool_output") or "")[:2000],
-                    output_analysis=analysis.interpretation[:2000] if analysis else "",
+                    thought=pending_step.get("thought", "")[:20000],
+                    reasoning=pending_step.get("reasoning", "")[:20000],
+                    output_summary=(pending_step.get("tool_output") or "")[:20000],
+                    output_analysis=analysis.interpretation[:20000] if analysis else "",
                     success=pending_step.get("success", True),
                     error_message=pending_step.get("error_message"),
                     extracted_info=analysis.extracted_info.model_dump() if analysis and analysis.extracted_info else {},
@@ -1068,7 +1071,7 @@ class AgentOrchestrator:
                         failure_type="tool_error",
                         tool_name=pending_step.get("tool_name", ""),
                         error_message=pending_step.get("error_message", ""),
-                        lesson_learned=analysis.interpretation[:300] if analysis else "",
+                        lesson_learned=analysis.interpretation[:20000] if analysis else "",
                         phase=phase,
                         iteration=step_iteration,
                     )
@@ -1083,7 +1086,7 @@ class AgentOrchestrator:
             else:
                 # LLM didn't return analysis — use raw output as fallback
                 logger.warning(f"[{user_id}/{project_id}/{session_id}] No output_analysis in LLM response, using fallback")
-                pending_step["output_analysis"] = (pending_step.get("tool_output") or "")[:2000]
+                pending_step["output_analysis"] = (pending_step.get("tool_output") or "")[:20000]
                 pending_step["actionable_findings"] = []
                 pending_step["recommended_next_steps"] = []
                 execution_trace = state.get("execution_trace", []) + [pending_step]

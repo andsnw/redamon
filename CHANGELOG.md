@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.0] - 2026-02-27
+
+### Added
+
+- **CypherFix — Automated Vulnerability Remediation Pipeline** — end-to-end system that takes offensive findings from the Neo4j graph and turns them into merged code fixes:
+  - **Triage Agent** (`cypherfix_triage/`): AI agent that queries the Neo4j knowledge graph, correlates hundreds of reconnaissance and exploitation findings, deduplicates them, ranks by exploitability and severity, and produces a prioritized remediation plan
+  - **CodeFix Agent** (`cypherfix_codefix/`): autonomous code-repair agent that clones the target repository, navigates the codebase with 11 code-aware tools, implements targeted fixes for each triaged vulnerability, and opens a GitHub pull request ready for review and merge
+  - Real-time WebSocket streaming for both Triage and CodeFix agents with dedicated hooks (`useCypherFixTriageWS`, `useCypherFixCodeFixWS`)
+  - Remediations API (`/api/remediations/`) and hook (`useRemediations`) for persisting and retrieving remediation results
+  - CypherFix API routes (`/api/cypherfix/`) for triggering and managing triage and codefix sessions
+  - Agent-side API endpoints and orchestrator integration in `api.py` and `orchestrator.py`
+- **CypherFix Tab on Graph Page** — new tab (`CypherFixTab/`) in the Graph dashboard providing a dedicated interface to launch triage, review prioritized findings, trigger code fixes, and monitor remediation progress
+- **CypherFix Settings Section** — new `CypherFixSettingsSection` in Project Settings for configuring CypherFix parameters (GitHub repo, branch, AI model, triage/codefix behavior)
+- **CypherFix Type System** (`cypherfix-types.ts`) — shared TypeScript types for triage results, codefix sessions, remediation records, and WebSocket message protocols
+- **Agentic README Documentation** (`agentic/readmes/`) — internal documentation for the agentic module
+
+### Changed
+
+- **Global Header** — updated navigation to include CypherFix access point
+- **View Tabs** — styling updates to accommodate the new CypherFix tab
+- **Project Form** — expanded with CypherFix settings section and updated section exports
+- **Hooks barrel export** — updated `hooks/index.ts` with new CypherFix and remediation hooks
+- **Prisma Schema** — new fields for CypherFix configuration in the project model
+- **Agent Requirements** — new Python dependencies for CypherFix agents
+- **Docker Compose** — updated service configuration for CypherFix support
+- **README** — version bump to v2.1.0, CypherFix badge added, pipeline description updated
+
+---
+
 ## [2.0.0] - 2026-02-22
 
 ### Added

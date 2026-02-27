@@ -188,3 +188,32 @@ async def agent_websocket(websocket: WebSocket):
         return
 
     await websocket_endpoint(websocket, orchestrator, ws_manager)
+
+
+# =============================================================================
+# CYPHERFIX WEBSOCKET ENDPOINTS
+# =============================================================================
+
+
+@app.websocket("/ws/cypherfix-triage")
+async def cypherfix_triage_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for CypherFix triage agent.
+
+    Runs vulnerability triage: collects findings from Neo4j graph,
+    correlates and prioritizes them, generates remediation items.
+    """
+    from cypherfix_triage.websocket_handler import handle_triage_websocket
+    await handle_triage_websocket(websocket)
+
+
+@app.websocket("/ws/cypherfix-codefix")
+async def cypherfix_codefix_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for CypherFix CodeFix agent.
+
+    Runs automated code remediation: clones repo, explores codebase,
+    implements fix, streams diff blocks for review, creates PR.
+    """
+    from cypherfix_codefix.websocket_handler import handle_codefix_websocket
+    await handle_codefix_websocket(websocket)

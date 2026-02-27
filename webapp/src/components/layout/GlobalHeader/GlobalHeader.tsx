@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Crosshair, FolderOpen } from 'lucide-react'
+import { Crosshair, FolderOpen, Shield } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { ProjectSelector } from './ProjectSelector'
 import { UserSelector } from './UserSelector'
@@ -12,6 +12,7 @@ import styles from './GlobalHeader.module.css'
 const navItems = [
   { label: 'Projects', href: '/projects', icon: <FolderOpen size={14} /> },
   { label: 'Red Zone', href: '/graph', icon: <Crosshair size={14} /> },
+  { label: 'CypherFix', href: '/cypherfix', icon: <Shield size={14} /> },
 ]
 
 export function GlobalHeader() {

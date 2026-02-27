@@ -9,6 +9,10 @@ import { AppLayout } from '@/components/layout'
 export const metadata: Metadata = {
   title: 'RedAmon - Security Reconnaissance Dashboard',
   description: 'Security reconnaissance and vulnerability assessment dashboard',
+  icons: {
+    icon: '/favicon.ico',
+    apple: '/favicon.png',
+  },
 }
 
 export default function RootLayout({
