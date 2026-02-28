@@ -94,8 +94,13 @@ RUN chmod +x /opt/entrypoint.sh
 
 WORKDIR /opt/mcp_servers
 
-# Expose ports for MCP servers (SSE/HTTP transport)
-EXPOSE 8000 8002 8003 8004 8014
+# Install ngrok (for optional TCP tunneling of reverse shells)
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -sSL "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-${ARCH}.tgz" \
+    | tar -xz -C /usr/local/bin
+
+# Expose ports for MCP servers (SSE/HTTP transport) + ngrok API
+EXPOSE 8000 8002 8003 8004 8014 4040
 
 # Initialize Metasploit database (speeds up first run)
 RUN msfdb init || true

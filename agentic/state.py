@@ -32,11 +32,11 @@ ApprovalDecision = Literal["approve", "modify", "abort"]
 QuestionFormat = Literal["text", "single_choice", "multi_choice"]
 
 # Attack path types for dynamic routing
-# Known types: "cve_exploit", "brute_force_credential_guess"
+# Known types: "cve_exploit", "brute_force_credential_guess", "phishing_social_engineering"
 # Unclassified types: "<descriptive_term>-unclassified" (e.g., "sql_injection-unclassified")
 AttackPathType = str  # Validated by AttackPathClassification.attack_path_type validator
 
-KNOWN_ATTACK_PATHS = {"cve_exploit", "brute_force_credential_guess"}
+KNOWN_ATTACK_PATHS = {"cve_exploit", "brute_force_credential_guess", "phishing_social_engineering"}
 _UNCLASSIFIED_RE = re.compile(r'^[a-z][a-z0-9_]*-unclassified$')
 
 
@@ -356,7 +356,7 @@ class AttackPathClassification(BaseModel):
             return v
         raise ValueError(
             f"attack_path_type must be 'cve_exploit', 'brute_force_credential_guess', "
-            f"or match '<term>-unclassified' pattern. Got: '{v}'"
+            f"'phishing_social_engineering', or match '<term>-unclassified' pattern. Got: '{v}'"
         )
 
 

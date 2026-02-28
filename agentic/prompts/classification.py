@@ -65,6 +65,27 @@ ATTACK_PATH_CLASSIFICATION_PROMPT = """You are classifying a penetration testing
   - "Try default credentials on PostgreSQL"
   - "Try to get access to SSH guessing password"
 
+### phishing_social_engineering
+- Social engineering attacks, phishing campaigns, payload delivery to humans
+- Generating malicious payloads, documents, or links for delivery to targets
+- Using msfvenom for payload generation (exe, elf, apk, war, python, powershell, bash)
+- Generating malicious documents (Word macro, Excel macro, PDF exploit, RTF, LNK, HTA)
+- Web delivery attacks (exploit/multi/script/web_delivery)
+- Email phishing campaigns with crafted payloads or links
+- Keywords: phish, phishing, social engineering, spear phishing, payload generation, malicious document, macro, msfvenom, trojan, dropper, email attack, fake email, web delivery, hta, office macro, backdoor, implant, campaign, lure, bait, send email, craft email, generate payload, malicious file, reverse shell payload, create backdoor
+- Tools: `kali_shell` (msfvenom), `metasploit_console` (fileformat modules, handler, web_delivery), `execute_code` (email sending)
+- Example requests:
+  - "Generate a phishing payload for Windows"
+  - "Create a malicious Word document with a macro"
+  - "Set up a web delivery attack"
+  - "Send a phishing email with a backdoor to target@example.com"
+  - "Create an HTA delivery server"
+  - "Generate an APK backdoor for Android"
+  - "Craft a spear phishing campaign"
+  - "Create a trojanized PDF"
+  - "Generate a reverse shell executable"
+  - "Create a malicious Excel file with a macro"
+
 ### <descriptive_term>-unclassified
 - ANY exploitation request that does NOT clearly fit cve_exploit or brute_force_credential_guess
 - The agent has no specialized workflow for these — it will use available tools generically
@@ -95,7 +116,8 @@ Classify the user's request:
    - Does the request target a login service (SSH, FTP, MySQL, etc.) with credential-based attack? -> "brute_force_credential_guess"
    - Does the request mention exploit modules or payloads? -> "cve_exploit"
    - Does the request mention wordlists or dictionaries? -> "brute_force_credential_guess"
-   - Does the request describe a specific attack technique (SQLi, XSS, SSRF, DoS, file upload, etc.) that doesn't fit cve_exploit or brute_force? -> "<descriptive_term>-unclassified"
+   - Does the request mention phishing, social engineering, payload generation, malicious documents, msfvenom, trojans, backdoors, email attacks, or crafting bait? -> "phishing_social_engineering"
+   - Does the request describe a specific attack technique (SQLi, XSS, SSRF, DoS, file upload, etc.) that doesn't fit cve_exploit, brute_force, or phishing? -> "<descriptive_term>-unclassified"
    - Default to "cve_exploit" if truly unclear (e.g., vague "hack the target")
 
 3. If informational, set attack_path_type to "cve_exploit" (default, won't be used)
@@ -110,7 +132,7 @@ Output valid JSON matching this schema:
 ```json
 {{
   "required_phase": "informational" | "exploitation",
-  "attack_path_type": "cve_exploit" | "brute_force_credential_guess" | "<descriptive_term>-unclassified",
+  "attack_path_type": "cve_exploit" | "brute_force_credential_guess" | "phishing_social_engineering" | "<descriptive_term>-unclassified",
   "confidence": 0.0-1.0,
   "reasoning": "Brief explanation of the classification",
   "detected_service": "ssh" | "ftp" | "mysql" | "mssql" | "postgres" | "smb" | "rdp" | "vnc" | "telnet" | "tomcat" | "http" | null,

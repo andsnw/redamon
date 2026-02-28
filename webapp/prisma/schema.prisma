@@ -264,6 +264,7 @@ model Project {
   agentLport                            Int?     @map("agent_lport")
   agentBindPortOnTarget                 Int?     @map("agent_bind_port_on_target")
   agentPayloadUseHttps                  Boolean  @default(false) @map("agent_payload_use_https")
+  agentNgrokTunnelEnabled               Boolean  @default(false) @map("agent_ngrok_tunnel_enabled")
   agentMaxIterations                    Int      @default(100) @map("agent_max_iterations")
   agentExecutionTraceMemorySteps        Int      @default(100) @map("agent_execution_trace_memory_steps")
   agentRequireApprovalForExploitation   Boolean  @default(true) @map("agent_require_approval_for_exploitation")
@@ -287,6 +288,9 @@ model Project {
   hydraExtraChecks                      String   @default("nsr") @map("hydra_extra_checks")
   hydraVerbose                          Boolean  @default(true) @map("hydra_verbose")
   hydraMaxWordlistAttempts              Int      @default(3) @map("hydra_max_wordlist_attempts")
+
+  // ========== PHISHING / SOCIAL ENGINEERING SETTINGS ==========
+  phishingSmtpConfig                    String   @default("") @map("phishing_smtp_config")
 
   // ========== CYPHERFIX SETTINGS ==========
   cypherfixGithubToken              String   @default("") @map("cypherfix_github_token")

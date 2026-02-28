@@ -24,5 +24,21 @@ if [ "${NUCLEI_AUTO_UPDATE:-true}" = "true" ]; then
     nuclei -update-templates 2>/dev/null || echo "[!] Nuclei template update failed"
 fi
 
+# Start ngrok TCP tunnel in background if auth token is provided
+if [ -n "${NGROK_AUTHTOKEN:-}" ]; then
+    echo "[*] Starting ngrok TCP tunnel on port 4444..."
+    mkdir -p /root/.config/ngrok
+    cat > /root/.config/ngrok/ngrok.yml <<NGROK_CFG
+version: "3"
+agent:
+  authtoken: ${NGROK_AUTHTOKEN}
+  web_addr: 0.0.0.0:4040
+NGROK_CFG
+    ngrok tcp 4444 --config /root/.config/ngrok/ngrok.yml --log=stdout --log-level=info > /var/log/ngrok.log 2>&1 &
+    echo "[*] ngrok started (API at http://0.0.0.0:4040)"
+else
+    echo "[*] Skipping ngrok (NGROK_AUTHTOKEN not set)"
+fi
+
 echo "[*] Starting MCP servers..."
 exec python3 run_servers.py "$@"

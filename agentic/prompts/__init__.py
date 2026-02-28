@@ -43,6 +43,12 @@ from .brute_force_credential_guess_prompts import (
     HYDRA_WORDLIST_GUIDANCE,
 )
 
+# Re-export from phishing / social engineering prompts
+from .phishing_social_engineering_prompts import (
+    PHISHING_SOCIAL_ENGINEERING_TOOLS,
+    PHISHING_PAYLOAD_FORMAT_GUIDANCE,
+)
+
 # Re-export from unclassified attack path prompts
 from .unclassified_prompts import UNCLASSIFIED_EXPLOIT_TOOLS
 
@@ -95,7 +101,7 @@ def get_phase_tools(
         activate_post_expl: If True, post-exploitation phase is available.
                            If False, exploitation is the final phase.
         post_expl_type: "statefull" for Meterpreter sessions, "stateless" for single commands.
-        attack_path_type: Type of attack path ("cve_exploit", "brute_force_credential_guess")
+        attack_path_type: Type of attack path ("cve_exploit", "brute_force_credential_guess", "phishing_social_engineering")
         execution_trace: List of execution steps (used to detect MSF search failures).
 
     Returns:
@@ -143,6 +149,14 @@ def get_phase_tools(
             post_expl_note=post_expl_note
         ))
 
+    # Pre-configured payload settings (LHOST/LPORT/ngrok) — injected BEFORE attack
+    # chain so the agent knows the payload direction regardless of attack path type.
+    # Only for exploitation phase + statefull mode (stateless doesn't use reverse shells).
+    if phase == "exploitation" and is_statefull:
+        session_config = get_session_config_prompt()
+        if session_config:
+            parts.append(session_config)
+
     # Add phase and ATTACK PATH specific workflow guidance
     if phase == "informational":
         # Dynamic tool descriptions (only shows allowed tools)
@@ -163,6 +177,17 @@ def get_phase_tools(
             ))
             # Add wordlist reference guide
             parts.append(HYDRA_WORDLIST_GUIDANCE)
+        elif attack_path_type == "phishing_social_engineering":
+            # Phishing / Social Engineering workflow
+            parts.append(PHISHING_SOCIAL_ENGINEERING_TOOLS)
+            parts.append(PHISHING_PAYLOAD_FORMAT_GUIDANCE)
+            # Inject SMTP config only for phishing path (saves tokens for other paths)
+            smtp_config = get_setting('PHISHING_SMTP_CONFIG', '')
+            if smtp_config:
+                parts.append(
+                    f"## Pre-Configured SMTP Settings\n\n"
+                    f"Use these for email delivery via execute_code (Python smtplib):\n{smtp_config}\n"
+                )
         elif attack_path_type.endswith("-unclassified"):
             # Generic unclassified workflow — no specific tool workflow
             parts.append(UNCLASSIFIED_EXPLOIT_TOOLS)
@@ -179,12 +204,6 @@ def get_phase_tools(
                     parts.append(NO_MODULE_FALLBACK_STATEFULL)
                 else:
                     parts.append(NO_MODULE_FALLBACK_STATELESS)
-            # Add pre-configured session settings for statefull mode
-            # (AFTER fallback so agent sees LHOST/LPORT/BIND values)
-            if is_statefull:
-                session_config = get_session_config_prompt()
-                if session_config:
-                    parts.append(session_config)
         else:
             # No exploitation tools available — show only informational tool descriptions
             parts.append(build_informational_tool_descriptions(allowed_tools))
@@ -237,6 +256,9 @@ __all__ = [
     # Hydra brute force
     "HYDRA_BRUTE_FORCE_TOOLS",
     "HYDRA_WORDLIST_GUIDANCE",
+    # Phishing / Social Engineering
+    "PHISHING_SOCIAL_ENGINEERING_TOOLS",
+    "PHISHING_PAYLOAD_FORMAT_GUIDANCE",
     # Unclassified attack path
     "UNCLASSIFIED_EXPLOIT_TOOLS",
     # Post-exploitation

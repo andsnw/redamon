@@ -9,7 +9,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, Sparkles, Plus, Shield, ShieldAlert, Target, Zap, HelpCircle, WifiOff, Wifi, Square, Play, Download, Wrench, History, ChevronDown, EyeOff, Eye } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, Sparkles, Plus, Shield, ShieldAlert, Target, Zap, HelpCircle, WifiOff, Wifi, Square, Play, Download, Wrench, History, ChevronDown, EyeOff, Eye, Mail } from 'lucide-react'
 import { StealthIcon } from '@/components/icons/StealthIcon'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -119,6 +119,12 @@ const KNOWN_ATTACK_PATH_CONFIG: Record<string, { label: string; shortLabel: stri
     shortLabel: 'BRUTE',
     color: 'var(--accent-secondary, #8b5cf6)',
     bgColor: 'rgba(139, 92, 246, 0.15)',
+  },
+  phishing_social_engineering: {
+    label: 'Phishing / Social Engineering',
+    shortLabel: 'PHISH',
+    color: 'var(--accent-tertiary, #ec4899)',
+    bgColor: 'rgba(236, 72, 153, 0.15)',
   },
 }
 
@@ -1377,6 +1383,68 @@ export function AIAssistantDrawer({
                     </button>
                     <button className={styles.suggestion} onClick={() => setInputValue('Chain multiple low-severity findings together to achieve remote code execution on the target')} disabled={!isConnected}>
                       Chain vulnerabilities for RCE
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Social Engineering */}
+              <div className={styles.templateGroup}>
+                <button
+                  className={`${styles.templateGroupHeader} ${openTemplateGroup === 'social_engineering' ? styles.templateGroupHeaderOpen : ''}`}
+                  onClick={() => setOpenTemplateGroup((prev: string | null) => prev === 'social_engineering' ? null : 'social_engineering')}
+                  style={{ '--tg-color': 'var(--accent-tertiary, #ec4899)' } as React.CSSProperties}
+                >
+                  <Mail size={14} />
+                  <span>Social Engineering</span>
+                  <ChevronDown size={14} className={styles.templateGroupChevron} />
+                </button>
+                {openTemplateGroup === 'social_engineering' && (
+                  <div className={styles.templateGroupItems}>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Windows reverse shell executable with msfvenom and set up the handler to catch the callback')} disabled={!isConnected}>
+                      Generate a Windows reverse shell payload
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Create a malicious Word document with a VBA macro that opens a Meterpreter session when the target enables macros')} disabled={!isConnected}>
+                      Create a malicious Word macro document
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Create a weaponized Excel spreadsheet with a macro payload that establishes a reverse shell connection')} disabled={!isConnected}>
+                      Create a malicious Excel macro spreadsheet
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a trojanized PDF file that executes a reverse shell when opened in Adobe Reader')} disabled={!isConnected}>
+                      Generate a malicious PDF document
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Set up a web delivery attack with a PowerShell one-liner that the target can paste to get a Meterpreter session')} disabled={!isConnected}>
+                      Set up a PowerShell web delivery attack
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Create an HTA delivery server that serves a payload when the target visits the URL in their browser')} disabled={!isConnected}>
+                      Create an HTA delivery server
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate an Android APK backdoor that opens a Meterpreter session when installed on the target device')} disabled={!isConnected}>
+                      Generate an Android APK backdoor
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Linux ELF reverse shell payload and set up the handler for a callback from the target machine')} disabled={!isConnected}>
+                      Generate a Linux ELF reverse shell
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Create a Python-based web delivery attack that works cross-platform on Windows, Linux, and macOS targets')} disabled={!isConnected}>
+                      Set up a cross-platform Python web delivery
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a phishing payload for Windows, encode it with shikata_ga_nai for AV evasion, and set up the handler')} disabled={!isConnected}>
+                      Generate an AV-evasive encoded payload
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Create a malicious RTF document exploiting CVE-2017-0199 that fetches an HTA payload when the target opens it')} disabled={!isConnected}>
+                      Create a malicious RTF document
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a malicious Windows shortcut (LNK file) that executes a reverse shell payload when the target clicks it')} disabled={!isConnected}>
+                      Create a malicious LNK shortcut file
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a Java WAR backdoor for deployment on a Tomcat or JBoss server and set up the Meterpreter handler')} disabled={!isConnected}>
+                      Generate a Java WAR backdoor for Tomcat
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Generate a phishing payload and send it via email to target@example.com with a convincing IT support pretext')} disabled={!isConnected}>
+                      Generate payload and send phishing email
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Set up a Regsvr32 web delivery attack to bypass AppLocker restrictions on the target Windows machine')} disabled={!isConnected}>
+                      Regsvr32 web delivery to bypass AppLocker
                     </button>
                   </div>
                 )}

@@ -117,6 +117,7 @@ The model selector in the project settings **dynamically fetches** available mod
 ```env
 TAVILY_API_KEY=tvly-...        # Web search for the AI agent — get one at tavily.com
 NVD_API_KEY=...                # NIST NVD API — higher rate limits for CVE lookups — nist.gov/developers
+NGROK_AUTHTOKEN=...            # ngrok TCP tunnel for reverse shells — get one at dashboard.ngrok.com
 ```
 
 ### 2. Build & Start
@@ -402,11 +403,12 @@ The agent progresses through three distinct operational phases, each with differ
 
 **Informational Phase** — The default starting phase. The agent gathers intelligence by querying the Neo4j graph, running web searches for CVE details, performing HTTP requests with curl, and scanning ports with Naabu. No offensive tools are available. The agent analyzes the attack surface, identifies high-value targets, and builds a mental model of what's exploitable.
 
-**Exploitation Phase** — When the agent identifies a viable attack path, it requests a phase transition. This requires **user approval** (configurable). Once approved, the agent gains access to the Metasploit console via MCP and can execute exploits. Three attack path types are supported:
+**Exploitation Phase** — When the agent identifies a viable attack path, it requests a phase transition. This requires **user approval** (configurable). Once approved, the agent gains access to the Metasploit console via MCP and can execute exploits. Four attack path types are supported:
 
-- **CVE Exploit** — the agent searches for a matching Metasploit module, configures the payload (reverse shell or bind shell), sets target parameters, and fires the exploit. For statefull mode, it establishes a Meterpreter session; for stateless mode, it executes one-shot commands.
+- **CVE Exploit** — the agent searches for a matching Metasploit module, configures the payload (reverse shell or bind shell), sets target parameters, and fires the exploit. For statefull mode, it establishes a Meterpreter session; for stateless mode, it executes one-shot commands. When **ngrok TCP tunnel** is enabled, LHOST and LPORT are auto-detected from the ngrok public URL, allowing reverse shells to work across NAT and cloud environments without manual port forwarding.
 - **Hydra Brute Force** — the agent uses THC Hydra to brute force credentials against services like SSH, FTP, RDP, SMB, MySQL, HTTP forms, and 50+ other protocols. Hydra settings (threads, timeouts, extra checks) are fully configurable per project. After credentials are discovered, the agent establishes access via `sshpass`, database clients, or Metasploit psexec.
-- **Unclassified Fallback** — for techniques that don't match CVE exploit or brute force (e.g., SQL injection, XSS, SSRF, file upload). The agent dynamically classifies the attack type and uses available tools generically without a mandatory workflow. These appear with a grey badge and a `-unclassified` suffix in the classification.
+- **Phishing / Social Engineering** — the agent generates malicious payloads (msfvenom executables, Office macro documents, PDFs, web delivery one-liners, HTA servers) and delivers them via email (Python smtplib with configurable SMTP settings), chat download (`docker cp`), or web link. A 6-step workflow guides the agent through target platform selection, handler setup, payload generation, verification, delivery, and session callback. SMTP settings are configured per project in the Attack Paths tab.
+- **Unclassified Fallback** — for techniques that don't match CVE exploit, brute force, or phishing (e.g., SQL injection, XSS, SSRF, file upload). The agent dynamically classifies the attack type and uses available tools generically without a mandatory workflow. These appear with a grey badge and a `-unclassified` suffix in the classification.
 
 When an exploit succeeds, the agent records a **ChainFinding(exploit_success)** in the [EvoGraph](#evograph--attack-chain-evolution) — recording the attack type, target IP, port, CVE IDs, Metasploit module, payload, session ID, and credentials discovered. This finding is linked to the attack chain step that produced it and bridged to the targeted IP and exploited CVE in the recon graph, making every successful compromise a permanent, queryable, and cross-session-accessible part of the knowledge graph.
 
@@ -517,7 +519,8 @@ The architecture supports **10 attack path categories** (CVE exploitation, brute
 |---|-------------|-------------|-------------|-------------------|
 | 1 | **CVE-Based Exploitation** | Exploits known vulnerabilities identified by CVE identifier. The agent searches for a matching Metasploit exploit module, configures target parameters and payload (reverse/bind shell), and fires the exploit. Supports both statefull (Meterpreter session) and stateless (one-shot command) post-exploitation. | `exploit/*` | Yes |
 | 2 | **Hydra Brute Force** | Password guessing attacks against 50+ authentication protocols (SSH, FTP, RDP, SMB, MySQL, HTTP forms, and more). The agent uses THC Hydra (`execute_hydra`) with configurable threads, timeouts, and retry strategies. After credentials are discovered, the agent establishes access via `sshpass` (SSH), database clients, or Metasploit psexec (SMB). | `execute_hydra` | Sometimes (SSH, SMB) |
-| 3 | **Unclassified Fallback** | Dynamic classification for techniques that don't match CVE or brute force (e.g., `sql_injection-unclassified`, `ssrf-unclassified`). The agent uses all available tools generically without a mandatory workflow. | Any available | Depends on technique |
+| 3 | **Phishing / Social Engineering** | Generates malicious payloads (msfvenom), weaponized documents (Office macros, PDF, RTF, LNK), web delivery one-liners, and HTA servers. Delivers via email (smtplib), chat download (docker cp), or web link. 6-step guided workflow with handler setup and session callback. | `msfvenom`, `fileformat/*`, `web_delivery` | Yes |
+| 4 | **Unclassified Fallback** | Dynamic classification for techniques that don't match CVE, brute force, or phishing (e.g., `sql_injection-unclassified`, `ssrf-unclassified`). The agent uses all available tools generically without a mandatory workflow. | Any available | Depends on technique |
 
 For full details on all 10 attack path categories, the intent router architecture, chain-specific workflows, and the implementation roadmap, see the **[Attack Paths Documentation](agentic/readmes/README.ATTACK_PATHS.md)**.
 
@@ -884,8 +887,8 @@ Every project in RedAmon has **180+ configurable parameters** across 11 setting 
 | **Security Checks** | 25+ individual checks: headers, TLS, DNS, exposed services |
 | **GVM Scan** | Scan profiles, target strategy, timeouts |
 | **Integrations** | GitHub secret hunting with 40+ regex patterns |
-| **Agent Behaviour** | LLM model (400+), phases, payloads, approval gates, limits |
-| **Attack Paths** | Hydra brute force, tool phase restriction matrix |
+| **Agent Behaviour** | LLM model (400+), phases, payloads, ngrok TCP tunnel, approval gates, limits |
+| **Attack Paths** | Hydra brute force, phishing SMTP configuration, tool phase restriction matrix |
 
 > **Full parameter reference:** See the **[Project Settings Reference](https://github.com/samugit83/redamon/wiki/9.-Project-Settings-Reference)** in the Wiki for all 180+ parameters with defaults and descriptions.
 >

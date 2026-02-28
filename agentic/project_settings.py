@@ -36,6 +36,7 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     'LPORT': None,      # None = not set
     'BIND_PORT_ON_TARGET': None,  # None = not set (agent will ask user)
     'PAYLOAD_USE_HTTPS': False,
+    'NGROK_TUNNEL_ENABLED': False,
 
     # Agent Limits
     'MAX_ITERATIONS': 100,
@@ -84,6 +85,9 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     'HYDRA_VERBOSE': True,
     'HYDRA_MAX_WORDLIST_ATTEMPTS': 3,
 
+    # Phishing / Social Engineering
+    'PHISHING_SMTP_CONFIG': '',  # Free-text SMTP config for phishing email delivery (optional)
+
     # Legacy (deprecated — kept for backward compat)
     'BRUTE_FORCE_MAX_WORDLIST_ATTEMPTS': 3,
     'BRUTEFORCE_SPEED': 5,
@@ -124,6 +128,7 @@ def fetch_agent_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['LPORT'] = project.get('agentLport', DEFAULT_AGENT_SETTINGS['LPORT'])
     settings['BIND_PORT_ON_TARGET'] = project.get('agentBindPortOnTarget', DEFAULT_AGENT_SETTINGS['BIND_PORT_ON_TARGET'])
     settings['PAYLOAD_USE_HTTPS'] = project.get('agentPayloadUseHttps', DEFAULT_AGENT_SETTINGS['PAYLOAD_USE_HTTPS'])
+    settings['NGROK_TUNNEL_ENABLED'] = project.get('agentNgrokTunnelEnabled', DEFAULT_AGENT_SETTINGS['NGROK_TUNNEL_ENABLED'])
     settings['MAX_ITERATIONS'] = project.get('agentMaxIterations', DEFAULT_AGENT_SETTINGS['MAX_ITERATIONS'])
     settings['EXECUTION_TRACE_MEMORY_STEPS'] = project.get('agentExecutionTraceMemorySteps', DEFAULT_AGENT_SETTINGS['EXECUTION_TRACE_MEMORY_STEPS'])
     settings['REQUIRE_APPROVAL_FOR_EXPLOITATION'] = project.get('agentRequireApprovalForExploitation', DEFAULT_AGENT_SETTINGS['REQUIRE_APPROVAL_FOR_EXPLOITATION'])
@@ -146,6 +151,7 @@ def fetch_agent_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['HYDRA_VERBOSE'] = project.get('hydraVerbose', DEFAULT_AGENT_SETTINGS['HYDRA_VERBOSE'])
     settings['HYDRA_MAX_WORDLIST_ATTEMPTS'] = project.get('hydraMaxWordlistAttempts', DEFAULT_AGENT_SETTINGS['HYDRA_MAX_WORDLIST_ATTEMPTS'])
     settings['STEALTH_MODE'] = project.get('stealthMode', DEFAULT_AGENT_SETTINGS['STEALTH_MODE'])
+    settings['PHISHING_SMTP_CONFIG'] = project.get('phishingSmtpConfig', DEFAULT_AGENT_SETTINGS['PHISHING_SMTP_CONFIG'])
 
     logger.info(f"Loaded {len(settings)} agent settings for project {project_id}")
     return settings

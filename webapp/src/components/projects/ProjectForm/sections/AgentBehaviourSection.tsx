@@ -272,45 +272,65 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
             <p className={styles.toggleDescription} style={{ marginBottom: 'var(--space-2)' }}>
               <strong>Reverse</strong>: target connects back to you (LHOST + LPORT). <strong>Bind</strong>: you connect to the target (leave LPORT empty).
             </p>
-            <div className={styles.fieldRow}>
-              <div className={styles.fieldGroup}>
-                <label className={styles.fieldLabel}>LHOST (Attacker IP)</label>
-                <input
-                  type="text"
-                  className="textInput"
-                  value={data.agentLhost}
-                  onChange={(e) => updateField('agentLhost', e.target.value)}
-                  placeholder="e.g. 172.28.0.2"
-                />
-                <span className={styles.fieldHint}>Leave empty for bind mode</span>
+            <div className={styles.toggleRow}>
+              <div>
+                <span className={styles.toggleLabel}>Enable ngrok TCP Tunnel</span>
+                <p className={styles.toggleDescription}>
+                  Route reverse shell traffic through an ngrok TCP tunnel.
+                  Requires <code>NGROK_AUTHTOKEN</code> in .env (auto-starts with docker compose up).
+                  When active, LHOST and LPORT are auto-detected from the ngrok public URL.
+                </p>
               </div>
-              <div className={styles.fieldGroup}>
-                <label className={styles.fieldLabel}>LPORT</label>
-                <input
-                  type="number"
-                  className="textInput"
-                  value={data.agentLport || ''}
-                  onChange={(e) => updateField('agentLport', e.target.value === '' ? null : parseInt(e.target.value))}
-                  min={1}
-                  max={65535}
-                  placeholder="Empty = bind mode"
-                />
-                <span className={styles.fieldHint}>Leave empty for bind mode</span>
-              </div>
-              <div className={styles.fieldGroup}>
-                <label className={styles.fieldLabel}>Bind Port on Target</label>
-                <input
-                  type="number"
-                  className="textInput"
-                  value={data.agentBindPortOnTarget || ''}
-                  onChange={(e) => updateField('agentBindPortOnTarget', e.target.value === '' ? null : parseInt(e.target.value))}
-                  min={1}
-                  max={65535}
-                  placeholder="Empty = ask agent"
-                />
-                <span className={styles.fieldHint}>Leave empty if unsure (agent will ask)</span>
-              </div>
+              <Toggle
+                checked={data.agentNgrokTunnelEnabled}
+                onChange={(checked) => updateField('agentNgrokTunnelEnabled', checked)}
+              />
             </div>
+            {data.agentNgrokTunnelEnabled ? (
+              <p className={styles.toggleDescription} style={{ marginTop: 'var(--space-2)', padding: 'var(--space-2)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-1)' }}>
+                LHOST and LPORT are auto-detected from the ngrok tunnel. No manual configuration needed.
+              </p>
+            ) : (
+              <div className={styles.fieldRow}>
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>LHOST (Attacker IP)</label>
+                  <input
+                    type="text"
+                    className="textInput"
+                    value={data.agentLhost}
+                    onChange={(e) => updateField('agentLhost', e.target.value)}
+                    placeholder="e.g. 172.28.0.2"
+                  />
+                  <span className={styles.fieldHint}>Leave empty for bind mode</span>
+                </div>
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>LPORT</label>
+                  <input
+                    type="number"
+                    className="textInput"
+                    value={data.agentLport || ''}
+                    onChange={(e) => updateField('agentLport', e.target.value === '' ? null : parseInt(e.target.value))}
+                    min={1}
+                    max={65535}
+                    placeholder="Empty = bind mode"
+                  />
+                  <span className={styles.fieldHint}>Leave empty for bind mode</span>
+                </div>
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>Bind Port on Target</label>
+                  <input
+                    type="number"
+                    className="textInput"
+                    value={data.agentBindPortOnTarget || ''}
+                    onChange={(e) => updateField('agentBindPortOnTarget', e.target.value === '' ? null : parseInt(e.target.value))}
+                    min={1}
+                    max={65535}
+                    placeholder="Empty = ask agent"
+                  />
+                  <span className={styles.fieldHint}>Leave empty if unsure (agent will ask)</span>
+                </div>
+              </div>
+            )}
             <div className={styles.toggleRow}>
               <div>
                 <span className={styles.toggleLabel}>Payload Use HTTPS</span>

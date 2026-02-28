@@ -42,6 +42,7 @@ The `/profile` endpoint:
 ### 2. Deploy (first time or any update)
 
 ```bash
+#from folder /redamon
 ssh -i ~/.ssh/guinea_pigs.pem ubuntu@15.160.68.117 "mkdir -p ~/apache" && scp -i ~/.ssh/guinea_pigs.pem -r guinea_pigs/node_serialize_1.0.0/* ubuntu@15.160.68.117:~/apache/ && ssh -i ~/.ssh/guinea_pigs.pem ubuntu@15.160.68.117 "bash ~/apache/setup.sh"
 ```
 

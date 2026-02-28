@@ -21,6 +21,7 @@ import { GithubSection } from './sections/GithubSection'
 import { AgentBehaviourSection } from './sections/AgentBehaviourSection'
 import { CveExploitSection } from './sections/CveExploitSection'
 import { HydraSection } from './sections/BruteForceSection'
+import { PhishingSection } from './sections/PhishingSection'
 import { GvmScanSection } from './sections/GvmScanSection'
 import { CypherFixSettingsSection } from './sections/CypherFixSettingsSection'
 
@@ -338,6 +339,7 @@ export function ProjectForm({
           <>
             <CveExploitSection data={formData} updateField={updateField} />
             <HydraSection data={formData} updateField={updateField} />
+            <PhishingSection data={formData} updateField={updateField} />
           </>
         )}
 
