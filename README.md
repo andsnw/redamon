@@ -145,8 +145,6 @@ Go to **http://localhost:3000** — create a project, configure your target, and
 ### Common Commands
 
 ```bash
-docker compose up -d                        # Start all services (including GVM)
-docker compose down                         # Stop all services (keeps data)
 docker compose ps                           # Check service status
 docker compose logs -f                      # Follow all logs
 docker compose logs -f webapp               # Webapp (Next.js)

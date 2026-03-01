@@ -14,57 +14,116 @@ Replaces and absorbs the former exploit_writer.py.
 import asyncio
 import logging
 import re
+import threading
+import time
 import uuid
 from typing import Any, Dict, List, Optional
 
 from neo4j import GraphDatabase
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Driver singleton (same pattern as the former exploit_writer)
+# Driver singleton with health check
 # ---------------------------------------------------------------------------
 
 _driver = None
+_driver_lock = threading.Lock()
 
 
 def _get_driver(uri: str, user: str, password: str):
-    """Get or create a singleton Neo4j driver."""
+    """Get or create a singleton Neo4j driver with connectivity check.
+
+    If the cached driver's connection has gone stale (e.g. Neo4j restarted),
+    it is discarded and a fresh driver is created.
+    """
     global _driver
-    if _driver is None:
-        _driver = GraphDatabase.driver(uri, auth=(user, password))
-    return _driver
+    with _driver_lock:
+        if _driver is not None:
+            try:
+                _driver.verify_connectivity()
+            except Exception:
+                logger.warning("Neo4j driver connectivity check failed; recreating driver")
+                try:
+                    _driver.close()
+                except Exception:
+                    pass
+                _driver = None
+
+        if _driver is None:
+            _driver = GraphDatabase.driver(uri, auth=(user, password))
+        return _driver
 
 
 def close_driver():
     """Close the Neo4j driver (call on shutdown)."""
     global _driver
-    if _driver is not None:
-        _driver.close()
-        _driver = None
+    with _driver_lock:
+        if _driver is not None:
+            _driver.close()
+            _driver = None
 
 
 # ---------------------------------------------------------------------------
-# Fire-and-forget helper
+# Fire-and-forget helper with retry and dead-letter counter
 # ---------------------------------------------------------------------------
 
-def _fire_and_forget(func, *args, **kwargs):
-    """Schedule *func* in a background thread; log errors, never raise."""
+_failed_write_count = 0
+_failed_write_lock = threading.Lock()
+
+
+def get_failed_write_count() -> int:
+    """Return the cumulative count of permanently failed graph writes."""
+    return _failed_write_count
+
+
+def _increment_failed_writes():
+    global _failed_write_count
+    with _failed_write_lock:
+        _failed_write_count += 1
+
+
+def _run_with_retry(func, args, kwargs, max_retries, retry_delay, sync):
+    """Execute func with retry logic. On final failure, increment dead-letter counter."""
+    last_exc = None
+    for attempt in range(1 + max_retries):
+        try:
+            func(*args, **kwargs)
+            return  # Success
+        except (ServiceUnavailable, SessionExpired, OSError) as exc:
+            last_exc = exc
+            if attempt < max_retries:
+                logger.debug("Chain graph write transient error (attempt %d/%d): %s",
+                             attempt + 1, max_retries + 1, exc)
+                time.sleep(retry_delay)
+        except Exception as exc:
+            # Non-transient (Cypher syntax, constraint violation) — no point retrying
+            last_exc = exc
+            break
+
+    _increment_failed_writes()
+    label = "sync fallback" if sync else "async"
+    func_name = getattr(func, "__name__", str(func))
+    logger.warning(
+        "Chain graph write permanently failed (%s) [%s] after %d attempt(s): %s",
+        label, func_name, 1 + max_retries, last_exc,
+    )
+
+
+def _fire_and_forget(func, *args, max_retries: int = 1, retry_delay: float = 0.5, **kwargs):
+    """Schedule *func* in a background thread; retry on transient errors, then dead-letter."""
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
-        # No running loop — fall back to synchronous call
-        try:
-            func(*args, **kwargs)
-        except Exception as exc:
-            logger.error("Chain graph write failed (sync fallback): %s", exc)
+        _run_with_retry(func, args, kwargs, max_retries, retry_delay, sync=True)
         return
 
     async def _run():
-        try:
-            await loop.run_in_executor(None, lambda: func(*args, **kwargs))
-        except Exception as exc:
-            logger.error("Chain graph write failed: %s", exc)
+        await loop.run_in_executor(
+            None,
+            lambda: _run_with_retry(func, args, kwargs, max_retries, retry_delay, sync=False),
+        )
 
     asyncio.ensure_future(_run())
 
@@ -475,7 +534,12 @@ def _write_step(
 
 
 def _resolve_step_bridges(session, step_id, extracted_info, user_id, project_id):
-    """Create bridge rels from ChainStep to recon nodes using extracted_info."""
+    """Create bridge rels from ChainStep to recon nodes using extracted_info.
+
+    Uses UNWIND for batch efficiency instead of per-item queries.
+    """
+    uid = user_id
+    pid = project_id
 
     # --- STEP_TARGETED -> IP or Subdomain (based on primary_target) ---
     primary_target = extracted_info.get("primary_target") or ""
@@ -488,11 +552,9 @@ def _resolve_step_bridges(session, step_id, extracted_info, user_id, project_id)
                 FOREACH (_ IN CASE WHEN ip IS NOT NULL THEN [1] ELSE [] END |
                     MERGE (s)-[:STEP_TARGETED]->(ip))
                 """,
-                {"step_id": step_id, "ip": primary_target,
-                 "uid": user_id, "pid": project_id},
+                {"step_id": step_id, "ip": primary_target, "uid": uid, "pid": pid},
             )
         else:
-            # Hostname -> bridge to Subdomain
             session.run(
                 """
                 MATCH (s:ChainStep {step_id: $step_id})
@@ -500,56 +562,52 @@ def _resolve_step_bridges(session, step_id, extracted_info, user_id, project_id)
                 FOREACH (_ IN CASE WHEN sub IS NOT NULL THEN [1] ELSE [] END |
                     MERGE (s)-[:STEP_TARGETED]->(sub))
                 """,
-                {"step_id": step_id, "hostname": primary_target,
-                 "uid": user_id, "pid": project_id},
+                {"step_id": step_id, "hostname": primary_target, "uid": uid, "pid": pid},
             )
 
-    # --- STEP_TARGETED -> Port (from ports list) ---
-    ports = extracted_info.get("ports") or []
-    for port_num in ports:
-        if port_num is not None:
-            session.run(
-                """
-                MATCH (s:ChainStep {step_id: $step_id})
-                OPTIONAL MATCH (p:Port {number: $port, user_id: $uid, project_id: $pid})
-                FOREACH (_ IN CASE WHEN p IS NOT NULL THEN [1] ELSE [] END |
-                    MERGE (s)-[:STEP_TARGETED]->(p))
-                """,
-                {"step_id": step_id, "port": port_num,
-                 "uid": user_id, "pid": project_id},
-            )
+    # --- STEP_TARGETED -> Port (batched via UNWIND) ---
+    ports = [p for p in (extracted_info.get("ports") or []) if p is not None]
+    if ports:
+        session.run(
+            """
+            UNWIND $ports AS port_num
+            MATCH (s:ChainStep {step_id: $step_id})
+            OPTIONAL MATCH (p:Port {number: port_num, user_id: $uid, project_id: $pid})
+            FOREACH (_ IN CASE WHEN p IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (s)-[:STEP_TARGETED]->(p))
+            """,
+            {"step_id": step_id, "ports": ports, "uid": uid, "pid": pid},
+        )
 
-    # --- STEP_EXPLOITED -> CVE ---
-    vulns = extracted_info.get("vulnerabilities") or []
-    for cve_id in vulns:
-        if cve_id:
-            session.run(
-                """
-                MATCH (s:ChainStep {step_id: $step_id})
-                OPTIONAL MATCH (c:CVE {id: $cve_id, user_id: $uid, project_id: $pid})
-                FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
-                    MERGE (s)-[:STEP_EXPLOITED]->(c))
-                """,
-                {"step_id": step_id, "cve_id": cve_id,
-                 "uid": user_id, "pid": project_id},
-            )
+    # --- STEP_EXPLOITED -> CVE (batched via UNWIND) ---
+    vulns = [v for v in (extracted_info.get("vulnerabilities") or []) if v]
+    if vulns:
+        session.run(
+            """
+            UNWIND $vulns AS cve_id
+            MATCH (s:ChainStep {step_id: $step_id})
+            OPTIONAL MATCH (c:CVE {id: cve_id, user_id: $uid, project_id: $pid})
+            FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (s)-[:STEP_EXPLOITED]->(c))
+            """,
+            {"step_id": step_id, "vulns": vulns, "uid": uid, "pid": pid},
+        )
 
-    # --- STEP_IDENTIFIED -> Technology (case-insensitive match) ---
-    technologies = extracted_info.get("technologies") or []
-    for tech_name in technologies:
-        if tech_name:
-            session.run(
-                """
-                MATCH (s:ChainStep {step_id: $step_id})
-                OPTIONAL MATCH (t:Technology {user_id: $uid, project_id: $pid})
-                    WHERE toLower(t.name) = toLower($tech)
-                WITH s, head(collect(t)) AS t
-                FOREACH (_ IN CASE WHEN t IS NOT NULL THEN [1] ELSE [] END |
-                    MERGE (s)-[:STEP_IDENTIFIED]->(t))
-                """,
-                {"step_id": step_id, "tech": tech_name,
-                 "uid": user_id, "pid": project_id},
-            )
+    # --- STEP_IDENTIFIED -> Technology (batched via UNWIND, case-insensitive) ---
+    technologies = [t for t in (extracted_info.get("technologies") or []) if t]
+    if technologies:
+        session.run(
+            """
+            UNWIND $techs AS tech_name
+            MATCH (s:ChainStep {step_id: $step_id})
+            OPTIONAL MATCH (t:Technology {user_id: $uid, project_id: $pid})
+                WHERE toLower(t.name) = toLower(tech_name)
+            WITH s, tech_name, head(collect(t)) AS t
+            FOREACH (_ IN CASE WHEN t IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (s)-[:STEP_IDENTIFIED]->(t))
+            """,
+            {"step_id": step_id, "techs": technologies, "uid": uid, "pid": pid},
+        )
 
 
 
@@ -658,44 +716,61 @@ def _write_finding(
 
 
 def _resolve_finding_bridges(session, finding_id, related_cves, related_ips, finding_type, user_id, project_id):
-    """Create bridge rels from ChainFinding to recon nodes."""
-    # FOUND_ON -> IP or Subdomain (depending on whether value is IP or hostname)
+    """Create bridge rels from ChainFinding to recon nodes.
+
+    Uses UNWIND for batch efficiency.
+    """
+    uid = user_id
+    pid = project_id
+
+    # FOUND_ON -> IP or Subdomain (pre-sort by type, then batch each)
+    ip_addrs = []
+    hostnames = []
     for addr in (related_ips or []):
         if not addr:
             continue
         if _looks_like_ip(addr):
-            session.run(
-                """
-                MATCH (f:ChainFinding {finding_id: $fid})
-                OPTIONAL MATCH (ip:IP {address: $ip, user_id: $uid, project_id: $pid})
-                FOREACH (_ IN CASE WHEN ip IS NOT NULL THEN [1] ELSE [] END |
-                    MERGE (f)-[:FOUND_ON]->(ip))
-                """,
-                {"fid": finding_id, "ip": addr, "uid": user_id, "pid": project_id},
-            )
+            ip_addrs.append(addr)
         else:
-            session.run(
-                """
-                MATCH (f:ChainFinding {finding_id: $fid})
-                OPTIONAL MATCH (sub:Subdomain {name: $hostname, user_id: $uid, project_id: $pid})
-                FOREACH (_ IN CASE WHEN sub IS NOT NULL THEN [1] ELSE [] END |
-                    MERGE (f)-[:FOUND_ON]->(sub))
-                """,
-                {"fid": finding_id, "hostname": addr, "uid": user_id, "pid": project_id},
-            )
+            hostnames.append(addr)
 
-    # FINDING_RELATES_CVE -> CVE
-    for cve_id in (related_cves or []):
-        if cve_id:
-            session.run(
-                """
-                MATCH (f:ChainFinding {finding_id: $fid})
-                OPTIONAL MATCH (c:CVE {id: $cve_id, user_id: $uid, project_id: $pid})
-                FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
-                    MERGE (f)-[:FINDING_RELATES_CVE]->(c))
-                """,
-                {"fid": finding_id, "cve_id": cve_id, "uid": user_id, "pid": project_id},
-            )
+    if ip_addrs:
+        session.run(
+            """
+            UNWIND $addrs AS ip_addr
+            MATCH (f:ChainFinding {finding_id: $fid})
+            OPTIONAL MATCH (ip:IP {address: ip_addr, user_id: $uid, project_id: $pid})
+            FOREACH (_ IN CASE WHEN ip IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (f)-[:FOUND_ON]->(ip))
+            """,
+            {"fid": finding_id, "addrs": ip_addrs, "uid": uid, "pid": pid},
+        )
+
+    if hostnames:
+        session.run(
+            """
+            UNWIND $hosts AS hostname
+            MATCH (f:ChainFinding {finding_id: $fid})
+            OPTIONAL MATCH (sub:Subdomain {name: hostname, user_id: $uid, project_id: $pid})
+            FOREACH (_ IN CASE WHEN sub IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (f)-[:FOUND_ON]->(sub))
+            """,
+            {"fid": finding_id, "hosts": hostnames, "uid": uid, "pid": pid},
+        )
+
+    # FINDING_RELATES_CVE -> CVE (batched via UNWIND)
+    cves = [c for c in (related_cves or []) if c]
+    if cves:
+        session.run(
+            """
+            UNWIND $cves AS cve_id
+            MATCH (f:ChainFinding {finding_id: $fid})
+            OPTIONAL MATCH (c:CVE {id: cve_id, user_id: $uid, project_id: $pid})
+            FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (f)-[:FINDING_RELATES_CVE]->(c))
+            """,
+            {"fid": finding_id, "cves": cves, "uid": uid, "pid": pid},
+        )
 
 
 # -------------------------------------------------------------------
@@ -1040,18 +1115,19 @@ def _write_exploit_success(
                     {"fid": finding_id, "hostname": target_ip, "uid": user_id, "pid": project_id},
                 )
 
-        # Bridge: FINDING_RELATES_CVE -> CVE
-        for cve_id in (cve_ids or []):
-            if cve_id:
-                session.run(
-                    """
-                    MATCH (f:ChainFinding {finding_id: $fid})
-                    OPTIONAL MATCH (c:CVE {id: $cve_id, user_id: $uid, project_id: $pid})
-                    FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
-                        MERGE (f)-[:FINDING_RELATES_CVE]->(c))
-                    """,
-                    {"fid": finding_id, "cve_id": cve_id, "uid": user_id, "pid": project_id},
-                )
+        # Bridge: FINDING_RELATES_CVE -> CVE (batched via UNWIND)
+        cve_list = [c for c in (cve_ids or []) if c]
+        if cve_list:
+            session.run(
+                """
+                UNWIND $cves AS cve_id
+                MATCH (f:ChainFinding {finding_id: $fid})
+                OPTIONAL MATCH (c:CVE {id: cve_id, user_id: $uid, project_id: $pid})
+                FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
+                    MERGE (f)-[:FINDING_RELATES_CVE]->(c))
+                """,
+                {"fid": finding_id, "cves": cve_list, "uid": user_id, "pid": project_id},
+            )
 
         # Bridge: STEP_TARGETED -> IP or Subdomain (on the step node)
         if target_ip:
@@ -1076,18 +1152,18 @@ def _write_exploit_success(
                     {"step_id": step_id, "hostname": target_ip, "uid": user_id, "pid": project_id},
                 )
 
-        # Bridge: STEP_EXPLOITED -> CVE (on the step node)
-        for cve_id in (cve_ids or []):
-            if cve_id:
-                session.run(
-                    """
-                    MATCH (s:ChainStep {step_id: $step_id})
-                    OPTIONAL MATCH (c:CVE {id: $cve_id, user_id: $uid, project_id: $pid})
-                    FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
-                        MERGE (s)-[:STEP_EXPLOITED]->(c))
-                    """,
-                    {"step_id": step_id, "cve_id": cve_id, "uid": user_id, "pid": project_id},
-                )
+        # Bridge: STEP_EXPLOITED -> CVE (on the step node, batched via UNWIND)
+        if cve_list:
+            session.run(
+                """
+                UNWIND $cves AS cve_id
+                MATCH (s:ChainStep {step_id: $step_id})
+                OPTIONAL MATCH (c:CVE {id: cve_id, user_id: $uid, project_id: $pid})
+                FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
+                    MERGE (s)-[:STEP_EXPLOITED]->(c))
+                """,
+                {"step_id": step_id, "cves": cve_list, "uid": user_id, "pid": project_id},
+            )
 
     logger.info(
         "[%s/%s] Exploit success recorded as ChainFinding: %s (%s, target=%s)",

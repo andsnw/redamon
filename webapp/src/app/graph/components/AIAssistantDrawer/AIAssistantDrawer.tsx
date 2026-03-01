@@ -26,6 +26,7 @@ import {
   type TodoItem
 } from '@/lib/websocket-types'
 import { AgentTimeline } from './AgentTimeline'
+import { FileDownloadCard } from './FileDownloadCard'
 import { TodoListWidget } from './TodoListWidget'
 import { ConversationHistory } from './ConversationHistory'
 import { useConversations } from '@/hooks/useConversations'
@@ -49,7 +50,17 @@ interface Message {
   isReport?: boolean
 }
 
-type ChatItem = Message | ThinkingItem | ToolExecutionItem
+interface FileDownloadItem {
+  type: 'file_download'
+  id: string
+  timestamp: Date
+  filepath: string
+  filename: string
+  description: string
+  source: string
+}
+
+type ChatItem = Message | ThinkingItem | ToolExecutionItem | FileDownloadItem
 
 /** Format prefixed model names for display (e.g. "openrouter/meta-llama/llama-4" → "llama-4 (OR)") */
 function formatModelDisplay(model: string): string {
@@ -472,6 +483,19 @@ export function AIAssistantDrawer({
         setIsLoading(false)
         setIsStopped(true)
         break
+
+      case MessageType.FILE_READY:
+        const fileItem: FileDownloadItem = {
+          type: 'file_download',
+          id: `file-${Date.now()}`,
+          timestamp: new Date(),
+          filepath: message.payload.filepath,
+          filename: message.payload.filename,
+          description: message.payload.description,
+          source: message.payload.source,
+        }
+        setChatItems(prev => [...prev, fileItem])
+        break
     }
   }, [todoList])
 
@@ -802,6 +826,17 @@ export function AIAssistantDrawer({
 
         lines.push('---')
         lines.push('')
+      } else if (item.type === 'file_download') {
+        const time = item.timestamp.toLocaleTimeString()
+        lines.push(`### File Download  \`${time}\``)
+        lines.push('')
+        lines.push(`- **File:** ${item.filename}`)
+        lines.push(`- **Path:** \`${item.filepath}\``)
+        lines.push(`- **Source:** ${item.source}`)
+        lines.push(`- **Description:** ${item.description}`)
+        lines.push('')
+        lines.push('---')
+        lines.push('')
       }
     })
 
@@ -929,6 +964,16 @@ export function AIAssistantDrawer({
           isGuidance: true,
           timestamp: new Date(msg.createdAt),
         } as Message
+      } else if (msg.type === 'file_ready') {
+        return {
+          type: 'file_download',
+          id: msg.id,
+          timestamp: new Date(msg.createdAt),
+          filepath: data.filepath || '',
+          filename: data.filename || '',
+          description: data.description || '',
+          source: data.source || '',
+        } as FileDownloadItem
       } else if (msg.type === 'todo_update') {
         // Track last todo list for state restoration (not a chat item)
         lastTodoList = data.todo_list || []
@@ -1033,7 +1078,7 @@ export function AIAssistantDrawer({
   }
 
   // Group timeline items by their sequence (between messages)
-  const groupedChatItems: Array<{ type: 'message' | 'timeline', content: Message | Array<ThinkingItem | ToolExecutionItem> }> = []
+  const groupedChatItems: Array<{ type: 'message' | 'timeline' | 'file_download', content: Message | Array<ThinkingItem | ToolExecutionItem> | FileDownloadItem }> = []
 
   let currentTimelineGroup: Array<ThinkingItem | ToolExecutionItem> = []
 
@@ -1046,6 +1091,13 @@ export function AIAssistantDrawer({
       }
       // Then push the message
       groupedChatItems.push({ type: 'message', content: item })
+    } else if ('type' in item && item.type === 'file_download') {
+      // File download cards are standalone (not grouped into timeline)
+      if (currentTimelineGroup.length > 0) {
+        groupedChatItems.push({ type: 'timeline', content: currentTimelineGroup })
+        currentTimelineGroup = []
+      }
+      groupedChatItems.push({ type: 'file_download', content: item })
     } else if ('type' in item && (item.type === 'thinking' || item.type === 'tool_execution')) {
       // It's a timeline item - add to current group
       currentTimelineGroup.push(item)
@@ -1498,6 +1550,17 @@ export function AIAssistantDrawer({
         {groupedChatItems.map((groupItem, index) => {
           if (groupItem.type === 'message') {
             return renderMessage(groupItem.content as Message)
+          } else if (groupItem.type === 'file_download') {
+            const file = groupItem.content as FileDownloadItem
+            return (
+              <FileDownloadCard
+                key={file.id}
+                filepath={file.filepath}
+                filename={file.filename}
+                description={file.description}
+                source={file.source}
+              />
+            )
           } else {
             // Render timeline group
             const items = groupItem.content as Array<ThinkingItem | ToolExecutionItem>

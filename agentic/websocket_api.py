@@ -65,6 +65,7 @@ class MessageType(str, Enum):
     TASK_COMPLETE = "task_complete"
     GUIDANCE_ACK = "guidance_ack"
     STOPPED = "stopped"
+    FILE_READY = "file_ready"
 
 
 # =============================================================================
@@ -457,6 +458,12 @@ class StreamingCallback:
             logger.info(f"Task complete sent to session {self.connection.session_id}")
         else:
             logger.debug(f"Duplicate task_complete blocked for session {self.connection.session_id}")
+
+    async def on_file_ready(self, file_info: dict):
+        """Called when agent has created a downloadable file."""
+        await self.connection.send_message(MessageType.FILE_READY, file_info)
+        self._persist("file_ready", file_info)
+        logger.info(f"File ready notification sent: {file_info.get('filename')}")
 
 
 # =============================================================================

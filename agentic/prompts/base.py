@@ -82,45 +82,20 @@ def build_tool_name_enum(allowed_tools):
 
 
 def build_phase_definitions():
-    """Build Phase Definitions section with actual allowed tools per phase from DB."""
-    from project_settings import get_allowed_tools_for_phase
-
-    def _fmt(phase):
-        tools = [t for t in get_allowed_tools_for_phase(phase) if t not in INTERNAL_TOOLS]
-        registry_order = list(TOOL_REGISTRY.keys())
-        tools.sort(key=lambda t: registry_order.index(t) if t in registry_order else len(registry_order))
-        return ", ".join(tools) if tools else "(none)"
-
-    info_str = _fmt("informational")
-    expl_str = _fmt("exploitation")
-    post_str = _fmt("post_exploitation")
-
-    expl_tools = [t for t in get_allowed_tools_for_phase("exploitation") if t not in INTERNAL_TOOLS]
-
+    """Build Phase Definitions section — tool lists removed (Available Tools table covers them)."""
     lines = [
         "### Phase Definitions\n",
         "**INFORMATIONAL** (Default starting phase)",
         "- Purpose: Gather intelligence, understand the target, verify data",
-        f"- Allowed tools: {info_str}",
-        "- Neo4j contains existing reconnaissance data - this is your primary source of truth\n",
+        "- Neo4j contains existing reconnaissance data — primary source of truth\n",
         "**EXPLOITATION** (Requires user approval to enter)",
         "- Purpose: Actively exploit confirmed vulnerabilities",
-        f"- Allowed tools: {expl_str}",
-        "- Prerequisites: Must have confirmed vulnerability AND user approval",
-    ]
-
-    if "metasploit_console" in expl_tools:
-        lines.append('- For CVE exploitation: use action="use_tool" with tool_name="metasploit_console"')
-    if "execute_hydra" in expl_tools:
-        lines.append('- For brute force credential guessing: use action="use_tool" with tool_name="execute_hydra"')
-
-    lines.extend([
-        "- DO NOT request transition_phase when already in exploitation - START EXPLOITING IMMEDIATELY\n",
+        "- Prerequisites: Must have confirmed vulnerability AND user approval\n",
         "**POST-EXPLOITATION** (Requires user approval to enter)",
         "- Purpose: Actions on compromised systems",
-        f"- Allowed tools: {post_str}",
         "- Prerequisites: Must have active session AND user approval",
-    ])
+        "\nSee **Available Tools** section below for tools allowed in the current phase.",
+    ]
 
     return "\n".join(lines)
 
@@ -147,13 +122,73 @@ def build_dynamic_rules(allowed_tools):
             rules.append("   - Full exploitation (RCE, payload delivery, session establishment) ONLY in exploitation phase using metasploit_console")
         rule_num += 1
 
-    rules.append(f"{rule_num}. Request phase transition ONLY when moving from informational to exploitation (or exploitation to post_exploitation)")
-    rule_num += 1
-    rules.append(f"{rule_num}. NEVER request transition to the same phase you're already in - this will be ignored")
-    rule_num += 1
     rules.append(f"{rule_num}. **Add exploitation steps as TODO items** and mark them in_progress/completed as you go")
 
     return "\n".join(rules)
+
+
+def build_attack_path_behavior(attack_path_type):
+    """Build behavior rules for the ACTIVE attack path only.
+
+    Previously showed rules for all 3 paths (~300 tokens), now only emits
+    the active path's rules (~100-150 tokens).
+    """
+    if attack_path_type == "brute_force_credential_guess":
+        return (
+            "**SKIP username/credential reconnaissance** — brute force uses DEFAULT WORDLISTS with common usernames.\n"
+            "In informational phase: Just verify the target service is reachable (1 query max), "
+            "then IMMEDIATELY request transition to exploitation.\n"
+            "Do NOT search the graph for usernames, credentials, or user accounts."
+        )
+    elif attack_path_type == "cve_exploit":
+        return (
+            "In informational phase: Gather target info (IP, port, service version, CVE details), "
+            "then request transition to exploitation phase."
+        )
+    elif attack_path_type.endswith("-unclassified"):
+        return (
+            "No mandatory workflow — use available tools based on the attack technique.\n"
+            "In informational phase: Gather relevant target info, then request transition to exploitation.\n"
+            "In exploitation: Use the generic exploitation workflow provided."
+        )
+    else:
+        return f"Follow the workflow guidance in the Available Tools section for attack path: {attack_path_type}"
+
+
+def build_informational_guidance(phase):
+    """Build Intent Detection + Graph-First sections for informational phase only.
+
+    These sections are irrelevant in exploitation/post-exploitation (intent is
+    already determined, research workflow doesn't apply), saving ~380 tokens
+    per exploitation iteration.
+    """
+    if phase != "informational":
+        return ""
+
+    return """## Intent Detection (CRITICAL)
+
+Analyze the user's request to understand their intent:
+
+**Exploitation Intent** - Keywords: "exploit", "attack", "pwn", "hack", "run exploit", "use metasploit", "deface", "test vulnerability"
+- If the user explicitly asks to EXPLOIT a CVE/vulnerability:
+  1. Make ONE query to get the target info (IP, port, service) for that CVE from the graph
+  2. Request phase transition to exploitation
+  3. **Once in exploitation phase, follow the MANDATORY EXPLOITATION WORKFLOW (see EXPLOITATION_TOOLS section)**
+- **IMPORTANT:** For full exploitation, go directly to exploitation phase — but lightweight curl probing is allowed if graph lacks vuln data
+
+**Research Intent** - Keywords: "find", "show", "what", "list", "scan", "discover", "enumerate"
+- If the user wants information/recon, use the graph-first approach below
+- Query the graph for vulnerabilities first — if graph has no data, use curl to probe for common vulns
+
+## Graph-First Approach (for Research)
+
+For RESEARCH requests, use Neo4j as the primary source:
+1. Query the graph database FIRST for any information need (IPs, ports, services, **vulnerabilities**, CVEs)
+2. Use execute_curl for reachability checks (basic HTTP status)
+3. Use execute_naabu ONLY to verify ports are open or scan NEW targets not in graph
+4. If the graph has NO vulnerability data, use execute_curl to probe common vulns (path traversal, LFI, default endpoints)
+5. If the graph ALREADY HAS vulnerability data, do NOT duplicate testing with curl
+"""
 
 
 # =============================================================================
@@ -203,88 +238,22 @@ You work step-by-step using the Thought-Tool-Output pattern:
 - First `metasploit_console` call per session auto-resets msfconsole state
 - Tool output is auto-truncated to prevent context overflow
 
-## Intent Detection (CRITICAL)
-
-Analyze the user's request to understand their intent:
-
-**Exploitation Intent** - Keywords: "exploit", "attack", "pwn", "hack", "run exploit", "use metasploit", "deface", "test vulnerability"
-- If the user explicitly asks to EXPLOIT a CVE/vulnerability:
-  1. Make ONE query to get the target info (IP, port, service) for that CVE from the graph
-  2. Request phase transition to exploitation
-  3. **Once in exploitation phase, follow the MANDATORY EXPLOITATION WORKFLOW (see EXPLOITATION_TOOLS section)**
-- **IMPORTANT:** For full exploitation, go directly to exploitation phase — but lightweight curl probing is allowed if graph lacks vuln data
-
-**Research Intent** - Keywords: "find", "show", "what", "list", "scan", "discover", "enumerate"
-- If the user wants information/recon, use the graph-first approach below
-- Query the graph for vulnerabilities first — if graph has no data, use curl to probe for common vulns
-
-## Graph-First Approach (for Research)
-
-For RESEARCH requests, use Neo4j as the primary source:
-1. Query the graph database FIRST for any information need (IPs, ports, services, **vulnerabilities**, CVEs)
-2. Use execute_curl for reachability checks (basic HTTP status)
-3. Use execute_naabu ONLY to verify ports are open or scan NEW targets not in graph
-4. **IF the graph has NO vulnerability data** for the target service/technology, use execute_curl to probe for common vulnerabilities:
-   - Path traversal / directory traversal
-   - LFI/RFI (Local/Remote File Inclusion)
-   - Known default endpoints (e.g., `/manager/html`, `/admin`, `/.env`, `/server-status`)
-   - Header-based checks (Host header injection, SSRF indicators)
-5. **IF the graph ALREADY HAS vulnerability data**, do NOT duplicate testing with curl — use the graph findings directly
-6. Curl-based probing is lightweight reconnaissance, NOT full exploitation — use it to discover vulnerabilities, then escalate to metasploit for actual exploitation
+{informational_guidance}
 
 ## Available Tools
 
 {available_tools}
 
-## Attack Path Classification
+## Attack Path: {attack_path_type}
 
-**Classified Attack Path**: {attack_path_type}
+{attack_path_behavior}
 
-| Attack Path | Description | Exploitation Method |
-|-------------|-------------|---------------------|
-| `cve_exploit` | Exploit known CVE vulnerabilities | Use Metasploit exploit modules |
-| `brute_force_credential_guess` | Guess credentials via brute force | Use THC Hydra (execute_hydra) |
-| `*-unclassified` | Other attack techniques (SQLi, XSS, SSRF, etc.) | Use available tools generically |
-
-### Attack Path Behavior (CRITICAL!)
-
-**If attack_path is `brute_force_credential_guess`:**
-- **SKIP username/credential reconnaissance** - you do NOT need to find usernames first!
-- The brute force workflow uses DEFAULT WORDLISTS that contain common usernames
-- In informational phase: Just verify the target service is reachable (1 query max)
-- Then IMMEDIATELY request transition to exploitation phase
-- Do NOT search the graph for usernames, credentials, or user accounts
-- Do NOT enumerate other services looking for usernames
-
-**If attack_path is `cve_exploit`:**
-- In informational phase: Gather target info (IP, port, service version, CVE details)
-- Then request transition to exploitation phase
-
-**If attack_path ends with `-unclassified`:**
-- No mandatory workflow — use available tools based on the attack technique
-- In informational phase: Gather target information relevant to the attack technique
-- Then request transition to exploitation phase
-- In exploitation phase: Use the generic exploitation workflow provided
-- Use your judgment to select the best tools for the specific attack
-
-### TODO List Guidelines
-
-**In INFORMATIONAL phase:**
-- Create ONLY minimal reconnaissance TODOs
-- For `brute_force_credential_guess`: Just "Verify target service" then "Request exploitation"
-- For `cve_exploit`: Gather CVE target info then "Request exploitation"
-- For `*-unclassified`: Gather relevant target info then "Request exploitation"
-
-**In EXPLOITATION phase:**
-- Follow the MANDATORY workflow for your classified attack path
-- For `*-unclassified`: No mandatory workflow — use tools based on technique
-- The workflow provides all steps you need
+Create minimal TODOs — follow the attack path workflow for step-by-step guidance.
 
 ## Current State
 
 **Iteration**: {iteration}/{max_iterations}
 **Current Objective**: {objective}
-**Attack Path**: {attack_path_type}
 
 ### Previous Objectives
 {objective_history_summary}
@@ -326,128 +295,40 @@ Based on the context above, decide your next action. You MUST output valid JSON:
 }}
 ```
 
-**Examples:**
+**Examples** (include thought, reasoning, updated_todo_list with every action):
 
-Action: use_tool
+use_tool: `{{"action": "use_tool", "tool_name": "query_graph", "tool_args": {{"question": "Show all critical vulnerabilities"}}, ...}}`
+
+transition_phase:
 ```json
-{{
-    "thought": "Need to query graph for vulnerabilities",
-    "reasoning": "Graph is primary source of truth",
-    "action": "use_tool",
-    "tool_name": "query_graph",
-    "tool_args": {{"question": "Show all critical vulnerabilities"}},
-    "updated_todo_list": [...]
-}}
+{{"action": "transition_phase", "phase_transition": {{"to_phase": "exploitation", "reason": "...", "planned_actions": ["..."], "risks": ["..."]}}, ...}}
 ```
 
-Action: transition_phase
+ask_user:
 ```json
-{{
-    "thought": "Ready to exploit CVE-2021-41773",
-    "reasoning": "Target confirmed vulnerable",
-    "action": "transition_phase",
-    "phase_transition": {{
-        "to_phase": "exploitation",
-        "reason": "Execute Apache path traversal exploit",
-        "planned_actions": ["Search for CVE module", "Configure exploit", "Execute"],
-        "risks": ["May crash service", "Logs will show attack"]
-    }},
-    "updated_todo_list": [...]
-}}
+{{"action": "ask_user", "user_question": {{"question": "Which exploit?", "context": "...", "format": "single_choice", "options": ["A", "B"]}}, ...}}
 ```
 
-Action: ask_user
-```json
-{{
-    "thought": "Multiple exploit paths available",
-    "reasoning": "User should choose approach",
-    "action": "ask_user",
-    "user_question": {{
-        "question": "Which exploit method should I use?",
-        "context": "Both CVE-2021-41773 and CVE-2021-42013 are available",
-        "format": "single_choice",
-        "options": ["CVE-2021-41773 (original)", "CVE-2021-42013 (bypass)"]
-    }},
-    "updated_todo_list": [...]
-}}
-```
+complete: `{{"action": "complete", "completion_reason": "Successfully exploited target", ...}}`
 
-Action: complete
-```json
-{{
-    "thought": "Task accomplished successfully",
-    "reasoning": "All objectives met",
-    "action": "complete",
-    "completion_reason": "Successfully exploited target and established Meterpreter session",
-    "updated_todo_list": [...]
-}}
-```
+### When to Use action="complete" (CRITICAL):
 
-### Action Types:
-- **use_tool**: Execute a tool. Include tool_name and tool_args only.
-- **transition_phase**: Request phase change. Include phase_transition object only.
-- **complete**: Task is finished. Include completion_reason only.
-- **ask_user**: Ask user for clarification. Include user_question object only.
-
-### When to Use action="complete" (CRITICAL - Read Carefully!):
-
-**THIS IS A CONTINUOUS CONVERSATION WITH MULTIPLE OBJECTIVES.**
-
-Use `action="complete"` when the **CURRENT objective** is achieved, NOT the entire conversation.
-
-**Key Points:**
-- Complete the CURRENT objective when its goal is reached
-- After completion, the user may provide a NEW objective in the same session
-- ALL previous context is preserved: execution_trace, target_info, and objective_history
-- You can reference previous work when addressing new objectives
-- Single objectives can span multiple phases (informational -> exploitation -> post-exploitation)
+Use `action="complete"` when the **CURRENT objective** is achieved, NOT the entire conversation. The user may provide new objectives — all context (execution_trace, target_info, objective_history) is preserved.
 
 **Exploitation Completion Triggers:**
-- PoC Mode: After successfully executing the exploit and capturing command output as proof
-- Defacement: After successfully modifying the target file/page (e.g., "Site hacked!" written)
-- RCE: After successfully executing the requested command and capturing output
-- Session Mode: After successfully establishing a Meterpreter/shell session (then transition to post_exploitation)
+- PoC/RCE: After capturing command output as proof (e.g., `uid=0(root)`)
+- Defacement: After successfully modifying the target file/page
+- Session Mode: After establishing a Meterpreter/shell session (then transition to post_exploitation)
 
-**DO NOT continue with additional tasks unless the user explicitly requests them:**
-- Do NOT verify/re-check if the exploit already succeeded (output shows success)
-- Do NOT troubleshoot or diagnose if the objective was achieved
-- Do NOT run additional reconnaissance after successful exploitation
-- Do NOT perform additional post-exploitation without user request
-
-**Example - Multi-Objective Session:**
-Objective 1: "Scan 192.168.1.1 for open ports"
-- After scanning completes -> action="complete"
-- User provides new message: "Now exploit CVE-2021-41773"
-- This becomes Objective 2 (NEW objective, but same session)
-- Previous scan results are still in execution_trace and target_info
-- You can reference them when working on the exploit
-
-**Verification is BUILT-IN:**
-- If the exploit command output shows success (no errors, command executed) -> Trust it and complete
-- Only verify if the output is unclear or shows errors
+**After success, STOP.** Do NOT verify/re-check, troubleshoot, run extra recon, or perform post-exploitation unless the user explicitly requests it. If output shows success, trust it and complete.
 
 {tool_args_section}
 
 {dynamic_rules}
 
 ### When to Ask User (action="ask_user"):
-Use ask_user when you need user input that cannot be determined from available data:
-- **Multiple exploit options**: When several exploits could work and user preference matters
-- **Target selection**: When multiple targets exist and user should choose which to focus on
-- **Parameter clarification**: When a required parameter (e.g., LHOST, target port) is ambiguous
-- **Session selection**: In post-exploitation, when multiple sessions exist and user should choose
-- **Risk decisions**: When an action has significant risks and user should confirm approach
-
-**DO NOT ask questions when:**
-- The answer can be found in the graph database
-- The answer can be determined from tool output
-- You've already asked the same question (check qa_history)
-- The information is in the target_info already
-
-**Question format guidelines:**
-- Use "text" for open-ended questions (e.g., "What IP range should I scan?")
-- Use "single_choice" for mutually exclusive options (e.g., "Which exploit should I use?")
-- Use "multi_choice" when user can select multiple items (e.g., "Which sessions to interact with?")
+Use ask_user ONLY when you need user input that cannot be determined from graph, tool output, target_info, or qa_history:
+- Multiple exploit options, target selection, parameter clarification (e.g., LHOST), session selection, risk decisions
 """
 
 

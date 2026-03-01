@@ -19,6 +19,8 @@ from .base import (
     # Dynamic prompt builders
     build_tool_availability_table,
     build_informational_tool_descriptions,
+    build_informational_guidance,
+    build_attack_path_behavior,
     build_tool_args_section,
     build_tool_name_enum,
     build_phase_definitions,
@@ -134,8 +136,10 @@ def get_phase_tools(
     # Filter out internal tools that should never be shown to the LLM
     allowed_tools = [t for t in get_allowed_tools_for_phase(phase) if t not in INTERNAL_TOOLS]
 
-    # Dynamic tool availability table (only shows allowed tools)
-    parts.append(build_tool_availability_table(phase, allowed_tools))
+    # Dynamic tool availability table — skip in informational phase where
+    # build_informational_tool_descriptions() already provides full details
+    if phase != "informational":
+        parts.append(build_tool_availability_table(phase, allowed_tools))
 
     # Add mode decision matrix for exploitation only (not needed in post-expl, mode already determined)
     if phase == "exploitation" and attack_path_type == "cve_exploit":
@@ -151,8 +155,17 @@ def get_phase_tools(
 
     # Pre-configured payload settings (LHOST/LPORT/ngrok) — injected BEFORE attack
     # chain so the agent knows the payload direction regardless of attack path type.
-    # Only for exploitation phase + statefull mode (stateless doesn't use reverse shells).
-    if phase == "exploitation" and is_statefull:
+    #
+    # Injection conditions:
+    #   1. exploitation phase + statefull mode (CVE exploit, brute force)
+    #   2. phishing attack path in ANY phase — payloads are generated before
+    #      exploitation (agent runs msfvenom during informational phase,
+    #      and the "exploitation" in phishing IS when the target opens the file)
+    needs_session_config = (
+        (phase == "exploitation" and is_statefull)
+        or attack_path_type == "phishing_social_engineering"
+    )
+    if needs_session_config:
         session_config = get_session_config_prompt()
         if session_config:
             parts.append(session_config)
@@ -233,6 +246,8 @@ __all__ = [
     "INTERNAL_TOOLS",
     "build_tool_availability_table",
     "build_informational_tool_descriptions",
+    "build_informational_guidance",
+    "build_attack_path_behavior",
     "build_tool_args_section",
     "build_tool_name_enum",
     "build_phase_definitions",

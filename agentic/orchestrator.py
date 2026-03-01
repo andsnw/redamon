@@ -7,6 +7,7 @@ Supports phase tracking, LLM-managed todo lists, and checkpoint-based approval.
 
 import asyncio
 import os
+import re
 import logging
 from typing import Optional
 
@@ -61,6 +62,8 @@ from prompts import (
     INTERNAL_TOOLS,
     get_phase_tools,
     build_phase_definitions,
+    build_informational_guidance,
+    build_attack_path_behavior,
     build_tool_name_enum,
     build_tool_args_section,
     build_dynamic_rules,
@@ -678,7 +681,9 @@ class AgentOrchestrator:
         system_prompt = REACT_SYSTEM_PROMPT.format(
             current_phase=phase,
             phase_definitions=build_phase_definitions(),
+            informational_guidance=build_informational_guidance(phase),
             attack_path_type=attack_path_type,
+            attack_path_behavior=build_attack_path_behavior(attack_path_type),
             available_tools=available_tools,
             tool_name_enum=build_tool_name_enum(allowed_tools),
             tool_args_section=build_tool_args_section(allowed_tools),
@@ -1000,24 +1005,28 @@ class AgentOrchestrator:
                     })
                     updates["chain_failures_memory"] = chain_failures_mem
 
-                # 3. Fire-and-forget: write ChainStep to Neo4j
+                # 3. Write ChainStep to Neo4j (via executor to avoid blocking the event loop)
                 prev_step_id = state.get("_last_chain_step_id")
-                chain_graph.sync_record_step(
-                    self.neo4j_uri, self.neo4j_user, self.neo4j_password,
-                    step_id=step_id,
-                    chain_id=session_id,
-                    prev_step_id=prev_step_id,
-                    user_id=user_id, project_id=project_id,
-                    iteration=step_iteration, phase=phase,
-                    tool_name=pending_step.get("tool_name"),
-                    tool_args_summary=str(pending_step.get("tool_args", {}))[:500],
-                    thought=pending_step.get("thought", "")[:20000],
-                    reasoning=pending_step.get("reasoning", "")[:20000],
-                    output_summary=(pending_step.get("tool_output") or "")[:20000],
-                    output_analysis=analysis.interpretation[:20000] if analysis else "",
-                    success=pending_step.get("success", True),
-                    error_message=pending_step.get("error_message"),
-                    extracted_info=analysis.extracted_info.model_dump() if analysis and analysis.extracted_info else {},
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    None,
+                    lambda: chain_graph.sync_record_step(
+                        self.neo4j_uri, self.neo4j_user, self.neo4j_password,
+                        step_id=step_id,
+                        chain_id=session_id,
+                        prev_step_id=prev_step_id,
+                        user_id=user_id, project_id=project_id,
+                        iteration=step_iteration, phase=phase,
+                        tool_name=pending_step.get("tool_name"),
+                        tool_args_summary=str(pending_step.get("tool_args", {}))[:500],
+                        thought=pending_step.get("thought", "")[:20000],
+                        reasoning=pending_step.get("reasoning", "")[:20000],
+                        output_summary=(pending_step.get("tool_output") or "")[:20000],
+                        output_analysis=analysis.interpretation[:20000] if analysis else "",
+                        success=pending_step.get("success", True),
+                        error_message=pending_step.get("error_message"),
+                        extracted_info=analysis.extracted_info.model_dump() if analysis and analysis.extracted_info else {},
+                    ),
                 )
                 updates["_last_chain_step_id"] = step_id
 
@@ -2152,6 +2161,66 @@ class AgentOrchestrator:
             self._streaming_callbacks.pop(session_id, None)
             self._guidance_queues.pop(session_id, None)
 
+    @staticmethod
+    def _detect_generated_file(step: dict) -> dict | None:
+        """Detect if a tool execution created a downloadable file in /tmp/.
+
+        Checks both tool_args (for explicit -o /tmp/... flags) and
+        tool_output (for file listing output confirming creation).
+
+        Returns:
+            dict with file metadata or None if no file detected.
+        """
+        tool_args = step.get("tool_args", {})
+        output = (step.get("tool_output") or "") + (step.get("output_analysis") or "")
+        command = ""
+
+        if isinstance(tool_args, dict):
+            command = tool_args.get("command", "") or tool_args.get("code", "")
+        elif isinstance(tool_args, str):
+            command = tool_args
+
+        # Pattern 1: msfvenom -o /tmp/filename
+        m = re.search(r'-o\s+(/tmp/[^\s;"\']+)', command)
+        if m:
+            filepath = m.group(1)
+            filename = os.path.basename(filepath)
+            # Verify file mentioned in output (success indicator)
+            if filename in output and "[ERROR]" not in output[:200]:
+                return {
+                    "filepath": filepath,
+                    "filename": filename,
+                    "source": "msfvenom",
+                    "description": f"Generated payload: {filename}",
+                }
+
+        # Pattern 2: cp ... /tmp/filename (from fileformat module copy)
+        m = re.search(r'cp\s+\S+\s+(/tmp/[^\s;"\']+)', command)
+        if m:
+            filepath = m.group(1)
+            filename = os.path.basename(filepath)
+            if filename in output and "[ERROR]" not in output[:200]:
+                return {
+                    "filepath": filepath,
+                    "filename": filename,
+                    "source": "fileformat",
+                    "description": f"Generated document: {filename}",
+                }
+
+        # Pattern 3: Output mentions a file was saved to /tmp/
+        m = re.search(r'[Ss]aved\s+(?:as\s+|to\s+)?(/tmp/[^\s"\']+)', output)
+        if m:
+            filepath = m.group(1)
+            filename = os.path.basename(filepath)
+            return {
+                "filepath": filepath,
+                "filename": filename,
+                "source": "tool_output",
+                "description": f"Generated file: {filename}",
+            }
+
+        return None
+
     async def _emit_streaming_events(self, state: dict, callback):
         """Emit appropriate streaming events based on state changes."""
         try:
@@ -2211,6 +2280,12 @@ class AgentOrchestrator:
                         "actionable_findings": cstep.get("actionable_findings", []),
                         "recommended_next_steps": cstep.get("recommended_next_steps", []),
                     })
+
+                    # Detect file creation in tool output and notify frontend
+                    if cstep.get("tool_name") in ("kali_shell", "execute_code", "metasploit_console"):
+                        file_info = self._detect_generated_file(cstep)
+                        if file_info:
+                            await callback.on_file_ready(file_info)
 
             # 2. Emit thinking (from _decision stored by _think_node)
             if "_decision" in state and state["_decision"]:

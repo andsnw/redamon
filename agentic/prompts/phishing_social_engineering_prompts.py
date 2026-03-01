@@ -202,12 +202,12 @@ Note the URL or one-liner printed in the output.
 ### Step 5: Deliver to Target
 
 #### Chat Download (default)
-Report the file location and details to the user:
+Report the file location and details to the user.
+The file will be available for download directly in the chat interface:
 - File path: `/tmp/<filename>`
 - File size and type (from `ls -la` and `file` output)
 - Payload type and callback parameters (LHOST:LPORT)
 - Handler status (running in background)
-- Retrieval command: `docker cp redamon-kali:/tmp/<filename> ./<filename>`
 
 #### Email Delivery (if user requests)
 Use `execute_code` with Python `smtplib` to send the payload/document as an email attachment or link.

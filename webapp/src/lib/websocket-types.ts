@@ -38,6 +38,7 @@ export enum MessageType {
   TASK_COMPLETE = 'task_complete',
   GUIDANCE_ACK = 'guidance_ack',
   STOPPED = 'stopped',
+  FILE_READY = 'file_ready',
 }
 
 // =============================================================================
@@ -173,6 +174,13 @@ export interface TaskCompletePayload {
   message: string
   final_phase: string
   total_iterations: number
+}
+
+export interface FileReadyPayload {
+  filepath: string
+  filename: string
+  source: string
+  description: string
 }
 
 // =============================================================================
