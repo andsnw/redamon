@@ -49,6 +49,7 @@ ssh -i ~/.ssh/guinea_pigs.pem ubuntu@15.160.68.117 "mkdir -p ~/apache" && scp -i
 ### 3. Wipe & Clean (remove everything)
 
 ```bash
+#from folder /redamon
 # Stop container, remove images, volumes, and all Docker data
 ssh -i ~/.ssh/guinea_pigs.pem ubuntu@15.160.68.117 "cd ~/apache && sudo docker-compose down && sudo docker system prune -a -f --volumes"
 ```

