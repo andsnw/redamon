@@ -171,14 +171,17 @@ docker compose --profile tools down --rmi local --volumes --remove-orphans
 
 For active development with **Next.js fast refresh** (no rebuild on every change):
 
+**Without GVM (lighter, faster startup):**
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres neo4j recon-orchestrator kali-sandbox agent webapp
+
+```
+**Complete, With GVM:**
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 ```
 
-**Without GVM (lighter, faster startup):**
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres neo4j recon-orchestrator kali-sandbox agent webapp
-```
+
 
 The first command starts **all** services including GVM/OpenVAS (which requires a ~30 min feed sync on first run). The second command starts only the core services, skipping GVM entirely — useful when you don't need network-level vulnerability scanning and want a faster, lighter stack.
 

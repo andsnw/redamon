@@ -84,9 +84,6 @@ def get_session_config_prompt() -> str:
     if NGROK_TUNNEL_ENABLED:
         if ngrok_active:
             lines.append(f"**ngrok Tunnel: ACTIVE** — public endpoint `{LHOST}:{LPORT}`")
-            if ngrok_hostname and ngrok_hostname != LHOST:
-                lines.append(f"(hostname `{ngrok_hostname}` pre-resolved to IP `{LHOST}` — "
-                             "use the IP in all payloads so targets with limited DNS can connect back)")
             lines.append("The Metasploit listener runs locally on kali-sandbox:4444.")
             lines.append("The target connects to the ngrok public URL, which tunnels traffic to your listener.")
             lines.append("")
@@ -171,6 +168,7 @@ def get_session_config_prompt() -> str:
             lines.append("set ReverseListenerBindAddress 127.0.0.1")
             lines.append("set ReverseListenerBindPort 4444")
             lines.append("set AutoVerifySession false")
+            lines.append("set DisablePayloadHandler false")
             lines.append("```")
             lines.append("")
             lines.append("**For msfvenom standalone payloads:**")
@@ -263,16 +261,17 @@ def _query_ngrok_tunnel() -> dict | None:
     ngrok runs inside kali-sandbox and exposes its API at
     http://kali-sandbox:4040/api/tunnels within the Docker network.
 
-    The hostname is resolved to an IP address so that targets with limited
-    or broken DNS can still connect back to the ngrok endpoint.
+    The hostname is returned as-is (not pre-resolved) because the agent
+    container's DNS may resolve ngrok TCP relay hostnames to a different
+    IP than the actual relay server.  The target will resolve the hostname
+    through its own DNS, which returns the correct IP.
 
     Returns:
-        Dict with 'host' (str — resolved IP), 'port' (int), and
-        'hostname' (str — original ngrok hostname) if a TCP tunnel is
-        found, or None if ngrok is unreachable or no tunnel exists.
+        Dict with 'host' (str — ngrok hostname), 'port' (int), and
+        'hostname' (str — same as host) if a TCP tunnel is found,
+        or None if ngrok is unreachable or no tunnel exists.
     """
     import requests
-    import socket
 
     try:
         resp = requests.get("http://kali-sandbox:4040/api/tunnels", timeout=5)
@@ -286,27 +285,14 @@ def _query_ngrok_tunnel() -> dict | None:
                 hostname, port_str = addr.rsplit(":", 1)
                 port = int(port_str)
 
-                # Resolve hostname to IP so the target doesn't need DNS
-                try:
-                    resolved_ip = socket.gethostbyname(hostname)
-                    logger.info(
-                        f"Resolved ngrok hostname {hostname} -> {resolved_ip}"
-                    )
-                    return {
-                        "host": resolved_ip,
-                        "port": port,
-                        "hostname": hostname,
-                    }
-                except socket.gaierror:
-                    logger.warning(
-                        f"Could not resolve ngrok hostname {hostname}, "
-                        "using hostname as-is"
-                    )
-                    return {
-                        "host": hostname,
-                        "port": port,
-                        "hostname": hostname,
-                    }
+                logger.info(
+                    f"ngrok TCP tunnel: {hostname}:{port}"
+                )
+                return {
+                    "host": hostname,
+                    "port": port,
+                    "hostname": hostname,
+                }
 
         logger.warning("ngrok API returned no TCP tunnels")
         return None
