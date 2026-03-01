@@ -12,9 +12,10 @@ import { GvmConfirmModal } from './components/GvmConfirmModal'
 import { ReconLogsDrawer } from './components/ReconLogsDrawer'
 import { ViewTabs, type ViewMode } from './components/ViewTabs'
 import { DataTable } from './components/DataTable'
+import { ActiveSessions } from './components/ActiveSessions'
 import { useGraphData, useDimensions, useNodeSelection, useTableData } from './hooks'
 import { exportToExcel } from './utils/exportExcel'
-import { useTheme, useSession, useReconStatus, useReconSSE, useGvmStatus, useGvmSSE, useGithubHuntStatus, useGithubHuntSSE } from '@/hooks'
+import { useTheme, useSession, useReconStatus, useReconSSE, useGvmStatus, useGvmSSE, useGithubHuntStatus, useGithubHuntSSE, useActiveSessions } from '@/hooks'
 import { useProject } from '@/providers/ProjectProvider'
 import { GVM_PHASES, GITHUB_HUNT_PHASES } from '@/lib/recon-types'
 import styles from './page.module.css'
@@ -165,6 +166,12 @@ export default function GraphPage() {
   } = useGithubHuntSSE({
     projectId,
     enabled: githubHuntState?.status === 'running' || githubHuntState?.status === 'starting',
+  })
+
+  // Active sessions hook — polls kali-sandbox session list
+  const activeSessions = useActiveSessions({
+    enabled: true,
+    fastPoll: activeView === 'sessions',
   })
 
   // ── Table view state (lifted from DataTable) ──────────────────────────
@@ -626,6 +633,7 @@ export default function GraphPage() {
         onExport={handleExportExcel}
         totalRows={filteredByType.length}
         filteredRows={textFilteredCount}
+        sessionCount={activeSessions.totalCount}
       />
 
       <div ref={bodyRef} className={styles.body}>
@@ -654,7 +662,7 @@ export default function GraphPage() {
               isDark={isDark}
               activeChainId={sessionId}
             />
-          ) : (
+          ) : activeView === 'table' ? (
             <DataTable
               data={data}
               isLoading={isLoading}
@@ -662,6 +670,19 @@ export default function GraphPage() {
               rows={filteredByType}
               globalFilter={globalFilter}
               onGlobalFilterChange={setGlobalFilter}
+            />
+          ) : (
+            <ActiveSessions
+              sessions={activeSessions.sessions}
+              jobs={activeSessions.jobs}
+              nonMsfSessions={activeSessions.nonMsfSessions}
+              agentBusy={activeSessions.agentBusy}
+              isLoading={activeSessions.isLoading}
+              projectId={projectId || ''}
+              onInteract={activeSessions.interactWithSession}
+              onKillSession={activeSessions.killSession}
+              onUpgradeSession={activeSessions.upgradeSession}
+              onKillJob={activeSessions.killJob}
             />
           )}
         </div>

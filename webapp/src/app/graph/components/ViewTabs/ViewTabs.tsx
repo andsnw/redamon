@@ -1,10 +1,10 @@
 'use client'
 
 import { memo } from 'react'
-import { Waypoints, Table2, Search, Download } from 'lucide-react'
+import { Waypoints, Table2, Terminal, Search, Download } from 'lucide-react'
 import styles from './ViewTabs.module.css'
 
-export type ViewMode = 'graph' | 'table'
+export type ViewMode = 'graph' | 'table' | 'sessions'
 
 interface ViewTabsProps {
   activeView: ViewMode
@@ -15,6 +15,8 @@ interface ViewTabsProps {
   onExport?: () => void
   totalRows?: number
   filteredRows?: number
+  // Sessions badge
+  sessionCount?: number
 }
 
 export const ViewTabs = memo(function ViewTabs({
@@ -25,6 +27,7 @@ export const ViewTabs = memo(function ViewTabs({
   onExport,
   totalRows,
   filteredRows,
+  sessionCount,
 }: ViewTabsProps) {
   return (
     <div className={styles.tabBar}>
@@ -46,6 +49,18 @@ export const ViewTabs = memo(function ViewTabs({
         >
           <Table2 size={14} />
           <span>Data Table</span>
+        </button>
+        <button
+          role="tab"
+          aria-selected={activeView === 'sessions'}
+          className={`${styles.tab} ${activeView === 'sessions' ? styles.tabActive : ''}`}
+          onClick={() => onViewChange('sessions')}
+        >
+          <Terminal size={14} />
+          <span>Remote Shells</span>
+          {sessionCount != null && sessionCount > 0 && (
+            <span className={styles.badge}>{sessionCount}</span>
+          )}
         </button>
       </div>
 

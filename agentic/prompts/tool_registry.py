@@ -206,7 +206,7 @@ TOOL_REGISTRY = {
             '   - Module context and sessions persist between calls\n'
             '   - **Chain commands with `;` (semicolons)**: `set RHOSTS 1.2.3.4; set RPORT 22; set USERNAME root`\n'
             '   - **DO NOT use `&&` or `||`** — these shell operators are NOT supported!\n'
-            '   - Metasploit state is auto-reset on first use in each session\n'
+            '   - Sessions persist across conversations — use msf_restart only if you need a clean state\n'
             '   - Simple system commands (curl, wget, python3) can be run directly in msfconsole\n'
             '   - **msfconsole Shell Limitations (CRITICAL):**\n'
             '     - NO variable assignment: `VAR=$(command)` does NOT work\n'
@@ -214,6 +214,19 @@ TOOL_REGISTRY = {
             '     - Complex quoting breaks — use file-based approach instead:\n'
             '       `echo \'script\' > /opt/output/gen.py` then `python3 /opt/output/gen.py`\n'
             '     - If a command fails due to quoting: switch to file-based approach immediately'
+        ),
+    },
+    "msf_restart": {
+        "purpose": "Restart msfconsole",
+        "when_to_use": "Reset Metasploit to a clean state (kills ALL sessions)",
+        "args_format": '(no arguments)',
+        "description": (
+            '**msf_restart** (Metasploit full reset)\n'
+            '   - Kills the msfconsole process and starts a fresh one\n'
+            '   - **WARNING: Kills ALL active sessions and clears all module config**\n'
+            '   - Use only when you need a completely clean Metasploit state\n'
+            '   - Takes 60-120s to restart — do not use casually\n'
+            '   - Do NOT use if there are active sessions you want to keep'
         ),
     },
 }

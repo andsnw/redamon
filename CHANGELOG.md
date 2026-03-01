@@ -33,6 +33,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Social Engineering Suggestion Templates** — 15 new suggestion buttons in AI Assistant drawer under a pink "Social Engineering" template group (Mail icon), covering payload generation, malicious documents, web delivery, HTA, email phishing, AV evasion, and more
 - **Phishing Attack Path Badge** — pink "PHISH" badge with `#ec4899` accent color for phishing sessions in the AI Assistant drawer
 - **Prisma Migrations** — `20260228120000_add_ngrok_tunnel` (agentNgrokTunnelEnabled) and `20260228130000_add_phishing_smtp_config` (phishingSmtpConfig) database migrations
+- **Remote Shells Tab** — new "Remote Shells" tab on the graph dashboard for real-time session management:
+  - Unified view of all active Metasploit sessions (meterpreter, shell), background handlers/jobs, and non-MSF listeners (netcat, socat)
+  - Sessions auto-detected from the Kali sandbox with 3-second polling and background cache refresh
+  - Built-in interactive terminal with command history (arrow keys), session-aware prompts, and auto-scroll
+  - Session actions: kill, upgrade shell to meterpreter, stop background jobs
+  - Agent busy detection with lock-timeout strategy — session listing always works from cache, interaction retries when lock is available
+  - Session-to-chat mapping — each session card shows which AI agent chat session created it
+  - Non-MSF session registration when agent creates netcat/socat listeners via `kali_shell`
+- **Command Whisperer** — AI-powered NLP-to-command translator in the Remote Shells terminal:
+  - Natural language input bar (purple accent) above the terminal command line
+  - Describe what you want in plain English → LLM generates the correct command for the current session type (meterpreter vs shell)
+  - Uses the project's configured LLM (same model as the AI agent) via a new `/command-whisperer` API endpoint
+  - Generated commands auto-fill the terminal input for review — no auto-execution
+- **Metasploit Session Persistence** — removed automatic Metasploit restart on new conversations:
+  - Removed `start_msf_prewarm` call from WebSocket initialization
+  - Removed `sessions -K` soft-reset on first `metasploit_console` use
+  - `msf_restart` tool now visible to the AI agent for manual use when a clean state is needed
 
 ### Changed
 

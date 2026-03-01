@@ -17,13 +17,16 @@ import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
+import httpx
 from fastapi import FastAPI, Query, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
+from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel
 
 from logging_config import setup_logging
 from orchestrator import AgentOrchestrator
+from orchestrator_helpers import normalize_content
 from utils import get_session_count
 from websocket_api import WebSocketManager, websocket_endpoint
 
@@ -248,6 +251,178 @@ async def download_file(
     except Exception as e:
         logger.error(f"File download error: {e}")
         return Response(content=f"Error reading file: {str(e)}", status_code=500)
+
+
+# =============================================================================
+# COMMAND WHISPERER — NLP-to-command translation using the project's LLM
+# =============================================================================
+
+_COMMAND_WHISPERER_SYSTEM_PROMPT = """You are a command-line expert for penetration testing.
+The user has an active {session_type} session and needs a command.
+
+Session type details:
+- "meterpreter": Meterpreter commands (hashdump, getsystem, upload, download, sysinfo, getuid, ps, migrate, search, cat, ls, portfwd, route, load, etc.)
+- "shell": Standard Linux/Unix shell commands (find, grep, cat, ls, whoami, id, uname, ifconfig, netstat, awk, sed, curl, wget, chmod, python, perl, etc.)
+
+Rules:
+1. Output ONLY the command — no explanations, no markdown, no commentary
+2. Single command (use && or ; to chain if needed)
+3. No sudo unless explicitly requested
+4. Prefer concise, commonly-used flags
+5. If ambiguous, pick the most likely interpretation"""
+
+
+class CommandWhispererRequest(BaseModel):
+    prompt: str
+    session_type: str
+    project_id: str
+
+
+@app.post("/command-whisperer", tags=["Sessions"])
+async def command_whisperer(body: CommandWhispererRequest):
+    """Translate a natural language request into a shell command using the project's LLM."""
+    if not orchestrator or not orchestrator._initialized:
+        return JSONResponse(content={"error": "Agent not initialized"}, status_code=503)
+
+    # Ensure LLM is set up for this project
+    if not orchestrator.llm:
+        try:
+            orchestrator._apply_project_settings(body.project_id)
+        except Exception as e:
+            logger.error(f"Command whisperer LLM setup error: {e}")
+            return JSONResponse(
+                content={"error": "LLM not configured. Open the AI assistant first or check API keys."},
+                status_code=503,
+            )
+
+    if not orchestrator.llm:
+        return JSONResponse(content={"error": "LLM not available"}, status_code=503)
+
+    try:
+        system_prompt = _COMMAND_WHISPERER_SYSTEM_PROMPT.format(
+            session_type=body.session_type,
+        )
+        response = await orchestrator.llm.ainvoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=body.prompt),
+        ])
+
+        command = normalize_content(response.content).strip()
+
+        # Strip markdown code fences if the LLM wraps the answer
+        if command.startswith("```") and command.endswith("```"):
+            command = command[3:-3].strip()
+        if command.startswith(("bash\n", "sh\n", "shell\n")):
+            command = command.split("\n", 1)[1].strip()
+
+        return {"command": command}
+
+    except Exception as e:
+        logger.error(f"Command whisperer error: {e}")
+        return JSONResponse(
+            content={"error": f"Failed to generate command: {str(e)}"},
+            status_code=500,
+        )
+
+
+# =============================================================================
+# SESSION MANAGEMENT PROXY — proxies to kali-sandbox:8013 session endpoints
+# =============================================================================
+
+# Derive base URL from existing progress URL (already in docker-compose)
+_SESSION_BASE = os.environ.get(
+    "MCP_METASPLOIT_PROGRESS_URL", "http://kali-sandbox:8013/progress"
+).rsplit("/progress", 1)[0]
+
+
+@app.get("/sessions", tags=["Sessions"])
+async def get_sessions():
+    """List all active Metasploit sessions, background jobs, and non-MSF sessions."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{_SESSION_BASE}/sessions")
+            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except httpx.TimeoutException:
+        return JSONResponse(content={"error": "Session manager timeout"}, status_code=504)
+    except Exception as e:
+        logger.error(f"Session proxy error: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=502)
+
+
+@app.post("/sessions/{session_id}/interact", tags=["Sessions"])
+async def interact_session(session_id: int, body: dict):
+    """Send a command to a specific Metasploit session."""
+    try:
+        async with httpx.AsyncClient(timeout=40.0) as client:
+            resp = await client.post(
+                f"{_SESSION_BASE}/sessions/{session_id}/interact", json=body
+            )
+            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except httpx.TimeoutException:
+        return JSONResponse(content={"error": "Session interaction timeout"}, status_code=504)
+    except Exception as e:
+        logger.error(f"Session interact proxy error: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=502)
+
+
+@app.post("/sessions/{session_id}/kill", tags=["Sessions"])
+async def kill_session(session_id: int):
+    """Kill a specific Metasploit session."""
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(f"{_SESSION_BASE}/sessions/{session_id}/kill")
+            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except Exception as e:
+        logger.error(f"Session kill proxy error: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=502)
+
+
+@app.post("/sessions/{session_id}/upgrade", tags=["Sessions"])
+async def upgrade_session(session_id: int):
+    """Upgrade a shell session to meterpreter."""
+    try:
+        async with httpx.AsyncClient(timeout=40.0) as client:
+            resp = await client.post(f"{_SESSION_BASE}/sessions/{session_id}/upgrade")
+            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except Exception as e:
+        logger.error(f"Session upgrade proxy error: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=502)
+
+
+@app.post("/jobs/{job_id}/kill", tags=["Sessions"])
+async def kill_job(job_id: int):
+    """Kill a background Metasploit job."""
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(f"{_SESSION_BASE}/jobs/{job_id}/kill")
+            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except Exception as e:
+        logger.error(f"Job kill proxy error: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=502)
+
+
+@app.post("/session-chat-map", tags=["Sessions"])
+async def session_chat_map(body: dict):
+    """Register a mapping between a Metasploit session ID and agent chat session ID."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(f"{_SESSION_BASE}/session-chat-map", json=body)
+            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except Exception as e:
+        logger.error(f"Session chat map proxy error: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=502)
+
+
+@app.post("/non-msf-sessions", tags=["Sessions"])
+async def register_non_msf_session(body: dict):
+    """Register a non-Metasploit session (netcat, socat, etc.)."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(f"{_SESSION_BASE}/non-msf-sessions", json=body)
+            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except Exception as e:
+        logger.error(f"Non-MSF session register proxy error: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=502)
 
 
 @app.websocket("/ws/agent")

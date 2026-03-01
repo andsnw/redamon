@@ -11,6 +11,8 @@ import re
 import logging
 from typing import Optional
 
+import httpx
+
 from dotenv import load_dotenv
 
 from langchain_openai import ChatOpenAI
@@ -87,6 +89,11 @@ set_checkpointer(checkpointer)
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# Base URL for session manager (kali-sandbox HTTP server on port 8013)
+_SESSION_MANAGER_BASE = os.environ.get(
+    "MCP_METASPLOIT_PROGRESS_URL", "http://kali-sandbox:8013/progress"
+).rsplit("/progress", 1)[0]
 
 
 class AgentOrchestrator:
@@ -1301,31 +1308,7 @@ class AgentOrchestrator:
         set_tenant_context(user_id, project_id)
         set_phase_context(phase)
 
-        # Soft-reset Metasploit on first use in this session
-        # Full restart (msf_restart) is handled by prewarm at WebSocket init time.
-        # Here we just do a lightweight reset to clear any leftover module/sessions.
-        msf_reset_done = state.get("msf_session_reset_done", False)
         extra_updates = {}
-        if tool_name == "metasploit_console" and not msf_reset_done:
-            session_key = f"{user_id}:{project_id}:{session_id}"
-
-            # Wait for prewarm (full restart) if it's still running
-            prewarm_task = self._prewarm_tasks.get(session_key)
-            if prewarm_task and not prewarm_task.done():
-                logger.info(f"[{session_key}] Waiting for Metasploit prewarm to complete...")
-                try:
-                    await prewarm_task
-                except Exception:
-                    pass  # Prewarm errors are non-fatal, soft reset handles cleanup
-                logger.info(f"[{session_key}] Metasploit prewarm finished")
-
-            # Lightweight soft reset: clear module context and kill leftover sessions
-            logger.info(f"[{session_key}] Soft-resetting Metasploit state (first use in session)")
-            await self.tool_executor.execute(
-                "metasploit_console", {"command": "back; sessions -K"}, phase
-            )
-            extra_updates["msf_session_reset_done"] = True
-            logger.info(f"[{session_key}] Metasploit soft reset complete")
 
         # Check if this is a long-running command that needs progress streaming
         is_long_running_msf = (
@@ -1385,6 +1368,33 @@ class AgentOrchestrator:
         else:
             logger.info("  (empty output)")
         logger.info(f"{'='*60}\n")
+
+        # Detect new Metasploit sessions and register chat mapping
+        if tool_name == "metasploit_console" and tool_output:
+            for match in re.finditer(r'session\s+(\d+)\s+opened', tool_output, re.IGNORECASE):
+                msf_session_id = int(match.group(1))
+                try:
+                    async with httpx.AsyncClient(timeout=5.0) as client:
+                        await client.post(
+                            f"{_SESSION_MANAGER_BASE}/session-chat-map",
+                            json={"msf_session_id": msf_session_id, "chat_session_id": session_id}
+                        )
+                except Exception:
+                    pass  # Best effort, don't break execution
+
+        # Register non-MSF listeners (netcat, socat) created via kali_shell
+        if tool_name == "kali_shell" and tool_args:
+            cmd = tool_args.get("command", "")
+            if re.search(r'(nc|ncat)\s+.*-l', cmd) or 'socat' in cmd:
+                try:
+                    async with httpx.AsyncClient(timeout=5.0) as client:
+                        await client.post(
+                            f"{_SESSION_MANAGER_BASE}/non-msf-sessions",
+                            json={"type": "listener", "tool": "netcat", "command": cmd,
+                                   "chat_session_id": session_id}
+                        )
+                except Exception:
+                    pass
 
         updates = {
             "_current_step": step_data,

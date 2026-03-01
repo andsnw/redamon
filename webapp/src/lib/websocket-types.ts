@@ -218,6 +218,48 @@ export interface WebSocketState {
 }
 
 // =============================================================================
+// ACTIVE SESSIONS (REST polling, not WebSocket)
+// =============================================================================
+
+export interface MsfSession {
+  id: number
+  type: 'meterpreter' | 'shell' | 'unknown'
+  info: string
+  connection: string
+  target_ip: string
+  chat_session_id: string | null
+}
+
+export interface MsfJob {
+  id: number
+  name: string
+  payload: string
+  port: number
+}
+
+export interface NonMsfSession {
+  id: string
+  type: string
+  tool: string
+  command: string
+  chat_session_id: string | null
+}
+
+export interface SessionsData {
+  sessions: MsfSession[]
+  jobs: MsfJob[]
+  non_msf_sessions: NonMsfSession[]
+  cache_age_seconds: number
+  agent_busy: boolean
+}
+
+export interface SessionInteractResult {
+  busy: boolean
+  output?: string
+  message?: string
+}
+
+// =============================================================================
 // TYPE GUARDS (Runtime type checking)
 // =============================================================================
 

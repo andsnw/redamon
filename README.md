@@ -214,6 +214,7 @@ No rebuild needed — just restart.
   - [Attack Surface Graph](#attack-surface-graph)
   - [EvoGraph — Attack Chain Evolution](#evograph--attack-chain-evolution)
   - [Multi-Session Parallel Attack Chains](#multi-session-parallel-attack-chains)
+  - [Remote Shells — Live Session Interaction](#remote-shells--live-session-interaction)
   - [CypherFix — Automated Vulnerability Remediation](#cypherfix--automated-vulnerability-remediation)
   - [Project Settings](#project-settings)
 - [System Architecture](#system-architecture)
@@ -812,6 +813,14 @@ This means you can:
 - **Track everything persistently** — all attack chains, tool executions, findings, and decisions are stored permanently in Neo4j. Nothing is lost when you close the browser or restart the containers. The full attack history is always available for querying and visualization on the graph dashboard.
 
 Each session's attack chain is visually represented on the [graph dashboard](#attack-surface-graph) with distinct coloring — inactive chains render in grey, the active session's chain pulses in orange, and per-session visibility can be toggled from the bottom bar controls.
+
+---
+
+### Remote Shells — Live Session Interaction
+
+The **Remote Shells** tab provides a unified view of every active session established by the AI agent — meterpreter shells, raw reverse/bind shells, and background listeners. Sessions appear automatically within seconds of being opened, and each one can be interacted with directly from the browser through a built-in terminal.
+
+A **Command Whisperer** input sits above the terminal: describe what you want in plain English (e.g., *"list all files containing passwords"*) and the project's LLM translates it into the correct command for the current shell type, auto-filling the terminal for review before execution.
 
 ---
 

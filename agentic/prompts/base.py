@@ -12,7 +12,7 @@ from .tool_registry import TOOL_REGISTRY
 # =============================================================================
 
 # Internal tools that exist in the phase map but are never shown to the LLM
-INTERNAL_TOOLS = {"msf_restart"}
+INTERNAL_TOOLS = set()  # msf_restart removed — agent can call it manually
 
 
 # =============================================================================
