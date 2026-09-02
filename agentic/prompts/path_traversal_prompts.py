@@ -305,6 +305,29 @@ by its name, and try the escape before declaring the prefix a dead app route.
 
 Capture the first oracle hit, record the exact payload form, and move on.
 
+#### 4A-proxy. Server-side FETCH proxies: the fixed path/URL prefix is itself an escape target
+
+Distinct from a local filesystem read: when a handler takes your input and FETCHES
+an internal resource whose location it builds as `<fixed-prefix>/<your-input>` -- an
+image / file / object / download proxy that server-side does
+`fetch("scheme://host/<container>/" + input)` or `open(BASE_DIR + "/" + input)` -- the
+hardcoded prefix in FRONT of your input is a boundary you can climb OUT of, exactly
+like a directory root. The app only ever references ONE container/prefix in its UI,
+but the backend it proxies to almost always exposes SIBLINGS the UI never links.
+- Inject `../` and its encodings (`%2e%2e%2f`, `..%2f`, double-encoded
+  `%252e%252e%252f`, backslash `..\`, and mixed) INSIDE your segment to step above
+  the fixed prefix and reach sibling containers / directories on the backend.
+- Beware handlers that keep only the LAST path segment of your input (a `split('/')`
+  or `basename` on the request path): a plain `/../sibling/name` collapses to `name`.
+  Smuggle the traversal INSIDE the final segment with encoded separators
+  (`..%2f..%2fsibling%2fname`) so it survives the split and only decodes backend-side.
+- Do NOT treat the one container the UI references as the whole surface. Once you can
+  reach siblings, ENUMERATE sibling container / directory / object names with a
+  content-discovery wordlist -- a readable secondary store (backups, dumps, config,
+  internal data) sitting beside the public one is the usual prize. The app-referenced
+  container is a STARTING point, not the boundary; do not declare the surface
+  exhausted from it alone.
+
 #### 4A-ter. Identical failures across encodings = a STRIPPING SANITIZER, not a whitelist
 
 If several *different* traversal encodings all collapse to the EXACT SAME
@@ -327,6 +350,18 @@ form can succeed where the plain families all failed. Do not try to reason out
 - Diff the responses and keep any token whose response DIFFERS from the baseline;
   that survivor is your working escape. Treat a size/status change from the
   soft-negative as a HIT to confirm, not noise.
+- **A single-pass stripper that removes MORE THAN ONE token needs DEEPER nesting,
+  not one fixed double.** When the filter deletes several sequences (e.g. both
+  `../` and `./`, or their backslash forms), the shallow `....//` fold can be
+  over-eaten -- one rule reconstitutes the step and a second rule immediately
+  consumes it again, so the residue is NOT `../`. Do not conclude the doubling
+  trick "does not work"; ESCALATE it: sweep a LADDER of nesting depths and
+  interleavings (more dots, more separators, and the other stripped token wrapped
+  around the target one) as its own oracle wave, so that after exactly one removal
+  of every rule the surviving residue collapses to `../`. Enumerate the ladder
+  (shallow -> deeper) against the /etc/passwd proof file and READ the winning depth
+  from the diff -- the correct nesting is DISCOVERED per filter, never assumed to
+  be the first double you tried.
 Only once the whole corpus is on record and every form returned the identical
 soft-negative may you entertain "whitelist / basename" as the explanation.
 

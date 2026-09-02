@@ -14,7 +14,9 @@
 FROM golang:1.23-bookworm AS builder
 
 ARG WCVS_REF=master
-RUN git clone https://github.com/Hackmanit/Web-Cache-Vulnerability-Scanner.git /src \
+# HTTP/1.1: bookworm's git 2.39 + GitHub's edge answer the HTTP/2
+# git-upload-pack POST with 401, which git reports as a credential prompt.
+RUN git -c http.version=HTTP/1.1 clone https://github.com/Hackmanit/Web-Cache-Vulnerability-Scanner.git /src \
     && cd /src \
     && git checkout "${WCVS_REF}" \
     && CGO_ENABLED=0 go build -o /wcvs .

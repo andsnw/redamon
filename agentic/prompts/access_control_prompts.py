@@ -106,6 +106,20 @@ enumeration, header/verb sets). When capture is OFF, fall back to `execute_curl`
   that ignore the header.
 - **Do not rat-hole on external CVE/PoC hunts** before the local differential
   sweep is on the record.
+- **A valid token that STILL gets redirected is a cookie-gated session, not a dead
+  end - do NOT abandon it.** When you hold a token the auth API accepts (login
+  returned it, or it verifies) but a protected page keeps answering a 3xx redirect
+  to a login/landing route, you are presenting the token the WRONG WAY, you are not
+  failing. Page / server-rendered auth almost always reads its session from a
+  COOKIE that the login front-end sets - never from the query param or
+  `Authorization` header you used against the API. So the moment you see
+  "valid-token-but-redirect-loop", you may NOT conclude the page is unreachable or
+  the account is wrong until you have: (1) inspected the login page's own
+  client-side JS and any `Set-Cookie` response for the cookie NAME it stores the
+  session under; (2) resent the IDENTICAL request with the token placed in that
+  cookie; (3) seen it STILL redirect. Forging a token, re-cracking, or chasing a
+  framework auth-bypass CVE are detours here - the fix is simply WHERE you put the
+  token you already hold.
 - **Commit to a logic/race vector; do not scatter into scanners.** Once evidence
   points to a business-logic, mass-assignment, or TOCTOU/race authorization bug (a
   concurrency/race theme, a check that sets state then re-reads it, a
@@ -173,6 +187,27 @@ menu and reading the differential, never a value you already know.
 - Only once this full matrix is on record WITHOUT a success differential does the
   credential genuinely need to be discovered - then, and only then, hand off to
   credential guessing / brute force.
+- **Loot a readable disclosure BEFORE you brute-force.** If the engagement has
+  surfaced ANY readable store - files, a database or backup dump, config, or
+  object-store keys - recover credentials and secrets from it FIRST. A readable
+  store almost always contains the exact secret you would otherwise try to guess, so
+  spraying a login while a readable dump sits unopened is wasted budget. Credential
+  brute force is the LAST resort, reached only after BOTH the auth-logic matrix above
+  AND every readable disclosure already in hand are exhausted.
+- **When you brute-force a login, define SUCCESS positively and treat EVERY distinct
+  rejection as failure.** A login endpoint frequently has more than one failure mode -
+  e.g. an input-validation / WAF rejection for malformed input AND a separate
+  wrong-credential rejection - each with a DIFFERENT response body. A brute-force
+  oracle keyed on the ABSENCE of one specific failure string (the classic
+  `hydra ... F=<one message>`) then FALSE-POSITIVES on the other rejection path and
+  buries the real hit in noise. Before trusting any tool's "found" line: enumerate
+  ALL of the login's failure responses (submit a known-bad credential AND a
+  known-malformed input, record every distinct body/length/status), mark them ALL as
+  failure, and key success on a POSITIVE signal instead - a redirect to an authed
+  area, a `Set-Cookie` / issued token, or the authenticated content itself. Then
+  re-verify each candidate "hit" by hand against that positive oracle; the intended
+  weak credential is usually already in a standard common-password list and is only
+  missed because the failure oracle was ambiguous.
 
 ### Step 3: Forced browsing / function-level access (WSTG 4.5.2 + 4.5.3 vertical)
 - The app decides your role somewhere; test whether privileged FUNCTIONS are
@@ -289,6 +324,58 @@ falsely read as "no bypass." Diff every response against the baseline:
   paths (and their common short forms), and try trivial/derived passwords - vendor
   defaults, the username itself, and a short weak-password list - before escalating
   to heavier credential attacks.
+- **A "no differential" bypass matrix does NOT close the class when a
+  client-trusted privilege field exists.** When Step 2A/Step 6 have surfaced a
+  role/privilege/entitlement parameter the client controls but the pure auth-bypass
+  matrix returned no success differential, the winning shape is very often
+  `valid-low-priv-session + tamper`, NOT a pure bypass - so the missing ingredient is
+  a real logged-in principal, not a cleverer bypass or a different vuln class. Do NOT
+  defect to SQLi / template / session-forge leads (a disclosed filter or debugger
+  string is a tempting but usually dead detour here); STAY on access control and
+  SOURCE the credential mechanically: run the known/derived username against a REAL
+  common-password wordlist (the standard top-N weak-password list - hand off to the
+  brute-force skill / `hydra` / an `execute_code` loop over a common-password list),
+  not a hand-picked handful of guesses. The most common real-world passwords (simple
+  word+digit and keyboard-sequence forms) are frequently the intended low-priv
+  secret; an ad-hoc list of five or six guesses that omits them is the usual reason
+  this path is wrongly abandoned. Once ANY valid session is obtained, replay the
+  privilege tamper and force-browse the protected resource directly.
+- **When you have EXFILTRATED a credential store, the credential is already in
+  hand - complete the chain, do not pivot to forging.** A recovered dump / backup /
+  leaked DB with user rows means you do NOT need to forge a token, crack a signing
+  secret, or chase a framework auth-bypass CVE - those are the classic detours that
+  strand a run one step from the goal. Instead: (1) DECODE the stored secret to a
+  usable form - a stored password/secret column is frequently just encoded
+  (base64 / hex / url-escaped), reversible in one step, not an irreversible hash;
+  try decoding before assuming you must crack it. (2) Identify the PRIVILEGED row
+  FROM THE DUMP ITSELF - the account whose role / admin / level / group /
+  entitlement column marks it as elevated - and target THAT principal, not an
+  arbitrary user. (3) AUTHENTICATE as that principal through the normal login to
+  mint a legitimate session/token. (4) Then load the PRIVILEGED UI ROUTE with that
+  session and read the rendered page: the objective is frequently emitted only in
+  the server-rendered HTML of the authenticated page, NOT by the JSON/status API you
+  used to confirm the role - so confirming `elevated == true` on an API is a
+  checkpoint, never the finish line; fetch the actual protected page before
+  concluding the access did not yield the goal. Two execution details decide this
+  last step and are the usual reason a run holds a valid token yet never sees the goal:
+  - **Present the token the way the PAGE reads it, not the way the API took it.** The
+    endpoint that ISSUED a token (query param, JSON body, or `Authorization` header)
+    is often NOT where the protected page looks for it. Page/server-rendered auth
+    commonly reads the token from a COOKIE that the app's client-side login code sets
+    - so recover the exact cookie NAME from the login front-end (its `Set-Cookie`, a
+    `cookie`-setting call in the login JS, or `document.cookie` writes) and REPLAY the
+    token in that cookie. Signature to watch for: you hold a token the API validates,
+    but the protected route keeps answering a 3xx redirect (to a login/landing page)
+    when you pass the token as a query param or header - that redirect loop IS the
+    tell that the session is cookie-gated; move the same token into the discovered
+    cookie and the redirect resolves to the page.
+  - **Authenticate as the FLAGGED row, not any row.** When privilege is a per-row
+    column, logging in as an arbitrary recovered account yields a VALID but
+    unprivileged session that reaches the page yet leaves the goal hidden behind the
+    privilege check (a "this needs a higher-privilege account" placeholder in place of
+    the content). Select the row whose privilege column is actually SET and
+    authenticate as THAT principal before loading the page; a 200 that shows the
+    placeholder means right-page/wrong-principal, not a dead end.
 
 ### Step 7: Token / session authorization (JWT, cookies)
 - Decode any JWT / bearer / session token (`execute_code`). Inspect claims for
