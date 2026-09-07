@@ -3898,6 +3898,44 @@ _status_expected_mb() {
     done
 }
 
+# Report any CORE service that is not running. A container that exited or is
+# restart-looping still resolves to nothing in Docker's embedded DNS, so the
+# webapp's calls to it fail with ENOTFOUND and the operator sees an error next
+# to whatever form they were filling in (issue #184). Naming the dead service
+# here is the difference between a 30-second fix and a bug report.
+_status_core_service_report() {
+    local svc state down=() have_any=0
+    for svc in $CORE_SERVICES; do
+        # `ps -a --format` prints one line per container; empty means the
+        # service has no container at all (never created, or removed).
+        state="$(docker compose ps -a --format '{{.State}}' "$svc" 2>/dev/null | head -1)"
+        [[ -n "$state" ]] && have_any=1
+        [[ "$state" == "running" ]] && continue
+        down+=("${svc}: ${state:-not created}")
+    done
+
+    # No container for ANY core service: this is a clone that was never
+    # installed, not an outage. Calling it one would hand a new user the wrong
+    # command - `up` cannot start images that were never built.
+    if (( have_any == 0 )); then
+        echo ""
+        echo -e "  ${YELLOW}No RedAmon services are installed yet.${NC} Run: ./redamon.sh install"
+        return 0
+    fi
+
+    if (( ${#down[@]} > 0 )); then
+        echo ""
+        echo -e "  ${RED}Core services NOT running:${NC}"
+        for svc in "${down[@]}"; do
+            echo -e "    ${RED}x${NC} ${svc}"
+        done
+        echo -e "  ${YELLOW}The webapp reaches these by container name, so while one is down the UI"
+        echo -e "  fails with 'ENOTFOUND <name>'. Inspect with:${NC}"
+        echo "    docker compose logs --tail=100 <service>"
+        echo -e "  ${YELLOW}then bring it back with:${NC} ./redamon.sh up"
+    fi
+}
+
 cmd_status() {
     _migrate_reorg_layout
     _migrate_legacy_kbase_flag
@@ -3953,11 +3991,16 @@ cmd_status() {
 
     # Container list — filter to redamon containers only. Keeps the header
     # row and any container whose name starts with "redamon-".
-    docker compose ps | grep -E '^(NAME|redamon-)' || {
-        # grep returns non-zero if no lines match (no containers running).
+    # `-a`, not a bare `ps`: without it an EXITED core service is simply absent
+    # from the table, so a crashed agent looked like a clean stack while the UI
+    # failed with "getaddrinfo ENOTFOUND agent" (issue #184).
+    docker compose ps -a | grep -E '^(NAME|redamon-)' || {
+        # grep returns non-zero if no lines match (no containers at all).
         # Fall back to plain ps so the user still sees the "no services" message.
-        docker compose ps
+        docker compose ps -a
     }
+
+    _status_core_service_report
 
     _status_memory_report
 
