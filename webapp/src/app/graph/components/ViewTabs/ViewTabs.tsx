@@ -32,6 +32,7 @@ export type TableViewMode =
   | 'webCachePoison'
   | 'reconDelta'
   | 'scanSchedule'
+  | 'triage'
 
 const TABLE_MODE_LABELS: Record<TableViewMode, string> = {
   nodeDetails: 'Node Inspector',
@@ -56,6 +57,20 @@ const TABLE_MODE_LABELS: Record<TableViewMode, string> = {
   webCachePoison: 'Web Cache Poisoning',
   reconDelta: 'Recon Delta',
   scanSchedule: 'Scans',
+  triage: 'Triage',
+}
+
+/**
+ * Modes that have their own top-level tab, so the table dropdown must NOT also
+ * advertise them - it would render a second, identical-looking tab beside the
+ * real one. Kept as one list because the icon and the label used to compute this
+ * separately and drifted apart the moment a tab was added.
+ */
+const OWN_TAB_MODES: readonly TableViewMode[] = ['reconDelta', 'scanSchedule', 'triage']
+
+/** The mode the table dropdown should present itself as. */
+export function dropdownMode(mode: TableViewMode | null | undefined): TableViewMode {
+  return !mode || OWN_TAB_MODES.includes(mode) ? 'all' : mode
 }
 
 const TABLE_VIEW_MODES = new Set<string>(Object.keys(TABLE_MODE_LABELS))
@@ -358,19 +373,27 @@ export const ViewTabs = memo(function ViewTabs({
           <CalendarClock size={14} />
           <span>Scans</span>
         </button>
+        {/* Triage lives beside the graph it suppresses findings from, rather
+            than as a separate top-level page. */}
+        <button
+          role="tab"
+          aria-selected={activeView === 'table' && tableViewMode === 'triage'}
+          className={`${styles.tab} ${activeView === 'table' && tableViewMode === 'triage' ? styles.tabActive : ''}`}
+          onClick={() => { onTableViewModeChange?.('triage'); onViewChange('table') }}
+        >
+          <Filter size={14} />
+          <span>Triage</span>
+        </button>
 
         <div ref={tableMenuRef} className={styles.tableMenuContainer}>
           <button
             role="tab"
-            aria-selected={activeView === 'table' && tableViewMode !== 'reconDelta' && tableViewMode !== 'scanSchedule'}
-            className={`${styles.tab} ${activeView === 'table' && tableViewMode !== 'reconDelta' && tableViewMode !== 'scanSchedule' ? styles.tabActive : ''}`}
+            aria-selected={activeView === 'table' && tableViewMode !== 'reconDelta' && tableViewMode !== 'scanSchedule' && tableViewMode !== 'triage'}
+            className={`${styles.tab} ${activeView === 'table' && tableViewMode !== 'reconDelta' && tableViewMode !== 'scanSchedule' && tableViewMode !== 'triage' ? styles.tabActive : ''}`}
             onClick={() => onViewChange('table')}
           >
             {(() => {
-              // Recon Delta / Scans are their own tabs now, so the table
-              // dropdown never advertises them - fall back to its default label.
-              const mode = (tableViewMode === 'reconDelta' || tableViewMode === 'scanSchedule')
-                ? 'all' : (tableViewMode ?? 'all')
+              const mode = dropdownMode(tableViewMode)
               const Icon =
                 mode === 'nodeDetails' ? Layers
                 : mode === 'jsRecon' ? Code
@@ -394,7 +417,7 @@ export const ViewTabs = memo(function ViewTabs({
                 : Table2
               return <Icon size={14} />
             })()}
-            <span>{TABLE_MODE_LABELS[(tableViewMode === 'reconDelta' || tableViewMode === 'scanSchedule') ? 'all' : (tableViewMode ?? 'all')]}</span>
+            <span>{TABLE_MODE_LABELS[dropdownMode(tableViewMode)]}</span>
             <UnseenBadge count={unseenTotal} />
             <ChevronDown
               size={18}

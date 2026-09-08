@@ -39,17 +39,24 @@ class IndividualPromptBlockBudgets(unittest.TestCase):
     def test_informational_guidance_info_phase(self):
         from prompts.base import build_informational_guidance
         info = build_informational_guidance("informational")
-        # Was ~2k chars pre-Safe (Intent Detection + Graph-First split);
-        # compressed to single bulleted block ~1.2k. A later commit added the
-        # substantive "Host surface check" guidance block (~950 chars), which is
-        # intentional; the budget is raised to 2400 to match while still guarding
-        # against runaway multi-paragraph restores. (Budget bump is unrelated to
-        # the crypto_attack skill: build_informational_guidance is a fixed literal
-        # that renders no per-skill content.)
+        # This block is now three distinct, intentional guidance sections, each
+        # injected every informational iteration:
+        #   1. Intent Detection + Graph-First (~1.2k) — the original content.
+        #   2. Host surface check (~1.5k) — full-range port scan + resolve-to-IP
+        #      when the scanner cannot resolve the target name.
+        #   3. Encrypted-token / cryptographic-oracle check (~1.4k) — padding
+        #      oracle / CBC bit-flip / alg=none, so the agent attacks a token's
+        #      crypto instead of sinking the run into an unreadable plaintext.
+        # Budget raised 2400 -> 5200 to fit all three with ~10% headroom. The
+        # bound still guards its real target: runaway DUPLICATION (a restored
+        # multi-paragraph intent block, a second Graph-First list). If a further
+        # substantive section lands, raise this AND extend the list above; do not
+        # bump it to silence a copy-paste regression.
         self.assertLess(
-            len(info), 2400,
+            len(info), 5200,
             "build_informational_guidance regressed — check for restored "
-            "multi-paragraph intent sections or duplicate Graph-First list.",
+            "multi-paragraph intent sections or a duplicated Graph-First / "
+            "Host-surface / crypto-oracle block.",
         )
 
     def test_informational_guidance_other_phases_empty(self):

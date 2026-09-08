@@ -702,6 +702,9 @@ function renderScope(data: ReportData, narrative?: string): string {
       <tr><td>Base URLs</td><td>${graphOverview.endpointCoverage.baseUrls}</td></tr>
       <tr><td>Endpoints</td><td>${graphOverview.endpointCoverage.endpoints}</td></tr>
       <tr><td>Parameters</td><td>${graphOverview.endpointCoverage.parameters}</td></tr>
+      ${graphOverview.suppressedCount
+        ? `<tr><td>Suppressed as noise</td><td>${graphOverview.suppressedCount} finding(s) reviewed and excluded from this report</td></tr>`
+        : ''}
     </tbody>
   </table>
   ${roeTable}

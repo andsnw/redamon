@@ -1,4 +1,16 @@
-"""Hardcoded Cypher queries for the static collection phase of triage."""
+"""Hardcoded Cypher queries for the static collection phase of triage.
+
+These are an ENFORCEMENT SITE for mute, not just a data source. They run through
+`run_static_query`, which never touches `graph_db.tenant_filter.scope_query`, so
+the `&!Muted` exclusion every agent query gets for free is absent here and has to
+be written by hand. Without it a triage run re-collects and re-classifies
+findings an operator already suppressed, and they reappear in the Findings table.
+
+Every query binding a MUTEABLE label (Vulnerability, ExploitGvm, GithubSecret,
+GithubSensitiveFile, Secret, JsReconFinding, MultiscannerFinding,
+MalPackageFinding) needs `WHERE NOT <var>:Muted`. ChainFinding is EvoGraph
+memory, is out of triage scope, and is deliberately left alone.
+"""
 
 TRIAGE_QUERIES = [
     {
@@ -7,6 +19,7 @@ TRIAGE_QUERIES = [
         "description": "All vulnerabilities with endpoints, parameters, and GVM fields",
         "query": """
 MATCH (v:Vulnerability {user_id: $userId, project_id: $projectId})
+WHERE NOT v:Muted
 OPTIONAL MATCH (v)-[:FOUND_AT]->(e:Endpoint)
 OPTIONAL MATCH (v)-[:AFFECTS_PARAMETER]->(p:Parameter)
 OPTIONAL MATCH (e)-[:BELONGS_TO]->(b:BaseURL)
@@ -34,6 +47,7 @@ MATCH (t:Technology {user_id: $userId, project_id: $projectId})
 OPTIONAL MATCH (c)-[:HAS_CWE]->(m:MitreData)
 OPTIONAL MATCH (m)-[:HAS_CAPEC]->(cap:Capec)
 OPTIONAL MATCH (ex:ExploitGvm)-[:EXPLOITED_CVE]->(c)
+  WHERE NOT ex:Muted
 RETURN t.name AS technology, t.version AS version,
        collect(DISTINCT {cve: c.id, cvss: c.cvss_score, description: c.description}) AS cves,
        collect(DISTINCT m.cwe_id) AS cwes,
@@ -51,7 +65,9 @@ MATCH (d:Domain {user_id: $userId, project_id: $projectId})
       -[:HAS_REPOSITORY]->(repo:GithubRepository)
 OPTIONAL MATCH (repo)-[:HAS_PATH]->(path:GithubPath)
       -[:CONTAINS_SECRET]->(secret:GithubSecret)
+  WHERE NOT secret:Muted
 OPTIONAL MATCH (path)-[:CONTAINS_SENSITIVE_FILE]->(sf:GithubSensitiveFile)
+  WHERE NOT sf:Muted
 RETURN repo.name AS repo, repo.full_name AS full_name,
        collect(DISTINCT {path: path.path, secret_type: secret.secret_type, sample: secret.sample}) AS secrets,
        collect(DISTINCT {path: sf.path, secret_type: sf.secret_type}) AS sensitive_files
@@ -64,6 +80,7 @@ RETURN repo.name AS repo, repo.full_name AS full_name,
         "query": """
 MATCH (ex:ExploitGvm {user_id: $userId, project_id: $projectId})
       -[:EXPLOITED_CVE]->(c:CVE)
+WHERE NOT ex:Muted
 OPTIONAL MATCH (t:Technology)-[:HAS_KNOWN_CVE]->(c)
 RETURN c.id AS cve, c.cvss_score AS cvss, c.description AS description,
        collect(DISTINCT t.name) AS affected_technologies,
@@ -173,6 +190,7 @@ RETURN cert.subject_cn AS subject_cn,
         "description": "Security check vulnerabilities (missing headers, misconfigs)",
         "query": """
 MATCH (v:Vulnerability {user_id: $userId, project_id: $projectId, source: 'security_check'})
+WHERE NOT v:Muted
 OPTIONAL MATCH (bu:BaseURL)-[:HAS_VULNERABILITY]->(v)
 RETURN v.id AS vuln_id, v.name AS name, v.severity AS severity,
        v.description AS description, v.category AS category,

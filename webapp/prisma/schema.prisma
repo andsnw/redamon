@@ -199,6 +199,8 @@ model UserSettings {
   driftnetApiKey   String  @default("") @map("driftnet_api_key")
   wpscanApiToken   String  @default("") @map("wpscan_api_token")
   pdcpApiKey       String  @default("") @map("pdcp_api_key")
+  securitytrailsApiKey String @default("") @map("securitytrails_api_key")
+  viewdnsApiKey    String  @default("") @map("viewdns_api_key")
 
   // Tunneling & Infrastructure
   // STRIDE I19: tunnels must be explicitly enabled by the operator; a saved
@@ -945,6 +947,17 @@ model Project {
   securityCheckTimeout              Int     @default(10) @map("security_check_timeout")
   securityCheckMaxWorkers           Int     @default(10) @map("security_check_max_workers")
 
+  // ========== ORIGIN-IP DISCOVERY (CDN/WAF unmasking) ==========
+  originDiscoveryEnabled            Boolean @default(false) @map("origin_discovery_enabled")
+  originDiscoveryKeyless            Boolean @default(true)  @map("origin_discovery_keyless")
+  originDiscoveryScanners           Boolean @default(true)  @map("origin_discovery_scanners")
+  originDiscoveryPassiveDns         Boolean @default(true)  @map("origin_discovery_passive_dns")
+  originDiscoveryMaxCandidates      Int     @default(25)    @map("origin_discovery_max_candidates")
+  originDiscoveryMaxSearchCalls     Int     @default(50)    @map("origin_discovery_max_search_calls")
+  originDiscoveryThreshold          Int     @default(60)    @map("origin_discovery_threshold")
+  originDiscoveryTimeout            Int     @default(10)    @map("origin_discovery_timeout")
+  originDiscoveryWorkers            Int     @default(10)    @map("origin_discovery_workers")
+
   // ========== GVM VULNERABILITY SCAN ==========
   gvmScanConfig                     String  @default("Full and fast") @map("gvm_scan_config")
   gvmScanTargets                    String  @default("both") @map("gvm_scan_targets")
@@ -1144,6 +1157,15 @@ model Project {
   cypherfixBranchPrefix             String   @default("cypherfix/") @map("cypherfix_branch_prefix")
   cypherfixRequireApproval          Boolean  @default(true) @map("cypherfix_require_approval")
   cypherfixLlmModel                 String   @default("") @map("cypherfix_llm_model")
+
+  // ========== FINDING TRIAGE ==========
+  // Below this confidence the classifier must return `needs_verification`
+  // instead of a real/noise call, so a guess is never recorded as a decision.
+  triageConfidenceThreshold         Float    @default(0.7)   @map("triage_confidence_threshold")
+  // Ships OFF and should stay off without a deliberate decision: muting is what
+  // hides a finding from the agent, so it stays a human action. Turning this on
+  // lets high-confidence `likely_noise` be suppressed automatically.
+  triageAutoMute                    Boolean  @default(false) @map("triage_auto_mute")
 
   // ========== RULES OF ENGAGEMENT ==========
   // --- Document & Metadata ---

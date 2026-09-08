@@ -125,8 +125,10 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
       {isOpen && (
         <div className={styles.sectionContent}>
           <p className={styles.sectionDescription}>
-            Configure automated code remediation. CypherFix analyzes your Neo4j graph for vulnerabilities,
-            then generates code fixes via pull requests to your GitHub repository.
+            Configure finding triage and automated code remediation. CypherFix analyzes your Neo4j
+            graph, classifies each finding as real or noise, then generates code fixes via pull
+            requests to your GitHub repository. The model chosen below runs the triage classification
+            as well as the fixes.
           </p>
 
           {/* GitHub Token */}
@@ -205,7 +207,7 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
 
           {/* LLM Model Override - searchable dropdown */}
           <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel}>LLM Model Override</label>
+            <label className={styles.fieldLabel}>CypherFix &amp; Triage LLM Model</label>
             <div className={styles.modelSelector} ref={dropdownRef}>
               <div
                 className={`${styles.modelSelectorInput} ${dropdownOpen ? styles.modelSelectorInputFocused : ''}`}
@@ -314,8 +316,47 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
               )}
             </div>
             <span className={styles.fieldHint}>
-              Override the LLM model for CypherFix agents. Leave empty to use the model selected in Agent Behaviour.
+              Override the LLM model for CypherFix agents, including the triage pass that classifies
+              findings as real or noise. Leave empty to use the model selected in Agent Behaviour.
             </span>
+          </div>
+
+          {/* Triage confidence threshold */}
+          <div className={styles.fieldGroup}>
+            <label className={styles.fieldLabel}>Triage Confidence Threshold</label>
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              className={styles.input}
+              value={data.triageConfidenceThreshold ?? 0.7}
+              onChange={(e) =>
+                updateField('triageConfidenceThreshold', parseFloat(e.target.value) || 0.7)
+              }
+            />
+            <span className={styles.fieldHint}>
+              Below this confidence the classifier records &quot;needs verification&quot; instead of
+              calling a finding real or noise, so a guess is never stored as a decision. Higher means
+              more findings come back for a human to check.
+            </span>
+          </div>
+
+          {/* Auto-mute */}
+          <div className={styles.toggleRow}>
+            <div>
+              <span className={styles.toggleLabel}>Auto-mute high-confidence noise</span>
+              <p className={styles.toggleDescription}>
+                Off by default, and worth leaving off. Muting hides a finding from the AI agent
+                entirely, so it is normally a human decision. Enabling this lets triage suppress
+                findings it is highly confident are noise, without asking. Muted findings can always
+                be restored from the Triage tab.
+              </p>
+            </div>
+            <Toggle
+              checked={data.triageAutoMute ?? false}
+              onChange={(checked) => updateField('triageAutoMute', checked)}
+            />
           </div>
         </div>
       )}

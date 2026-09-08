@@ -63,6 +63,30 @@ class TriageStreamingCallback:
             pass
 
 
+#: Projects with a triage run in flight, guarding against a second concurrent
+#: start. Process-local, which matches the deployment: triage runs inside the one
+#: agent container, so there is a single process to coordinate. A multi-replica
+#: agent would need this in Postgres or Redis instead.
+_TRIAGE_IN_FLIGHT: set = set()
+
+
+def _claim_triage_slot(project_id: str) -> bool:
+    """Take the run slot for a project. False when one is already running.
+
+    No lock is needed around the check-and-add: asyncio does not preempt a
+    coroutine between two statements, and every caller shares the event loop.
+    """
+    if project_id in _TRIAGE_IN_FLIGHT:
+        return False
+    _TRIAGE_IN_FLIGHT.add(project_id)
+    return True
+
+
+def _release_triage_slot(project_id: str) -> None:
+    """Free the slot. Safe to call twice."""
+    _TRIAGE_IN_FLIGHT.discard(project_id)
+
+
 async def handle_triage_websocket(websocket: WebSocket):
     """Main WebSocket handler for triage agent connections.
 
@@ -91,6 +115,7 @@ async def handle_triage_websocket(websocket: WebSocket):
     state: TriageState | None = None
     orchestrator: TriageOrchestrator | None = None
     triage_task: asyncio.Task | None = None
+    triage_project_id: str | None = None
 
     try:
         while True:
@@ -124,6 +149,21 @@ async def handle_triage_websocket(websocket: WebSocket):
                     await callback.on_error("Not initialized. Send init first.", recoverable=True)
                     continue
 
+                # One triage run per project at a time. Two concurrent runs
+                # would collect the same findings, classify them twice against a
+                # graph that is still changing, race each other writing verdicts
+                # back, and bill the operator for both. Rejected rather than
+                # queued: the second run wants the answer the first is already
+                # computing.
+                if not _claim_triage_slot(state["project_id"]):
+                    await callback.on_error(
+                        "A triage run is already in progress for this project. "
+                        "Wait for it to finish, or stop it first.",
+                        recoverable=True,
+                    )
+                    continue
+                triage_project_id = state["project_id"]
+
                 orchestrator = TriageOrchestrator(
                     user_id=state["user_id"],
                     project_id=state["project_id"],
@@ -136,6 +176,11 @@ async def handle_triage_websocket(websocket: WebSocket):
                     except Exception as e:
                         logger.exception("Triage failed")
                         await callback.on_error(str(e), recoverable=False)
+                    finally:
+                        # Released here, not only in the socket's finally, so a
+                        # run that fails does not lock the project out until the
+                        # operator closes the tab.
+                        _release_triage_slot(triage_project_id)
 
                 triage_task = asyncio.create_task(run_triage())
 
@@ -151,5 +196,9 @@ async def handle_triage_websocket(websocket: WebSocket):
     finally:
         if triage_task and not triage_task.done():
             triage_task.cancel()
+        # A cancelled task's `finally` may never run, so a disconnect mid-run
+        # would otherwise strand the slot. Releasing twice is a no-op.
+        if triage_project_id:
+            _release_triage_slot(triage_project_id)
         if orchestrator:
             await orchestrator.cleanup()

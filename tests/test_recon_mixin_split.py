@@ -180,10 +180,13 @@ class TestCombinatorClass(unittest.TestCase):
             elif isinstance(b, ast.Attribute):
                 bases.add(b.attr)
         # Original 7 sub-mixins from the split, plus the sub-mixins added since
-        # (takeover/vhost_sni/ai_surface). ReconMixin must inherit all of them.
+        # (takeover/vhost_sni/ai_surface/triage). ReconMixin must inherit all of
+        # them: a method that is not reachable through the MRO is a method the
+        # Neo4jClient silently does not have.
         required = {"DomainMixin", "PortMixin", "HttpMixin", "VulnMixin",
                     "ResourceMixin", "JsReconMixin", "UserInputMixin",
-                    "TakeoverMixin", "VhostSniMixin", "AiSurfaceReconMixin"}
+                    "TakeoverMixin", "VhostSniMixin", "AiSurfaceReconMixin",
+                    "TriageMixin"}
         self.assertEqual(bases, required,
                          f"ReconMixin bases mismatch. got={bases} expected={required}")
 

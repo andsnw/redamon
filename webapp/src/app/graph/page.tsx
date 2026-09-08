@@ -46,6 +46,7 @@ import { useUnseenCounts } from './hooks/useUnseenCounts'
 import { ActiveVersionOnlyNotice } from './components/VersionSwitch'
 import { VersionManager } from './components/VersionManager'
 import { ReconDeltaTable } from './components/ReconDelta'
+import { TriageTable } from './components/Triage/TriageTable'
 import { ScanScheduleTable } from './components/ScanSchedule'
 import { useStableGraphData } from './hooks/useStableGraphData'
 import { exportToCsv, exportToJson, exportToMarkdown } from './utils/exportCsv'
@@ -1665,6 +1666,12 @@ export default function GraphPage() {
                   onOpenManager={() => setIsVersionManagerOpen(true)}
                 />
               </div>
+            ) : tableViewMode === 'triage' ? (
+              // Verdicts and mute state are LIVE, never version-scoped, so this
+              // sits BELOW the past-version guard: viewing an old snapshot shows
+              // the same "active version only" notice the RedZone panels show,
+              // rather than silently rendering current data under an old label.
+              <TriageTable projectId={projectId} />
             ) : tableViewMode === 'nodeDetails' ? (
               <NodeDetailsTable
                 data={filterGraphData ?? data}

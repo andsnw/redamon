@@ -39,6 +39,7 @@ function makeReportData(overrides: Partial<ReportData> = {}): ReportData {
     generatedAt: '2026-04-03T00:00:00.000Z',
     graphOverview: {
       totalNodes: 0,
+      suppressedCount: 0,
       nodeCounts: [],
       subdomainStats: { total: 0, resolved: 0, uniqueIps: 0 },
       endpointCoverage: { baseUrls: 0, endpoints: 0, parameters: 0 },

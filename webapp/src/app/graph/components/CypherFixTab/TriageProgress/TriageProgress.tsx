@@ -15,6 +15,7 @@ const PHASE_LABELS: Record<TriagePhase, string> = {
   collecting_attack_chains: 'Loading chain summaries',
   collecting_certificates: 'Checking certificates',
   collecting_security_checks: 'Reviewing security checks',
+  classifying: 'AI classifying real vs noise',
   correlating: 'AI correlating findings',
   prioritizing: 'AI prioritizing threats',
   generating_remediations: 'Generating remediations',

@@ -28,7 +28,8 @@ from fastapi.responses import Response, JSONResponse
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel
 
-from llm_guard import require_internal_auth, require_internal_auth_only
+from llm_guard import (require_internal_auth, require_internal_auth_only,
+                       require_master_internal_auth)
 from logging_config import setup_logging
 from orchestrator import AgentOrchestrator
 from orchestrator_helpers import normalize_content
@@ -2797,9 +2798,15 @@ async def text_to_cypher(body: TextToCypherRequest):
 #  graph_db.tenant_filter.scope_query, which checks EVERY node pattern)
 _graph_exec_driver = None
 
+# Fixed op, so it never reaches scope_query - the mute exclusion that every
+# agent-emitted pattern gets for free has to be written out by hand here, or a
+# suppressed finding still shows up in the node-type counts. Excluding the node
+# also keeps `Muted` itself out of the returned label list, since the only nodes
+# carrying it are the ones this filter drops.
 _GRAPH_TYPES_CYPHER = (
     "MATCH (n) "
     "WHERE n.user_id = $tenant_user_id AND n.project_id = $tenant_project_id "
+    "AND NOT n:Muted "
     "UNWIND labels(n) AS label "
     "RETURN DISTINCT label AS type ORDER BY type"
 )
@@ -2841,6 +2848,122 @@ def _graph_exec_coerce(v):
     return str(v)
 
 
+_triage_client = None
+
+
+def _triage_graph_client():
+    """One long-lived Neo4jClient for the triage endpoint.
+
+    Constructing a client per request also re-runs the FULL schema DDL, because
+    `BaseMixin.__init__` calls `init_schema`. Measured on a live stack that put
+    /graph/triage at 0.26-0.41s against /graph/exec's 0.002-0.012s, and it built
+    and abandoned a Bolt connection pool every time - the same create-and-drop
+    pattern documented in webapp/src/app/api/graph/neo4j.ts as having produced
+    Neo4j's "Increase in network aborts detected" on a busy instance.
+
+    A neo4j Driver is designed to be long-lived and shared, and reconnects on
+    its own, so caching it is the intended usage rather than an optimisation.
+    """
+    global _triage_client
+    if _triage_client is None:
+        from graph_db.neo4j_client import Neo4jClient
+        _triage_client = Neo4jClient()
+    return _triage_client
+
+
+class GraphTriageRequest(BaseModel):
+    """Webapp -> agent triage write.
+
+    The tenant is supplied by the CALLER, which resolved it through
+    `guardProject` before calling. `node_id` is scoped by that tenant inside the
+    mixin, so a guessed id from another project matches nothing rather than
+    mutating anything.
+    """
+    op: str  # "mute" | "unmute" | "list_muted" | "list_findings" | "human_verdict"
+    user_id: str
+    project_id: str
+    node_id: Optional[str] = None
+    reason: Optional[str] = None
+    muted_by: Optional[str] = None
+    status: Optional[str] = None
+
+
+@app.post("/graph/triage", tags=["Graph"], dependencies=[Depends(require_master_internal_auth)])
+async def graph_triage(body: GraphTriageRequest):
+    """Mute / unmute a finding, and read the triage tables.
+
+    Graph writes live in Python behind this endpoint rather than in the webapp's
+    own Neo4j driver, so the tenant scoping and the muteable-label guard have
+    exactly one implementation (`graph_db/mixins/recon/triage_mixin.py`).
+
+    Auth is the MASTER key only, deliberately stricter than `/graph/exec`.
+    `/graph/exec` accepts the scoped SCANNER_API_KEY because the kali-sandbox
+    holds it and needs read-only graph access; this endpoint WRITES suppression
+    state, and the sandbox is the least-trusted, target-facing component. It
+    stays outside the LLM rate-limit bucket either way: these are cheap graph
+    operations, not billed LLM calls.
+    """
+    if not body.user_id or not body.project_id:
+        return JSONResponse(status_code=400, content={"error": "missing tenant identity"})
+
+    needs_node = ("mute", "unmute", "human_verdict")
+    if body.op in needs_node and not body.node_id:
+        return JSONResponse(status_code=400, content={"error": f"op {body.op} needs node_id"})
+
+    try:
+        client = _triage_graph_client()
+        if body.op == "mute":
+            result = client.mute_finding(
+                body.user_id, body.project_id, body.node_id,
+                muted_by=body.muted_by or body.user_id, reason=body.reason or "")
+        elif body.op == "unmute":
+            result = client.unmute_finding(body.user_id, body.project_id, body.node_id)
+        elif body.op == "list_muted":
+            result = {"findings": client.list_muted(body.user_id, body.project_id)}
+        elif body.op == "list_findings":
+            # `total` is what stops the table lying: the query is capped, so
+            # without it the operator reads a truncated list as complete.
+            result = {
+                "findings": client.list_triage_findings(body.user_id, body.project_id),
+                "total": client.count_triage_findings(body.user_id, body.project_id),
+            }
+        elif body.op == "human_verdict":
+            result = client.set_human_verdict(
+                body.user_id, body.project_id, body.node_id,
+                body.status or "", body.reason or "")
+        else:
+            return JSONResponse(status_code=400,
+                                content={"error": f"unknown op {body.op!r}"})
+    except Exception as e:
+        logger.error(f"graph/triage {body.op} failed: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+    # Who suppressed what, and when. The node itself carries muted_by/muted_at;
+    # this is the time-ordered half. log_event never raises, so auditability
+    # cannot turn a successful mute into a 500.
+    if body.op in ("mute", "unmute"):
+        from session_log import log_event
+        if result.get(f"{body.op}d"):
+            log_event(
+                f"finding_{body.op}d",
+                user_id=body.user_id,
+                project_id=body.project_id,
+                node_id=body.node_id,
+                label=result.get("label"),
+                reason=body.reason or "",
+            )
+        else:
+            # Matched nothing: a stale node id (version-activate recreates
+            # nodes), an asset id, or another tenant's. The caller gets a
+            # generic failure on purpose, so this is the only place the id is
+            # recorded and the only way to diagnose it afterwards.
+            logger.warning(
+                "graph/triage %s matched no finding: node_id=%s user=%s project=%s",
+                body.op, body.node_id, body.user_id, body.project_id)
+
+    return JSONResponse(content=result)
+
+
 class GraphExecRequest(BaseModel):
     """Worker (redagraph) -> agent graph query. `op` selects a fixed operation
     so arbitrary unscoped queries are impossible."""
@@ -2875,6 +2998,10 @@ async def graph_exec(body: GraphExecRequest):
     op = body.op
     if op == "schema":
         # Fixed, read-only structural query — server-controlled, worker can't alter it.
+        # It is database-global (never tenant-scoped), so it does surface the
+        # existence of the `Muted` label. Accepted: it exposes no node and no
+        # count, and scope_query refuses any follow-up query that names the
+        # label, so knowing it exists buys nothing.
         final, params = "CALL db.schema.visualization()", {}
     elif op == "types":
         final = _GRAPH_TYPES_CYPHER

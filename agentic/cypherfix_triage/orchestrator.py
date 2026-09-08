@@ -13,6 +13,13 @@ from .state import TriageState, TriageFinding, RemediationDraft
 from .tools import TriageNeo4jToolManager, TriageWebSearchManager, TRIAGE_TOOLS
 from .prompts.cypher_queries import TRIAGE_QUERIES
 from .prompts.system import TRIAGE_SYSTEM_PROMPT
+from .prompts.classify import (
+    CLASSIFY_BATCH_SIZE,
+    CLASSIFY_SYSTEM_PROMPT,
+    EVIDENCE_FIELDS,
+    FIELD_CHAR_CAP,
+    build_classify_prompt,
+)
 from .project_settings import load_cypherfix_settings
 
 logger = logging.getLogger(__name__)
@@ -62,17 +69,37 @@ class TriageOrchestrator:
             state["status"] = "complete"
             return state
 
+        # Phase 1b: Classify each finding as real or noise, and write the
+        # verdicts back onto the nodes. Deliberately BEFORE correlation, so the
+        # remediation step below can drop the noise instead of ranking it.
+        await self.callback.on_phase("classifying", "Classifying findings...", 68)
+        verdicts = await self._classify(state, raw_data)
+        state["verdicts"] = verdicts
+
         # Fetch existing non-pending remediations to avoid duplicates on re-triage
         existing_remediations = await self._fetch_existing_remediations()
 
         # Phase 2: ReAct Analysis
         await self.callback.on_phase("correlating", "Analyzing collected data...", 70)
-        analysis = await self._analyze(state, raw_data, existing_remediations)
+        analysis = await self._analyze(
+            state, self._drop_classified_noise(raw_data, verdicts), existing_remediations)
         state["analysis_result"] = analysis
 
         # Phase 3: Save to database
         await self.callback.on_phase("saving", "Saving remediations...", 95)
         await self._save_remediations(analysis)
+
+        # Verdict counts, for the JSONL event stream. Reconstructing what a run
+        # concluded from the prose log is not practical.
+        try:
+            from session_log import log_event
+            counts = {}
+            for v in state.get("verdicts", []):
+                counts[v["triage_status"]] = counts.get(v["triage_status"], 0) + 1
+            log_event("triage_run", user_id=self.user_id, project_id=self.project_id,
+                      verdicts=counts, remediations=len(analysis.findings))
+        except Exception:
+            pass
 
         # Complete
         await self.callback.on_complete(
@@ -106,6 +133,188 @@ class TriageOrchestrator:
                 raw_data[query_def["name"]] = []
 
         return raw_data
+
+    # ── Phase 1b: classification ────────────────────────────────────────────
+
+    #: Collection queries whose rows are findings a verdict can be written to,
+    #: mapped to the field carrying the node's id. The other queries return
+    #: assets and CVE chains, which are context, not findings.
+    _CLASSIFIABLE = {
+        "vulnerabilities": "vuln_id",
+        "security_checks": "vuln_id",
+        "github_secrets": "secret_id",
+        "exploits": "exploit_id",
+    }
+
+    def _findings_for_classification(self, raw_data: dict) -> list:
+        """Flatten the collected rows into {id, evidence} bundles.
+
+        Only fields in EVIDENCE_FIELDS travel, each truncated: an untrimmed
+        `raw_response` runs to kilobytes and would crowd the rest of the batch
+        out of the context window.
+        """
+        findings = []
+        seen = set()
+        for query_name, id_field in self._CLASSIFIABLE.items():
+            for row in raw_data.get(query_name, []) or []:
+                if not isinstance(row, dict):
+                    continue
+                node_id = row.get(id_field) or row.get("id")
+                if not node_id or node_id in seen:
+                    continue
+                seen.add(node_id)
+                evidence = {}
+                for field in EVIDENCE_FIELDS:
+                    value = row.get(field)
+                    if value in (None, "", [], {}):
+                        continue
+                    text = value if isinstance(value, str) else json.dumps(value, default=str)
+                    evidence[field] = text[:FIELD_CHAR_CAP]
+                findings.append({"id": str(node_id), "evidence": evidence})
+        return findings
+
+    async def _classify(self, state: TriageState, raw_data: dict) -> list:
+        """Ask the model for a verdict per finding, then write them to the graph.
+
+        Never raises. A classify failure must leave findings `unreviewed` and
+        VISIBLE: the whole feature is about suppressing noise, so a broken
+        classifier that silently hid findings would be far worse than one that
+        did nothing.
+        """
+        findings = self._findings_for_classification(raw_data)
+        if not findings:
+            return []
+
+        settings = state.get("settings", {}) or {}
+        threshold = float(settings.get("triageConfidenceThreshold", 0.7) or 0.7)
+
+        verdicts = []
+        batches = [findings[i:i + CLASSIFY_BATCH_SIZE]
+                   for i in range(0, len(findings), CLASSIFY_BATCH_SIZE)]
+
+        for index, batch in enumerate(batches):
+            progress = 68 + int((index / max(len(batches), 1)) * 2)
+            await self.callback.on_phase(
+                "classifying",
+                f"Classifying findings ({index * CLASSIFY_BATCH_SIZE + len(batch)}/{len(findings)})...",
+                progress,
+            )
+            try:
+                verdicts.extend(await self._classify_batch(batch, threshold))
+            except Exception as e:
+                # One bad batch must not lose the verdicts already collected.
+                logger.error(f"Classify batch {index} failed: {e}")
+
+        if verdicts:
+            await self._save_verdicts(verdicts)
+        logger.info(f"Classified {len(verdicts)}/{len(findings)} findings")
+        return verdicts
+
+    async def _classify_batch(self, batch: list, threshold: float) -> list:
+        """One LLM call. Returns only verdicts that name a finding in the batch."""
+        payload = wrap_untrusted(json.dumps(batch, default=str), "FINDINGS")
+        response = await self._call_llm(
+            CLASSIFY_SYSTEM_PROMPT,
+            [{"role": "user", "content": build_classify_prompt(payload, threshold)}],
+        )
+
+        text = response.get("text", "") if isinstance(response, dict) else str(response)
+        parsed = self._extract_json_array(text)
+
+        # Only ids we actually asked about. A model that invents an id, or echoes
+        # one out of the evidence text, must not be able to write a verdict onto
+        # some other finding.
+        asked = {f["id"] for f in batch}
+        clean = []
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            node_id = str(item.get("id", ""))
+            if node_id not in asked:
+                logger.warning(f"Classify returned an id that was not in the batch: {node_id!r}")
+                continue
+            clean.append({
+                "id": node_id,
+                "triage_status": item.get("triage_status"),
+                "triage_confidence": item.get("triage_confidence"),
+                "triage_reason": item.get("triage_reason", ""),
+                "triage_cluster_id": item.get("triage_cluster_id"),
+            })
+        return clean
+
+    @staticmethod
+    def _extract_json_array(text: str) -> list:
+        """Pull the JSON array out of a fenced model response, or return []."""
+        if not text:
+            return []
+        match = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", text, re.DOTALL)
+        raw = match.group(1) if match else None
+        if raw is None:
+            start, end = text.find("["), text.rfind("]")
+            raw = text[start:end + 1] if 0 <= start < end else None
+        if not raw:
+            return []
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
+
+    async def _save_verdicts(self, verdicts: list) -> None:
+        """Write the verdicts onto the finding nodes.
+
+        Goes through the graph mixin, which drops unknown statuses, clamps the
+        confidence, and skips any finding a human has already judged. It has no
+        way to set `:Muted`.
+        """
+        try:
+            from graph_db.neo4j_client import Neo4jClient
+            with Neo4jClient() as client:
+                result = client.apply_triage_verdicts(
+                    self.user_id, self.project_id, verdicts)
+            logger.info(
+                f"Triage verdicts: {result['updated']} written, "
+                f"{result['skipped_human']} left alone (human), "
+                f"{result['rejected']} rejected")
+        except Exception as e:
+            # A finding with no verdict stays `unreviewed` and visible.
+            logger.error(f"Failed to write triage verdicts: {e}")
+
+    def _drop_classified_noise(self, raw_data: dict, verdicts: list) -> dict:
+        """Remove findings the classifier judged noise, before remediation.
+
+        This is the point of classifying first. Previously every collected
+        finding went into the remediation prompt and the model was left to sort
+        real from false-positive while also correlating and prioritising; now the
+        noise is gone before it gets there, so remediations are generated for
+        `confirmed` and `needs_verification` only.
+
+        `likely_noise` findings are NOT muted and NOT deleted: they keep their
+        verdict, stay visible in the graph and in the Triage table, and a human
+        decides whether to suppress them. All this does is stop the model writing
+        remediation work items for them.
+        """
+        noise = {v["id"] for v in verdicts
+                 if v.get("triage_status") == "likely_noise"}
+        if not noise:
+            return raw_data
+
+        filtered = {}
+        for query_name, rows in raw_data.items():
+            id_field = self._CLASSIFIABLE.get(query_name)
+            if not id_field or not isinstance(rows, list):
+                filtered[query_name] = rows
+                continue
+            filtered[query_name] = [
+                row for row in rows
+                if not (isinstance(row, dict)
+                        and str(row.get(id_field) or row.get("id") or "") in noise)
+            ]
+
+        dropped = sum(len(raw_data[k]) - len(filtered[k])
+                      for k in filtered if isinstance(raw_data.get(k), list))
+        logger.info(f"Dropped {dropped} finding(s) classified as noise before remediation")
+        return filtered
 
     async def _analyze(self, state: TriageState, raw_data: dict, existing_remediations: list) -> RemediationDraft:
         """Phase 2: ReAct analysis using LLM."""
