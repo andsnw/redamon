@@ -1,4 +1,4 @@
-"""LLM-response handling for the reduced Noise Gate assist step.
+"""LLM-response handling for the reduced Priority Board assist step.
 
 Ranking is deterministic now (see test_triage_scoring.py); the LLM only clusters
 duplicates and writes a one-line rationale for the top findings. The value at

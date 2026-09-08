@@ -175,8 +175,14 @@
   white-space: nowrap;
 }
 
-.signals {
+/* The cell stays a normal table cell so its row border aligns with the others.
+   Making the <td> itself display:flex took it out of table layout and detached
+   the horizontal divider when the chips wrapped to a second line. */
+.signalsCell {
   max-width: 260px;
+}
+
+.signals {
   display: flex;
   flex-wrap: wrap;
   gap: 3px;

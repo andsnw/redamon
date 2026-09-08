@@ -1,4 +1,4 @@
-"""The deterministic Noise Gate scorer.
+"""The deterministic Priority Board scorer.
 
 This is the load-bearing test file for the prioritisation redesign: the whole
 point is that ranking is decided HERE, in pure code, not by an LLM. So the order

@@ -67,7 +67,7 @@ class TriageRun:
     """A triage run, whose lifetime is the RUN's, not the browser tab's.
 
     The run used to be owned by the websocket: closing the tab cancelled the
-    task mid-flight, so navigating away from the Noise Gate tab silently threw
+    task mid-flight, so navigating away from the Priority Board tab silently threw
     away a multi-minute, paid-for LLM run and left no verdicts behind.
 
     The task now lives here instead. A socket ATTACHES for progress and detaches

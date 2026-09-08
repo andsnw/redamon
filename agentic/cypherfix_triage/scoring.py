@@ -1,7 +1,7 @@
-"""Deterministic finding prioritisation for the Noise Gate.
+"""Deterministic finding prioritisation for the Priority Board.
 
 The weight table below used to live as PROSE in `prompts/system.py`, evaluated by
-an LLM for remediation ranking only. Findings in the Noise Gate table were fed to
+an LLM for remediation ranking only. Findings in the Priority Board table were fed to
 a *separate* LLM step that asked "real or noise?" and, given thin evidence,
 answered "needs verification" for almost everything.
 

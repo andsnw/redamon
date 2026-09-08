@@ -318,7 +318,7 @@ class TriageOrchestrator:
 
         `likely_noise` here means patched (gvm_remediated) or agent-tried-and-
         failed -- decided deterministically, not guessed. Those findings keep
-        their score, stay visible in the Noise Gate table and in the graph; this
+        their score, stay visible in the Priority Board table and in the graph; this
         only stops the remediation model writing a work item for them. Nothing is
         muted or deleted.
         """

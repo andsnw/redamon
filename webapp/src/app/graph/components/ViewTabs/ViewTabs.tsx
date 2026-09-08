@@ -2,7 +2,7 @@
 
 import { memo, useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { CalendarClock, GitCompare, Waypoints, Table2, Terminal, Shield, Search, Download, Loader2, SquareTerminal, Filter, Plus, Trash2, X, ChevronDown, Code, Target, Zap, Flag, Key, Server, Boxes, LockKeyhole, Bug, Network, Mail, ShieldAlert, Package, PackageSearch, History, Layers, Bot, Radiation, Swords, Droplets } from 'lucide-react'
+import { CalendarClock, GitCompare, Waypoints, Table2, Terminal, Shield, Search, Download, Loader2, SquareTerminal, Filter, Plus, Trash2, X, ChevronDown, Code, Target, Zap, Flag, Key, Server, Boxes, LockKeyhole, Bug, Network, Mail, ShieldAlert, Package, PackageSearch, History, Layers, Bot, Radiation, Swords, Droplets, ListOrdered } from 'lucide-react'
 import { Toggle } from '@/components/ui'
 import { AUTO_2D_THRESHOLD } from '../GraphCanvas'
 import styles from './ViewTabs.module.css'
@@ -57,7 +57,7 @@ const TABLE_MODE_LABELS: Record<TableViewMode, string> = {
   webCachePoison: 'Web Cache Poisoning',
   reconDelta: 'Recon Delta',
   scanSchedule: 'Scans',
-  triage: 'Noise Gate',
+  triage: 'Priority Board',
 }
 
 /**
@@ -381,8 +381,8 @@ export const ViewTabs = memo(function ViewTabs({
           className={`${styles.tab} ${activeView === 'table' && tableViewMode === 'triage' ? styles.tabActive : ''}`}
           onClick={() => { onTableViewModeChange?.('triage'); onViewChange('table') }}
         >
-          <Filter size={14} />
-          <span>Noise Gate</span>
+          <ListOrdered size={14} />
+          <span>Priority Board</span>
         </button>
 
         <div ref={tableMenuRef} className={styles.tableMenuContainer}>

@@ -15,7 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, EyeOff, Eye, ShieldCheck, ShieldQuestion, ShieldX, Play } from 'lucide-react'
+import { Loader2, EyeOff, Eye, Play } from 'lucide-react'
 import { useAlertModal, useToast, WikiInfoButton } from '@/components/ui'
 import { useProject } from '@/providers/ProjectProvider'
 import { useCypherFixTriageWS } from '@/hooks/useCypherFixTriageWS'
@@ -59,18 +59,28 @@ export type TriageStatus =
   | 'needs_verification'
   | 'unreviewed'
 
-const STATUS_LABEL: Record<TriageStatus, string> = {
-  confirmed: 'Confirmed',
-  likely_noise: 'Likely noise',
-  needs_verification: 'Needs verification',
-  unreviewed: 'Unreviewed',
-}
+/**
+ * Priority band derived from the deterministic score. Mirrors
+ * scoring.py::tier_for_score -- keep these thresholds in sync with _TIER_BANDS
+ * there (Critical 1000 / High 500 / Medium 150 / Low 40, else Info). The old
+ * real/noise verdict chips (Confirmed / Likely noise / Needs verification /
+ * Unreviewed) are gone: the new system ranks by exploitability and exposure, so
+ * the filter matches the ranking rather than a verdict we no longer produce.
+ */
+export type TriageTier = 'Critical' | 'High' | 'Medium' | 'Low' | 'Info'
 
-const STATUS_ICON: Record<TriageStatus, typeof ShieldCheck> = {
-  confirmed: ShieldCheck,
-  likely_noise: ShieldX,
-  needs_verification: ShieldQuestion,
-  unreviewed: ShieldQuestion,
+const TIER_ORDER: TriageTier[] = ['Critical', 'High', 'Medium', 'Low', 'Info']
+const TIER_BANDS: [number, TriageTier][] = [
+  [1000, 'Critical'],
+  [500, 'High'],
+  [150, 'Medium'],
+  [40, 'Low'],
+]
+
+function tierForScore(score: number | null | undefined): TriageTier {
+  const s = score ?? -1
+  for (const [threshold, tier] of TIER_BANDS) if (s >= threshold) return tier
+  return 'Info'
 }
 
 /** Worst-first, so the operator's attention lands where it should. */
@@ -100,7 +110,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
   const [showMuted, setShowMuted] = useState(false)
   /** Server-side total, which can exceed what the query returned. */
   const [total, setTotal] = useState(0)
-  const [statusFilter, setStatusFilter] = useState<TriageStatus | 'all'>('all')
+  const [tierFilter, setTierFilter] = useState<TriageTier | 'all'>('all')
   const [showProgress, setShowProgress] = useState(false)
   /** True when the run was launched from this mount, rather than re-attached. */
   const startedHereRef = useRef(false)
@@ -125,7 +135,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
       setTotal(findingsBody.total ?? (findingsBody.findings ?? []).length)
       setMuted((await m.json()).findings ?? [])
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load Noise Gate data')
+      setError(e instanceof Error ? e.message : 'Failed to load Priority Board data')
     } finally {
       setLoading(false)
     }
@@ -168,13 +178,14 @@ export function TriageTable({ projectId }: TriageTableProps) {
   const runTriage = useCallback(async () => {
     if (!projectId || !userId) return
     const ok = await dangerConfirm(
-      'Run the Noise Gate on this project?\n\n' +
-        'The AI classifies every finding as real or noise and writes a verdict ' +
-        'to each, then generates remediations for what is confirmed. It uses the ' +
-        'model set in Project Settings -> CypherFix & Noise Gate LLM Model. ' +
-        'Nothing is muted automatically -- muting stays a manual action.',
-      'Run Noise Gate',
-      { confirmLabel: 'Run Noise Gate' },
+      'Rank the findings on this project?\n\n' +
+        'Every finding is scored and ranked by exploitability and exposure, ' +
+        'worst first. The AI then writes a short "why it matters" for the top ' +
+        'findings and generates remediations. It uses the model set in Project ' +
+        'Settings -> CypherFix & Priority Board LLM Model. Nothing is muted ' +
+        'automatically -- muting stays a manual action.',
+      'Rank findings',
+      { confirmLabel: 'Rank findings' },
     )
     if (!ok) return
     startedHereRef.current = true
@@ -275,9 +286,9 @@ export function TriageTable({ projectId }: TriageTableProps) {
   )
 
   const visible = useMemo(() => {
-    const rows = statusFilter === 'all'
+    const rows = tierFilter === 'all'
       ? findings
-      : findings.filter(f => f.triage_status === statusFilter)
+      : findings.filter(f => tierForScore(f.triage_priority_score) === tierFilter)
     // Rank by the deterministic priority score, worst first. The server already
     // returns them in this order; this mirrors it so a client-side filter keeps
     // the ranking. Severity is only the tiebreak among equal scores.
@@ -286,7 +297,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
       if (p !== 0) return p
       return severityRank(a.severity) - severityRank(b.severity)
     })
-  }, [findings, statusFilter])
+  }, [findings, tierFilter])
 
   // The query is capped server-side. Saying so is not cosmetic: without it a
   // truncated list reads as the complete set of findings to triage, and an
@@ -295,12 +306,15 @@ export function TriageTable({ projectId }: TriageTableProps) {
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {}
-    for (const f of findings) c[f.triage_status] = (c[f.triage_status] || 0) + 1
+    for (const f of findings) {
+      const t = tierForScore(f.triage_priority_score)
+      c[t] = (c[t] || 0) + 1
+    }
     return c
   }, [findings])
 
   if (!projectId) {
-    return <div className={styles.empty}>Select a project to run the Noise Gate.</div>
+    return <div className={styles.empty}>Select a project to rank its findings.</div>
   }
 
   if (loading && findings.length === 0 && muted.length === 0) {
@@ -325,29 +339,29 @@ export function TriageTable({ projectId }: TriageTableProps) {
       <div className={styles.toolbar}>
         <div className={styles.filters}>
           <button
-            className={`${styles.chip} ${statusFilter === 'all' ? styles.chipActive : ''}`}
-            onClick={() => setStatusFilter('all')}
+            className={`${styles.chip} ${tierFilter === 'all' ? styles.chipActive : ''}`}
+            onClick={() => setTierFilter('all')}
           >
             All ({findings.length}{truncated ? ` of ${total}` : ''})
           </button>
-          {(Object.keys(STATUS_LABEL) as TriageStatus[]).map(status => (
+          {TIER_ORDER.map(tier => (
             <button
-              key={status}
-              className={`${styles.chip} ${statusFilter === status ? styles.chipActive : ''}`}
-              onClick={() => setStatusFilter(status)}
+              key={tier}
+              className={`${styles.chip} ${tierFilter === tier ? styles.chipActive : ''}`}
+              onClick={() => setTierFilter(tier)}
             >
-              {STATUS_LABEL[status]} ({counts[status] ?? 0})
+              {tier} ({counts[tier] ?? 0})
             </button>
           ))}
         </div>
         <div className={styles.actions}>
-          <WikiInfoButton target="NoiseGate" />
+          <WikiInfoButton target="PriorityBoard" />
           <button
             className={styles.button}
             onClick={() => void runTriage()}
             disabled={!projectId || !userId || showProgress}
           >
-            <Play size={14} /> Run Noise Gate
+            <Play size={14} /> Rank Findings
           </button>
           <button className={styles.button} onClick={() => setShowMuted(v => !v)}>
             {showMuted ? <Eye size={14} /> : <EyeOff size={14} />}
@@ -360,9 +374,9 @@ export function TriageTable({ projectId }: TriageTableProps) {
         <div className={styles.runBanner} role="status">
           <Loader2 className={styles.spin} size={13} />
           <span className={styles.runBannerText}>
-            Noise Gate running
+            Priority Board running
             {triage.currentPhase ? ` — ${PHASE_LABELS[triage.currentPhase] ?? triage.currentPhase}` : ''}
-            . Verdicts appear below as they are decided; you can leave this page.
+            . The ranking fills in below as it goes; you can leave this page.
           </span>
           <button className={styles.runBannerBtn} onClick={() => setShowProgress(true)}>
             Details
@@ -383,7 +397,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
       {visible.length === 0 ? (
         <div className={styles.empty}>
           {findings.length === 0
-            ? 'No findings in scope yet. Run a scan, then run the Noise Gate to classify what it found.'
+            ? 'No findings in scope yet. Run a scan, then rank the findings to see what matters most.'
             : 'No findings match this filter.'}
         </div>
       ) : (
@@ -420,14 +434,16 @@ export function TriageTable({ projectId }: TriageTableProps) {
                         {f.severity || '-'}
                       </span>
                     </td>
-                    <td className={styles.signals}>
-                      {(f.triage_signals ?? []).length === 0
-                        ? <span className={styles.confidence}>-</span>
-                        : (f.triage_signals ?? []).map(sig => (
-                            <span key={sig} className={styles.signalChip} title={sig}>
-                              {sig.replace(/_/g, ' ')}
-                            </span>
-                          ))}
+                    <td className={styles.signalsCell}>
+                      <div className={styles.signals}>
+                        {(f.triage_signals ?? []).length === 0
+                          ? <span className={styles.confidence}>-</span>
+                          : (f.triage_signals ?? []).map(sig => (
+                              <span key={sig} className={styles.signalChip} title={sig}>
+                                {sig.replace(/_/g, ' ')}
+                              </span>
+                            ))}
+                      </div>
                     </td>
                     <td className={styles.where}>{f.host || f.location || '-'}</td>
                     <td className={styles.reason}>{f.triage_reason || '-'}</td>
@@ -510,7 +526,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
 
       <TriageProgress
         isVisible={showProgress}
-        title="Noise Gate"
+        title="Priority Board"
         phase={triage.currentPhase}
         progress={triage.progress}
         findings={triage.findings}

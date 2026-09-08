@@ -110,10 +110,10 @@ export const SECTION_WIKI: Record<string, { page: string; anchor?: string }> = {
   ScanTimeline:     { page: 'Scan-Timeline' },
   ReconDelta:       { page: 'Scan-Timeline', anchor: 'recon-delta-comparing-two-versions' },
   ScanSchedule:     { page: 'Scan-Timeline', anchor: 'scans' },
-  // Noise Gate (finding triage + mute). One page; the settings section and the
-  // Red Zone tab both point at it, so an operator reaches the same explanation.
-  NoiseGate:        { page: 'Noise-Gate' },
-  NoiseGateMute:    { page: 'Noise-Gate', anchor: 'what-muted-actually-means' },
+  // Priority Board (finding ranking + mute). One page; the settings section and
+  // the Red Zone tab both point at it, so an operator reaches the same explanation.
+  PriorityBoard:     { page: 'Priority-Board' },
+  PriorityBoardMute: { page: 'Priority-Board', anchor: 'what-muted-actually-means' },
   VersionManager:   { page: 'Scan-Timeline', anchor: 'version-manager' },
   // Tool sections that have a TOOL_WIKI entry are also exposed here for convenience.
   ...({} as Record<string, { page: string; anchor?: string }>),

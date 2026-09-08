@@ -1,4 +1,4 @@
-"""Prompts for the reduced LLM role in the Noise Gate.
+"""Prompts for the reduced LLM role in the Priority Board.
 
 Ranking is deterministic (`scoring.py`). The LLM is left with only the two jobs
 it is actually good at, and only on the findings that survive deterministic

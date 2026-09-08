@@ -30,7 +30,7 @@ interface TriageProgressProps {
   thinking: string
   error: string | null
   status: string
-  /** Feature name for the header, e.g. "Noise Gate". Defaults to the CypherFix
+  /** Feature name for the header, e.g. "Priority Board". Defaults to the CypherFix
    *  wording so the CypherFix page is unchanged. */
   title?: string
   onClose: () => void

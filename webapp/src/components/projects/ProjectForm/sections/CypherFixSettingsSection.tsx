@@ -125,10 +125,10 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
       {isOpen && (
         <div className={styles.sectionContent}>
           <p className={styles.sectionDescription}>
-            Configure finding triage and automated code remediation. CypherFix analyzes your Neo4j
-            graph, classifies each finding as real or noise, then generates code fixes via pull
-            requests to your GitHub repository. The model chosen below runs the triage classification
-            as well as the fixes.
+            Configure finding prioritisation and automated code remediation. CypherFix analyzes your
+            Neo4j graph, ranks each finding by exploitability and exposure (the Priority Board), then
+            generates code fixes via pull requests to your GitHub repository. The model chosen below
+            runs the Priority Board ranking as well as the fixes.
           </p>
 
           {/* GitHub Token */}
@@ -207,7 +207,7 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
 
           {/* LLM Model Override - searchable dropdown */}
           <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel}>CypherFix &amp; Noise Gate LLM Model</label>
+            <label className={styles.fieldLabel}>CypherFix &amp; Priority Board LLM Model</label>
             <div className={styles.modelSelector} ref={dropdownRef}>
               <div
                 className={`${styles.modelSelectorInput} ${dropdownOpen ? styles.modelSelectorInputFocused : ''}`}
@@ -316,15 +316,15 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
               )}
             </div>
             <span className={styles.fieldHint}>
-              Override the LLM model for CypherFix agents, including the Noise Gate pass that
-              classifies findings as real or noise. Leave empty to use the model selected in Agent
-              Behaviour.
+              Override the LLM model for CypherFix agents, including the Priority Board pass that
+              explains and groups the top-ranked findings. Leave empty to use the model selected in
+              Agent Behaviour.
             </span>
           </div>
 
-          {/* Noise Gate confidence threshold */}
+          {/* Priority Board confidence threshold */}
           <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel}>Noise Gate Confidence Threshold</label>
+            <label className={styles.fieldLabel}>Priority Board Confidence Threshold</label>
             <input
               type="number"
               min={0}
@@ -337,9 +337,9 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
               }
             />
             <span className={styles.fieldHint}>
-              Below this confidence the classifier records &quot;needs verification&quot; instead of
-              calling a finding real or noise, so a guess is never stored as a decision. Higher means
-              more findings come back for a human to check.
+              The confidence floor for the optional AI verdict on a finding: below it, the finding
+              keeps only its deterministic rank and no real/noise verdict is stored. Higher means
+              fewer AI-set verdicts.
             </span>
           </div>
 
@@ -349,9 +349,9 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
               <span className={styles.toggleLabel}>Auto-mute high-confidence noise</span>
               <p className={styles.toggleDescription}>
                 Off by default, and worth leaving off. Muting hides a finding from the AI agent
-                entirely, so it is normally a human decision. Enabling this lets the Noise Gate
+                entirely, so it is normally a human decision. Enabling this lets the Priority Board
                 suppress findings it is highly confident are noise, without asking. Muted findings
-                can always be restored from the Noise Gate tab.
+                can always be restored from the Priority Board tab.
               </p>
             </div>
             <Toggle
@@ -360,9 +360,9 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
             />
           </div>
 
-          {/* Noise Gate: LLM rationale cap */}
+          {/* Priority Board: LLM rationale cap */}
           <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel}>Noise Gate: findings sent to the LLM</label>
+            <label className={styles.fieldLabel}>Priority Board: findings sent to the LLM</label>
             <input
               type="number"
               min={0}
@@ -375,7 +375,7 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
               }
             />
             <span className={styles.fieldHint}>
-              The Noise Gate ranks every finding in code. This caps how many of the top and
+              The Priority Board ranks every finding in code. This caps how many of the top and
               still-ambiguous findings get an AI-written &quot;why it matters&quot; sentence and
               cross-tool grouping. Higher means more findings explained, at more LLM cost.
             </span>
