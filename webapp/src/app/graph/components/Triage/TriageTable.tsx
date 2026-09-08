@@ -121,7 +121,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
       setTotal(findingsBody.total ?? (findingsBody.findings ?? []).length)
       setMuted((await m.json()).findings ?? [])
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load triage data')
+      setError(e instanceof Error ? e.message : 'Failed to load Noise Gate data')
     } finally {
       setLoading(false)
     }
@@ -145,13 +145,13 @@ export function TriageTable({ projectId }: TriageTableProps) {
   const runTriage = useCallback(async () => {
     if (!projectId || !userId) return
     const ok = await dangerConfirm(
-      'Run triage on this project?\n\n' +
+      'Run the Noise Gate on this project?\n\n' +
         'The AI classifies every finding as real or noise and writes a verdict ' +
         'to each, then generates remediations for what is confirmed. It uses the ' +
-        'model set in Project Settings -> CypherFix & Triage LLM Model. Nothing ' +
-        'is muted automatically -- muting stays a manual action.',
-      'Run triage',
-      { confirmLabel: 'Run triage' },
+        'model set in Project Settings -> CypherFix & Noise Gate LLM Model. ' +
+        'Nothing is muted automatically -- muting stays a manual action.',
+      'Run Noise Gate',
+      { confirmLabel: 'Run Noise Gate' },
     )
     if (!ok) return
     setShowProgress(true)
@@ -267,7 +267,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
   }, [findings])
 
   if (!projectId) {
-    return <div className={styles.empty}>Select a project to triage its findings.</div>
+    return <div className={styles.empty}>Select a project to run the Noise Gate.</div>
   }
 
   if (loading && findings.length === 0 && muted.length === 0) {
@@ -308,13 +308,13 @@ export function TriageTable({ projectId }: TriageTableProps) {
           ))}
         </div>
         <div className={styles.actions}>
-          <WikiInfoButton target="Triage" />
+          <WikiInfoButton target="NoiseGate" />
           <button
             className={styles.button}
             onClick={() => void runTriage()}
             disabled={!projectId || !userId || showProgress}
           >
-            <Play size={14} /> Run triage
+            <Play size={14} /> Run Noise Gate
           </button>
           <button className={styles.button} onClick={() => setShowMuted(v => !v)}>
             {showMuted ? <Eye size={14} /> : <EyeOff size={14} />}
@@ -333,7 +333,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
       {visible.length === 0 ? (
         <div className={styles.empty}>
           {findings.length === 0
-            ? 'No findings in triage scope yet. Run a scan, then run triage to classify what it found.'
+            ? 'No findings in scope yet. Run a scan, then run the Noise Gate to classify what it found.'
             : 'No findings match this filter.'}
         </div>
       ) : (
@@ -365,7 +365,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
                         </span>
                       )}
                       {f.triage_source === 'human' && (
-                        <span className={styles.humanTag} title="Set by a person; AI triage will not overwrite it">
+                        <span className={styles.humanTag} title="Set by a person; the AI will not overwrite it">
                           human
                         </span>
                       )}
@@ -458,6 +458,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
 
       <TriageProgress
         isVisible={showProgress}
+        title="Noise Gate"
         phase={triage.currentPhase}
         progress={triage.progress}
         findings={triage.findings}

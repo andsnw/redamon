@@ -57,7 +57,7 @@ const TABLE_MODE_LABELS: Record<TableViewMode, string> = {
   webCachePoison: 'Web Cache Poisoning',
   reconDelta: 'Recon Delta',
   scanSchedule: 'Scans',
-  triage: 'Triage',
+  triage: 'Noise Gate',
 }
 
 /**
@@ -382,7 +382,7 @@ export const ViewTabs = memo(function ViewTabs({
           onClick={() => { onTableViewModeChange?.('triage'); onViewChange('table') }}
         >
           <Filter size={14} />
-          <span>Triage</span>
+          <span>Noise Gate</span>
         </button>
 
         <div ref={tableMenuRef} className={styles.tableMenuContainer}>

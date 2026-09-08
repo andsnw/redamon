@@ -23,9 +23,9 @@ const PAGE = readFileSync(join(__dirname, '..', '..', 'page.tsx'), 'utf8')
 
 describe('the Triage tab can actually launch a run', () => {
   test('the Run triage button is not gated behind a caller-supplied prop', () => {
-    // The exact defect: `{onRunTriage && (<button>Run triage</button>)}` with no
+    // The exact defect: `{onRunTriage && (<button>Run …</button>)}` with no
     // caller passing onRunTriage.
-    expect(SRC).toContain('Run triage')
+    expect(SRC).toContain('Run Noise Gate')
     expect(SRC).not.toMatch(/onRunTriage\s*&&/)
     expect(SRC).not.toMatch(/onRunTriage\?:/)
   })

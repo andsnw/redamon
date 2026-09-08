@@ -207,7 +207,7 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
 
           {/* LLM Model Override - searchable dropdown */}
           <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel}>CypherFix &amp; Triage LLM Model</label>
+            <label className={styles.fieldLabel}>CypherFix &amp; Noise Gate LLM Model</label>
             <div className={styles.modelSelector} ref={dropdownRef}>
               <div
                 className={`${styles.modelSelectorInput} ${dropdownOpen ? styles.modelSelectorInputFocused : ''}`}
@@ -316,14 +316,15 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
               )}
             </div>
             <span className={styles.fieldHint}>
-              Override the LLM model for CypherFix agents, including the triage pass that classifies
-              findings as real or noise. Leave empty to use the model selected in Agent Behaviour.
+              Override the LLM model for CypherFix agents, including the Noise Gate pass that
+              classifies findings as real or noise. Leave empty to use the model selected in Agent
+              Behaviour.
             </span>
           </div>
 
-          {/* Triage confidence threshold */}
+          {/* Noise Gate confidence threshold */}
           <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel}>Triage Confidence Threshold</label>
+            <label className={styles.fieldLabel}>Noise Gate Confidence Threshold</label>
             <input
               type="number"
               min={0}
@@ -348,9 +349,9 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
               <span className={styles.toggleLabel}>Auto-mute high-confidence noise</span>
               <p className={styles.toggleDescription}>
                 Off by default, and worth leaving off. Muting hides a finding from the AI agent
-                entirely, so it is normally a human decision. Enabling this lets triage suppress
-                findings it is highly confident are noise, without asking. Muted findings can always
-                be restored from the Triage tab.
+                entirely, so it is normally a human decision. Enabling this lets the Noise Gate
+                suppress findings it is highly confident are noise, without asking. Muted findings
+                can always be restored from the Noise Gate tab.
               </p>
             </div>
             <Toggle

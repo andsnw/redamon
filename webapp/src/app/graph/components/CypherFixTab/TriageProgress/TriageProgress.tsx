@@ -30,6 +30,9 @@ interface TriageProgressProps {
   thinking: string
   error: string | null
   status: string
+  /** Feature name for the header, e.g. "Noise Gate". Defaults to the CypherFix
+   *  wording so the CypherFix page is unchanged. */
+  title?: string
   onClose: () => void
   onStop: () => void
 }
@@ -42,6 +45,7 @@ export const TriageProgress = memo(function TriageProgress({
   thinking,
   error,
   status,
+  title = 'Vulnerability Triage',
   onClose,
   onStop,
 }: TriageProgressProps) {
@@ -62,7 +66,7 @@ export const TriageProgress = memo(function TriageProgress({
             {isCompleted && <CheckCircle size={16} className={styles.successIcon} />}
             {isError && <AlertCircle size={16} className={styles.errorIcon} />}
             <span className={styles.headerTitle}>
-              {isCompleted ? 'Triage Complete' : isError ? 'Triage Failed' : 'Vulnerability Triage'}
+              {isCompleted ? `${title} complete` : isError ? `${title} failed` : title}
             </span>
           </div>
           <div className={styles.headerRight}>
