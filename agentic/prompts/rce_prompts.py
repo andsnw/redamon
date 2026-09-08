@@ -841,6 +841,15 @@ the sink checks for is loaded server-side and IS your gadget target. Do not conc
   amount of class-name guessing; treat blind/combinatorial class-name brute-forcing as a
   LAST resort only after raw-source retrieval has genuinely failed, never as a substitute
   for reading a disclosure surface you have already located.
+  When you fetch through a disclosure surface, read the RAW BYTES, not a rendered view: a
+  `200` that shows only a page shell, a formatted/highlighted listing, or no code at all
+  means you got the RENDERED output, not the source. Re-request it as raw -- a `.bak` /
+  `.txt` / `~` suffix, a `?raw` / view-source-style parameter the endpoint accepts, a
+  `phar://` / `file://` / `php://filter` wrapper, or the file one directory level up -- and
+  judge success ONLY by grepping the bytes you received for structural tokens (`<?php`,
+  `class `, `function `, `instanceof`, `require` / `include`), never by whether the browser
+  view superficially looks like source. A disclosure attempt that returned none of those
+  tokens has NOT been tried properly and must not be marked exhausted.
 - **Confirm a class is loaded with the deserialize oracle.** Unserializing a class name
   the server knows yields a full object; an unknown name yields `__PHP_Incomplete_Class`.
   Use that differential to verify a candidate class is actually loaded before investing
