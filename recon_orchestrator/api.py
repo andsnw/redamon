@@ -813,6 +813,9 @@ async def get_defaults():
             'UNCOVER_GOOGLE_API_CX',
             'UNCOVER_ONYPHE_API_KEY',
             'UNCOVER_DRIFTNET_API_KEY',
+            # Origin-IP Discovery passive-DNS credentials (per-user, never a default)
+            'SECURITYTRAILS_API_KEY',
+            'VIEWDNS_API_KEY',
         }
 
         # Convert snake_case keys to camelCase for frontend

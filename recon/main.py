@@ -166,52 +166,10 @@ def _graph_wait_all():
     _graph_executor = None
 
 
-def _is_roe_excluded(host: str, excluded_list: list) -> bool:
-    """Check if a host (IP or domain) matches any RoE exclusion entry.
-
-    Supports:
-    - Exact IP/domain match: "10.0.0.5" matches "10.0.0.5"
-    - CIDR match: "10.0.0.5" matches "10.0.0.0/24"
-    - Subdomain match: "payments.example.com" matches "payments.example.com"
-    """
-    import ipaddress as _ipaddress
-
-    for entry in excluded_list:
-        entry = entry.strip()
-        if not entry:
-            continue
-        # Exact string match (works for both IPs and domains)
-        if host == entry:
-            return True
-        # CIDR match: check if host IP falls within an excluded network
-        if '/' in entry:
-            try:
-                network = _ipaddress.ip_network(entry, strict=False)
-                try:
-                    if _ipaddress.ip_address(host) in network:
-                        return True
-                except ValueError:
-                    pass  # host is a domain, not an IP — skip CIDR check
-            except ValueError:
-                pass  # invalid CIDR in exclusion list
-        # Domain suffix match: "payments.example.com" should be excluded
-        # if the exclusion is a parent domain pattern
-        elif host.endswith('.' + entry):
-            return True
-    return False
-
-
-def _filter_roe_excluded(hosts: list, settings: dict, label: str = "host") -> list:
-    """Filter a list of hosts/IPs against ROE_EXCLUDED_HOSTS. Returns the filtered list."""
-    roe_excluded = settings.get('ROE_EXCLUDED_HOSTS', [])
-    if not settings.get('ROE_ENABLED', False) or not roe_excluded:
-        return hosts
-    before_count = len(hosts)
-    filtered = [h for h in hosts if not _is_roe_excluded(h, roe_excluded)]
-    removed = before_count - len(filtered)
-    if removed:
-        print(f"[RoE] Excluded {removed} {label}(s) per Rules of Engagement")
-    return filtered
+# RoE excluded-host matching lives in recon.helpers.roe_scope so active scanners
+# (origin_discovery) can enforce it without importing this module. Re-exported
+# here so `from main import _is_roe_excluded/_filter_roe_excluded` still resolves.
+from recon.helpers.roe_scope import _is_roe_excluded, _filter_roe_excluded
 
 
 def _check_roe_time_window(settings: dict, _now=None) -> tuple[bool, str]:
@@ -1015,6 +973,9 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
         if settings.get('WEB_CACHE_POISON_ENABLED', False):
             from recon.cache_scan import run_cache_scan_isolated
             ip_phase_a['cache_scan'] = run_cache_scan_isolated
+        if settings.get('ORIGIN_DISCOVERY_ENABLED', False):
+            from recon.main_recon_modules.origin_discovery import run_origin_discovery_enrichment_isolated
+            ip_phase_a['origin_discovery'] = run_origin_discovery_enrichment_isolated
 
         if ip_phase_a:
             print(f"\n[*][Pipeline] GROUP 6 Phase A: Active Vulnerability Scanning (fan-out: {', '.join(ip_phase_a.keys())})")
@@ -1552,6 +1513,9 @@ def run_domain_recon(target: str, bruteforce: bool = False,
         if _settings.get('WEB_CACHE_POISON_ENABLED', False):
             from recon.cache_scan import run_cache_scan_isolated
             phase_a_tools['cache_scan'] = run_cache_scan_isolated
+        if _settings.get('ORIGIN_DISCOVERY_ENABLED', False):
+            from recon.main_recon_modules.origin_discovery import run_origin_discovery_enrichment_isolated
+            phase_a_tools['origin_discovery'] = run_origin_discovery_enrichment_isolated
 
         if phase_a_tools:
             print(f"\n[*][Pipeline] GROUP 6 Phase A: Active Vulnerability Scanning (fan-out: {', '.join(phase_a_tools.keys())})")

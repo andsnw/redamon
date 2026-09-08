@@ -80,6 +80,9 @@ class TestSyntax(unittest.TestCase):
     # (relpath, method_name); keep this list tight so new stragglers are caught.
     _ALLOWED_INLINE_IMPORTS = {
         ("graph_db/mixins/recon/port_mixin.py", "update_graph_from_nmap"),  # local `import re`
+        # lazy `stable_vuln_id` import: a top-level graph_db.mixins.* import here
+        # breaks tests that load osint_mixin with graph_db stubbed as a MagicMock.
+        ("graph_db/mixins/osint_mixin.py", "update_graph_from_origin_discovery"),
     }
 
     def test_no_inline_imports_in_methods(self):

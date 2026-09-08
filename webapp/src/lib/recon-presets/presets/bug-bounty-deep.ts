@@ -305,6 +305,11 @@ Bug bounty hunters who have already triaged a target (perhaps with the Quick Win
     securityCheckMaxWorkers: 10,
 
     // --- DISABLE all OSINT ---
+    // --- Origin-IP Discovery: unmask the real origin behind the CDN/WAF ---
+    originDiscoveryEnabled: true,
+    originDiscoveryKeyless: true,
+    originDiscoveryScanners: true,
+    originDiscoveryPassiveDns: true,
     osintEnrichmentEnabled: false,
     shodanEnabled: false,
     urlscanEnabled: false,

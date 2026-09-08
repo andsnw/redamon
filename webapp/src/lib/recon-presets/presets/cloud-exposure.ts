@@ -228,6 +228,11 @@ Cloud security engineers, red teams targeting cloud-hosted organizations, and se
     securityCheckMaxWorkers: 15,
 
     // --- OSINT: ALL providers enabled ---
+    // --- Origin-IP Discovery: unmask the real origin behind the CDN/WAF ---
+    originDiscoveryEnabled: true,
+    originDiscoveryKeyless: true,
+    originDiscoveryScanners: true,
+    originDiscoveryPassiveDns: true,
     osintEnrichmentEnabled: true,
     shodanEnabled: true,
     shodanHostLookup: true,

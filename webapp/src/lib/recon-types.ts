@@ -190,6 +190,7 @@ export interface GraphInputs {
   existing_mcp_endpoints_count?: number
   existing_vector_db_services_count?: number
   existing_external_domains_count?: number
+  fronted_count?: number
   source: 'graph' | 'settings'
 }
 
@@ -211,7 +212,7 @@ export interface PartialReconParams {
   settings_overrides?: Record<string, unknown>
 }
 
-export const PARTIAL_RECON_SUPPORTED_TOOLS = new Set(['SubdomainDiscovery', 'Naabu', 'Masscan', 'Nmap', 'Httpx', 'Katana', 'ZapAjaxSpider', 'Hakrawler', 'Jsluice', 'Gau', 'Kiterunner', 'ParamSpider', 'Arjun', 'Ffuf', 'EndpointAiClassifier', 'AiSurfaceRecon', 'JsRecon', 'SupplyChainRecon', 'GraphqlScan', 'Nuclei', 'SubdomainTakeover', 'VhostSni', 'WebCachePoison', 'SecurityChecks', 'Shodan', 'Urlscan', 'Uncover', 'OsintEnrichment'])
+export const PARTIAL_RECON_SUPPORTED_TOOLS = new Set(['SubdomainDiscovery', 'Naabu', 'Masscan', 'Nmap', 'Httpx', 'Katana', 'ZapAjaxSpider', 'Hakrawler', 'Jsluice', 'Gau', 'Kiterunner', 'ParamSpider', 'Arjun', 'Ffuf', 'EndpointAiClassifier', 'AiSurfaceRecon', 'JsRecon', 'SupplyChainRecon', 'GraphqlScan', 'Nuclei', 'SubdomainTakeover', 'VhostSni', 'WebCachePoison', 'SecurityChecks', 'Shodan', 'Urlscan', 'Uncover', 'OsintEnrichment', 'OriginDiscovery'])
 
 export const PARTIAL_RECON_PHASE_MAP: Record<string, readonly string[]> = {
   SubdomainDiscovery: ['Subdomain Discovery'],
@@ -242,6 +243,7 @@ export const PARTIAL_RECON_PHASE_MAP: Record<string, readonly string[]> = {
   Urlscan: ['URLScan Enrichment'],
   Uncover: ['Uncover Expansion'],
   OsintEnrichment: ['OSINT Enrichment'],
+  OriginDiscovery: ['Origin Discovery'],
 }
 
 // Backward-compatible default (SubdomainDiscovery phases)

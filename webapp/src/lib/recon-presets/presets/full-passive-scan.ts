@@ -175,6 +175,8 @@ Red team operators in the pre-engagement phase, OSINT analysts building target p
     mitreEnrichRecon: true,
 
     // --- ENABLE all OSINT providers at maximum ---
+    // --- Origin-IP Discovery: off (this preset runs no active validation probes) ---
+    originDiscoveryEnabled: false,
     osintEnrichmentEnabled: true,
 
     shodanEnabled: true,

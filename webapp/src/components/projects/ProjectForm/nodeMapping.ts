@@ -1,6 +1,7 @@
 export const SECTION_INPUT_MAP: Record<string, string[]> = {
   SubdomainDiscovery: ['Domain'],
   Shodan:             ['IP'],
+  OriginDiscovery:    ['Subdomain', 'IP'],
   Urlscan:            ['Domain'],
   OsintEnrichment:    ['IP', 'Domain'],
   Naabu:              ['IP', 'Subdomain'],
@@ -36,6 +37,7 @@ export const SECTION_INPUT_MAP: Record<string, string[]> = {
 export const SECTION_NODE_MAP: Record<string, string[]> = {
   SubdomainDiscovery: ['Subdomain', 'IP', 'DNSRecord', 'ExternalDomain'],
   Shodan:             ['Port', 'Service', 'Subdomain', 'ExternalDomain', 'DNSRecord', 'Vulnerability', 'CVE'],
+  OriginDiscovery:    ['IP', 'Vulnerability'],
   Urlscan:            ['Subdomain', 'ExternalDomain', 'Endpoint', 'Parameter'],
   OsintEnrichment:    ['Subdomain', 'Port', 'Service', 'ExternalDomain', 'DNSRecord', 'ThreatPulse', 'Malware', 'Certificate', 'Vulnerability', 'CVE'],
   Naabu:              ['Port', 'Service'],
@@ -72,6 +74,7 @@ export const SECTION_ENRICH_MAP: Record<string, string[]> = {
   SupplyChainRecon:   ['BaseURL'],
   SubdomainDiscovery: ['Domain'],
   Shodan:             ['IP'],
+  OriginDiscovery:    ['IP'],
   Urlscan:            ['Domain', 'IP', 'BaseURL'],
   OsintEnrichment:    ['IP', 'Domain'],
   Naabu:              ['IP', 'Domain'],

@@ -218,6 +218,8 @@ Red team operators performing authorized reconnaissance against targets with act
     mitreEnrichRecon: true,
 
     // --- OSINT: all enabled at reduced limits ---
+    // --- Origin-IP Discovery: off (this preset runs no active validation probes) ---
+    originDiscoveryEnabled: false,
     osintEnrichmentEnabled: true,
 
     shodanEnabled: true,

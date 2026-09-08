@@ -488,6 +488,17 @@ export const reconPresetSchema = z.object({
   securityCheckTimeout: int,
   securityCheckMaxWorkers: int,
 
+  // -- Origin-IP Discovery (CDN/WAF unmasking) --
+  originDiscoveryEnabled: bool,
+  originDiscoveryKeyless: bool,
+  originDiscoveryScanners: bool,
+  originDiscoveryPassiveDns: bool,
+  originDiscoveryMaxCandidates: int,
+  originDiscoveryMaxSearchCalls: int,
+  originDiscoveryThreshold: int,
+  originDiscoveryTimeout: int,
+  originDiscoveryWorkers: int,
+
   // -- OSINT Enrichment --
   osintEnrichmentEnabled: bool,
   shodanEnabled: bool,
@@ -996,6 +1007,17 @@ export const RECON_PARAMETER_CATALOG = `
 - securityCheckNoRateLimiting: boolean
 - securityCheckTimeout: integer - Seconds
 - securityCheckMaxWorkers: integer
+
+## Origin-IP Discovery (CDN/WAF unmasking)
+- originDiscoveryEnabled: boolean - Master switch; finds the real origin server behind a CDN/WAF. Active validation probes + passive source queries. Enable for bug-bounty/infra-mapping/red-team intents; leave off for passive-only or stealth presets.
+- originDiscoveryKeyless: boolean - Non-CDN subdomains + SPF/MX + crt.sh (no key needed)
+- originDiscoveryScanners: boolean - Favicon/cert pivots via Shodan/Censys/FOFA/ZoomEye/OTX/VirusTotal (each uses its own key)
+- originDiscoveryPassiveDns: boolean - SecurityTrails + ViewDNS DNS history
+- originDiscoveryMaxCandidates: integer - Cap on probed candidate IPs per fronted host
+- originDiscoveryMaxSearchCalls: integer - Per-scan budget of keyed scanner-search calls
+- originDiscoveryThreshold: integer - Weighted-similarity confidence (0-100) needed to confirm an origin
+- originDiscoveryTimeout: integer - Per-probe HTTP timeout (seconds)
+- originDiscoveryWorkers: integer - Parallel source + validation workers
 
 ## OSINT & Threat Intelligence
 - osintEnrichmentEnabled: boolean - Master switch for OSINT enrichment

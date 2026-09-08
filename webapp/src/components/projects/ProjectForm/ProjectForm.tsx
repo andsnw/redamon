@@ -61,6 +61,7 @@ import { AttackSkillsSection } from './sections/AttackSkillsSection'
 import { ShodanSection } from './sections/ShodanSection'
 import { UrlscanSection } from './sections/UrlscanSection'
 import { SubdomainDiscoverySection } from './sections/SubdomainDiscoverySection'
+import { OriginDiscoverySection } from './sections/OriginDiscoverySection'
 import { ToolMatrixSection } from './sections/ToolMatrixSection'
 import { GvmScanSection } from './sections/GvmScanSection'
 import { SectionScanActions } from './sections/SectionScanActions'
@@ -1055,6 +1056,7 @@ export function ProjectForm({
             <ShodanSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('Shodan') : undefined} />
             <UrlscanSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('Urlscan') : undefined} />
             <OsintEnrichmentSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('OsintEnrichment') : undefined} onRunUncover={mode === 'edit' && projectId ? () => setPartialReconToolId('Uncover') : undefined} />
+            <OriginDiscoverySection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('OriginDiscovery') : undefined} />
           </>
         )}
 

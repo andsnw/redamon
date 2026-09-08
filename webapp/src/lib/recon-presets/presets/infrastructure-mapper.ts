@@ -223,6 +223,11 @@ Network pentesters and infrastructure security teams mapping an external or inte
     securityCheckMaxWorkers: 15,
 
     // --- OSINT: Shodan + Censys only (infra-relevant) ---
+    // --- Origin-IP Discovery: unmask the real origin behind the CDN/WAF ---
+    originDiscoveryEnabled: true,
+    originDiscoveryKeyless: true,
+    originDiscoveryScanners: true,
+    originDiscoveryPassiveDns: true,
     osintEnrichmentEnabled: true,
     shodanEnabled: true,
     shodanHostLookup: true,

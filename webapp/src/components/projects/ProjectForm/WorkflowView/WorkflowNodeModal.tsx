@@ -10,6 +10,7 @@ import { WORKFLOW_TOOLS } from './workflowDefinition'
 import { SubdomainDiscoverySection } from '../sections/SubdomainDiscoverySection'
 import { UrlscanSection } from '../sections/UrlscanSection'
 import { ShodanSection } from '../sections/ShodanSection'
+import { OriginDiscoverySection } from '../sections/OriginDiscoverySection'
 import { OsintEnrichmentSection } from '../sections/OsintEnrichmentSection'
 import { NaabuSection } from '../sections/NaabuSection'
 import { MasscanSection } from '../sections/MasscanSection'
@@ -96,6 +97,7 @@ export function WorkflowNodeModal({
       case 'Urlscan':           return <UrlscanSection {...baseProps} />
       case 'Shodan':            return <ShodanSection {...baseProps} />
       case 'OsintEnrichment':   return <OsintEnrichmentSection {...baseProps} />
+      case 'OriginDiscovery':   return <OriginDiscoverySection {...baseProps} />
       case 'Naabu':             return <NaabuSection {...baseProps} />
       case 'Masscan':           return <MasscanSection {...baseProps} />
       case 'Nmap':              return <NmapSection {...baseProps} />

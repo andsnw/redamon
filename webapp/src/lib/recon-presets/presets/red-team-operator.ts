@@ -220,6 +220,11 @@ Red team operators running authorized engagements where some active probing is a
     securityCheckEnabled: false,
 
     // --- OSINT: selective providers ---
+    // --- Origin-IP Discovery: unmask the real origin behind the CDN/WAF ---
+    originDiscoveryEnabled: true,
+    originDiscoveryKeyless: true,
+    originDiscoveryScanners: true,
+    originDiscoveryPassiveDns: true,
     osintEnrichmentEnabled: true,
 
     shodanEnabled: true,

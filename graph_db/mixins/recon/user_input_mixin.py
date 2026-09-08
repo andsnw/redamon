@@ -710,4 +710,34 @@ class UserInputMixin:
                     "source": "graph" if (record and record["domain"]) else "settings",
                 }
 
+            elif tool_id == "OriginDiscovery":
+                # Origin Discovery needs CDN-FRONTED hosts (from a prior HTTP probe),
+                # not just any subdomain. Return the fronted-host count so the modal
+                # can block a run that has nothing to unmask (G7), plus subdomain
+                # names for the manual-entry dropdown. A host is "fronted" if it
+                # resolves to a CDN IP or its BaseURL is CDN-flagged / has a favicon.
+                result = session.run(
+                    """
+                    OPTIONAL MATCH (d:Domain {user_id: $uid, project_id: $pid})
+                    OPTIONAL MATCH (d)-[:HAS_SUBDOMAIN]->(s:Subdomain)
+                    WITH d, collect(DISTINCT s.name) AS subdomains
+                    OPTIONAL MATCH (fs:Subdomain {user_id: $uid, project_id: $pid})
+                    WHERE EXISTS { (fs)-[:RESOLVES_TO]->(ci:IP) WHERE ci.is_cdn = true }
+                       OR EXISTS { (fs)-[:HAS_BASEURL]->(:BaseURL)-[:HAS_ENDPOINT]->(ep:Endpoint)
+                                   WHERE ep.is_cdn = true OR ep.favicon_hash IS NOT NULL }
+                    WITH d, subdomains, count(DISTINCT fs) AS fronted_count
+                    RETURN d.name AS domain, subdomains,
+                           size(subdomains) AS sub_count, fronted_count
+                    """,
+                    uid=user_id, pid=project_id,
+                )
+                record = result.single()
+                return {
+                    "domain": record["domain"] if record and record["domain"] else None,
+                    "existing_subdomains": (record["subdomains"] if record else []) or [],
+                    "existing_subdomains_count": (record["sub_count"] if record else 0) or 0,
+                    "fronted_count": (record["fronted_count"] if record else 0) or 0,
+                    "source": "graph" if (record and record["domain"]) else "settings",
+                }
+
             return {"error": f"Unknown tool_id: {tool_id}"}
