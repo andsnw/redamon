@@ -5,7 +5,7 @@ import { Loader2, CheckCircle, AlertCircle, X, Brain } from 'lucide-react'
 import type { TriagePhase, TriageFindingPayload } from '@/lib/cypherfix-types'
 import styles from './TriageProgress.module.css'
 
-const PHASE_LABELS: Record<TriagePhase, string> = {
+export const PHASE_LABELS: Record<TriagePhase, string> = {
   collecting_vulnerabilities: 'Collecting vulnerabilities',
   collecting_cve_chains: 'Mapping CVE chains',
   collecting_secrets: 'Scanning for secrets',
@@ -17,7 +17,7 @@ const PHASE_LABELS: Record<TriagePhase, string> = {
   collecting_security_checks: 'Reviewing security checks',
   classifying: 'AI classifying real vs noise',
   correlating: 'AI correlating findings',
-  prioritizing: 'AI prioritizing threats',
+  prioritizing: 'Scoring & ranking findings',
   generating_remediations: 'Generating remediations',
   saving: 'Saving results',
 }

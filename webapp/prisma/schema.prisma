@@ -1166,6 +1166,9 @@ model Project {
   // hides a finding from the agent, so it stays a human action. Turning this on
   // lets high-confidence `likely_noise` be suppressed automatically.
   triageAutoMute                    Boolean  @default(false) @map("triage_auto_mute")
+  // How many top / ambiguous findings get an LLM rationale per run. The
+  // deterministic scorer ranks everything; this only caps the assist calls.
+  triageTopNForLlm                  Int      @default(40)    @map("triage_top_n_for_llm")
 
   // ========== RULES OF ENGAGEMENT ==========
   // --- Document & Metadata ---

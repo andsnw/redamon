@@ -29,6 +29,7 @@ async def load_cypherfix_settings(project_id: str) -> dict:
                 # a project saved before these fields existed behaves the same.
                 "triageConfidenceThreshold": project.get("triageConfidenceThreshold", 0.7),
                 "triageAutoMute": project.get("triageAutoMute", False),
+                "triageTopNForLlm": project.get("triageTopNForLlm", 40),
             }
 
             # Fetch user LLM providers for key resolution

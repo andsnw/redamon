@@ -248,6 +248,88 @@ class TestAHumanVerdictIsNeverOverwritten(unittest.TestCase):
         self.assertEqual(client.queries, [])
 
 
+class TestApplyTriageScores(unittest.TestCase):
+    """The prioritisation write path. The behavioural guarantees (tenant
+    isolation, the human skip actually taking effect) need a real database and
+    are proved in tests/test_triage_scoring_graph_live.py; here we pin the
+    generated Cypher and the pure-Python cleaning, which is what regresses from
+    an edit to this method alone."""
+
+    def _row(self, **kw):
+        base = {"id": "v1", "score": 900.0, "signals": ["cisa_kev"]}
+        base.update(kw)
+        return base
+
+    def test_it_writes_the_score_and_signals(self):
+        client = FakeClient(records=[{"updated": 1, "skipped_human": 0}])
+        client.apply_triage_scores(UID, PID, [self._row()])
+        self.assertIn("n.triage_priority_score = row.score", client.last)
+        self.assertIn("n.triage_signals        = row.signals", client.last)
+        sent = client.params[-1]["rows"][0]
+        self.assertEqual(sent["score"], 900.0)
+        self.assertEqual(sent["signals"], ["cisa_kev"])
+
+    def test_it_is_tenant_scoped(self):
+        client = FakeClient(records=[{"updated": 1, "skipped_human": 0}])
+        client.apply_triage_scores(UID, PID, [self._row()])
+        self.assertIn("n.user_id = $user_id AND n.project_id = $project_id", client.last)
+        self.assertEqual(client.params[-1]["user_id"], UID)
+        self.assertEqual(client.params[-1]["project_id"], PID)
+
+    def test_it_never_mutes(self):
+        # The same non-negotiable as apply_triage_verdicts: scanner output
+        # influences the rationale, so the write path must not be able to hide.
+        client = FakeClient(records=[{"updated": 1, "skipped_human": 0}])
+        client.apply_triage_scores(UID, PID, [self._row()])
+        self.assertNotIn(":Muted", client.last)
+        self.assertNotIn("SET n:", client.last.replace("SET n.", ""))
+
+    def test_it_skips_human_findings(self):
+        client = FakeClient(records=[{"updated": 0, "skipped_human": 1}])
+        client.apply_triage_scores(UID, PID, [self._row()])
+        self.assertIn("n.triage_source = 'human'", client.last)
+        self.assertIn("isHuman", client.last)
+
+    def test_a_verdict_is_written_only_when_decisive(self):
+        # status None (ambiguous, awaiting the LLM) must NOT clobber an existing
+        # verdict -- the SET is guarded on `row.status IS NULL`.
+        client = FakeClient(records=[{"updated": 1, "skipped_human": 0}])
+        client.apply_triage_scores(UID, PID, [self._row(status="confirmed", confidence=1.0)])
+        self.assertIn("row.status IS NULL", client.last)
+        sent = client.params[-1]["rows"][0]
+        self.assertEqual(sent["status"], "confirmed")
+
+    def test_an_invalid_status_is_dropped_to_none(self):
+        client = FakeClient(records=[{"updated": 1, "skipped_human": 0}])
+        client.apply_triage_scores(UID, PID, [self._row(status="whatever")])
+        self.assertIsNone(client.params[-1]["rows"][0]["status"])
+
+    def test_confidence_is_clamped(self):
+        client = FakeClient(records=[{"updated": 1, "skipped_human": 0}])
+        client.apply_triage_scores(UID, PID, [self._row(status="confirmed", confidence=4.2)])
+        self.assertEqual(client.params[-1]["rows"][0]["confidence"], 1.0)
+
+    def test_a_row_with_no_id_is_dropped(self):
+        client = FakeClient(records=[{"updated": 0, "skipped_human": 0}])
+        result = client.apply_triage_scores(UID, PID, [{"score": 5, "signals": []}])
+        self.assertEqual(result["rejected"], 1)
+        self.assertEqual(client.queries, [])  # nothing run
+
+    def test_garbage_score_becomes_zero_not_a_crash(self):
+        client = FakeClient(records=[{"updated": 1, "skipped_human": 0}])
+        client.apply_triage_scores(UID, PID, [self._row(score="not a number")])
+        self.assertEqual(client.params[-1]["rows"][0]["score"], 0.0)
+
+    def test_reason_and_cluster_only_set_when_present(self):
+        client = FakeClient(records=[{"updated": 1, "skipped_human": 0}])
+        client.apply_triage_scores(UID, PID, [self._row()])  # no reason/cluster
+        self.assertIn("row.reason IS NULL", client.last)
+        self.assertIn("row.cluster_id IS NULL", client.last)
+        sent = client.params[-1]["rows"][0]
+        self.assertIsNone(sent["reason"])
+        self.assertIsNone(sent["cluster_id"])
+
+
 class TestTheCappedTableCannotLieAboutWhatItShows(unittest.TestCase):
     """The Triage table is capped, so WHAT it drops and whether it says so both
     matter. Ordering by confidence alone was a total tie before any triage run
@@ -256,13 +338,16 @@ class TestTheCappedTableCannotLieAboutWhatItShows(unittest.TestCase):
     and the client-side severity sort only ever reorders the survivors."""
 
     def test_the_cap_keeps_the_worst_findings(self):
+        # Priority is now the primary sort key (deterministic scorer), severity
+        # the tiebreak. The cap therefore keeps the highest-priority findings,
+        # not an arbitrary subset.
         client = FakeClient()
         client.list_triage_findings(UID, PID)
         order = client.last[client.last.index("ORDER BY"):]
+        self.assertIn("triage_priority_score", order)
         self.assertIn("'critical' THEN 0", order)
-        self.assertIn("'high' THEN 1", order)
-        self.assertLess(order.index("severity"), order.index("triage_confidence"),
-                        "severity must be the PRIMARY sort key, not the tiebreak")
+        self.assertLess(order.index("triage_priority_score"), order.index("severity"),
+                        "priority score must be the PRIMARY sort key")
 
     def test_the_order_is_deterministic_so_the_cap_is_stable(self):
         # Without a unique final tiebreak two calls can return different rows

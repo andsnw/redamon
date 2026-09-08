@@ -14,12 +14,12 @@
  * agent can see for the whole project, so it is not a click to make by accident.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, EyeOff, Eye, ShieldCheck, ShieldQuestion, ShieldX, Play } from 'lucide-react'
 import { useAlertModal, useToast, WikiInfoButton } from '@/components/ui'
 import { useProject } from '@/providers/ProjectProvider'
 import { useCypherFixTriageWS } from '@/hooks/useCypherFixTriageWS'
-import { TriageProgress } from '../CypherFixTab/TriageProgress/TriageProgress'
+import { TriageProgress, PHASE_LABELS } from '../CypherFixTab/TriageProgress/TriageProgress'
 import styles from './TriageTable.module.css'
 
 export interface TriageFinding {
@@ -35,6 +35,8 @@ export interface TriageFinding {
   triage_reason: string | null
   triage_source?: string
   triage_cluster_id?: string | null
+  triage_priority_score?: number | null
+  triage_signals?: string[]
   updated_at?: string | null
 }
 
@@ -100,6 +102,8 @@ export function TriageTable({ projectId }: TriageTableProps) {
   const [total, setTotal] = useState(0)
   const [statusFilter, setStatusFilter] = useState<TriageStatus | 'all'>('all')
   const [showProgress, setShowProgress] = useState(false)
+  /** True when the run was launched from this mount, rather than re-attached. */
+  const startedHereRef = useRef(false)
 
   const { userId } = useProject()
   const { alertError, dangerConfirm } = useAlertModal()
@@ -139,8 +143,27 @@ export function TriageTable({ projectId }: TriageTableProps) {
     userId: userId || '',
     projectId: projectId || '',
     enabled: !!projectId && !!userId,
+    // Connect as soon as the tab opens, not just when Run is pressed: a run
+    // started here keeps going after you navigate away, and re-attaching is the
+    // only way to see it again.
+    autoConnect: true,
     onComplete: () => { void load() },
   })
+
+  // A run outlives the tab that started it, so on (re)connect the server
+  // replays a run already in progress. Surfacing that matters -- otherwise a
+  // live run is invisible -- but HOW depends on who started it.
+  //
+  // The full panel is a blocking overlay. That is right when you just pressed
+  // Run and are watching it work; it is wrong when you merely came back to the
+  // tab during a long background run, because it hides the findings table you
+  // came to read. Re-attached runs get the inline banner instead.
+  useEffect(() => {
+    if (triage.status === 'running' && startedHereRef.current) setShowProgress(true)
+  }, [triage.status])
+
+  /** A run in flight that is NOT being shown in the blocking panel. */
+  const backgroundRun = triage.status === 'running' && !showProgress
 
   const runTriage = useCallback(async () => {
     if (!projectId || !userId) return
@@ -154,13 +177,20 @@ export function TriageTable({ projectId }: TriageTableProps) {
       { confirmLabel: 'Run Noise Gate' },
     )
     if (!ok) return
+    startedHereRef.current = true
     setShowProgress(true)
     triage.startTriage()
   }, [projectId, userId, dangerConfirm, triage])
 
   const closeProgress = useCallback(() => {
     setShowProgress(false)
-    triage.disconnect()
+    // Only drop the socket once there is nothing left to stream. Disconnecting
+    // mid-run no longer cancels anything, but it would stop the progress this
+    // view is about to want again. Dismissing the panel is not "stop the run" --
+    // that is the Stop button.
+    if (triage.status !== 'running' && triage.status !== 'connecting') {
+      triage.disconnect()
+    }
     if (triage.status === 'completed') void load()
   }, [triage, load])
 
@@ -248,10 +278,13 @@ export function TriageTable({ projectId }: TriageTableProps) {
     const rows = statusFilter === 'all'
       ? findings
       : findings.filter(f => f.triage_status === statusFilter)
+    // Rank by the deterministic priority score, worst first. The server already
+    // returns them in this order; this mirrors it so a client-side filter keeps
+    // the ranking. Severity is only the tiebreak among equal scores.
     return [...rows].sort((a, b) => {
-      const s = severityRank(a.severity) - severityRank(b.severity)
-      if (s !== 0) return s
-      return (b.triage_confidence ?? 0) - (a.triage_confidence ?? 0)
+      const p = (b.triage_priority_score ?? -1) - (a.triage_priority_score ?? -1)
+      if (p !== 0) return p
+      return severityRank(a.severity) - severityRank(b.severity)
     })
   }, [findings, statusFilter])
 
@@ -323,6 +356,23 @@ export function TriageTable({ projectId }: TriageTableProps) {
         </div>
       </div>
 
+      {backgroundRun && (
+        <div className={styles.runBanner} role="status">
+          <Loader2 className={styles.spin} size={13} />
+          <span className={styles.runBannerText}>
+            Noise Gate running
+            {triage.currentPhase ? ` — ${PHASE_LABELS[triage.currentPhase] ?? triage.currentPhase}` : ''}
+            . Verdicts appear below as they are decided; you can leave this page.
+          </span>
+          <button className={styles.runBannerBtn} onClick={() => setShowProgress(true)}>
+            Details
+          </button>
+          <button className={styles.runBannerBtn} onClick={triage.stopTriage}>
+            Stop
+          </button>
+        </div>
+      )}
+
       {truncated && (
         <div className={styles.truncationNotice} role="status">
           Showing the {findings.length} highest-severity findings of {total}. Mute or resolve
@@ -341,29 +391,22 @@ export function TriageTable({ projectId }: TriageTableProps) {
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>Verdict</th>
+                <th>#</th>
                 <th>Finding</th>
                 <th>Type</th>
                 <th>Severity</th>
+                <th>Signals</th>
                 <th>Where</th>
                 <th>Why</th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {visible.map(f => {
-                const Icon = STATUS_ICON[f.triage_status] ?? ShieldQuestion
+              {visible.map((f, i) => {
                 return (
                   <tr key={f.id}>
-                    <td>
-                      <span className={`${styles.badge} ${styles[f.triage_status] ?? ''}`}>
-                        <Icon size={12} /> {STATUS_LABEL[f.triage_status] ?? f.triage_status}
-                      </span>
-                      {f.triage_confidence != null && (
-                        <span className={styles.confidence}>
-                          {Math.round(f.triage_confidence * 100)}%
-                        </span>
-                      )}
+                    <td className={styles.rank}>
+                      {i + 1}
                       {f.triage_source === 'human' && (
                         <span className={styles.humanTag} title="Set by a person; the AI will not overwrite it">
                           human
@@ -376,6 +419,15 @@ export function TriageTable({ projectId }: TriageTableProps) {
                       <span className={`${styles.sev} ${styles[(f.severity || '').toLowerCase()] ?? ''}`}>
                         {f.severity || '-'}
                       </span>
+                    </td>
+                    <td className={styles.signals}>
+                      {(f.triage_signals ?? []).length === 0
+                        ? <span className={styles.confidence}>-</span>
+                        : (f.triage_signals ?? []).map(sig => (
+                            <span key={sig} className={styles.signalChip} title={sig}>
+                              {sig.replace(/_/g, ' ')}
+                            </span>
+                          ))}
                     </td>
                     <td className={styles.where}>{f.host || f.location || '-'}</td>
                     <td className={styles.reason}>{f.triage_reason || '-'}</td>

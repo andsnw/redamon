@@ -30,6 +30,17 @@ interface UseCypherFixTriageWSConfig {
   userId: string
   projectId: string
   enabled?: boolean
+  /**
+   * Open the socket on mount instead of waiting for `startTriage`.
+   *
+   * A triage run outlives the tab that started it, but the server can only
+   * re-attach a tab that actually connects. Without this the hook connected
+   * ONLY from startTriage, so returning to the page after leaving mid-run
+   * showed an idle screen over a run that was still going.
+   *
+   * Off by default so the CypherFix page keeps connecting lazily.
+   */
+  autoConnect?: boolean
   onPhase?: (payload: TriagePhasePayload) => void
   onFinding?: (payload: TriageFindingPayload) => void
   onComplete?: (payload: TriageCompletePayload) => void
@@ -56,6 +67,7 @@ export function useCypherFixTriageWS({
   userId,
   projectId,
   enabled = true,
+  autoConnect = false,
   onPhase,
   onFinding,
   onComplete,
@@ -253,6 +265,15 @@ export function useCypherFixTriageWS({
       wsRef.current = null
     }
   }, [])
+
+  // Connect on mount when asked, so the server can re-attach this tab to a run
+  // already in progress and replay what it missed. `connect` no-ops when a
+  // socket already exists, so the changing identity of the callbacks below
+  // cannot open a second one.
+  useEffect(() => {
+    if (!autoConnect || !enabled || !userId || !projectId) return
+    void connect()
+  }, [autoConnect, enabled, userId, projectId, connect])
 
   // Cleanup on unmount
   useEffect(() => {

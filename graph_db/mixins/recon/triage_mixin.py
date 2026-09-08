@@ -59,8 +59,8 @@ _SEVERITY_RANK = """CASE toLower(coalesce(n.severity, ''))
              WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2
              WHEN 'low' THEN 3 WHEN 'info' THEN 4 ELSE 5 END"""
 
-#: Verdict properties the classifier owns. Listed once so the write and the
-#: unmute cleanup cannot drift apart.
+#: Verdict + priority properties the triage phase owns. Listed once so the write
+#: and the unmute cleanup cannot drift apart.
 TRIAGE_PROPS = (
     "triage_status",
     "triage_confidence",
@@ -68,6 +68,10 @@ TRIAGE_PROPS = (
     "triage_source",
     "triage_cluster_id",
     "triaged_at",
+    # Prioritisation (deterministic scorer). triage_priority_score is THE sort
+    # key: higher = more urgent. Deliberately no inverted "priority number".
+    "triage_priority_score",
+    "triage_signals",
 )
 
 VALID_TRIAGE_STATUS = ("confirmed", "likely_noise", "needs_verification", "unreviewed")
@@ -170,17 +174,13 @@ class TriageMixin:
     def list_triage_findings(self, user_id: str, project_id: str, limit: int = 2000) -> list:
         """Every finding in triage scope that is NOT muted, for the Triage table.
 
-        Carries the verdict properties so the table can show and sort by them.
-        Absent `triage_status` reads as `unreviewed`, which is why no backfill
-        was needed when the feature shipped.
-
-        Ordered severity-first, and the tiebreak matters. Sorting on confidence
-        alone was a TOTAL tie before any triage run (every finding has a null
-        confidence), so `LIMIT` kept an arbitrary subset and a `critical`
-        finding could be dropped while `info` ones were kept. The client then
-        sorts by severity, which only ever reorders what survived the cap. Pair
-        this with `count_triage_findings` so the caller can tell the operator
-        the list was capped.
+        Carries the priority score + signals + verdict props so the table can
+        rank and explain each row. Absent `triage_priority_score` sorts last
+        (an un-scored finding, e.g. from before a run), so a fresh project is not
+        mis-ranked. `count_triage_findings` gives the caller the true total so a
+        capped list can say "showing N of M" -- and the cap now keeps the
+        top-N by priority rather than an arbitrary subset, because the score is a
+        near-total order.
         """
         query = f"""
         MATCH (n:{_MUTEABLE})
@@ -200,9 +200,11 @@ class TriageMixin:
                n.triage_reason                     AS triage_reason,
                coalesce(n.triage_source, '')       AS triage_source,
                n.triage_cluster_id                 AS triage_cluster_id,
+               n.triage_priority_score             AS triage_priority_score,
+               coalesce(n.triage_signals, [])      AS triage_signals,
                toString(n.updated_at)              AS updated_at
-        ORDER BY {_SEVERITY_RANK},
-                 coalesce(n.triage_confidence, 0) DESC,
+        ORDER BY coalesce(n.triage_priority_score, -1) DESC,
+                 {_SEVERITY_RANK},
                  coalesce(n.id, n.finding_id)
         LIMIT $limit
         """
@@ -295,6 +297,92 @@ class TriageMixin:
             "updated": (record["updated"] if record else 0) or 0,
             "skipped_human": (record["skipped_human"] if record else 0) or 0,
             "rejected": len(verdicts or []) - len(clean),
+        }
+
+    def apply_triage_scores(self, user_id: str, project_id: str, rows: list) -> dict:
+        """Write the deterministic priority score onto findings.
+
+        `rows` is a list of {id, score, signals, status?, confidence?} produced by
+        the scorer. This is the ranking backbone: `triage_priority_score` (higher
+        = more urgent) is the table's sort key, `triage_signals` is the
+        transparent "why it ranked here", and `triage_status`/`triage_confidence`
+        are set ONLY when the graph is decisive (the scorer's auto-verdict) —
+        never a guess.
+
+        Same two guarantees as `apply_triage_verdicts`, enforced in Cypher:
+        a `triage_source = 'human'` finding is never overwritten, and there is no
+        `SET n:Muted` here and never must be. The score is deterministic, so a
+        re-run is idempotent for AI-owned findings.
+        """
+        clean = []
+        for r in rows or []:
+            node_id = (r or {}).get("id")
+            if not node_id:
+                continue
+            try:
+                score = float(r.get("score"))
+            except (TypeError, ValueError):
+                score = 0.0
+            signals = r.get("signals") or []
+            if not isinstance(signals, list):
+                signals = [str(signals)]
+            status = r.get("status")
+            if status not in VALID_TRIAGE_STATUS:
+                status = None            # leave the verdict untouched when not decisive
+            confidence = r.get("confidence")
+            try:
+                confidence = None if confidence is None else max(0.0, min(1.0, float(confidence)))
+            except (TypeError, ValueError):
+                confidence = None
+            clean.append({
+                "id": str(node_id),
+                "score": score,
+                "signals": [str(s) for s in signals],
+                "status": status,
+                "confidence": confidence,
+                "reason": str(r.get("reason") or "")[:500] or None,
+                "cluster_id": str(r.get("cluster_id") or "") or None,
+            })
+
+        if not clean:
+            return {"updated": 0, "skipped_human": 0, "rejected": len(rows or [])}
+
+        # The score/signals always write (they are deterministic and carry no
+        # opinion). The verdict fields write only when the row supplies a
+        # decisive status, so an ambiguous finding awaiting the LLM rationale is
+        # ranked now and keeps whatever verdict it had.
+        query = f"""
+        UNWIND $rows AS row
+        MATCH (n:{_MUTEABLE})
+        WHERE (n.id = row.id OR n.finding_id = row.id)
+          AND n.user_id = $user_id AND n.project_id = $project_id
+        WITH n, row, n.triage_source = 'human' AS isHuman
+        FOREACH (_ IN CASE WHEN isHuman THEN [] ELSE [1] END |
+          SET n.triage_priority_score = row.score,
+              n.triage_signals        = row.signals,
+              n.triaged_at            = datetime(),
+              n.triage_source         = 'ai'
+        )
+        FOREACH (_ IN CASE WHEN isHuman OR row.status IS NULL THEN [] ELSE [1] END |
+          SET n.triage_status     = row.status,
+              n.triage_confidence  = row.confidence
+        )
+        FOREACH (_ IN CASE WHEN isHuman OR row.reason IS NULL THEN [] ELSE [1] END |
+          SET n.triage_reason = row.reason)
+        FOREACH (_ IN CASE WHEN isHuman OR row.cluster_id IS NULL THEN [] ELSE [1] END |
+          SET n.triage_cluster_id = row.cluster_id)
+        RETURN count(CASE WHEN isHuman THEN 1 END) AS skipped_human,
+               count(CASE WHEN isHuman THEN NULL ELSE 1 END) AS updated
+        """
+        with self.driver.session() as session:
+            record = session.run(
+                query, rows=clean, user_id=user_id, project_id=project_id
+            ).single()
+
+        return {
+            "updated": (record["updated"] if record else 0) or 0,
+            "skipped_human": (record["skipped_human"] if record else 0) or 0,
+            "rejected": len(rows or []) - len(clean),
         }
 
     def set_human_verdict(self, user_id: str, project_id: str, node_id: str,

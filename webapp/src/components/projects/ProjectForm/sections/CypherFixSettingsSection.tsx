@@ -359,6 +359,27 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
               onChange={(checked) => updateField('triageAutoMute', checked)}
             />
           </div>
+
+          {/* Noise Gate: LLM rationale cap */}
+          <div className={styles.fieldGroup}>
+            <label className={styles.fieldLabel}>Noise Gate: findings sent to the LLM</label>
+            <input
+              type="number"
+              min={0}
+              max={500}
+              step={5}
+              className={styles.input}
+              value={data.triageTopNForLlm ?? 40}
+              onChange={(e) =>
+                updateField('triageTopNForLlm', parseInt(e.target.value, 10) || 40)
+              }
+            />
+            <span className={styles.fieldHint}>
+              The Noise Gate ranks every finding in code. This caps how many of the top and
+              still-ambiguous findings get an AI-written &quot;why it matters&quot; sentence and
+              cross-tool grouping. Higher means more findings explained, at more LLM cost.
+            </span>
+          </div>
         </div>
       )}
     </div>
