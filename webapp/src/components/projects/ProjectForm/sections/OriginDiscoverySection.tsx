@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, Globe, Info, Play } from 'lucide-react'
+import { ChevronDown, Globe, Play } from 'lucide-react'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import { useProject } from '@/providers/ProjectProvider'
@@ -61,12 +61,14 @@ export function OriginDiscoverySection({ data, updateField, onRun }: OriginDisco
 
   useEffect(() => { checkApiKeys() }, [checkApiKeys])
 
-  const scannerKeys: Array<[keyof KeyStatus, string]> = [
+  // OTX is intentionally NOT here: its passive-DNS endpoint works without a key
+  // (a key only raises the rate limit), so it is never "skipped for want of a key".
+  const keyRequiredScanners: Array<[keyof KeyStatus, string]> = [
     ['shodan', 'Shodan'], ['censys', 'Censys'], ['fofa', 'FOFA'],
-    ['zoomEye', 'ZoomEye'], ['otx', 'OTX'], ['virusTotal', 'VirusTotal'],
+    ['zoomEye', 'ZoomEye'], ['virusTotal', 'VirusTotal'],
   ]
-  const liveScanners = keyStatus ? scannerKeys.filter(([k]) => keyStatus[k]).map(([, n]) => n) : []
-  const missingScanners = keyStatus ? scannerKeys.filter(([k]) => !keyStatus[k]).map(([, n]) => n) : []
+  const liveScanners = keyStatus ? keyRequiredScanners.filter(([k]) => keyStatus[k]).map(([, n]) => n) : []
+  const missingScanners = keyStatus ? keyRequiredScanners.filter(([k]) => !keyStatus[k]).map(([, n]) => n) : []
 
   return (
     <div className={styles.section}>
@@ -123,22 +125,6 @@ export function OriginDiscoverySection({ data, updateField, onRun }: OriginDisco
 
           {data.originDiscoveryEnabled && (
           <>
-          {/* Informational (non-blocking) source status: keyless keeps it useful with no keys. */}
-          <div className={styles.shodanWarning}>
-            <Info size={14} />
-            {keyStatus === null ? (
-              <span>Checking configured sources...</span>
-            ) : (
-              <span>
-                Keyless sources (non-CDN subdomains, SPF/MX, crt.sh) always run - no key needed.
-                {' '}Scanner sources live now: {liveScanners.length ? liveScanners.join(', ') : 'none'}.
-                {missingScanners.length ? ` Skipped for want of a key: ${missingScanners.join(', ')}.` : ''}
-                {' '}Passive DNS: SecurityTrails {keyStatus.securitytrails ? 'set' : 'not set'}, ViewDNS {keyStatus.viewdns ? 'set' : 'not set'}.
-                {' '}Add keys in Global Settings to widen coverage.
-              </span>
-            )}
-          </div>
-
           <div className={styles.subSection}>
             <h3 className={styles.subSectionTitle}>Source Groups</h3>
 
@@ -146,7 +132,7 @@ export function OriginDiscoverySection({ data, updateField, onRun }: OriginDisco
               <div>
                 <span className={styles.toggleLabel}>Keyless sources</span>
                 <p className={styles.toggleDescription}>
-                  Non-CDN subdomain probing, SPF/MX email-record IPs, and crt.sh certificate search. No API key required.
+                  Non-CDN subdomain probing, SPF/MX email-record IPs, and crt.sh certificate search. No API key required - this group always runs.
                 </p>
               </div>
               <Toggle
@@ -159,8 +145,16 @@ export function OriginDiscoverySection({ data, updateField, onRun }: OriginDisco
               <div>
                 <span className={styles.toggleLabel}>Internet-wide scanners</span>
                 <p className={styles.toggleDescription}>
-                  Favicon-hash and certificate pivots via Shodan, Censys, FOFA, ZoomEye, OTX and VirusTotal. Each uses the key you already store; a source with no key is skipped.
+                  Favicon-hash and certificate pivots via Shodan, Censys, FOFA, ZoomEye and VirusTotal (each uses the key you store; a source with no key is skipped), plus OTX (works without a key).
                 </p>
+                {data.originDiscoveryScanners && (
+                  <p className={styles.fieldHint} style={{ marginTop: '4px' }}>
+                    {keyStatus === null ? 'Checking configured keys...' : (
+                      <>Live now (key set): {liveScanners.length ? liveScanners.join(', ') : 'none'}; OTX runs without a key.
+                      {missingScanners.length ? ` No key, skipped: ${missingScanners.join(', ')}. Add keys in Global Settings to widen coverage.` : ''}</>
+                    )}
+                  </p>
+                )}
               </div>
               <Toggle
                 checked={data.originDiscoveryScanners}
@@ -174,6 +168,14 @@ export function OriginDiscoverySection({ data, updateField, onRun }: OriginDisco
                 <p className={styles.toggleDescription}>
                   Historical A records from SecurityTrails and ViewDNS that often reveal the pre-CDN origin.
                 </p>
+                {data.originDiscoveryPassiveDns && (
+                  <p className={styles.fieldHint} style={{ marginTop: '4px' }}>
+                    {keyStatus === null ? 'Checking configured keys...' : (
+                      <>SecurityTrails {keyStatus.securitytrails ? 'live (key set)' : 'no key, skipped'}, ViewDNS {keyStatus.viewdns ? 'live (key set)' : 'no key, skipped'}.
+                      {(!keyStatus.securitytrails || !keyStatus.viewdns) ? ' Add keys in Global Settings.' : ''}</>
+                    )}
+                  </p>
+                )}
               </div>
               <Toggle
                 checked={data.originDiscoveryPassiveDns}
