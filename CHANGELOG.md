@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.14.1] - 2026-09-09
+
+### Fixed
+
+- **`./redamon.sh update` no longer refuses to pull after a scan, and its error no longer makes the problem permanent** ([#185](https://github.com/samugit83/redamon/issues/185)). RedAmon was dirtying its own checkout: `recon/` is bind-mounted read-write into the spawned recon container, and two **git-tracked** data directories are re-downloaded there on a 24h cache miss -- `recon/main_recon_modules/data/mitre_db/` (the MITRE CVE/CAPEC/CWE database, written by `add_mitre.py`) and `recon/main_recon_modules/data/wappalyzer_cache/` (the Wappalyzer fingerprints, written by `http_probe.py`). So a scan or two left tracked files modified and `git pull --ff-only` refused. `update` was supposed to restore those before pulling, but `RUNTIME_TRACKED_PATHS` listed only the `.last_update` marker, which had since been gitignored and was therefore untracked -- the restore was dead code while the 16 files beside it drifted. It now covers both directories. Worse than the refusal was the advice: the error told users to run `git commit -am 'local changes'`, which is precisely what converts a self-healing dirty tree into a permanent dead end, because the checkout then holds a commit the project does not and no fast-forward can ever pass it again. At that point the message was also simply false, still claiming "the working tree has local changes" while `git status` was provably empty. That suggestion is gone, and the dirty-tree branch now warns against it explicitly ([68d0d906]).
+- **`update` tells the four failure modes apart instead of blaming local changes for all of them.** A diverged branch, a genuinely dirty tree, a checkout with no git remote (a zip download rather than a clone) and a transport/auth failure each get their own diagnosis and their own runnable recovery command; the last of these now prints git's own message rather than guessing. A checkout diverged **only** by committed runtime files repairs itself and reports what it discarded, so the update completes instead of stranding the user. That reset is the single destructive step in `update` and is gated four ways -- the working tree must be clean, `git status` must be readable, every path in the diverging commits must sit under a RedAmon runtime data directory, and no path may contain a traversal -- with `REDAMON_NO_AUTO_RESET=1` to disable it outright. Anything touching real work stops the update with instructions that preserve it ([68d0d906]).
+- **A mixed root/user checkout now fails fast with the one command that fixes it.** An earlier `sudo ./redamon.sh install` (or the `sudo git commit` the old message provoked) leaves root-owned files in a user-owned clone, and the next non-root run failed piecemeal: git could not rewrite `.git/index`, `_gpu_export_env` could not write `.torch-variant`, and none of the errors pointed at the cause. `update` now checks up front and stops with the `chown`, `install` warns at the point the mistake is made, and a runtime data file that is clean but root-owned is flagged **before** a release that changes it makes `git pull` fail with `unable to unlink ... Permission denied`. A restore that cannot write its target no longer swallows the failure ([68d0d906]).
+
+### Note
+
+A checkout that has **already** diverged still needs one manual recovery, because the fix ships inside `redamon.sh` -- the very file such a checkout cannot pull:
+
+```bash
+cd ~/redamon
+sudo chown -R "$(id -un):$(id -gn)" .   # only if an earlier run used sudo
+git fetch origin
+git reset --hard origin/master
+./redamon.sh update
+```
+
+From this release on it is automatic. See [docs/readmes/TROUBLESHOOTING.md](docs/readmes/TROUBLESHOOTING.md) for the symptom table.
+
 ## [6.14.0] - 2026-09-08
 
 ### Added
