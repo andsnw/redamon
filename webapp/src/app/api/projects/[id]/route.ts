@@ -10,6 +10,7 @@ import { orchestratorFetch } from '@/lib/orchestrator'
 import { isInternalRequest, isScannerRequest } from '@/lib/session'
 import { requireEffectiveUser, requireProjectAccess } from '@/lib/access'
 import { toAuthProfileMetadata } from '@/lib/authProfile'
+import { callGraphTriage } from '@/lib/triageClient'
 
 // Path to output directories (fallback for local deletion)
 const RECON_OUTPUT_PATH = process.env.RECON_OUTPUT_PATH || '/home/samuele/Progetti didattici/RedAmon/recon/output'
@@ -347,6 +348,17 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       })
     } catch (e) {
       console.warn('Could not cancel queued jobs before project delete:', e)
+    }
+
+    // A triage run lives in the agent's memory. Deleting the project without
+    // telling it leaves the run working against a project that no longer
+    // exists, for as long as it takes the next heartbeat to fail (X12).
+    // Best-effort: an unreachable agent must not block the delete, because the
+    // run's publish and heartbeat both fail closed on the missing project.
+    try {
+      await callGraphTriage('stop_run', { userId: eff.userId, projectId: id })
+    } catch (e) {
+      console.warn('Could not stop a triage run before project delete:', e)
     }
     // Best-effort stop of each PROJECT-LEVEL scan container. Run-based scans
     // (partial_recon, ai_attack) are keyed by run-id, not project, so they are not

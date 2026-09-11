@@ -368,24 +368,24 @@ class TestLogRedaction(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # L5: the LLM batch is the top N by score
 # ---------------------------------------------------------------------------
-class TestRationaleBatchIsTopN(unittest.TestCase):
-    def test_rank_findings_result_is_what_the_caller_keeps(self):
-        from cypherfix_triage import scoring
-        rows = [
-            {"id": "low", "score": 1.0, "severity": "info"},
-            {"id": "high", "score": 900.0, "severity": "critical"},
-            {"id": "mid", "score": 400.0, "severity": "high"},
-        ]
-        ordered = scoring.rank_findings(rows)
-        self.assertEqual([r["id"] for r in ordered], ["high", "mid", "low"])
+class TestFindingsAreOrderedByScore(unittest.TestCase):
+    """L5 was: the LLM batch was the first N rows in Neo4j's return order,
+    because the caller discarded what the sort returned. Step A now sorts in
+    place, and the review takes its budget off the front of that list."""
 
-    def test_the_orchestrator_reassigns_the_sorted_list(self):
-        """Guards the exact regression: `rank_findings(scored)` on its own left
-        `scored` in Neo4j's return order, so the "top 40" was the first 40."""
+    def test_step_a_returns_findings_worst_first(self):
         import inspect
         from cypherfix_triage.orchestrator import TriageOrchestrator
-        source = inspect.getsource(TriageOrchestrator._score_findings)
-        self.assertIn("scored = scoring.rank_findings(scored)", source)
+        source = inspect.getsource(TriageOrchestrator._score)
+        self.assertIn("scored.sort(", source)
+        self.assertIn('-r["score"]', source)
+
+    def test_the_review_budget_takes_the_highest_scoring_findings(self):
+        import inspect
+        from cypherfix_triage.orchestrator import TriageOrchestrator
+        source = inspect.getsource(TriageOrchestrator._review)
+        self.assertIn("candidates.sort(", source)
+        self.assertIn("candidates[:budget]", source)
 
 
 if __name__ == "__main__":

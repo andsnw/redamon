@@ -234,6 +234,26 @@ def _release_triage_slot(project_id: str) -> None:
     _TRIAGE_IN_FLIGHT.discard(project_id)
 
 
+def stop_project_run(project_id: str) -> dict:
+    """Cancel the in-flight run for a project, from outside the socket.
+
+    Called by `/graph/triage` op `stop_run` when the webapp is about to delete
+    the project (X12). Without it the run would keep working against a project
+    that is being deleted, and only notice at its next heartbeat.
+
+    Cancelling is enough: the run's own `finally` releases the slot and reports
+    the outcome, and its publish and heartbeat calls fail closed once the
+    project row is gone.
+    """
+    run = _RUNS.get(project_id)
+    if run is None or not run.is_active:
+        return {"stopped": False, "reason": "no run in progress"}
+    run.status = "stopped"
+    if run.task is not None:
+        run.task.cancel()
+    return {"stopped": True}
+
+
 async def handle_triage_websocket(websocket: WebSocket):
     """Main WebSocket handler for triage agent connections.
 

@@ -11,6 +11,7 @@ import path from 'path'
 import { safeBasename } from '@/lib/safePath'
 import { orchestratorFetch } from '@/lib/orchestrator'
 import { envelopeForKind } from '@/lib/jobQueue'
+import { describeLiveGraphWriters } from '@/lib/graphWriters'
 
 export const maxDuration = 300
 
@@ -478,7 +479,25 @@ export async function POST(request: NextRequest) {
           // Also clear the original project's Neo4j data to prevent duplicates.
           // With global unique constraints, nodes from the old project would conflict
           // or create stale relationships pointing to orphaned unconstrained nodes.
+          //
+          // This deletes a project the operator did not ask to touch, so it must
+          // not happen underneath something that is reading it. A triage run
+          // holds the whole graph in memory and writes its ranking back at the
+          // end; clearing the source here would make it publish a ranking of
+          // findings that no longer exist (X1).
           if (_oldProjectId && _oldProjectId !== newProject.id) {
+            const busy = await describeLiveGraphWriters(_oldProjectId)
+            if (busy) {
+              return NextResponse.json(
+                {
+                  error: `This export came from a project that is still in use: ` +
+                    `${busy}. Importing it would clear that project's graph. ` +
+                    `Wait for it to finish and try again.`,
+                  graphBusy: true,
+                },
+                { status: 409 }
+              )
+            }
             await clearProjectGraph(session, _oldProjectId)
           }
 

@@ -1,4 +1,15 @@
-"""Tools available to the triage agent during ReAct analysis phase."""
+"""The triage run's only graph access.
+
+There are no LLM TOOLS here any more. Triage used to bind `query_graph` and
+`web_search` into a ReAct loop, which meant a model steered by scanner output
+could write its own Cypher and its own search queries. Steps A to D now read
+the graph through the fixed queries in `fact_queries.py`, and the review and
+prose calls bind no tools at all, so an injected instruction has nothing to
+reach for.
+
+`run_query` survives for the guarded path that is still exercised by the
+security tests: anything model-written goes through `scope_query` first.
+"""
 
 import logging
 import os
@@ -10,7 +21,6 @@ from graph_db.tenant_filter import (
     find_disallowed_write_operation,
     scope_query,
 )
-from prompt_safety import wrap_untrusted
 
 logger = logging.getLogger(__name__)
 
@@ -87,87 +97,3 @@ class TriageNeo4jToolManager:
         return await self._execute(
             cypher, {"userId": self.user_id, "projectId": self.project_id}
         )
-
-class TriageWebSearchManager:
-    """Web search tool for enriching triage analysis."""
-
-    def __init__(self, tavily_api_key: str = "", key_rotator=None):
-        self.tavily_api_key = tavily_api_key or ""
-        self.key_rotator = key_rotator  # Optional[KeyRotator]
-
-    async def search(self, query: str, max_results: int = 5) -> str:
-        """Search the web using Tavily API."""
-        api_key = self.key_rotator.current_key if self.key_rotator and self.key_rotator.has_keys else self.tavily_api_key
-        if not api_key:
-            return "Web search unavailable: Tavily API key not configured in Global Settings"
-
-        try:
-            import httpx
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(
-                    "https://api.tavily.com/search",
-                    json={
-                        "api_key": api_key,
-                        "query": query,
-                        "max_results": max_results,
-                        "search_depth": "basic",
-                    },
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                if self.key_rotator:
-                    self.key_rotator.tick()
-
-                results = []
-                for r in data.get("results", []):
-                    results.append(
-                        f"**{r['title']}**\n{r['url']}\n{r.get('content', '')[:500]}"
-                    )
-                if not results:
-                    return "No results found."
-                return wrap_untrusted("\n\n---\n\n".join(results), "WEB_SEARCH_RESULTS")
-        except Exception as e:
-            logger.error(f"Web search failed: {e}")
-            return f"Web search error: {e}"
-
-
-# Tool definitions for the LLM
-TRIAGE_TOOLS = [
-    {
-        "name": "query_graph",
-        "description": (
-            "Run a read-only follow-up Cypher query against the Neo4j graph database. "
-            "Use this when you need additional context about specific findings. "
-            "Tenant filters are injected for you, but every node pattern must name "
-            "an explicit label, e.g. MATCH (v:Vulnerability), never MATCH (n). "
-            "Write clauses are refused."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "cypher": {
-                    "type": "string",
-                    "description": "Read-only Cypher query. Every node pattern needs an explicit label.",
-                },
-            },
-            "required": ["cypher"],
-        },
-    },
-    {
-        "name": "web_search",
-        "description": (
-            "Search the web for vulnerability details, CVE information, "
-            "CISA KEV catalog status, or exploit availability."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query",
-                },
-            },
-            "required": ["query"],
-        },
-    },
-]

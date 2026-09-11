@@ -2879,7 +2879,7 @@ class GraphTriageRequest(BaseModel):
     mixin, so a guessed id from another project matches nothing rather than
     mutating anything.
     """
-    op: str  # "mute" | "unmute" | "list_muted" | "list_findings" | "human_verdict"
+    op: str  # mute | unmute | list_muted | list_findings | human_verdict | stop_run
     user_id: str
     project_id: str
     node_id: Optional[str] = None
@@ -2940,6 +2940,12 @@ async def graph_triage(body: GraphTriageRequest):
             result = client.set_human_verdict(
                 body.user_id, body.project_id, body.node_id,
                 body.status or "", body.reason or "")
+        elif body.op == "stop_run":
+            # Project delete calls this before deleting (X12). A run that keeps
+            # working against a project being deleted would only notice at its
+            # next heartbeat, minutes later, and could still be mid-publish.
+            from cypherfix_triage.websocket_handler import stop_project_run
+            result = stop_project_run(body.project_id)
         else:
             return JSONResponse(status_code=400,
                                 content={"error": f"unknown op {body.op!r}"})
