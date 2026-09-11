@@ -212,6 +212,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'TAKEOVER_RATE_LIMIT': 50,
     'TAKEOVER_MANUAL_REVIEW_AUTO_PUBLISH': False,
     'TAKEOVER_CNAME_VALIDATION_ENABLED': True,
+    # Certificate-derived takeover signals (Phase 3). Mirrors the CNAME toggle
+    # above; gates the cert enrichment + the new cert scoring rules. Reads
+    # whatever cert data is available (httpx 443 with tlsx off, more with on).
+    'TAKEOVER_CERT_VALIDATION_ENABLED': True,
     # Cascade-gated by AI_IN_PIPELINE. When on, takeover findings whose
     # response carries no third-party vendor token get an LLM second pass
     # to disambiguate genuine "service unclaimed" pages from WAF block
@@ -1196,6 +1200,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['TLSX_CIPHER_ENUM'] = project.get('tlsxCipherEnum', DEFAULT_SETTINGS['TLSX_CIPHER_ENUM'])
     settings['TLSX_CIPHER_CONCURRENCY'] = project.get('tlsxCipherConcurrency', DEFAULT_SETTINGS['TLSX_CIPHER_CONCURRENCY'])
     settings['TLSX_MAX_TARGETS'] = project.get('tlsxMaxTargets', DEFAULT_SETTINGS['TLSX_MAX_TARGETS'])
+    settings['TAKEOVER_CERT_VALIDATION_ENABLED'] = project.get('takeoverCertValidationEnabled', DEFAULT_SETTINGS['TAKEOVER_CERT_VALIDATION_ENABLED'])
 
     # Resource Enum AI Classifier
     settings['RESOURCE_ENUM_AI_CLASSIFIER_ENABLED'] = project.get('resourceEnumAiClassifierEnabled', DEFAULT_SETTINGS['RESOURCE_ENUM_AI_CLASSIFIER_ENABLED'])
