@@ -596,33 +596,44 @@ TLS/SSL certificates discovered during HTTP probing, GVM scanning, or Censys enr
 
 ```cypher
 (:Certificate {
-    subject_cn: "*.beta80group.it",          // Common Name (UNIQUE per tenant)
+    cert_key: "sha256:a1b2c3...",             // Certificate identity (UNIQUE per tenant).
+                                              //   "sha256:<fp>" when a fingerprint is known
+                                              //   (tlsx/Censys/GVM); "surrogate:<sha1>" over
+                                              //   subject_cn|issuer|not_before|not_after otherwise
+                                              //   (httpx, FOFA). NOT subject_cn: a CN is neither
+                                              //   unique nor always present (SAN-only certs).
+    subject_cn: "*.beta80group.it",          // Common Name (nullable; empty on SAN-only certs)
     user_id: "samgiam",                       // Owner/user identifier
     project_id: "project_2",                  // Project identifier
     issuer: "DigiCert Inc",                   // Certificate issuer (CN + org)
     not_before: "2025-09-02T00:00:00Z",       // Valid from date
     not_after: "2026-10-03T23:59:59Z",        // Expiration date
-    san: ["*.beta80group.it", "beta80group.it"],  // Subject Alternative Names
+    san: ["*.beta80group.it", "beta80group.it"],  // Subject Alternative Names (full list, CN included)
     cipher: "TLS_AES_128_GCM_SHA256",         // TLS cipher suite
     tls_version: "TLSv1.3",                   // TLS version (if detected)
     subject_org: "Example Org",               // Certificate subject organization (set by FOFA certs_subject_org)
     is_valid: true,                           // Certificate validity flag (set by FOFA certs_valid)
-    source: "http_probe",                     // Discovery source: "http_probe", "gvm", "censys", "fofa"
-
-    // Censys-specific properties (when source = "censys")
-    fingerprint: "sha256:A1B2C3...",          // Certificate fingerprint from Censys leaf_data
+    source: "http_probe",                     // FIRST writer (ON CREATE only): "http_probe","tlsx","gvm","censys","fofa"
+    observed_by: ["http_probe", "gvm"],       // ALL writers that observed this cert (append-only).
+                                              //   A cross-source clear preserves a cert with any
+                                              //   other scanner still in this list.
+    fingerprint_sha256: "a1b2c3...",          // SHA-256 fingerprint (single canonical name across writers)
 
     // GVM-specific properties (when source = "gvm")
     serial: "01:AB:CD:...",                   // Certificate serial number
-    sha256_fingerprint: "A1B2C3...",          // SHA-256 fingerprint
-    scan_timestamp: "2026-02-12T23:10:29Z"    // When GVM scan ran
+    scan_timestamp: "2026-02-12T23:10:29Z",   // When GVM scan ran
+
+    // tlsx verdict/posture booleans (also read by the TLS-hygiene security checks)
+    expired: false, self_signed: false, mismatched: false,
+    revoked: false, untrusted: false, wildcard: false,
+    jarm: "...", ja3: "...", ja3s: "..."      // fingerprints (flag-gated in tlsx)
 })
 ```
 
 **Constraints:**
 ```cypher
-CREATE CONSTRAINT certificate_unique IF NOT EXISTS
-FOR (c:Certificate) REQUIRE (c.subject_cn, c.user_id, c.project_id) IS UNIQUE;
+CREATE CONSTRAINT certificate_key_unique IF NOT EXISTS
+FOR (c:Certificate) REQUIRE (c.cert_key, c.user_id, c.project_id) IS UNIQUE;
 ```
 
 ---
@@ -1631,11 +1642,15 @@ FOR (m:Malware) ON (m.user_id, m.project_id);
 // BaseURL uses technologies (detected by httpx/wappalyzer)
 (BaseURL)-[:USES_TECHNOLOGY {confidence: 100, detected_by: "httpx"}]->(Technology)
 
-// BaseURL has TLS certificate (if HTTPS)
+// BaseURL has TLS certificate (httpx over HTTPS)
 (BaseURL)-[:HAS_CERTIFICATE]->(Certificate)
 
-// IP has TLS certificate (GVM-discovered, non-HTTP TLS)
+// IP has TLS certificate (GVM/Censys/FOFA/tlsx-discovered, incl. non-HTTP TLS ports)
 (IP)-[:HAS_CERTIFICATE]->(Certificate)
+
+// Certificate covers a hostname listed in its SAN (tlsx; wildcard-stripped).
+// Makes SAN data traversable instead of a dead list property.
+(Certificate)-[:COVERS_HOST]->(Subdomain)
 
 // BaseURL has HTTP headers
 (BaseURL)-[:HAS_HEADER]->(Header)
@@ -2046,7 +2061,7 @@ RETURN s.name AS host, svc.name AS service, u.url AS url,
 | Endpoint | path, method, baseurl, has_parameters, source | ✅ Tenant composite unique |
 | Parameter | name, position, endpoint_path, baseurl, is_injectable, sample_value | ✅ Tenant composite unique |
 | Technology | name, version, categories, confidence, product, known_cve_count | ✅ Tenant composite unique |
-| Certificate | subject_cn, issuer, not_before, not_after, source | ✅ Tenant composite unique |
+| Certificate | cert_key, subject_cn, issuer, not_before, not_after, source, observed_by | ✅ Tenant composite unique |
 | DNSRecord | type, value, subdomain, ttl | ✅ Tenant composite unique |
 | Header | name, value, baseurl, is_security_header | ✅ Tenant composite unique |
 | Traceroute | target_ip, scanner_ip, hops, distance, source | ✅ Tenant composite unique |
@@ -2117,8 +2132,8 @@ FOR (h:Header) REQUIRE (h.name, h.value, h.baseurl, h.user_id, h.project_id) IS 
 CREATE CONSTRAINT dnsrecord_unique IF NOT EXISTS
 FOR (dns:DNSRecord) REQUIRE (dns.type, dns.value, dns.subdomain, dns.user_id, dns.project_id) IS UNIQUE;
 
-CREATE CONSTRAINT certificate_unique IF NOT EXISTS
-FOR (c:Certificate) REQUIRE (c.subject_cn, c.user_id, c.project_id) IS UNIQUE;
+CREATE CONSTRAINT certificate_key_unique IF NOT EXISTS
+FOR (c:Certificate) REQUIRE (c.cert_key, c.user_id, c.project_id) IS UNIQUE;
 
 CREATE CONSTRAINT traceroute_unique IF NOT EXISTS
 FOR (tr:Traceroute) REQUIRE (tr.target_ip, tr.user_id, tr.project_id) IS UNIQUE;

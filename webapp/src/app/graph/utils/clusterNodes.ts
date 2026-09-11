@@ -35,6 +35,9 @@ const STRUCTURAL_EDGE_TYPES = new Set([
   'RUNS_SERVICE',
   'SERVES_URL',
   'HAS_BASE_URL',
+  // Legacy spelling still on disk until vhost/AI-surface data ages out; the
+  // writers now emit HAS_BASE_URL (Phase 0.4) but keep this for old graphs.
+  'HAS_BASEURL',
   'RESOLVES_TO',
   'HAS_SUBDOMAIN',
   // Multiscanner asset hubs: a namespace scan can hang hundreds of findings off

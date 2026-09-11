@@ -251,6 +251,10 @@ def _aggregate_external_domains(combined_result: dict) -> list:
         _merge_external_domain(aggregated, e)
     for e in combined_result.get("domain_discovery_external_domains", []):
         _merge_external_domain(aggregated, e)
+    # Out-of-scope names diverted by merge_discovered_hostnames (certificate
+    # SANs, js_recon subdomains): recorded, never scanned.
+    for e in combined_result.get("discovered_external_domains", []):
+        _merge_external_domain(aggregated, e)
     return list(aggregated.values())
 
 

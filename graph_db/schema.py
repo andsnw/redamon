@@ -37,6 +37,11 @@ DROP_LEGACY_CONSTRAINTS = [
     "DROP INDEX idx_trufflehogmodel_name IF EXISTS",
     "DROP INDEX idx_trufflehogbucket_name IF EXISTS",
     "DROP INDEX idx_trufflehogendpoint_name IF EXISTS",
+    # Certificate re-key: subject_cn is not a certificate identity (empty on
+    # SAN-only certs, non-unique across distinct certs). Dropped by its OLD name
+    # so the renamed constraint (certificate_key_unique) can back the new
+    # cert_key without a same-name silent no-op. See backfill_cert_key.
+    "DROP CONSTRAINT certificate_unique IF EXISTS",
 ]
 
 # Uniqueness constraints (tenant-scoped for per-project nodes, global for shared reference nodes)
@@ -52,7 +57,10 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT parameter_unique IF NOT EXISTS FOR (p:Parameter) REQUIRE (p.name, p.position, p.endpoint_path, p.baseurl, p.user_id, p.project_id) IS UNIQUE",
     "CREATE CONSTRAINT header_unique IF NOT EXISTS FOR (h:Header) REQUIRE (h.name, h.value, h.baseurl, h.user_id, h.project_id) IS UNIQUE",
     "CREATE CONSTRAINT dnsrecord_unique IF NOT EXISTS FOR (dns:DNSRecord) REQUIRE (dns.type, dns.value, dns.subdomain, dns.user_id, dns.project_id) IS UNIQUE",
-    "CREATE CONSTRAINT certificate_unique IF NOT EXISTS FOR (c:Certificate) REQUIRE (c.subject_cn, c.user_id, c.project_id) IS UNIQUE",
+    # Keyed on cert_key (fingerprint-derived, surrogate fallback), NOT subject_cn.
+    # NEW NAME is mandatory: a same-name CREATE IF NOT EXISTS against a DB that
+    # still has the old constraint is a silent no-op (see backfill_cert_key).
+    "CREATE CONSTRAINT certificate_key_unique IF NOT EXISTS FOR (c:Certificate) REQUIRE (c.cert_key, c.user_id, c.project_id) IS UNIQUE",
     "CREATE CONSTRAINT traceroute_unique IF NOT EXISTS FOR (tr:Traceroute) REQUIRE (tr.target_ip, tr.user_id, tr.project_id) IS UNIQUE",
     "CREATE CONSTRAINT cve_unique IF NOT EXISTS FOR (c:CVE) REQUIRE c.id IS UNIQUE",
     "CREATE CONSTRAINT mitredata_unique IF NOT EXISTS FOR (m:MitreData) REQUIRE m.id IS UNIQUE",
@@ -153,6 +161,11 @@ TENANT_INDEXES = [
     "CREATE INDEX idx_chainfailure_tenant IF NOT EXISTS FOR (fl:ChainFailure) ON (fl.user_id, fl.project_id)",
     # Partial Recon — UserInput tenant index
     "CREATE INDEX idx_userinput_tenant IF NOT EXISTS FOR (ui:UserInput) ON (ui.user_id, ui.project_id)",
+    # Certificate had no tenant index of its own: the old (subject_cn,...)
+    # constraint backed reads. Re-keying to cert_key moves that backing, and
+    # readers filtering by project_id alone (sharedInfra, graph-overview) need
+    # this on a cert population tlsx is about to grow.
+    "CREATE INDEX idx_certificate_tenant IF NOT EXISTS FOR (c:Certificate) ON (c.user_id, c.project_id)",
 ]
 
 # Additional functional indexes
@@ -393,6 +406,13 @@ def migrate_legacy_labels(session):
 UPDATED_AT_BACKFILL_MARKER = "backfill-updated-at-v1"
 UPDATED_AT_SOURCES = ("last_seen", "created_at", "first_seen")
 
+# Certificate re-key backfill: existing nodes have no cert_key and would escape
+# the new uniqueness constraint. Runs in the pre-DDL block (a uniqueness
+# constraint on the new key cannot be satisfied while data lacks it) and is
+# guarded by a marker so the steady-state cost is one lookup, not a full
+# Certificate scan on every client construction.
+CERT_KEY_BACKFILL_MARKER = "backfill-cert-key-v1"
+
 
 def backfill_updated_at(session):
     """Give pre-existing nodes an `updated_at` from their other write time."""
@@ -507,6 +527,61 @@ def strip_reference_node_tenant(session):
               "the next connection (no marker written)")
 
 
+def backfill_cert_key(session):
+    """Give pre-existing Certificate nodes a cert_key and one fingerprint name.
+
+    Two steps, both idempotent and both careful NOT to touch updated_at (the
+    unseen-rows badge counts nodes stamped after the user's watermark; bumping it
+    here would light the badge for every existing certificate in every project).
+
+    1. Consolidate the three historical fingerprint spellings
+       (sha256_fingerprint from GVM, fingerprint from Censys) onto the single
+       name fingerprint_sha256.
+    2. Assign a unique legacy cert_key to every node still missing one. The key
+       is suffixed with the node id so two certs that once collided on subject_cn
+       cannot collide again here and block constraint creation. Legacy rows keep
+       this degraded key until their next scan re-MERGEs them on a real key; the
+       cert writers reconcile the resulting duplicate by subject_cn.
+    """
+    if _migration_applied(session, CERT_KEY_BACKFILL_MARKER):
+        return
+
+    ok = True
+    try:
+        moved = _run_batched(
+            session,
+            "MATCH (c:Certificate) "
+            "WHERE c.fingerprint_sha256 IS NULL "
+            "AND (c.sha256_fingerprint IS NOT NULL OR c.fingerprint IS NOT NULL) "
+            f"WITH c LIMIT {MIGRATION_BATCH} "
+            "SET c.fingerprint_sha256 = coalesce(c.sha256_fingerprint, c.fingerprint) "
+            "RETURN count(c) AS c")
+        if moved:
+            print(f"[graph-db] consolidated fingerprint on {moved} certificate(s)")
+    except Exception as e:
+        print(f"[!][graph-db] certificate fingerprint consolidation failed: {e}")
+        ok = False
+
+    try:
+        keyed = _run_batched(
+            session,
+            "MATCH (c:Certificate) WHERE c.cert_key IS NULL "
+            f"WITH c LIMIT {MIGRATION_BATCH} "
+            "SET c.cert_key = 'legacy:' + coalesce(c.subject_cn, '') + ':' + toString(id(c)) "
+            "RETURN count(c) AS c")
+        if keyed:
+            print(f"[graph-db] backfilled cert_key on {keyed} certificate(s)")
+    except Exception as e:
+        print(f"[!][graph-db] cert_key backfill failed: {e}")
+        ok = False
+
+    if ok:
+        _mark_migration_applied(session, CERT_KEY_BACKFILL_MARKER)
+    else:
+        print("[!][graph-db] cert_key backfill incomplete; retried on the next "
+              "connection (no marker written)")
+
+
 def init_schema(session):
     """
     Initialize constraints and indexes for the graph schema.
@@ -518,6 +593,7 @@ def init_schema(session):
     migrate_legacy_labels(session)
     backfill_updated_at(session)
     strip_reference_node_tenant(session)
+    backfill_cert_key(session)
 
     for stmt in DROP_LEGACY_CONSTRAINTS:
         try:

@@ -18,6 +18,8 @@ Provides methods to ingest OSINT enrichment data:
 import re
 import json
 from datetime import datetime, timezone
+
+from graph_db.cert_key import build_cert_key
 from urllib.parse import urlparse as _urlparse
 
 
@@ -871,29 +873,44 @@ class OsintMixin:
                                 tls_data = svc.get("tls")
                                 if isinstance(tls_data, dict):
                                     subject_cn = tls_data.get("subject_cn") or ""
-                                    if subject_cn:
+                                    issuer = tls_data.get("issuer")
+                                    not_before = tls_data.get("not_before")
+                                    not_after = tls_data.get("not_after")
+                                    fingerprint = tls_data.get("fingerprint")
+                                    if subject_cn or fingerprint:
+                                        issuer_str = (", ".join(issuer) if isinstance(issuer, list)
+                                                      else issuer)
+                                        cert_key = build_cert_key(
+                                            fingerprint_sha256=fingerprint, subject_cn=subject_cn,
+                                            issuer=issuer_str, not_before=not_before, not_after=not_after,
+                                        )
                                         cert_props = {k: v for k, v in {
-                                            "issuer":      tls_data.get("issuer"),
+                                            "subject_cn":  subject_cn or None,
+                                            "issuer":      issuer,
                                             "san":         tls_data.get("san"),
-                                            "not_before":  tls_data.get("not_before"),
-                                            "not_after":   tls_data.get("not_after"),
-                                            "fingerprint": tls_data.get("fingerprint"),
+                                            "not_before":  not_before,
+                                            "not_after":   not_after,
+                                            "fingerprint_sha256": fingerprint,
                                             "tls_version": tls_data.get("tls_version"),
                                             "cipher":      tls_data.get("cipher"),
-                                            "source":      "censys",
                                         }.items() if v is not None and v != "" and v != []}
                                         try:
                                             session.run(
                                                 """
-                                                MERGE (c:Certificate {subject_cn: $subject_cn,
+                                                MERGE (c:Certificate {cert_key: $cert_key,
                                                                        user_id: $user_id,
                                                                        project_id: $project_id})
-                                                SET c += $props, c.updated_at = datetime()
+                                                ON CREATE SET c.source = 'censys'
+                                                SET c += $props,
+                                                    c.observed_by = CASE WHEN 'censys' IN coalesce(c.observed_by, [])
+                                                                         THEN c.observed_by
+                                                                         ELSE coalesce(c.observed_by, []) + 'censys' END,
+                                                    c.updated_at = datetime()
                                                 WITH c
                                                 MATCH (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
                                                 MERGE (i)-[:HAS_CERTIFICATE]->(c)
                                                 """,
-                                                subject_cn=subject_cn, user_id=user_id,
+                                                cert_key=cert_key, user_id=user_id,
                                                 project_id=project_id, props=cert_props, ip=ip,
                                             )
                                             stats["certificates_merged"] += 1
@@ -1053,21 +1070,28 @@ class OsintMixin:
                             # --- Certificate node ---
                             cert_cn = (row.get("certs_subject_cn") or "").strip()
                             if cert_cn:
+                                issuer_cn = row.get("certs_issuer_cn") or ""
+                                # FOFA carries no fingerprint: surrogate key over CN+issuer.
+                                cert_key = build_cert_key(subject_cn=cert_cn, issuer=issuer_cn)
                                 session.run(
                                     """
-                                    MERGE (c:Certificate {subject_cn: $cn, user_id: $user_id, project_id: $project_id})
-                                    ON CREATE SET c.source = 'fofa', c.updated_at = datetime()
-                                    SET c.issuer       = CASE WHEN $issuer_cn <> '' THEN $issuer_cn ELSE c.issuer END,
+                                    MERGE (c:Certificate {cert_key: $cert_key, user_id: $user_id, project_id: $project_id})
+                                    ON CREATE SET c.source = 'fofa'
+                                    SET c.subject_cn   = $cn,
+                                        c.issuer       = CASE WHEN $issuer_cn <> '' THEN $issuer_cn ELSE c.issuer END,
                                         c.subject_org  = CASE WHEN $subject_org <> '' THEN $subject_org ELSE c.subject_org END,
                                         c.tls_version  = CASE WHEN $tls_ver <> '' THEN $tls_ver ELSE c.tls_version END,
                                         c.is_valid     = CASE WHEN $cert_valid <> '' THEN ($cert_valid = 'true') ELSE c.is_valid END,
+                                        c.observed_by  = CASE WHEN 'fofa' IN coalesce(c.observed_by, [])
+                                                              THEN c.observed_by
+                                                              ELSE coalesce(c.observed_by, []) + 'fofa' END,
                                         c.updated_at   = datetime()
                                     MERGE (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
                                     SET i.updated_at = datetime()
                                     MERGE (i)-[:HAS_CERTIFICATE]->(c)
                                     """,
-                                    cn=cert_cn,
-                                    issuer_cn=row.get("certs_issuer_cn") or "",
+                                    cert_key=cert_key, cn=cert_cn,
+                                    issuer_cn=issuer_cn,
                                     subject_org=row.get("certs_subject_org") or "",
                                     tls_ver=row.get("tls_version") or "",
                                     cert_valid=str(row.get("certs_valid") or "").lower(),

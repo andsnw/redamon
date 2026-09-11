@@ -604,7 +604,7 @@ class UserInputMixin:
                     """
                     OPTIONAL MATCH (d:Domain {user_id: $uid, project_id: $pid})
                     OPTIONAL MATCH (d)-[:HAS_SUBDOMAIN]->(s:Subdomain)
-                    OPTIONAL MATCH (s)-[:HAS_BASEURL]->(bu:BaseURL)
+                    OPTIONAL MATCH (s)-[:HAS_BASE_URL|HAS_BASEURL]->(bu:BaseURL)
                     WITH d, collect(DISTINCT s.name) AS subdomains,
                          count(DISTINCT bu) AS baseurl_count
                     RETURN d.name AS domain, subdomains,
@@ -631,7 +631,7 @@ class UserInputMixin:
                     OPTIONAL MATCH (d)-[:HAS_SUBDOMAIN]->(s:Subdomain)
                     OPTIONAL MATCH (s)-[:RESOLVES_TO]->(i:IP)
                     OPTIONAL MATCH (i)-[:HAS_PORT]->(p:Port)
-                    OPTIONAL MATCH (s)-[:HAS_BASEURL]->(bu:BaseURL)
+                    OPTIONAL MATCH (s)-[:HAS_BASE_URL|HAS_BASEURL]->(bu:BaseURL)
                     OPTIONAL MATCH (ed:ExternalDomain {user_id: $uid, project_id: $pid})
                     WITH d, collect(DISTINCT s.name) AS subdomains,
                          count(DISTINCT i) AS ip_count,
@@ -723,7 +723,7 @@ class UserInputMixin:
                     WITH d, collect(DISTINCT s.name) AS subdomains
                     OPTIONAL MATCH (fs:Subdomain {user_id: $uid, project_id: $pid})
                     WHERE EXISTS { (fs)-[:RESOLVES_TO]->(ci:IP) WHERE ci.is_cdn = true }
-                       OR EXISTS { (fs)-[:HAS_BASEURL]->(:BaseURL)-[:HAS_ENDPOINT]->(ep:Endpoint)
+                       OR EXISTS { (fs)-[:HAS_BASE_URL|HAS_BASEURL]->(:BaseURL)-[:HAS_ENDPOINT]->(ep:Endpoint)
                                    WHERE ep.is_cdn = true OR ep.favicon_hash IS NOT NULL }
                     WITH d, subdomains, count(DISTINCT fs) AS fronted_count
                     RETURN d.name AS domain, subdomains,

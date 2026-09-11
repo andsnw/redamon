@@ -179,6 +179,7 @@ class BaseMixin:
                   AND NOT coalesce(n.source, '') IN $keep_sources
                   AND coalesce(n.ai_attack_synthetic, false) = false
                   AND NOT (n:Technology AND coalesce(n.detected_by, '') CONTAINS 'gvm')
+                  AND NOT (n:Certificate AND any(o IN coalesce(n.observed_by, []) WHERE o IN $keep_sources))
                 DETACH DELETE n
                 RETURN count(n) AS deleted
                 """,
@@ -254,11 +255,15 @@ class BaseMixin:
             if record:
                 stats["traceroutes_deleted"] = record["deleted"]
 
-            # 1c. Delete GVM-sourced Certificate nodes (preserve recon/httpx certificates)
+            # 1c. Delete Certificate nodes observed ONLY by GVM. A certificate
+            # httpx/tlsx/OSINT also observed carries their name in observed_by and
+            # is preserved — source alone is whoever wrote last and cannot answer
+            # "does another scanner still need this".
             result = session.run(
                 """
                 MATCH (c:Certificate {user_id: $uid, project_id: $pid})
-                WHERE c.source = 'gvm'
+                WHERE coalesce(c.observed_by, []) = ['gvm']
+                   OR (coalesce(c.observed_by, []) = [] AND c.source = 'gvm')
                 DETACH DELETE c
                 RETURN count(c) as deleted
                 """,

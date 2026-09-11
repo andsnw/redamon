@@ -278,7 +278,7 @@ class VhostSniMixin:
                         ON CREATE SET s.source = 'vhost_sni_enum',
                                       s.created_at = datetime()
                         SET s.updated_at = datetime()
-                        MERGE (s)-[:HAS_BASEURL]->(b)
+                        MERGE (s)-[:HAS_BASE_URL]->(b)
                         RETURN count(b) AS created
                         """,
                         url=url, uid=user_id, pid=project_id,

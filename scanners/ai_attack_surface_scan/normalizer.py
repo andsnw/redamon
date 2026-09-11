@@ -175,7 +175,7 @@ def _ensure_target_node(session, finding: Finding, vid: str,
     Builds ``BaseURL -[:HAS_ENDPOINT]-> Endpoint -[:HAS_VULNERABILITY]-> Vuln``
     (always connected) and anchors the BaseURL to a host root so it joins the
     graph rather than floating: a hostname gets ``Domain -[:HAS_SUBDOMAIN]->
-    Subdomain -[:HAS_BASEURL]-> BaseURL``; a raw IP gets ``IP -[:HAS_VULNERABILITY]
+    Subdomain -[:HAS_BASE_URL]-> BaseURL``; a raw IP gets ``IP -[:HAS_VULNERABILITY]
     -> Vuln`` (the IP, Endpoint and BaseURL share the one Vulnerability node, so
     the whole thing is a single connected component). Created nodes carry
     ``source='ai_attack_target'`` + ``ai_attack_synthetic=true`` so they are
@@ -216,7 +216,7 @@ def _ensure_target_node(session, finding: Finding, vid: str,
         return
 
     if _is_ip(host):
-        # No IP-[:HAS_BASEURL] in the schema; anchor the IP to the shared
+        # No IP-[:HAS_BASE_URL] in the schema; anchor the IP to the shared
         # Vulnerability (vhost_sni precedent) so the component stays connected.
         session.run(
             """
@@ -236,7 +236,7 @@ def _ensure_target_node(session, finding: Finding, vid: str,
             MERGE (s:Subdomain {name: $host, user_id: $uid, project_id: $pid})
               ON CREATE SET s.source = 'ai_attack_target', s.ai_attack_synthetic = true,
                             s.updated_at = datetime()
-            MERGE (s)-[:HAS_BASEURL]->(b)
+            MERGE (s)-[:HAS_BASE_URL]->(b)
             MERGE (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
               ON CREATE SET d.source = 'ai_attack_target', d.ai_attack_synthetic = true,
                             d.updated_at = datetime()

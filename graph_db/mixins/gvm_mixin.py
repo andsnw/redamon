@@ -12,6 +12,7 @@ import re
 from datetime import datetime
 
 from graph_db.cpe_resolver import _resolve_cpe_to_display_name, _parse_cpe_string, _CPE_SKIP_LIST
+from graph_db.cert_key import build_cert_key
 
 
 class GvmMixin:
@@ -773,26 +774,32 @@ class GvmMixin:
                             host_info = cert_data.get("host", {})
                             cert_ip = host_info.get("ip", "") if isinstance(host_info, dict) else str(host_info)
 
+                            cert_key = build_cert_key(
+                                fingerprint_sha256=sha256, subject_cn=subject_cn,
+                                issuer=issuer_dn, not_before=activation, not_after=expiration,
+                            )
                             cert_props = {
                                 "subject_cn": subject_cn,
-                                "user_id": user_id,
-                                "project_id": project_id,
                                 "issuer": issuer_dn,
                                 "serial": serial,
-                                "sha256_fingerprint": sha256,
+                                "fingerprint_sha256": sha256,
                                 "not_before": activation,
                                 "not_after": expiration,
-                                "source": "gvm",
                                 "scan_timestamp": scan_timestamp,
                             }
                             cert_props = {k: v for k, v in cert_props.items() if v}
 
                             session.run(
                                 """
-                                MERGE (c:Certificate {subject_cn: $subject_cn, user_id: $user_id, project_id: $project_id})
-                                SET c += $props, c.updated_at = datetime()
+                                MERGE (c:Certificate {cert_key: $cert_key, user_id: $user_id, project_id: $project_id})
+                                ON CREATE SET c.source = 'gvm'
+                                SET c += $props,
+                                    c.observed_by = CASE WHEN 'gvm' IN coalesce(c.observed_by, [])
+                                                         THEN c.observed_by
+                                                         ELSE coalesce(c.observed_by, []) + 'gvm' END,
+                                    c.updated_at = datetime()
                                 """,
-                                subject_cn=subject_cn, user_id=user_id, project_id=project_id, props=cert_props
+                                cert_key=cert_key, user_id=user_id, project_id=project_id, props=cert_props
                             )
 
                             # Link to IP node if available
@@ -800,10 +807,10 @@ class GvmMixin:
                                 session.run(
                                     """
                                     MATCH (i:IP {address: $ip, user_id: $uid, project_id: $pid})
-                                    MATCH (c:Certificate {subject_cn: $cn, user_id: $uid, project_id: $pid})
+                                    MATCH (c:Certificate {cert_key: $cert_key, user_id: $uid, project_id: $pid})
                                     MERGE (i)-[:HAS_CERTIFICATE]->(c)
                                     """,
-                                    ip=cert_ip, uid=user_id, pid=project_id, cn=subject_cn
+                                    ip=cert_ip, uid=user_id, pid=project_id, cert_key=cert_key
                                 )
 
                             stats["certificates_created"] += 1

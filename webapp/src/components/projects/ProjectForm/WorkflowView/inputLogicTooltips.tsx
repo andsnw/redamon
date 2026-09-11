@@ -846,7 +846,7 @@ const VhostSni = (
       <li>The Vulnerability is attached to the discovered <strong>Subdomain</strong> via <span style={codeStyle}>HAS_VULNERABILITY</span>. For host-header-bypass findings the <strong>IP</strong> also gets the same Vulnerability so it surfaces in IP-level dashboards.</li>
       <li>Every probed Subdomain is enriched in place with <em>vhost_tested</em>, <em>vhost_hidden</em>, <em>vhost_routing_layer</em>, <em>vhost_status_code</em>, <em>vhost_size_delta</em>, and <em>sni_routed</em>.</li>
       <li>Every probed IP is enriched with <em>vhost_baseline_status</em>, <em>vhost_baseline_size</em>, <em>hosts_hidden_vhosts</em>, <em>hidden_vhost_count</em>, and <em>is_reverse_proxy</em>.</li>
-      <li>For every confirmed hidden vhost, a <strong>BaseURL</strong> is created (with <em>discovery_source = vhost_sni_enum</em>) and linked to the Subdomain via <span style={codeStyle}>HAS_BASEURL</span>, so a follow-up partial recon can route the new URL through Katana and Nuclei.</li>
+      <li>For every confirmed hidden vhost, a <strong>BaseURL</strong> is created (with <em>discovery_source = vhost_sni_enum</em>) and linked to the Subdomain via <span style={codeStyle}>HAS_BASE_URL</span>, so a follow-up partial recon can route the new URL through Katana and Nuclei.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
       Findings are deduplicated per <em>(hostname + IP + port + layer)</em>. Re-running refreshes <em>last_seen</em> rather than creating duplicates.

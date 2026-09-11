@@ -174,14 +174,15 @@ MATCH (cert:Certificate {user_id: $userId, project_id: $projectId})
 OPTIONAL MATCH (bu:BaseURL)-[:HAS_CERTIFICATE]->(cert)
 OPTIONAL MATCH (ip:IP)-[:HAS_CERTIFICATE]->(cert)
 RETURN cert.subject_cn AS subject_cn,
+       cert.cert_key AS cert_key,
+       cert.fingerprint_sha256 AS fingerprint_sha256,
        cert.issuer AS issuer,
        cert.not_before AS valid_from,
        cert.not_after AS expires,
        cert.san AS san,
-       cert.key_type AS key_type,
-       cert.key_bits AS key_bits,
-       cert.signature_algorithm AS signature_algorithm,
        cert.self_signed AS self_signed,
+       cert.expired AS expired,
+       cert.mismatched AS mismatched,
        cert.source AS source,
        collect(DISTINCT bu.url) AS baseurl_urls,
        collect(DISTINCT ip.address) AS ip_addresses,
