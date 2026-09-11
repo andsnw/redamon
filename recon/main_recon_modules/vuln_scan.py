@@ -913,8 +913,15 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
             "direct_ip_https": SECURITY_CHECK_DIRECT_IP_HTTPS,
             "ip_api_exposed": SECURITY_CHECK_IP_API_EXPOSED,
             "waf_bypass": SECURITY_CHECK_WAF_BYPASS,
-            # TLS/SSL checks (only expiring soon - others covered by Nuclei)
+            # TLS/SSL checks
             "tls_expiring_soon": SECURITY_CHECK_TLS_EXPIRING_SOON,
+            # TLS-hygiene checks derived from tlsx/httpx certificate data
+            "tls_expired": settings.get('SECURITY_CHECK_TLS_EXPIRED', True),
+            "tls_self_signed": settings.get('SECURITY_CHECK_TLS_SELF_SIGNED', True),
+            "tls_hostname_mismatch": settings.get('SECURITY_CHECK_TLS_HOSTNAME_MISMATCH', True),
+            "tls_weak_version": settings.get('SECURITY_CHECK_TLS_WEAK_VERSION', True),
+            "tls_weak_cipher": settings.get('SECURITY_CHECK_TLS_WEAK_CIPHER', True),
+            "tls_wildcard_overbroad": settings.get('SECURITY_CHECK_TLS_WILDCARD_OVERBROAD', True),
             # Security Headers checks (only headers not covered by Nuclei)
             "missing_referrer_policy": SECURITY_CHECK_MISSING_REFERRER_POLICY,
             "missing_permissions_policy": SECURITY_CHECK_MISSING_PERMISSIONS_POLICY,

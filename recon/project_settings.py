@@ -598,6 +598,14 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'WAF_AI_CLASSIFIER': False,
     'SECURITY_CHECK_TLS_EXPIRING_SOON': True,
     'SECURITY_CHECK_TLS_EXPIRY_DAYS': 30,
+    # TLS-hygiene checks derived from certificate data (tlsx/httpx), per-check so
+    # an operator can silence one class of TLS finding without losing the rest.
+    'SECURITY_CHECK_TLS_EXPIRED': True,
+    'SECURITY_CHECK_TLS_SELF_SIGNED': True,
+    'SECURITY_CHECK_TLS_HOSTNAME_MISMATCH': True,
+    'SECURITY_CHECK_TLS_WEAK_VERSION': True,
+    'SECURITY_CHECK_TLS_WEAK_CIPHER': True,
+    'SECURITY_CHECK_TLS_WILDCARD_OVERBROAD': True,
     'SECURITY_CHECK_MISSING_REFERRER_POLICY': True,
     'SECURITY_CHECK_MISSING_PERMISSIONS_POLICY': True,
     'SECURITY_CHECK_MISSING_COOP': True,
@@ -1434,6 +1442,12 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['WAF_AI_CLASSIFIER'] = project.get('wafAiClassifier', DEFAULT_SETTINGS['WAF_AI_CLASSIFIER'])
     settings['SECURITY_CHECK_TLS_EXPIRING_SOON'] = project.get('securityCheckTlsExpiringSoon', DEFAULT_SETTINGS['SECURITY_CHECK_TLS_EXPIRING_SOON'])
     settings['SECURITY_CHECK_TLS_EXPIRY_DAYS'] = project.get('securityCheckTlsExpiryDays', DEFAULT_SETTINGS['SECURITY_CHECK_TLS_EXPIRY_DAYS'])
+    settings['SECURITY_CHECK_TLS_EXPIRED'] = project.get('securityCheckTlsExpired', DEFAULT_SETTINGS['SECURITY_CHECK_TLS_EXPIRED'])
+    settings['SECURITY_CHECK_TLS_SELF_SIGNED'] = project.get('securityCheckTlsSelfSigned', DEFAULT_SETTINGS['SECURITY_CHECK_TLS_SELF_SIGNED'])
+    settings['SECURITY_CHECK_TLS_HOSTNAME_MISMATCH'] = project.get('securityCheckTlsHostnameMismatch', DEFAULT_SETTINGS['SECURITY_CHECK_TLS_HOSTNAME_MISMATCH'])
+    settings['SECURITY_CHECK_TLS_WEAK_VERSION'] = project.get('securityCheckTlsWeakVersion', DEFAULT_SETTINGS['SECURITY_CHECK_TLS_WEAK_VERSION'])
+    settings['SECURITY_CHECK_TLS_WEAK_CIPHER'] = project.get('securityCheckTlsWeakCipher', DEFAULT_SETTINGS['SECURITY_CHECK_TLS_WEAK_CIPHER'])
+    settings['SECURITY_CHECK_TLS_WILDCARD_OVERBROAD'] = project.get('securityCheckTlsWildcardOverbroad', DEFAULT_SETTINGS['SECURITY_CHECK_TLS_WILDCARD_OVERBROAD'])
     settings['SECURITY_CHECK_MISSING_REFERRER_POLICY'] = project.get('securityCheckMissingReferrerPolicy', DEFAULT_SETTINGS['SECURITY_CHECK_MISSING_REFERRER_POLICY'])
     settings['SECURITY_CHECK_MISSING_PERMISSIONS_POLICY'] = project.get('securityCheckMissingPermissionsPolicy', DEFAULT_SETTINGS['SECURITY_CHECK_MISSING_PERMISSIONS_POLICY'])
     settings['SECURITY_CHECK_MISSING_COOP'] = project.get('securityCheckMissingCoop', DEFAULT_SETTINGS['SECURITY_CHECK_MISSING_COOP'])

@@ -801,6 +801,25 @@ def check_tls_expiring_soon(
         expiry_date = parse_cert_date(not_after)
         now = datetime.now(timezone.utc).replace(tzinfo=None)
 
+        if expiry_date and expiry_date <= now:
+            # ALREADY expired. The old code required expiry_date > now, so an
+            # expired certificate produced ZERO findings -- the most severe case
+            # was the one silently dropped.
+            days_expired = (now - expiry_date).days
+            return {
+                "type": "tls_expired",
+                "severity": "high",
+                "name": "TLS Certificate Expired",
+                "description": f"The TLS certificate for {hostname} expired {days_expired} days ago ({not_after}). "
+                              "Clients will reject the connection or present a security warning.",
+                "url": f"https://{hostname}:{port}",
+                "hostname": hostname,
+                "port": port,
+                "expiry_date": not_after,
+                "days_until_expiry": -days_expired,
+                "evidence": f"Certificate expired {days_expired} days ago",
+            }
+
         if expiry_date and expiry_date > now:
             days_until_expiry = (expiry_date - now).days
             if days_until_expiry <= days_threshold:
@@ -862,6 +881,104 @@ def run_tls_checks(
                 findings.extend(host_findings)
             except Exception:
                 pass
+
+    return findings
+
+
+# tlsx emits negotiated-version tokens like these, NOT "TLS 1.0"; a deny list
+# written against pretty names would silently never match.
+WEAK_TLS_VERSIONS = {"ssl30", "ssl20", "tls10", "tls11"}
+WEAK_CIPHER_MARKERS = ("RC4", "3DES", "_DES_", "-DES-", "NULL", "EXPORT", "MD5", "ANON")
+_WILDCARD_SAN_OVERBROAD = 20
+
+
+def _looks_like_ip(value: str) -> bool:
+    import ipaddress
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def run_tls_data_checks(recon_data: Dict[str, Any], enabled_checks: Dict[str, bool]) -> List[Dict]:
+    """Derive TLS-hygiene findings from certificate data already in memory.
+
+    Reads recon_data["tlsx"]["by_target"] (populated in GROUP 3.6) and the cert
+    verdict flags -- zero extra network cost, and covers non-HTTP TLS ports and
+    bare IPs the hostname-only network check never reaches. Gated on cert-data
+    availability, not on tlsx: with tlsx off this simply finds no targets.
+
+    Each finding carries type/severity/name/description/url and one of
+    hostname/matched_ip, so vuln_mixin turns it into a Vulnerability node with
+    no new Cypher.
+    """
+    findings: List[Dict] = []
+    by_target = ((recon_data.get("tlsx") or {}).get("by_target")) or {}
+
+    for _key, e in by_target.items():
+        if not isinstance(e, dict) or not e.get("probe_status"):
+            continue
+        host = e.get("host") or e.get("scanned_ip") or ""
+        ip = e.get("scanned_ip") or e.get("ip")
+        port = e.get("port")
+        url = f"https://{host}:{port}" if host else None
+        hostname = host if host and not _looks_like_ip(host) else None
+
+        def _add(check_type, severity, name, description, evidence):
+            f = {
+                "type": check_type, "severity": severity, "name": name,
+                "description": description, "evidence": evidence,
+                "url": url, "hostname": hostname, "matched_ip": ip, "port": port,
+                "source": "security_check",
+            }
+            findings.append(f)
+
+        target_desc = host or ip or "target"
+
+        if enabled_checks.get("tls_expired", True) and e.get("expired"):
+            _add("tls_expired", "high", "TLS Certificate Expired",
+                 f"The TLS certificate presented on {target_desc}:{port} is expired "
+                 f"(not_after {e.get('not_after')}).", f"not_after={e.get('not_after')}")
+        if enabled_checks.get("tls_self_signed", True) and e.get("self_signed"):
+            _add("tls_self_signed", "medium", "Self-Signed TLS Certificate",
+                 f"{target_desc}:{port} presents a self-signed certificate (subject == issuer).",
+                 f"subject_dn={e.get('subject_dn')}")
+        if enabled_checks.get("tls_hostname_mismatch", True) and e.get("mismatched"):
+            _add("tls_hostname_mismatch", "medium", "TLS Certificate Hostname Mismatch",
+                 f"The certificate on {target_desc}:{port} does not name the host it was served for.",
+                 f"subject_cn={e.get('subject_cn')} san={e.get('san')}")
+
+        version = (e.get("tls_version") or "").lower()
+        if enabled_checks.get("tls_weak_version", True) and version in WEAK_TLS_VERSIONS:
+            _add("tls_weak_version", "medium", "Weak TLS Version Negotiated",
+                 f"{target_desc}:{port} negotiated {version}, a deprecated TLS version.", version)
+
+        cipher = (e.get("cipher") or "").upper()
+        if enabled_checks.get("tls_weak_cipher", True) and cipher and any(m in cipher for m in WEAK_CIPHER_MARKERS):
+            _add("tls_weak_cipher", "medium", "Weak TLS Cipher Negotiated",
+                 f"{target_desc}:{port} negotiated a weak cipher ({cipher}).", cipher)
+
+        san = e.get("san") or []
+        if enabled_checks.get("tls_wildcard_overbroad", True) and e.get("wildcard") and len(san) > _WILDCARD_SAN_OVERBROAD:
+            _add("tls_wildcard_overbroad", "low", "Overbroad Wildcard Certificate",
+                 f"The wildcard certificate on {target_desc}:{port} names {len(san)} SAN entries; "
+                 "broad wildcard reuse widens the blast radius of a key compromise.",
+                 f"{len(san)} SAN entries")
+
+        # Flag-gated: version_enum / cipher_enum are populated only when the
+        # corresponding tlsx enum flag was on. A server can SUPPORT a weak
+        # version while negotiating a strong one -- strictly better evidence.
+        weak_supported = [str(v).lower() for v in (e.get("version_enum") or [])
+                          if str(v).lower() in WEAK_TLS_VERSIONS]
+        if enabled_checks.get("tls_weak_version", True) and weak_supported:
+            _add("tls_weak_version_supported", "medium", "Weak TLS Version Supported",
+                 f"{target_desc}:{port} still supports {', '.join(weak_supported)}.",
+                 ", ".join(weak_supported))
+        if enabled_checks.get("tls_weak_cipher", True) and e.get("cipher_enum"):
+            _add("tls_weak_cipher_supported", "medium", "Weak TLS Cipher Supported",
+                 f"{target_desc}:{port} supports weak ciphers (tlsx -ct weak).",
+                 "weak cipher_enum non-empty")
 
     return findings
 
@@ -2333,7 +2450,12 @@ def run_security_checks(
 
     # Count enabled checks by category
     ip_checks = ["direct_ip_http", "direct_ip_https", "ip_api_exposed", "waf_bypass"]
-    tls_checks = ["tls_expiring_soon"]
+    tls_checks = [
+        "tls_expiring_soon",
+        # tlsx-data-derived hygiene checks (zero extra network cost)
+        "tls_expired", "tls_self_signed", "tls_hostname_mismatch",
+        "tls_weak_version", "tls_weak_cipher", "tls_wildcard_overbroad",
+    ]
     header_checks = [
         "missing_referrer_policy", "missing_permissions_policy",
         "missing_coop", "missing_corp", "missing_coep",
@@ -2405,6 +2527,15 @@ def run_security_checks(
         )
         all_findings.extend(tls_findings)
         print(f"[+][SecurityCheck] Found {len(tls_findings)} issues")
+
+    # TLS hygiene from certificate data already in memory (tlsx / httpx). Runs
+    # independently of the hostname-only network check above so it covers
+    # non-HTTP TLS ports and bare IPs, at zero extra network cost.
+    if recon_data.get("tlsx"):
+        tls_data_findings = run_tls_data_checks(recon_data, enabled_checks)
+        if tls_data_findings:
+            all_findings.extend(tls_data_findings)
+            print(f"[+][SecurityCheck] Found {len(tls_data_findings)} TLS-hygiene issues from cert data")
 
     # Run Security Headers checks
     if enabled_headers > 0 and hostnames:
