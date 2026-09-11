@@ -563,6 +563,15 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         # scan_urls is the union for reporting/metadata
         scan_urls = sorted(set(target_urls + (dast_urls if do_dast_pass else [])))
 
+        # Authenticated-session profile: attach the operator's auth headers to
+        # nuclei when every scanned host is in scope (no-op otherwise). Nuclei
+        # has no header support of its own, so these flow via the new
+        # build_nuclei_command auth_headers arg.
+        from urllib.parse import urlparse as _urlparse
+        from recon.helpers.auth_profile import merge_auth_headers as _merge_auth
+        _nuclei_hosts = sorted({_urlparse(u).hostname for u in scan_urls if _urlparse(u).hostname})
+        _nuclei_auth = _merge_auth([], settings, _nuclei_hosts)
+
         try:
             findings = []
             false_positives_filtered = []
@@ -597,6 +606,7 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                     follow_redirects=NUCLEI_FOLLOW_REDIRECTS,
                     max_redirects=NUCLEI_MAX_REDIRECTS,
                     interactsh=NUCLEI_INTERACTSH,
+                    auth_headers=_nuclei_auth,
                 )
                 d_findings, d_fps, d_duration, _ = _execute_nuclei_pass(
                     detection_cmd, detection_output_file, label="DETECTION"
@@ -623,6 +633,7 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                     max_redirects=NUCLEI_MAX_REDIRECTS,
                     interactsh=NUCLEI_INTERACTSH,
                     force_dast_pass=True,
+                    auth_headers=_nuclei_auth,
                 )
                 b_findings, b_fps, b_duration, _ = _execute_nuclei_pass(
                     dast_cmd, dast_output_file, label="DAST"

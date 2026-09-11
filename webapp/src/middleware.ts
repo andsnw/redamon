@@ -23,6 +23,10 @@ const INTERNAL_ALLOWLIST: { method: string; pattern: RegExp }[] = [
   // Global TrafficMind capture config, polled by the orchestrator to materialise
   // the DB settings to the proxy's config file (DB = single source of truth).
   { method: 'GET', pattern: /^\/api\/internal\/capture-config$/ },
+  // Operator-recording session extraction: the ingest worker POSTs the login
+  // material it pulled (pre-redaction) from operator-source traffic. The route
+  // resolves the tenant from the recording session, never the body (G6).
+  { method: 'POST', pattern: /^\/api\/internal\/auth-profile\/[^/]+\/observe$/ },
   { method: 'ANY', pattern: /^\/api\/conversations\/by-session\// },
   { method: 'ANY', pattern: /^\/api\/remediations(\/|$)/ },
   { method: 'GET', pattern: /^\/api\/global\/tunnel-config$/ },

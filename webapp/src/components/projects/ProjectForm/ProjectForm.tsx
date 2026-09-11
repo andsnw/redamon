@@ -32,6 +32,7 @@ import styles from './ProjectForm.module.css'
 
 // Import sections
 import { TargetSection } from './sections/TargetSection'
+import { AuthenticationSection } from './sections/AuthenticationSection'
 import { ScanModulesSection } from './sections/ScanModulesSection'
 import { NaabuSection } from './sections/NaabuSection'
 import { MasscanSection } from './sections/MasscanSection'
@@ -1046,6 +1047,7 @@ export function ProjectForm({
         {activeTab === 'target' && viewMode === 'tabs' && (
           <>
             <TargetSection data={formData} updateField={updateField} mode={mode} />
+            <AuthenticationSection data={formData} updateField={updateField} projectId={projectId} mode={mode} />
             <ScanModulesSection data={formData} updateField={updateField} />
           </>
         )}

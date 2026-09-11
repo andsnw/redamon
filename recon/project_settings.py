@@ -728,6 +728,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'GRAPHQL_AUTH_TYPE': '',
     'GRAPHQL_AUTH_VALUE': '',
     'GRAPHQL_AUTH_HEADER': '',
+
+    # Unified authenticated-session profile (the whole ProjectAuthProfile row,
+    # or None). Served only to internal/scanner callers, so it carries the
+    # plaintext authValue/extraHeaders here. Consumed via helpers.auth_profile.
+    'AUTH_PROFILE': None,
     'GRAPHQL_ENDPOINTS': '',
     'GRAPHQL_DEPTH_LIMIT': 10,
     'GRAPHQL_RETRY_COUNT': 3,
@@ -1638,6 +1643,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['GRAPHQL_AUTH_TYPE'] = project.get('graphqlAuthType', DEFAULT_SETTINGS['GRAPHQL_AUTH_TYPE'])
     settings['GRAPHQL_AUTH_VALUE'] = project.get('graphqlAuthValue', DEFAULT_SETTINGS['GRAPHQL_AUTH_VALUE'])
     settings['GRAPHQL_AUTH_HEADER'] = project.get('graphqlAuthHeader', DEFAULT_SETTINGS['GRAPHQL_AUTH_HEADER'])
+    settings['AUTH_PROFILE'] = project.get('authProfile', DEFAULT_SETTINGS['AUTH_PROFILE'])
     settings['GRAPHQL_ENDPOINTS'] = project.get('graphqlEndpoints', DEFAULT_SETTINGS['GRAPHQL_ENDPOINTS'])
     settings['GRAPHQL_DEPTH_LIMIT'] = project.get('graphqlDepthLimit', DEFAULT_SETTINGS['GRAPHQL_DEPTH_LIMIT'])
     settings['GRAPHQL_RETRY_COUNT'] = project.get('graphqlRetryCount', DEFAULT_SETTINGS['GRAPHQL_RETRY_COUNT'])

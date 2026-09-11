@@ -356,6 +356,10 @@ model Project {
   conversations               Conversation[]
   graphViews                  GraphView[]
   capturedHttpTransactions    CapturedHttpTransaction[]
+  // A relation, never a scalar column: GET /api/projects/[id] spreads every
+  // Project scalar to the browser, so a secret stored here would leak.
+  authProfile                 ProjectAuthProfile?
+  recordingSessions           RecordingSession[]
 
   // ========== TARGET CONFIGURATION ==========
   targetDomain                String   @default("") @map("target_domain")
@@ -1254,6 +1258,63 @@ model Project {
   supplyChainBatches                SupplyChainBatch[]
 
   @@map("projects")
+}
+
+// ========== AUTHENTICATED SESSION PROFILE ==========
+// One identity per project that every recon tool and the agent attach to
+// in-scope requests. authValue/extraHeaders are plaintext (same trust level as
+// UserLlmProvider.apiKey) and write-only from the UI: served to X-Internal-Key
+// callers, never to a browser (see lib/authProfile.ts).
+model ProjectAuthProfile {
+  id              String    @id @default(cuid())
+  projectId       String    @unique @map("project_id")
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId          String    @map("user_id")
+  authType        String    @default("none") @map("auth_type")          // none|bearer|cookie|header|basic|apikey
+  authHeaderName  String    @default("") @map("auth_header_name")
+  authValue       String    @default("") @map("auth_value") @db.Text
+  extraHeaders    Json      @default("{}") @map("extra_headers")       // {name: value}
+  // Hosts the session may attach to. Empty = the project's own target hosts,
+  // never broader, so a crawl cannot carry the cookie to a third party.
+  scopeHosts      String[]  @default([]) @map("scope_hosts")
+  // Independent consumer gates (both default on): whether the recon pipeline and
+  // the agent attach this identity. Lets an operator record once and choose which
+  // side uses it (e.g. authenticated crawl but anonymous agent probing).
+  reconEnabled    Boolean   @default(true) @map("recon_enabled")
+  agentEnabled    Boolean   @default(true) @map("agent_enabled")
+  source          String    @default("manual")                         // manual|recorded
+  status          String    @default("unknown")                        // unknown|active|expired
+  lastValidatedAt DateTime? @map("last_validated_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("project_auth_profiles")
+}
+
+// An operator login being recorded through the capture proxy. A table, not a
+// profile field: the capture-config route asks "is ANY recording active" every
+// reconcile tick, and start is a global single-active check-and-set.
+// Observed session material is held here (plaintext, never sent to a browser)
+// until the operator confirms it into the ProjectAuthProfile, so an empty or
+// unwanted capture never overwrites a working profile.
+model RecordingSession {
+  id              String    @id @default(cuid())
+  projectId       String    @map("project_id")
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId          String    @map("user_id")
+  state           String    @default("active")                          // active|stopped|committed|discarded
+  scopeHosts      String[]  @default([]) @map("scope_hosts")
+  startedAt       DateTime  @default(now()) @map("started_at")
+  expiresAt       DateTime  @map("expires_at")
+  stoppedAt       DateTime? @map("stopped_at")
+  observedCount   Int       @default(0) @map("observed_count")
+  lastError       String?   @map("last_error")
+  pendingMaterial Json      @default("{}") @map("pending_material")
+
+  @@index([state, expiresAt])
+  @@index([projectId])
+  @@map("recording_sessions")
 }
 
 // ========== SCAN TIMELINE ==========

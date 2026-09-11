@@ -3060,6 +3060,76 @@ async def graph_exec(body: GraphExecRequest):
 _TRAFFIC_REPLAY_SENDS: dict[str, int] = {}
 
 
+# Short-TTL cache for the per-project auth profile. One proxy_brain run fans out
+# to many replays, and each was doing a full project GET with a 10s timeout on
+# the send path.
+_AUTH_PROFILE_CACHE: dict[str, tuple[float, dict]] = {}
+_AUTH_PROFILE_TTL_SEC = 60.0
+
+
+async def _profile_auth_base(project_id: str, txn: dict) -> dict:
+    """AuthProfile headers to seed under an in-scope replay/browser send.
+
+    Best-effort and fail-open: any error (no profile, webapp down, out of scope)
+    returns {} so replay is never blocked. The profile rides UNDER the origin
+    header and the agent's explicit mutate, so an IDOR/BOLA swap still wins.
+    """
+    try:
+        host = txn.get("host")
+        if not host:
+            return {}
+        webapp_url = os.environ.get("WEBAPP_API_URL", "http://webapp:3000")
+        def _fetch():
+            import requests as _rq
+            r = _rq.get(f"{webapp_url.rstrip('/')}/api/projects/{project_id}",
+                        headers={"X-Internal-Key": os.environ.get("INTERNAL_API_KEY", "")}, timeout=10)
+            r.raise_for_status()
+            return r.json()
+        import time as _time  # `time` is not imported at module scope in this file
+        _now = _time.time()
+        _hit = _AUTH_PROFILE_CACHE.get(project_id)
+        if _hit and (_now - _hit[0]) < _AUTH_PROFILE_TTL_SEC:
+            project = _hit[1]
+        else:
+            project = await asyncio.to_thread(_fetch)
+            _AUTH_PROFILE_CACHE[project_id] = (_now, project)
+        profile = project.get("authProfile")
+        if not profile:
+            return {}
+        # Scope: the profile's explicit hosts, else the project's target domains.
+        scope = list(profile.get("scopeHosts") or [])
+        if not scope:
+            if not project.get("ipMode"):
+                roots = []
+                root = (project.get("targetDomain") or "").strip()
+                if root:
+                    roots.append(root)
+                # A domain-batch project leaves targetDomain empty and keeps its
+                # scope in the derived groups.
+                for g in (project.get("domainBatchGroups") or []):
+                    if isinstance(g, dict):
+                        gr = str(g.get("rootDomain") or "").strip()
+                        if gr and gr not in roots:
+                            roots.append(gr)
+                for r in roots:
+                    # Subdomains are the project's own surface and are exactly what
+                    # the captured transactions hit. An apex-only scope left every
+                    # replay against a discovered host silently unauthenticated
+                    # (mirrors default_scope_hosts in recon/helpers/auth_profile.py).
+                    scope.append(r)
+                    scope.append(f"*.{r}")
+                if root:
+                    for pre in (project.get("subdomainList") or []):
+                        pre = str(pre).strip().rstrip(".")
+                        if pre:
+                            scope.append(f"{pre}.{root}")
+            scope += [str(ip) for ip in (project.get("targetIps") or [])]
+        from auth_profile import auth_headers_for_host
+        return auth_headers_for_host(profile, host, scope)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def _replay_budget() -> int:
     try:
         return max(1, int(os.environ.get("TRAFFIC_REPLAY_BUDGET", "1000") or "1000"))
@@ -3209,6 +3279,9 @@ async def traffic_replay(body: TrafficReplayRequest):
     except Exception:  # noqa: BLE001
         replay_tag = ""
 
+    # Authenticated identity for in-scope hosts (best-effort; {} otherwise).
+    auth_base = await _profile_auth_base(claims["project_id"], txn)
+
     try:
         if body.op == "fuzz":
             ip = str(body.insertion_point or "")
@@ -3217,10 +3290,10 @@ async def traffic_replay(body: TrafficReplayRequest):
             payloads = [str(x) for x in (body.payloads or [])[:200]]
             if not ip or not payloads:
                 return JSONResponse(status_code=400, content={"error": "fuzz requires insertion_point + payloads"})
-            sends = [{"payload": pl, "curl_args": args} for pl, args in build_fuzz_curls(txn, ip, payloads)]
+            sends = [{"payload": pl, "curl_args": args} for pl, args in build_fuzz_curls(txn, ip, payloads, auth_base=auth_base)]
         else:
             mutate = body.mutate if isinstance(body.mutate, dict) else {}
-            sends = [{"payload": None, "curl_args": build_replay_curl(txn, mutate)}]
+            sends = [{"payload": None, "curl_args": build_replay_curl(txn, mutate, auth_base=auth_base)}]
     except ValueError as e:
         # Host-pin / scope violation (F1) or a malformed mutate — refuse, fail closed.
         return JSONResponse(status_code=400, content={"error": f"replay refused: {str(e)[:200]}"})
@@ -3345,11 +3418,17 @@ async def traffic_browser(body: TrafficBrowserRequest):
             }, os.environ.get("INTERNAL_API_KEY", ""))
         except Exception:  # noqa: BLE001
             cap_tag = ""
+        # Authenticated identity for the chromium context: the browser is pinned
+        # to the origin transaction's host, which _profile_auth_base scope-checks,
+        # so the session rides every request the page makes (best-effort, {} when
+        # no profile / out of scope). Same write-only channel as the ctx tag.
+        auth_headers = await _profile_auth_base(claims["project_id"], txn)
         return JSONResponse(content={
             "origin_host": origin_host,
             "scheme": origin_scheme,
             "port": origin_port,
             "ctx": cap_tag,
+            "auth_headers": auth_headers,
         })
 
     return JSONResponse(content={"ok": True})

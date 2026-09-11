@@ -38,6 +38,7 @@ import { CveLookupSection } from '../sections/CveLookupSection'
 import { MitreSection } from '../sections/MitreSection'
 import { SecurityChecksSection } from '../sections/SecurityChecksSection'
 import { TargetSection } from '../sections/TargetSection'
+import { AuthenticationSection } from '../sections/AuthenticationSection'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
 
@@ -124,7 +125,12 @@ export function WorkflowNodeModal({
       case 'Mitre':             return <MitreSection {...baseProps} />
       case 'SecurityChecks':    return <SecurityChecksSection {...baseProps} />
       case 'Uncover':           return <OsintEnrichmentSection {...baseProps} />
-      case 'input':             return <TargetSection {...extendedProps} />
+      case 'input':             return (
+        <>
+          <TargetSection {...extendedProps} />
+          <AuthenticationSection {...extendedProps} />
+        </>
+      )
       default:                  return <p>No settings available for this module.</p>
     }
   }

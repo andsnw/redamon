@@ -784,7 +784,8 @@ def get_host_path(container_path: str) -> str:
     return container_path
 
 
-def build_httpx_command(targets_file: str, output_file: str, settings: dict) -> List[str]:
+def build_httpx_command(targets_file: str, output_file: str, settings: dict,
+                        probe_hosts: List[str] = None) -> List[str]:
     """
     Build the Docker command for running httpx.
 
@@ -826,6 +827,14 @@ def build_httpx_command(targets_file: str, output_file: str, settings: dict) -> 
     HTTPX_PROBE_CDN = settings.get('HTTPX_PROBE_CDN', True)
     HTTPX_PATHS = settings.get('HTTPX_PATHS', [])
     HTTPX_CUSTOM_HEADERS = settings.get('HTTPX_CUSTOM_HEADERS', [])
+    # Authenticated-session profile. The scope check MUST run against the hosts
+    # this command will actually probe (`probe_hosts`), not against the project's
+    # configured scope: httpx applies one -H set to the whole targets file, which
+    # includes every discovered subdomain, so checking the configured list would
+    # send the session to hosts that were never scope-checked. No probe_hosts =>
+    # no auth (fail closed).
+    from recon.helpers.auth_profile import merge_auth_headers as _merge_auth
+    HTTPX_CUSTOM_HEADERS = _merge_auth(HTTPX_CUSTOM_HEADERS, settings, probe_hosts or [])
     HTTPX_MATCH_CODES = settings.get('HTTPX_MATCH_CODES', [])
     HTTPX_FILTER_CODES = settings.get('HTTPX_FILTER_CODES', [])
 
@@ -1780,7 +1789,11 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
         httpx_output = scan_temp_dir / "httpx_output.json"
 
         # Build and run command
-        cmd = build_httpx_command(str(targets_file), str(httpx_output), settings)
+        # The auth scope is checked against the hosts actually in targets.txt.
+        from urllib.parse import urlparse as _urlparse
+        _probe_hosts = sorted({h for h in (_urlparse(u).hostname for u in urls) if h})
+        cmd = build_httpx_command(str(targets_file), str(httpx_output), settings,
+                                  probe_hosts=_probe_hosts)
 
         print(f"\n[*][httpx] Starting httpx probe...")
         print(f"[*][httpx] URLs to probe: {len(urls)}")

@@ -63,6 +63,7 @@ def build_nuclei_command(
     max_redirects: int = 0,
     interactsh: bool = True,
     force_dast_pass: bool = False,
+    auth_headers: List[str] = None,
 ) -> List[str]:
     """
     Build nuclei Docker command with all configured parameters.
@@ -233,6 +234,12 @@ def build_nuclei_command(
     # Interactsh (OOB testing)
     if not interactsh:
         cmd.append("-no-interactsh")
+
+    # Authenticated-session profile: real target headers on the tool's own header
+    # path, kept entirely separate from the X-Redamon-Ctx branch below. Already
+    # scope-checked and sanitized by the caller (merge_auth_headers).
+    for header in (auth_headers or []):
+        cmd.extend(["-H", header])
 
     # HTTP traffic capture (Phase 1): route through the capture proxy when
     # enabled + reachable; tag added ONLY in this branch (§20.2 no-leak).

@@ -1,0 +1,36 @@
+# RedAmon auth_target guinea pig — Authenticated Session Recording
+#
+# Bring up:    docker compose up -d --build
+# Bring down:  docker compose down
+#
+# Joins pentest-net under SEVERAL aliases on purpose. They all resolve to this
+# one container, which is what makes the scope rules testable for real:
+#   authpig.test          apex            -> in scope via the apex entry
+#   app./api./cdn.*.test  subdomains      -> in scope ONLY via the *.root widening
+#   outsider.example-evil.test            -> OUT of scope; the session must never
+#                                            be attached to it
+services:
+  authpig:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: redamon-auth-target:latest
+    container_name: authpig
+    restart: unless-stopped
+    # Loopback only: intentionally vulnerable, never expose this.
+    ports:
+      - "127.0.0.1:9010:5000"
+    networks:
+      pentest:
+        aliases:
+          - authpig
+          - authpig.test
+          - app.authpig.test
+          - api.authpig.test
+          - cdn.authpig.test
+          - outsider.example-evil.test
+
+networks:
+  pentest:
+    external: true
+    name: redamon_pentest-net
