@@ -3,7 +3,14 @@
 import logging
 import os
 
-from neo4j import AsyncGraphDatabase
+from neo4j import READ_ACCESS, AsyncGraphDatabase
+
+from graph_db.tenant_filter import (
+    TenantScopeError,
+    find_disallowed_write_operation,
+    scope_query,
+)
+from prompt_safety import wrap_untrusted
 
 logger = logging.getLogger(__name__)
 
@@ -29,26 +36,57 @@ class TriageNeo4jToolManager:
         if self.driver:
             await self.driver.close()
 
-    async def run_query(self, cypher: str, params: dict = None) -> list[dict]:
-        """Run a Cypher query with tenant filtering injected."""
+    async def _execute(self, cypher: str, params: dict) -> list[dict]:
+        """Run already-vetted Cypher in a read session.
+
+        Read access mode is belt-and-braces: the write clauses are refused
+        before we get here, and a read session makes a missed one fail at the
+        server instead of mutating the graph.
+        """
         if not self.driver:
             await self.connect()
+
+        async with self.driver.session(default_access_mode=READ_ACCESS) as session:
+            result = await session.run(cypher, params)
+            return await result.data()
+
+    async def run_query(self, cypher: str, params: dict = None) -> list[dict]:
+        """Run LLM-written Cypher, refusing anything that cannot be proven scoped.
+
+        This is the only path the model can reach. It mirrors the main agent's
+        `query_graph` chokepoint (`agentic/tools.py`): refuse writes, then
+        `scope_query`, which injects the tenant filter, rejects the reserved
+        `Muted` label and raises rather than running an unscopable pattern.
+        """
+        disallowed = find_disallowed_write_operation(cypher)
+        if disallowed:
+            raise TenantScopeError(
+                f"Write operations are not allowed in triage queries "
+                f"(found: {disallowed.strip()})"
+            )
+
+        scoped = scope_query(cypher, self.user_id, self.project_id)
 
         query_params = {
             "userId": self.user_id,
             "projectId": self.project_id,
+            "tenant_user_id": self.user_id,
+            "tenant_project_id": self.project_id,
             **(params or {}),
         }
-
-        async with self.driver.session() as session:
-            result = await session.run(cypher, query_params)
-            records = await result.data()
-            return records
+        return await self._execute(scoped, query_params)
 
     async def run_static_query(self, cypher: str) -> list[dict]:
-        """Run a static collection query (already has $userId/$projectId params)."""
-        return await self.run_query(cypher)
+        """Run a repo-authored collection query (already carries $userId/$projectId).
 
+        Deliberately separate from `run_query`: these queries are written in
+        `prompts/cypher_queries.py`, hand-write their own `NOT x:Muted` terms and
+        would not survive `scope_query`'s label requirement. Nothing the model
+        emits may reach this method.
+        """
+        return await self._execute(
+            cypher, {"userId": self.user_id, "projectId": self.project_id}
+        )
 
 class TriageWebSearchManager:
     """Web search tool for enriching triage analysis."""
@@ -85,7 +123,9 @@ class TriageWebSearchManager:
                     results.append(
                         f"**{r['title']}**\n{r['url']}\n{r.get('content', '')[:500]}"
                     )
-                return "\n\n---\n\n".join(results) if results else "No results found."
+                if not results:
+                    return "No results found."
+                return wrap_untrusted("\n\n---\n\n".join(results), "WEB_SEARCH_RESULTS")
         except Exception as e:
             logger.error(f"Web search failed: {e}")
             return f"Web search error: {e}"
@@ -96,16 +136,18 @@ TRIAGE_TOOLS = [
     {
         "name": "query_graph",
         "description": (
-            "Run a follow-up Cypher query against the Neo4j graph database. "
+            "Run a read-only follow-up Cypher query against the Neo4j graph database. "
             "Use this when you need additional context about specific findings. "
-            "The query must use $userId and $projectId parameters for tenant filtering."
+            "Tenant filters are injected for you, but every node pattern must name "
+            "an explicit label, e.g. MATCH (v:Vulnerability), never MATCH (n). "
+            "Write clauses are refused."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "cypher": {
                     "type": "string",
-                    "description": "Cypher query to execute. Must include {user_id: $userId, project_id: $projectId} filters.",
+                    "description": "Read-only Cypher query. Every node pattern needs an explicit label.",
                 },
             },
             "required": ["cypher"],

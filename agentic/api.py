@@ -28,8 +28,8 @@ from fastapi.responses import Response, JSONResponse
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel
 
-from llm_guard import (require_internal_auth, require_internal_auth_only,
-                       require_master_internal_auth)
+from llm_guard import (master_key_is_weak, require_internal_auth,
+                       require_internal_auth_only, require_master_internal_auth)
 from logging_config import setup_logging
 from orchestrator import AgentOrchestrator
 from orchestrator_helpers import normalize_content
@@ -2903,6 +2903,15 @@ async def graph_triage(body: GraphTriageRequest):
     stays outside the LLM rate-limit bucket either way: these are cheap graph
     operations, not billed LLM calls.
     """
+    # `require_master_internal_auth` fails open with no key so a bare dev
+    # install still boots. This route writes suppression and verdict state, so
+    # it refuses for itself instead of accepting unauthenticated callers.
+    if master_key_is_weak():
+        return JSONResponse(status_code=503, content={
+            "error": "INTERNAL_API_KEY is not configured; triage operations are "
+                     "disabled. Generate the secret via redamon.sh.",
+        })
+
     if not body.user_id or not body.project_id:
         return JSONResponse(status_code=400, content={"error": "missing tenant identity"})
 

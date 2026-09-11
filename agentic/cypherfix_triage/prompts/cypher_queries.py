@@ -6,6 +6,11 @@ the `&!Muted` exclusion every agent query gets for free is absent here and has t
 be written by hand. Without it a triage run re-collects and re-classifies
 findings an operator already suppressed, and they reappear in the Findings table.
 
+CVE, MitreData and Capec are shared reference nodes with no tenant keys, so
+any per-project label reached THROUGH one (ExploitGvm, Technology) must carry
+`{user_id: $userId, project_id: $projectId}` in its own pattern. Without it the
+traversal walks out of this project and returns another tenant's rows.
+
 Every query binding a MUTEABLE label (Vulnerability, ExploitGvm, GithubSecret,
 GithubSensitiveFile, Secret, JsReconFinding, MultiscannerFinding,
 MalPackageFinding) needs `WHERE NOT <var>:Muted`. ChainFinding is EvoGraph
@@ -46,7 +51,8 @@ MATCH (t:Technology {user_id: $userId, project_id: $projectId})
       -[:HAS_KNOWN_CVE]->(c:CVE)
 OPTIONAL MATCH (c)-[:HAS_CWE]->(m:MitreData)
 OPTIONAL MATCH (m)-[:HAS_CAPEC]->(cap:Capec)
-OPTIONAL MATCH (ex:ExploitGvm)-[:EXPLOITED_CVE]->(c)
+OPTIONAL MATCH (ex:ExploitGvm {user_id: $userId, project_id: $projectId})
+      -[:EXPLOITED_CVE]->(c)
   WHERE NOT ex:Muted
 RETURN t.name AS technology, t.version AS version,
        collect(DISTINCT {cve: c.id, cvss: c.cvss_score, description: c.description}) AS cves,
@@ -81,7 +87,7 @@ RETURN repo.name AS repo, repo.full_name AS full_name,
 MATCH (ex:ExploitGvm {user_id: $userId, project_id: $projectId})
       -[:EXPLOITED_CVE]->(c:CVE)
 WHERE NOT ex:Muted
-OPTIONAL MATCH (t:Technology)-[:HAS_KNOWN_CVE]->(c)
+OPTIONAL MATCH (t:Technology {user_id: $userId, project_id: $projectId})-[:HAS_KNOWN_CVE]->(c)
 RETURN c.id AS cve, c.cvss_score AS cvss, c.description AS description,
        collect(DISTINCT t.name) AS affected_technologies,
        collect(DISTINCT {exploit_id: ex.id, source: ex.source}) AS exploits

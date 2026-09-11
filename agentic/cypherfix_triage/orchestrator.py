@@ -8,6 +8,7 @@ from typing import Optional
 
 import httpx
 
+from cypherfix_errors import safe_error
 from prompt_safety import wrap_untrusted
 from .state import TriageState, TriageFinding, RemediationDraft
 from .tools import TriageNeo4jToolManager, TriageWebSearchManager, TRIAGE_TOOLS
@@ -185,7 +186,10 @@ class TriageOrchestrator:
             logger.info("Scoring: no findings in scope")
             return []
 
-        scoring.rank_findings(scored)   # stamps 1-based 'rank', worst first
+        # Take the RETURN value: rank_findings sorts a copy. Dropping it left
+        # `scored` in query order, so "the top 40 for the LLM" below was really
+        # "the first 40 rows Neo4j happened to return".
+        scored = scoring.rank_findings(scored)   # worst first, 1-based 'rank' 
 
         # Persist the deterministic score for every finding (no verdict prose yet).
         await self._save_scores(scored)
@@ -379,8 +383,9 @@ class TriageOrchestrator:
                     tools=TRIAGE_TOOLS,
                 )
             except Exception as e:
-                logger.error(f"LLM call failed: {e}")
-                await self.callback.on_error(f"LLM error: {e}", recoverable=False)
+                logger.exception("LLM call failed")
+                await self.callback.on_error(
+                    safe_error("llm_error"), recoverable=False, code="llm_error")
                 return RemediationDraft()
 
             # Append assistant message (include tool_uses so _call_llm can reconstruct properly)
@@ -472,8 +477,9 @@ class TriageOrchestrator:
                 resp.raise_for_status()
                 logger.info(f"Saved {len(remediations)} remediations")
         except Exception as e:
-            logger.error(f"Failed to save remediations: {e}")
-            await self.callback.on_error(f"Failed to save: {e}", recoverable=False)
+            logger.exception("Failed to save remediations")
+            await self.callback.on_error(
+                safe_error("save_failed"), recoverable=False, code="save_failed")
 
     async def _fetch_existing_remediations(self) -> list:
         """Fetch existing non-pending remediations to pass to LLM for dedup."""

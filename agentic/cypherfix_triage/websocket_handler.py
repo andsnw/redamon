@@ -6,6 +6,7 @@ import logging
 import uuid
 from fastapi import WebSocket, WebSocketDisconnect
 
+from cypherfix_errors import safe_error
 from .orchestrator import TriageOrchestrator
 from .state import TriageState
 
@@ -53,8 +54,10 @@ class TriageStreamingCallback:
             "summary": summary,
         })
 
-    async def on_error(self, message: str, recoverable: bool = True):
-        await self._send("error", {"message": message, "recoverable": recoverable})
+    async def on_error(self, message: str, recoverable: bool = True, code: str = ""):
+        await self._send("error", {
+            "message": message, "recoverable": recoverable, "code": code,
+        })
 
     async def _send(self, msg_type: str, payload: dict):
         try:
@@ -188,8 +191,10 @@ class TriageRunCallback:
             "summary": summary,
         })
 
-    async def on_error(self, message: str, recoverable: bool = True):
-        await self._send("error", {"message": message, "recoverable": recoverable})
+    async def on_error(self, message: str, recoverable: bool = True, code: str = ""):
+        await self._send("error", {
+            "message": message, "recoverable": recoverable, "code": code,
+        })
 
     async def _send(self, msg_type: str, payload: dict):
         self.run.record(msg_type, payload)
@@ -351,7 +356,11 @@ async def handle_triage_websocket(websocket: WebSocket):
                     except Exception as e:
                         logger.exception("Triage failed")
                         run.status = "error"
-                        await TriageRunCallback(run).on_error(str(e), recoverable=False)
+                        await TriageRunCallback(run).on_error(
+                            safe_error("internal_error"),
+                            recoverable=False,
+                            code="internal_error",
+                        )
                     finally:
                         # The run owns its own teardown now that it outlives the
                         # socket: nothing else is guaranteed to still be around
