@@ -15,6 +15,7 @@ import { OsintEnrichmentSection } from '../sections/OsintEnrichmentSection'
 import { NaabuSection } from '../sections/NaabuSection'
 import { MasscanSection } from '../sections/MasscanSection'
 import { NmapSection } from '../sections/NmapSection'
+import { TlsxSection } from '../sections/TlsxSection'
 import { HttpxSection } from '../sections/HttpxSection'
 import { KatanaSection } from '../sections/KatanaSection'
 import { ZapAjaxSpiderSection } from '../sections/ZapAjaxSpiderSection'
@@ -102,6 +103,7 @@ export function WorkflowNodeModal({
       case 'Naabu':             return <NaabuSection {...baseProps} />
       case 'Masscan':           return <MasscanSection {...baseProps} />
       case 'Nmap':              return <NmapSection {...baseProps} />
+      case 'Tlsx':              return <TlsxSection {...baseProps} />
       case 'Httpx':             return <HttpxSection {...baseProps} />
       case 'Katana':            return <KatanaSection {...baseProps} />
       case 'ZapAjaxSpider':     return <ZapAjaxSpiderSection {...baseProps} />

@@ -638,6 +638,28 @@ model Project {
   vhostSniCustomWordlist           String   @default("") @map("vhost_sni_custom_wordlist") @db.Text
   vhostSniMaxCandidatesPerIp       Int      @default(2000) @map("vhost_sni_max_candidates_per_ip")
 
+  // ========== TLSX (TLS CERTIFICATE GRAB) ==========
+  // GROUP 3.6 active scanner: one TLS handshake per open non-HTTP port. Default
+  // ON (quieter than httpx -jarm which is already on). Loud sub-probes off.
+  tlsxEnabled                      Boolean  @default(true) @map("tlsx_enabled")
+  tlsxDockerImage                  String   @default("projectdiscovery/tlsx:latest") @map("tlsx_docker_image")
+  tlsxScanMode                     String   @default("auto") @map("tlsx_scan_mode")
+  tlsxConcurrency                  Int      @default(50) @map("tlsx_concurrency")
+  tlsxTimeout                      Int      @default(5) @map("tlsx_timeout")
+  tlsxRunTimeout                   Int      @default(900) @map("tlsx_run_timeout")
+  tlsxRetries                      Int      @default(1) @map("tlsx_retries")
+  tlsxMaxInjectedHostnames         Int      @default(200) @map("tlsx_max_injected_hostnames")
+  tlsxDelay                        String   @default("") @map("tlsx_delay")
+  tlsxIncludeHttpPorts             Boolean  @default(false) @map("tlsx_include_http_ports")
+  tlsxInjectHostnames              Boolean  @default(true) @map("tlsx_inject_hostnames")
+  tlsxRevPtrSni                    Boolean  @default(false) @map("tlsx_rev_ptr_sni")
+  tlsxMaxHostnamesPerIp            Int      @default(1) @map("tlsx_max_hostnames_per_ip")
+  tlsxProbeJarm                    Boolean  @default(false) @map("tlsx_probe_jarm")
+  tlsxVersionEnum                  Boolean  @default(false) @map("tlsx_version_enum")
+  tlsxCipherEnum                   Boolean  @default(false) @map("tlsx_cipher_enum")
+  tlsxCipherConcurrency            Int      @default(10) @map("tlsx_cipher_concurrency")
+  tlsxMaxTargets                   Int      @default(2000) @map("tlsx_max_targets")
+
   // ========== WEB CACHE POISONING ==========
   // Active GROUP 6 scanner: WCVS breadth engine + native 5-phase confirmation.
   webCachePoisonEnabled            Boolean  @default(false) @map("web_cache_poison_enabled")
@@ -1172,16 +1194,19 @@ model Project {
   cypherfixLlmModel                 String   @default("") @map("cypherfix_llm_model")
 
   // ========== FINDING TRIAGE ==========
-  // Below this confidence the classifier must return `needs_verification`
-  // instead of a real/noise call, so a guess is never recorded as a decision.
-  triageConfidenceThreshold         Float    @default(0.7)   @map("triage_confidence_threshold")
-  // Ships OFF and should stay off without a deliberate decision: muting is what
-  // hides a finding from the agent, so it stays a human action. Turning this on
-  // lets high-confidence `likely_noise` be suppressed automatically.
-  triageAutoMute                    Boolean  @default(false) @map("triage_auto_mute")
-  // How many top / ambiguous findings get an LLM rationale per run. The
-  // deterministic scorer ranks everything; this only caps the assist calls.
-  triageTopNForLlm                  Int      @default(40)    @map("triage_top_n_for_llm")
+  // How many findings the AI may review per run, and therefore what a run can
+  // cost. The ranking itself is free and never depends on this: 0 turns the
+  // review off entirely and still gives a fully ranked board.
+  //
+  // 150 rather than "all of them" because the review is narrowed to findings
+  // whose evidence a model can actually judge. Facts (security_check) and
+  // advisories (OSV) are skipped, and on a real project those are most of the
+  // graph, so 150 covers the interesting ones several times over.
+  //
+  // Replaces triageConfidenceThreshold, triageAutoMute and triageTopNForLlm:
+  // the first two were never read by any code, and the third capped an LLM step
+  // that no longer exists.
+  triageReviewBudget                Int      @default(150)   @map("triage_review_budget")
 
   // ========== RULES OF ENGAGEMENT ==========
   // --- Document & Metadata ---
