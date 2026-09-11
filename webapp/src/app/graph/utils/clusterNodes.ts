@@ -26,6 +26,10 @@ const STRUCTURAL_EDGE_TYPES = new Set([
   'HAS_PARAMETER',
   'HAS_DNS_RECORD',
   'HAS_CERTIFICATE',
+  // One wildcard cert can cover every Subdomain it names; without this, that
+  // high-degree fan-out never collapses and /graph degrades on the first
+  // wildcard cert.
+  'COVERS_HOST',
   'HAS_SECRET',
   'HAS_PORT',
   'HAS_TRACEROUTE',

@@ -827,6 +827,25 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
         if "nmap_scan" in combined_result:
             _graph_update_bg("update_graph_from_nmap", combined_result, USER_ID, PROJECT_ID)
 
+    # =====================================================================
+    # GROUP 3.6 — TLS certificate grab (tlsx), IP mode.
+    # No SAN hostname injection here: IP mode has no apex to scope-test against,
+    # so merge_discovered_hostnames would fail closed anyway. Certs still land
+    # on the graph (IP-anchored), and non-HTTP TLS ports get identified.
+    # =====================================================================
+    if settings.get('TLSX_ENABLED', True) and "port_scan" in combined_result:
+        print(f"\n[*][Pipeline] GROUP 3.6: TLS Certificate Grab (IP mode)")
+        print("-" * 40)
+        try:
+            from recon.main_recon_modules.tls_scan import run_tlsx_enrichment
+            combined_result = run_tlsx_enrichment(combined_result, settings=settings)
+            combined_result["metadata"]["modules_executed"].append("tlsx")
+            save_recon_file(combined_result, output_file)
+            _graph_update_bg("update_graph_from_tlsx", combined_result, USER_ID, PROJECT_ID)
+        except Exception as e:
+            print(f"[!][Pipeline] tlsx failed: {e}")
+            combined_result["metadata"].setdefault("phase_errors", {})["tlsx"] = str(e)
+
     # OSINT Enrichment (parallel, same logic as domain recon Group 3b)
     _ip_osint_tools = {
         'censys': ('CENSYS_ENABLED', 'recon.main_recon_modules.censys_enrich', 'run_censys_enrichment_isolated', 'update_graph_from_censys'),
@@ -1372,6 +1391,39 @@ def run_domain_recon(target: str, bruteforce: bool = False,
 
         if "nmap_scan" in combined_result:
             _graph_update_bg("update_graph_from_nmap", combined_result, USER_ID, PROJECT_ID)
+
+    # =====================================================================
+    # GROUP 3.6 — TLS certificate grab (tlsx)
+    # Depends on: merged port_scan data. Runs BEFORE http_probe so SAN-derived
+    # hostnames become probe targets, and before GROUP 6 so vhost_sni can use them.
+    # Sequential (not a fan-out peer) because the SAN injection mutates shared
+    # state GROUP 4 reads.
+    # =====================================================================
+    if _settings.get('TLSX_ENABLED', True) and "port_scan" in combined_result:
+        print(f"\n[*][Pipeline] GROUP 3.6: TLS Certificate Grab")
+        print("-" * 40)
+        try:
+            from recon.main_recon_modules.tls_scan import run_tlsx_enrichment
+            combined_result = run_tlsx_enrichment(combined_result, settings=_settings)
+            combined_result["metadata"]["modules_executed"].append("tlsx")
+            if _settings.get('TLSX_INJECT_HOSTNAMES', True):
+                from recon.helpers.target_helpers import merge_discovered_hostnames
+                # root_domain is THIS group's own root (batch mode empties
+                # metadata['root_domain'] precisely so a joined string can't be a
+                # target); merge applies the apex test against it and fails closed.
+                merge_discovered_hostnames(
+                    combined_result,
+                    (combined_result.get("tlsx") or {}).get("discovered_hostnames", []),
+                    source="tlsx",
+                    root_domain=root_domain,
+                    settings=_settings,
+                    max_injected=_settings.get('TLSX_MAX_INJECTED_HOSTNAMES', 200),
+                )
+            save_recon_file(combined_result, output_file)
+            _graph_update_bg("update_graph_from_tlsx", combined_result, USER_ID, PROJECT_ID)
+        except Exception as e:
+            print(f"[!][Pipeline] tlsx failed: {e}")
+            combined_result["metadata"].setdefault("phase_errors", {})["tlsx"] = str(e)
 
     # =====================================================================
     # GROUP 3b — OSINT Enrichment (parallel, passive — no packets to target)

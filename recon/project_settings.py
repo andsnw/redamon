@@ -241,6 +241,28 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'VHOST_SNI_CUSTOM_WORDLIST': '',
     'VHOST_SNI_MAX_CANDIDATES_PER_IP': 2000,
 
+    # tlsx TLS certificate grab (GROUP 3.6). Default ON: one handshake per open
+    # non-HTTP TLS port, quieter than -jarm (already default-on in httpx) and
+    # net-zero on the 5 SSL ports http_probe already dials and discards.
+    'TLSX_ENABLED': True,
+    'TLSX_DOCKER_IMAGE': 'projectdiscovery/tlsx:latest',
+    'TLSX_SCAN_MODE': 'auto',                # ctls|ztls|openssl|auto
+    'TLSX_CONCURRENCY': 50,                  # tlsx default is 300; 50 is quieter
+    'TLSX_TIMEOUT': 5,                       # per-handshake -timeout (seconds)
+    'TLSX_RUN_TIMEOUT': 900,                 # whole-container ceiling (Popen)
+    'TLSX_RETRIES': 1,                       # tlsx default is 3
+    'TLSX_MAX_INJECTED_HOSTNAMES': 200,      # SAN names merged into dns.subdomains
+    'TLSX_DELAY': '',                        # -delay (stealth only)
+    'TLSX_INCLUDE_HTTP_PORTS': False,        # anti-duplication with httpx
+    'TLSX_INJECT_HOSTNAMES': True,           # SAN -> dns.subdomains
+    'TLSX_REV_PTR_SNI': False,               # -rps, extra DNS per bare IP
+    'TLSX_MAX_HOSTNAMES_PER_IP': 1,          # SNI correctness cap
+    'TLSX_PROBE_JARM': False,                # -jarm/-ja3: ~10 handshakes/target
+    'TLSX_VERSION_ENUM': False,              # -ve: extra connections per target
+    'TLSX_CIPHER_ENUM': False,               # -ce: extra connections per target
+    'TLSX_CIPHER_CONCURRENCY': 10,           # -cec, only when cipher enum on
+    'TLSX_MAX_TARGETS': 2000,
+
     # Resource Enum AI Classifier — cross-cutting endpoint + parameter
     # classifier that runs after Katana/Hakrawler/GAU/FFuf/jsluice/ParamSpider/
     # Kiterunner/Arjun have produced endpoints. Pure regex, no extra traffic.
@@ -1147,6 +1169,26 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['VHOST_SNI_CUSTOM_WORDLIST'] = project.get('vhostSniCustomWordlist', DEFAULT_SETTINGS['VHOST_SNI_CUSTOM_WORDLIST'])
     settings['VHOST_SNI_MAX_CANDIDATES_PER_IP'] = project.get('vhostSniMaxCandidatesPerIp', DEFAULT_SETTINGS['VHOST_SNI_MAX_CANDIDATES_PER_IP'])
 
+    # tlsx TLS certificate grab
+    settings['TLSX_ENABLED'] = project.get('tlsxEnabled', DEFAULT_SETTINGS['TLSX_ENABLED'])
+    settings['TLSX_DOCKER_IMAGE'] = project.get('tlsxDockerImage', DEFAULT_SETTINGS['TLSX_DOCKER_IMAGE'])
+    settings['TLSX_SCAN_MODE'] = project.get('tlsxScanMode', DEFAULT_SETTINGS['TLSX_SCAN_MODE'])
+    settings['TLSX_CONCURRENCY'] = project.get('tlsxConcurrency', DEFAULT_SETTINGS['TLSX_CONCURRENCY'])
+    settings['TLSX_TIMEOUT'] = project.get('tlsxTimeout', DEFAULT_SETTINGS['TLSX_TIMEOUT'])
+    settings['TLSX_RUN_TIMEOUT'] = project.get('tlsxRunTimeout', DEFAULT_SETTINGS['TLSX_RUN_TIMEOUT'])
+    settings['TLSX_RETRIES'] = project.get('tlsxRetries', DEFAULT_SETTINGS['TLSX_RETRIES'])
+    settings['TLSX_MAX_INJECTED_HOSTNAMES'] = project.get('tlsxMaxInjectedHostnames', DEFAULT_SETTINGS['TLSX_MAX_INJECTED_HOSTNAMES'])
+    settings['TLSX_DELAY'] = project.get('tlsxDelay', DEFAULT_SETTINGS['TLSX_DELAY'])
+    settings['TLSX_INCLUDE_HTTP_PORTS'] = project.get('tlsxIncludeHttpPorts', DEFAULT_SETTINGS['TLSX_INCLUDE_HTTP_PORTS'])
+    settings['TLSX_INJECT_HOSTNAMES'] = project.get('tlsxInjectHostnames', DEFAULT_SETTINGS['TLSX_INJECT_HOSTNAMES'])
+    settings['TLSX_REV_PTR_SNI'] = project.get('tlsxRevPtrSni', DEFAULT_SETTINGS['TLSX_REV_PTR_SNI'])
+    settings['TLSX_MAX_HOSTNAMES_PER_IP'] = project.get('tlsxMaxHostnamesPerIp', DEFAULT_SETTINGS['TLSX_MAX_HOSTNAMES_PER_IP'])
+    settings['TLSX_PROBE_JARM'] = project.get('tlsxProbeJarm', DEFAULT_SETTINGS['TLSX_PROBE_JARM'])
+    settings['TLSX_VERSION_ENUM'] = project.get('tlsxVersionEnum', DEFAULT_SETTINGS['TLSX_VERSION_ENUM'])
+    settings['TLSX_CIPHER_ENUM'] = project.get('tlsxCipherEnum', DEFAULT_SETTINGS['TLSX_CIPHER_ENUM'])
+    settings['TLSX_CIPHER_CONCURRENCY'] = project.get('tlsxCipherConcurrency', DEFAULT_SETTINGS['TLSX_CIPHER_CONCURRENCY'])
+    settings['TLSX_MAX_TARGETS'] = project.get('tlsxMaxTargets', DEFAULT_SETTINGS['TLSX_MAX_TARGETS'])
+
     # Resource Enum AI Classifier
     settings['RESOURCE_ENUM_AI_CLASSIFIER_ENABLED'] = project.get('resourceEnumAiClassifierEnabled', DEFAULT_SETTINGS['RESOURCE_ENUM_AI_CLASSIFIER_ENABLED'])
     settings['RESOURCE_ENUM_AI_PATH_CLASSIFIER_ENABLED'] = project.get('resourceEnumAiPathClassifierEnabled', DEFAULT_SETTINGS['RESOURCE_ENUM_AI_PATH_CLASSIFIER_ENABLED'])
@@ -1967,6 +2009,15 @@ def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     # build a custom preset (see red-team-operator) with graph-only candidates,
     # L7-only, low concurrency. ---
     settings['VHOST_SNI_ENABLED'] = False
+
+    # --- tlsx: KEEP it (a plain cert grab is one handshake per already-open port,
+    # far quieter than the vhost brute above), but force the loud dials off and
+    # throttle concurrency. JARM/JA3 add ~10 handshakes/target; version/cipher
+    # enum add extra connections per target. ---
+    settings['TLSX_PROBE_JARM'] = False
+    settings['TLSX_VERSION_ENUM'] = False
+    settings['TLSX_CIPHER_ENUM'] = False
+    settings['TLSX_CONCURRENCY'] = 5
 
     # --- Origin Discovery: keep it (unmasking is the point of a stealth engagement)
     # but throttle its active validation probes hard — 1 worker, ~1 rps — and drop

@@ -28,6 +28,7 @@ from graph_db.mixins.recon.takeover_mixin import TakeoverMixin
 from graph_db.mixins.recon.vhost_sni_mixin import VhostSniMixin
 from graph_db.mixins.recon.ai_surface_recon_mixin import AiSurfaceReconMixin
 from graph_db.mixins.recon.triage_mixin import TriageMixin
+from graph_db.mixins.recon.tlsx_mixin import TlsxMixin
 
 
 class ReconMixin(
@@ -42,5 +43,6 @@ class ReconMixin(
     VhostSniMixin,
     AiSurfaceReconMixin,
     TriageMixin,
+    TlsxMixin,
 ):
     pass
