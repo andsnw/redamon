@@ -34,6 +34,43 @@ def _join(value):
     return value
 
 
+def _weak_cipher_names(cipher_enum) -> list:
+    """Flatten tlsx's `-ce -ct weak` output to cipher names.
+
+    H7: tlsx reports one envelope per TLS version -- `[{"version": "tls12",
+    "ciphers": {...}}]` -- and Neo4j refuses a list of maps as a property
+    ("Property values can only be of primitive types or arrays thereof"). The
+    whole `SET svc += $props` was rejected, so enabling the "Enumerate weak
+    ciphers" toggle silently wiped tls, tls_version, tls_cipher AND
+    tls_service_hint off every Service, and the error went into a stats list
+    nothing printed.
+
+    Duplicated from recon/helpers/security_checks.py on purpose: graph_db must
+    not import recon.
+    """
+    names = []
+    for entry in cipher_enum or []:
+        if isinstance(entry, str):
+            names.append(entry)
+            continue
+        if not isinstance(entry, dict):
+            continue
+        ciphers = entry.get("ciphers")
+        buckets = ciphers.values() if isinstance(ciphers, dict) else [ciphers]
+        for bucket in buckets:
+            if isinstance(bucket, list):
+                names.extend(str(c) for c in bucket if c)
+            elif bucket:
+                names.append(str(bucket))
+    seen = set()
+    return [n for n in names if not (n in seen or seen.add(n))]
+
+
+def _primitive_list(value) -> list:
+    """Only arrays of primitives survive as Neo4j properties."""
+    return [str(v) for v in (value or []) if v is not None and not isinstance(v, (dict, list))]
+
+
 class TlsxMixin:
     def update_graph_from_tlsx(self, recon_data: dict, user_id: str, project_id: str) -> dict:
         stats = {
@@ -74,8 +111,10 @@ class TlsxMixin:
                                 "tls_key_exchange": entry.get("key_exchange"),
                                 "tls_connection": entry.get("tls_connection"),
                                 "tls_service_hint": entry.get("tls_service_hint"),
-                                "tls_versions_supported": entry.get("version_enum") or None,
-                                "tls_ciphers_weak": entry.get("cipher_enum") or None,
+                                "tls_versions_supported": _primitive_list(
+                                    entry.get("version_enum")) or None,
+                                "tls_ciphers_weak": _weak_cipher_names(
+                                    entry.get("cipher_enum")) or None,
                                 "tls_probe_failed": False,
                                 "tls_updated_at": datetime.now(timezone.utc).isoformat(),
                             }
@@ -201,4 +240,10 @@ class TlsxMixin:
 
         print(f"[*][graph-db] tlsx: {stats['certificates_created']} cert(s), "
               f"{stats['services_enriched']} service(s), {stats['covers_host_edges']} COVERS_HOST edge(s)")
+        # A swallowed write is how H7 stayed hidden: every Service enrichment
+        # failed on a Neo4j type error while the counts above read as a clean
+        # run. Surface the first few rather than burying them in the return.
+        if stats["errors"]:
+            print(f"[!][graph-db] tlsx: {len(stats['errors'])} graph write error(s); "
+                  f"first: {stats['errors'][0]}")
         return stats

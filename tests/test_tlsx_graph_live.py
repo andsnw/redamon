@@ -168,6 +168,48 @@ class TlsxGraphWriteLive(unittest.TestCase):
             self.assertIn(flag, c.keys(), f"{flag}=False was filtered out of cert_props")
             self.assertIs(c[flag], False)
 
+    # -- H7: enum data must not poison the Service write --------------------
+    def test_cipher_enum_does_not_destroy_the_service_enrichment(self):
+        """tlsx reports cipher_enum as a list of MAPS, and Neo4j refuses a list
+        of maps as a property, so `SET svc += $props` was rejected wholesale:
+        enabling the weak-cipher toggle silently wiped tls, tls_version,
+        tls_cipher and tls_service_hint off every Service, and the error went
+        into a stats list nothing printed."""
+        payload = _tlsx_payload(overrides={
+            "cipher_enum": [
+                {"version": "tls12", "ciphers": {}},
+                {"version": "tls10", "ciphers": {"insecure": ["TLS_RSA_WITH_RC4_128_SHA"]}},
+            ],
+            "version_enum": ["tls12", "tls10"],
+        })
+        stats = self._write(payload)
+        self.assertEqual(stats["errors"], [], "the Service write still fails")
+        self.assertEqual(stats["services_enriched"], 1,
+                         "the Service enrichment was lost with cipher_enum on")
+
+        with self.client.driver.session() as s:
+            svc = s.run(
+                "MATCH (svc:Service {port_number: $port, user_id: $uid, project_id: $pid}) "
+                "RETURN svc", port=self.PORT, uid=self.uid, pid=self.pid).single()["svc"]
+        self.assertTrue(svc["tls"])
+        self.assertEqual(svc["tls_service_hint"], "imaps")
+        self.assertEqual(svc["tls_versions_supported"], ["tls12", "tls10"])
+        self.assertEqual(svc["tls_ciphers_weak"], ["TLS_RSA_WITH_RC4_128_SHA"],
+                         "the envelopes were stored raw, or the names were dropped")
+
+    def test_an_enum_with_no_weak_cipher_stores_nothing_rather_than_empty_envelopes(self):
+        payload = _tlsx_payload(overrides={
+            "cipher_enum": [{"version": "tls12", "ciphers": {}}],
+        })
+        stats = self._write(payload)
+        self.assertEqual(stats["errors"], [])
+        with self.client.driver.session() as s:
+            svc = s.run(
+                "MATCH (svc:Service {port_number: $port, user_id: $uid, project_id: $pid}) "
+                "RETURN svc", port=self.PORT, uid=self.uid, pid=self.pid).single()["svc"]
+        self.assertNotIn("tls_ciphers_weak", svc.keys())
+        self.assertTrue(svc["tls"], "the rest of the enrichment must still land")
+
     # -- COVERS_HOST --------------------------------------------------------
     def test_covers_host_edges_exist_for_in_scope_san_names(self):
         self._write()
