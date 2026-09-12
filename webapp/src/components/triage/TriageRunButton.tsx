@@ -194,7 +194,13 @@ export function TriageRunButton({
       const ok = await confirm(
         buildDialog(pre),
         `Run triage on ${pre.projectName}?`,
-        { confirmLabel: pre.lastRun ? 'Re-triage' : 'Start triage' }
+        {
+          confirmLabel: pre.lastRun ? 'Re-triage' : 'Start triage',
+          // This dialog is a briefing, not a yes/no: headings, a numbered
+          // list and a cost estimate. At the default alert width it reflowed
+          // into a column barely wide enough for a few words per line.
+          size: 'large',
+        }
       )
       if (ok) onConfirm()
     } catch (e) {

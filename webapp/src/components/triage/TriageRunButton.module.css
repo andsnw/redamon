@@ -44,7 +44,9 @@
   gap: 12px;
   font-size: 13px;
   line-height: 1.5;
-  max-width: 560px;
+  /* No cap of its own: the modal decides the width (this dialog asks for the
+     `large` size). A max-width here would hold the text narrow inside a wide
+     modal, which is the bug this replaced. */
 }
 
 .dialog p {

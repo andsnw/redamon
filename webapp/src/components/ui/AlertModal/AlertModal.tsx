@@ -18,6 +18,13 @@ type AlertType = 'info' | 'error' | 'warning' | 'confirm' | 'danger-confirm'
 export interface ConfirmOptions {
   confirmLabel?: string
   cancelLabel?: string
+  /**
+   * Modal width. Alerts default to `small`, which suits the one-line messages
+   * that are most of them. A dialog carrying real explanation (the triage
+   * confirm has headings, a numbered list and a cost estimate) asks for a
+   * wider one rather than every alert in the app being widened for it.
+   */
+  size?: 'small' | 'default' | 'large' | 'full'
 }
 
 interface AlertState {
@@ -26,6 +33,7 @@ interface AlertState {
   message: ReactNode
   confirmLabel?: string
   cancelLabel?: string
+  size?: ConfirmOptions['size']
   resolve: (value: boolean) => void
 }
 
@@ -76,6 +84,7 @@ export function AlertProvider({ children }: AlertProviderProps) {
           type, title, message, resolve,
           confirmLabel: options?.confirmLabel,
           cancelLabel: options?.cancelLabel,
+          size: options?.size,
         }
         if (current) {
           queueRef.current.push(state)
@@ -136,7 +145,7 @@ export function AlertProvider({ children }: AlertProviderProps) {
         isOpen={!!current}
         onClose={() => handleResolve(false)}
         title={current?.title}
-        size="small"
+        size={current?.size ?? 'small'}
         closeOnOverlayClick={!isConfirm}
         showCloseButton={!isConfirm}
         footer={
