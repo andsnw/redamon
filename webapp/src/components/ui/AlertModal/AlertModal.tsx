@@ -176,7 +176,12 @@ export function AlertProvider({ children }: AlertProviderProps) {
           )
         }
       >
-        {current && <p className={styles.message}>{current.message}</p>}
+        {/* A <div>, not a <p>: `message` is a ReactNode, and the triage
+            confirm dialog nests headings and lists inside it. Block content
+            inside a <p> is invalid HTML and React hoists it out of the
+            paragraph, which breaks the styling. The class is unchanged, so
+            every existing string caller looks exactly as before. */}
+        {current && <div className={styles.message}>{current.message}</div>}
       </Modal>
     </AlertContext.Provider>
   )

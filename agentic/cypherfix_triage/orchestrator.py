@@ -22,6 +22,7 @@ from .fact_queries import (
     build_project_facts,
     normalise_finding_row,
 )
+from .intel import CveIntel
 from .run_client import TriageRunAborted, TriageRunClient
 from .project_settings import load_cypherfix_settings
 
@@ -524,6 +525,7 @@ class TriageOrchestrator:
             logger.info("Scoring: no findings in scope")
             return []
 
+        await self._load_intel(rows, state)
         intel = self.intel or {}
         scored: list = []
         unknown_sources = set()
@@ -569,6 +571,33 @@ class TriageOrchestrator:
             by_tier[row["tier"]] = by_tier.get(row["tier"], 0) + 1
         logger.info(f"Scored {len(scored)} findings: {by_tier}")
         return scored
+
+    async def _load_intel(self, rows: list, state: TriageState) -> None:
+        """KEV, EPSS and public-PoC status for the CVEs in scope.
+
+        Without it, "how likely is this to be exploited" falls back to a class
+        prior and the CVSS vector, which cannot tell a CVE being exploited in
+        the wild this week from one nobody has ever used.
+
+        Only CVE ids leave the machine, and only after a regex check. Failure is
+        not an error: the ranking degrades to the priors, which is the
+        documented behaviour.
+        """
+        cve_ids = {c for row in rows for c in (row.get("cve_ids") or [])}
+        if not cve_ids:
+            return
+        try:
+            settings = state.get("settings", {}) or {}
+            user_settings = settings.get("user_settings", {}) or {}
+            loader = CveIntel(pdcp_api_key=user_settings.get("pdcpApiKey", ""))
+            self.intel = await loader.load(cve_ids, self._graph_client())
+            self.intel_date = loader.intel_date
+            if loader.refreshed:
+                logger.info(f"CVE intelligence: {loader.refreshed} refreshed, "
+                            f"{len(self.intel)} known")
+        except Exception as e:                                    # noqa: BLE001
+            logger.warning(f"CVE intelligence unavailable ({e.__class__.__name__}); "
+                           f"the ranking uses class priors")
 
     # ── Step E: publish, the only step that writes ────────────────────────
 

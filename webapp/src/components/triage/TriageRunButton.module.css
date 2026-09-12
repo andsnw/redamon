@@ -1,0 +1,83 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #2a3441);
+  background: var(--accent-bg, #1b2a3a);
+  color: var(--accent-fg, #7dd3fc);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--accent-bg-hover, #22364a);
+  border-color: var(--accent-fg, #7dd3fc);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: triage-spin 1s linear infinite;
+}
+
+@keyframes triage-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── The confirmation dialog's body ───────────────────────────────────── */
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 560px;
+}
+
+.dialog p {
+  margin: 0;
+}
+
+.dialog ol,
+.dialog ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dialogHeading {
+  font-weight: 600;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.muted {
+  color: var(--text-secondary, #94a3b8);
+  font-size: 12px;
+}
+
+.warn {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--warn-border, #8a6d3b);
+  background: var(--warn-bg, #2a2314);
+  color: var(--warn-fg, #f0c674);
+  font-size: 12px;
+}
+
+.blocked {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--danger-border, #7f1d1d);
+  background: var(--danger-bg, #2a1414);
+  color: var(--danger-fg, #fca5a5);
+  font-size: 12px;
+}

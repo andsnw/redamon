@@ -8,9 +8,10 @@ Two separate things live here, and keeping them separate is the point:
   `:Muted` label, which makes the node invisible to every agent query and every
   analytics, report and graph read.
 
-Only a person mutes. `apply_triage_verdicts` cannot set `:Muted` no matter what
-the model returns, so a prompt injection in scanner output (`raw_response`,
-`evidence`) can at worst mislabel a verdict a human can overrule.
+Only a person mutes. `apply_triage_scores` -- the one path a triage run writes
+through -- cannot set `:Muted` no matter what the model returns, so a prompt
+injection in scanner output (`raw_response`, `evidence`) can at worst mislabel a
+verdict a human can overrule.
 
 See `docs/readmes/GRAPH.SCHEMA.md` for the label's schema contract, and
 `graph_db/tenant_filter.py` for how invisibility is enforced.
@@ -98,7 +99,11 @@ TRIAGE_PROPS = (
     "triage_proof",
 )
 
-VALID_TRIAGE_STATUS = ("confirmed", "likely_noise", "needs_verification", "unreviewed")
+#: `needs_verification` is gone. The old classifier answered it for almost
+#: everything, because it was the safe-looking answer and nothing punished it,
+#: so it stopped meaning anything. The review's equivalent is `unclear`, which
+#: is recorded as an AI verdict and deliberately changes NOTHING about the rank.
+VALID_TRIAGE_STATUS = ("confirmed", "likely_noise", "unreviewed")
 
 #: What `triage_state` may hold. Anything else is refused rather than stored,
 #: because the board's sections are driven by this and an unknown value would
@@ -292,6 +297,45 @@ class TriageMixin:
             return [dict(r) for r in session.run(
                 query, user_id=user_id, project_id=project_id, limit=limit)]
 
+    def triage_preflight(self, user_id: str, project_id: str) -> dict:
+        """What the confirmation dialog needs to tell the operator, in one read.
+
+        Counts only, never finding text: this crosses two services to reach a
+        browser, and a dialog does not need to name anything.
+        """
+        query = f"""
+        MATCH (n:{_MUTEABLE})
+        WHERE n.user_id = $user_id AND n.project_id = $project_id
+          AND NOT n:Muted
+        WITH n,
+             coalesce(n.triage_state, 'open') AS state,
+             coalesce(n.triage_run_id, '') AS run_id
+        RETURN count(n) AS in_scope,
+               count(CASE WHEN run_id = '' THEN 1 END) AS never_triaged,
+               count(CASE WHEN state = 'open' THEN 1 END) AS open_findings,
+               max(toString(n.triaged_at)) AS last_triaged_at,
+               // What the review would actually cost: facts and advisories are
+               // skipped, and they are the bulk of a real project.
+               count(CASE WHEN run_id = ''
+                            AND coalesce(n.source, '') <> 'security_check'
+                            AND coalesce(n.source, '') <> 'osv'
+                            AND state = 'open'
+                          THEN 1 END) AS reviewable
+        """
+        with self.driver.session() as session:
+            record = session.run(
+                query, user_id=user_id, project_id=project_id).single()
+        if not record:
+            return {"in_scope": 0, "never_triaged": 0, "open_findings": 0,
+                    "reviewable": 0, "last_triaged_at": None}
+        return {
+            "in_scope": int(record["in_scope"] or 0),
+            "never_triaged": int(record["never_triaged"] or 0),
+            "open_findings": int(record["open_findings"] or 0),
+            "reviewable": int(record["reviewable"] or 0),
+            "last_triaged_at": record["last_triaged_at"],
+        }
+
     def count_triage_findings(self, user_id: str, project_id: str) -> int:
         """How many findings are in triage scope, ignoring the display cap.
 
@@ -308,76 +352,6 @@ class TriageMixin:
             record = session.run(
                 query, user_id=user_id, project_id=project_id).single()
         return int(record["total"]) if record else 0
-
-    def apply_triage_verdicts(self, user_id: str, project_id: str, verdicts: list) -> dict:
-        """Write AI verdicts onto findings.
-
-        `verdicts` is a list of {id, triage_status, triage_confidence,
-        triage_reason, triage_cluster_id}.
-
-        Two guarantees this method is responsible for, both enforced in Cypher
-        rather than trusted to the caller:
-
-        1. **A human verdict is never overwritten.** `triage_source = 'human'`
-           means someone already decided; a re-run must leave it alone, or the
-           operator's judgement silently evaporates on the next triage.
-        2. **The classifier cannot mute.** There is no `SET n:Muted` here and
-           there must never be one. Scanner output reaches the classify prompt,
-           so a model that has been talked into saying "hide me" can at worst
-           write a verdict a human can see and overrule.
-
-        Unknown statuses are dropped rather than written, so a malformed model
-        response cannot invent a state the UI has no meaning for.
-        """
-        clean = []
-        for v in verdicts or []:
-            node_id = (v or {}).get("id")
-            status = (v or {}).get("triage_status")
-            if not node_id or status not in VALID_TRIAGE_STATUS:
-                continue
-            confidence = v.get("triage_confidence")
-            try:
-                confidence = max(0.0, min(1.0, float(confidence)))
-            except (TypeError, ValueError):
-                confidence = None
-            clean.append({
-                "id": str(node_id),
-                "status": status,
-                "confidence": confidence,
-                "reason": str(v.get("triage_reason") or "")[:500],
-                "cluster_id": str(v.get("triage_cluster_id") or "") or None,
-            })
-
-        if not clean:
-            return {"updated": 0, "skipped_human": 0, "rejected": len(verdicts or [])}
-
-        query = f"""
-        UNWIND $verdicts AS verdict
-        MATCH (n:{_MUTEABLE})
-        WHERE (n.id = verdict.id OR n.finding_id = verdict.id)
-          AND n.user_id = $user_id AND n.project_id = $project_id
-        WITH n, verdict, n.triage_source = 'human' AS isHuman
-        FOREACH (_ IN CASE WHEN isHuman THEN [] ELSE [1] END |
-          SET n.triage_status     = verdict.status,
-              n.triage_confidence = verdict.confidence,
-              n.triage_reason     = verdict.reason,
-              n.triage_cluster_id = verdict.cluster_id,
-              n.triage_source     = 'ai',
-              n.triaged_at        = datetime()
-        )
-        RETURN count(CASE WHEN isHuman THEN 1 END) AS skipped_human,
-               count(CASE WHEN isHuman THEN NULL ELSE 1 END) AS updated
-        """
-        with self.driver.session() as session:
-            record = session.run(
-                query, verdicts=clean, user_id=user_id, project_id=project_id
-            ).single()
-
-        return {
-            "updated": (record["updated"] if record else 0) or 0,
-            "skipped_human": (record["skipped_human"] if record else 0) or 0,
-            "rejected": len(verdicts or []) - len(clean),
-        }
 
     def apply_triage_scores(self, user_id: str, project_id: str, rows: list,
                             guard_updated_at: bool = True) -> dict:
@@ -575,7 +549,8 @@ class TriageMixin:
         """Record an operator's own verdict, which the AI may not later overwrite.
 
         Stamping `triage_source = 'human'` is what makes the skip in
-        `apply_triage_verdicts` fire on the next run.
+        `apply_triage_scores` fire on the next run: facts and factors keep
+        updating, but the verdict stays theirs.
         """
         if status not in VALID_TRIAGE_STATUS:
             return {"updated": False, "reason": f"invalid status {status!r}"}
