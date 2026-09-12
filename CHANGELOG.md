@@ -7,169 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **Priority Board and CypherFix are one job with one result.** Three buttons
-  used to send the same message under two names, running one job with two halves
-  that ignored each other: the board's order came from a points formula, and
-  CypherFix's fix list came from a second LLM run that invented its own
-  priorities and, on a large project, never saw most of the findings. There is
-  now one button, one confirmation dialog carrying the project's own numbers,
-  and one run whose result both pages read.
-
-  **The points formula is gone.** It added up signals, which counted one fact
-  several times (severity, CVSS score and CVSS vector all describe the same
-  thing), summed signals that mean the same thing (KEV + EPSS + a public proof
-  of concept), and ADDED impact to likelihood when risk is impact TIMES
-  likelihood. The new model estimates four probabilities and multiplies them:
-  how likely a finding is to be real, how likely it is to be exploited, how bad
-  that would be, and how reachable it is. Fixed rules then place it in one of
-  four tiers (Act now, Act soon, Plan, Track) and the tier is built into the
-  0-100 score, so a bigger number always means more urgent. Every row shows the
-  four factors and the fact each came from, so the position is arguable rather
-  than asserted.
-
-  Measured on a real graph: on the project that showed the symptom worst,
-  NDCG@25 went from -0.30 to 1.00, and the eight "IP Address (Private)" GitHub
-  "secrets" that were sitting in the top 25 (at 540 points each) left it,
-  replaced by actual credentials. Three decisions drive that: an ungraded OSV
-  advisory is scored as unknown rather than as info (all 419 PYSEC advisories in
-  the dev graph write `severity: info` to mean "never graded"); a writer that
-  stamps the same severity on everything it creates cannot raise a finding above
-  its class; and nothing without impact leaves Track unless something proved it.
-
-  **The AI's job changed.** It no longer writes a "why" sentence about a
-  ranking it did not produce. It reads the evidence a scanner captured (the
-  request and the response, the file path, the validation result) and corrects
-  the four factors against it, which is the one thing rules cannot do: a nuclei
-  "exposed .env" whose stored response is the site's own homepage is a false
-  positive, and only the response body reveals that. Every quote it gives is
-  verified as a substring of what it was sent, an unverifiable correction
-  becomes "no change", numbers are clamped, only eight named facts can be
-  disputed, and a proven finding cannot be talked down. It binds no tools at
-  all. Findings it cannot usefully judge (missing headers, dependency
-  advisories) never reach it, which on a real project is most of the graph.
-
-  **A run is now a first-class object.** It exists as a row, so version
-  activation, version save, the delta preview, project import and project delete
-  can finally see one and wait for it. Everything happens in memory until the
-  last step, so a run that is stopped or refused leaves the previous ranking
-  exactly as it was, and a run whose agent dies stops blocking the project after
-  ten minutes. Scans deliberately do NOT block: any finding a scan changes
-  mid-run is skipped at publish time and picked up by the next run.
-
-  **Fix items are linked to their findings.** Nothing tied a remediation to a
-  finding before, so de-duplication relied on the model's wording. Findings that
-  share a fix are grouped (one CVE on three hosts is one item; every advisory on
-  one package is one upgrade), and the list is upserted by group in one
-  transaction. Anything a person has dismissed, or the CodeFix agent is working
-  on, is never rewritten or deleted: the old path deleted every pending item and
-  then recreated them, outside a transaction.
-
-  **The board learns from Real and False positive clicks.** A detector that is
-  right everywhere is still wrong on somebody's estate, and nothing in the model
-  could ever learn that: muting the same class of noise after every scan was the
-  only recourse. Each verdict is now counted against the detector that produced
-  the finding (a nuclei template, a TruffleHog detector, a GVM test), and the
-  "real" factor for that detector becomes a Beta posterior over those verdicts,
-  with the detection rule as its prior. Ten labels move it halfway, so one
-  unlucky click cannot re-rank a board. It never crosses users, never learns a
-  detector below 0.1 (a detector nobody can see is one nobody discovers was
-  right), and never talks down something an exploit proved. The factor line says
-  so on hover: `real 34%; detected by github_hunt; you judged 2 of 30 of these
-  real`.
-
-  Three settings that no code ever read (`triageConfidenceThreshold`,
-  `triageAutoMute`, `triageTopNForLlm`) are replaced by one that does:
-  **Priority Board: findings the AI reviews**, which caps what a run costs. Set
-  it to 0 for a fully ranked, AI-free board.
-
-### Security
-
-- **The triage agent's `query_graph` ran LLM-written Cypher unscoped, in a write
-  session**, while its docstring claimed tenant filtering was injected. It now
-  goes through the same chokepoint as the main agent (refuse write clauses, then
-  `scope_query`) in a read-only session. Both LLM tools have since been removed
-  from triage entirely, so an injected instruction has nothing to reach for.
-- **Two triage collection queries read other tenants' data** by traversing
-  through the shared, tenant-key-less `CVE` node into another project's
-  `ExploitGvm` counts and `Technology` names. Both are anchored.
-- **The CodeFix agent's filesystem tools had no path confinement.** `../` and
-  absolute paths escaped the checked-out repository into the agent container,
-  whose environment holds the Neo4j password, the internal API key and the
-  database URL. Every path-taking tool now resolves through one helper that
-  refuses absolute paths, parent traversal and symlinks pointing out.
-- **The CodeFix repository came from LLM-written remediation text.** It comes
-  only from project settings now: `targetRepo` decides where the agent clones
-  and pushes.
-- **An unanswered CodeFix approval prompt auto-ACCEPTED the change after five
-  minutes.** It rejects, and a rejected edit is now reverted on disk rather than
-  being left there to be committed.
-- **A CodeFix session accepted any remediation id**, including another
-  project's, because the internal key bypasses the route's own ownership guard.
-  It is bound to the ticket's project.
-- **Provider exceptions reached the browser** and were logged with their
-  tracebacks unredacted, which is exactly where an SDK puts the key it was
-  called with. The socket gets an error code and a fixed sentence; the log
-  filter redacts `exc_info` and knows `tvly-`, `AIza`, `xai-` and PDCP key
-  shapes.
-- **`/graph/triage` refuses with 503** when `INTERNAL_API_KEY` is unset or still
-  `changeme`, rather than inheriting the global fail-open default.
-- **`PUT /api/remediations/[id]` spread the whole request body into the update**
-  and `GET` passed `sort` straight into `orderBy`. Both work from a whitelist.
-
-### Fixed
-
-- **The agent's exploitation proof never reached the recon graph.** Every CVE
-  match in the chain writer supplied tenant keys, but `CVE` is a shared
-  reference node and carries none, so all of them matched nothing, every time.
-  The dev graph had zero `FINDING_RELATES_CVE` relationships, which means the
-  board could never show a single proven finding.
-- **A crawl undid what a fuzzing run proved.** Two writers that never test for
-  injectability assigned `is_injectable = false` unconditionally, so a parameter
-  could be injectable on Monday and not on Tuesday with nothing having changed.
-- **`nmap_nse` findings had no id**, so triage could never address one: it could
-  not be muted, given a verdict, or linked to a fix. Its CVE was also stored
-  where the scorer does not read.
-- **A GVM finding that came back stayed "remediated" for ever.** The flag was
-  set when a scan stopped reporting a CVE and never cleared.
-- **One project's CriminalIP reading overwrote another project's NVD score** on
-  the shared CVE node.
-- **`RESOLVES_TO` and `WAF_BYPASS_VIA` were duplicated on every run**, because
-  `datetime()` sat inside the MERGE pattern and is therefore part of the key.
-  Anything counting them counted scans, not facts.
-- **The AI-surface writer deleted its own evidence.** `SET v += $props` with a
-  None value removes that property, so a rescan that could not read the evidence
-  erased the evidence a previous scan had captured. Its `COALESCE` arguments
-  were also reversed, so "keep what is there" always overwrote.
-- **Every GraphQL vulnerability was dropped when no endpoint was confirmed**:
-  `urlparse` was imported inside one branch, so the other call site raised.
-  Separately, an OSINT error handler logged through an undefined `logger`, so it
-  raised while handling an error and took the whole batch with it.
-- **JS recon overwrote the HTTP probe's `status_code`**, which is what
-  reachability is read from, so a finding on a live endpoint could read as
-  unreachable.
-- **A rescan deleted everything you had decided about a finding.** Every
-  scanner deleted its findings up front and re-created them, which took the
-  mute you applied, the verdict you recorded, the AI's cached review and the
-  link from a fix item back to the finding with them. Re-muting the same noise
-  after every scan was the visible half; a fix item pointing at a finding id
-  that no longer existed was the invisible one. Scans now refresh what they
-  still report and remove only what they stopped reporting, and a finding a
-  person touched is kept and marked resolved rather than deleted.
-- **Two projects scanning the same target collided.** Per-project findings were
-  unique on `id` alone, so one id could exist once in the whole database. Either
-  one project's scan took over and re-pointed the other's node, or the second
-  project's finding was silently lost to a swallowed constraint error. It is
-  also why importing a project export deleted the project it came from.
-
 ## [6.15.0] - 2026-09-12
 
 ### Added
 
-- **Authenticated Session Recording: one logged-in identity per project.** Most of an application only exists after login, and an anonymous scan never sees it. Set the session once and every consumer attaches it to in-scope hosts: httpx, katana, hakrawler, ffuf, the ZAP Ajax Spider, arjun, kiterunner, nuclei, the AI-surface and GraphQL probes, the partial-recon equivalents, and the agent's replay, chromium browser and `execute_curl`. Record it by driving your own browser through the capture proxy and logging in once -- the ingest worker extracts the cookie/bearer/CSRF before redaction, so the raw secret never lands in the traffic corpus -- or paste a cookie, bearer token or custom headers by hand. Two switches decide who uses it, recon and agent independently and both on by default, so the agent can stay anonymous for access-control testing while recon maps the authenticated surface. On a lab target the same scan found 2 URLs logged out and 198 logged in.
+- **Authenticated Session Recording: one logged-in identity per project.** Most of an application only exists after login. Set the session once and every consumer attaches it to in-scope hosts: httpx, katana, hakrawler, ffuf, the ZAP Ajax Spider, arjun, kiterunner, nuclei, the AI-surface and GraphQL probes, partial recon, and the agent's replay, browser and `execute_curl`. Record it by driving your own browser through the capture proxy and logging in once, or paste a cookie, bearer token or headers by hand. Two switches pick who uses it (recon and agent, independently), so the agent can stay anonymous for access-control testing. On a lab target the same scan found 2 URLs logged out and 198 logged in. The value is write-only and never returned to a browser; it attaches only to in-scope hosts, and since most tools apply one header set to a whole targets file, one out-of-scope host means it attaches to none of them. With a session attached nuclei drops OAST and redirects are confined to the same host, because a public collector and a cross-host redirect are both off-scope. See [Authenticated Session Recording](https://github.com/samugit83/redamon/wiki/Authenticated-Session-Recording).
 
-  The stored value is **write-only**: served to the scanners and the agent, never returned to a browser. It attaches only to in-scope hosts (exact, `*.suffix` or CIDR, minus RoE exclusions), and because most tools apply one header set to a whole targets file, a single out-of-scope host means the session attaches to none of them rather than leaking cross-origin. With a session attached, nuclei drops OAST and both nuclei and httpx confine redirects to the same host: interactsh callbacks go to a public third-party collector, and a cross-host redirect names a host that was never scope-checked. Recording is time-boxed to 30 minutes, single-active across projects, and the proxy holds no signing key. See [Authenticated Session Recording](https://github.com/samugit83/redamon/wiki/Authenticated-Session-Recording).
+### Changed
+
+- **Priority Board and CypherFix are one job with one result.** Three buttons ran one job with two halves that ignored each other: the board ordered by a points formula while CypherFix's fix list came from a second LLM run with its own priorities that, on a large project, never saw most findings. Now one button, one run, one result both pages read.
+
+  **The points formula is gone.** Adding up signals counted one fact several times, summed signals that mean the same thing, and added impact to likelihood when risk is impact times likelihood. The new model estimates four probabilities and multiplies them (real, exploited, impact, reachable), then fixed rules place the finding in one of four tiers built into the 0-100 score, so a bigger number always means more urgent. Every row shows the four factors and the fact each came from. On the worst-affected project NDCG@25 went from -0.30 to 1.00, and eight "IP Address (Private)" GitHub "secrets" left the top 25, replaced by actual credentials.
+
+  **The AI now corrects rather than narrates.** It reads the evidence a scanner captured and adjusts the four factors against it, which rules cannot do: a nuclei "exposed .env" whose stored response is the site's own homepage is a false positive, and only the body reveals that. Quotes are verified as substrings of what it was sent, numbers are clamped, only eight named facts can be disputed, a proven finding cannot be talked down, and it binds no tools.
+
+  **The board learns from Real and False positive clicks.** Each verdict counts against the detector that produced the finding, and that detector's "real" factor becomes a Beta posterior with the detection rule as prior. Ten labels move it halfway, so one click cannot re-rank a board; it never crosses users and never talks down something an exploit proved.
+
+  **Fix items are linked to their findings**, so findings sharing a fix are grouped and upserted by group in one transaction, and anything dismissed or in progress is never rewritten. **A run is a first-class row**, so version activation, delta preview, import and delete can see one and wait; everything stays in memory until the last step, so a stopped run leaves the previous ranking intact. Three settings no code read are replaced by one that does: **Priority Board: findings the AI reviews** (0 for a fully ranked, AI-free board).
+
+### Security
+
+- **The triage agent's `query_graph` ran LLM-written Cypher unscoped, in a write session**, while its docstring claimed tenant filtering. It now goes through the same chokepoint as the main agent in a read-only session, and both LLM tools have been removed from triage entirely. Two triage queries also read other tenants' data by traversing the shared, tenant-key-less `CVE` node; both are anchored.
+- **The CodeFix agent's filesystem tools had no path confinement.** `../` and absolute paths escaped the checked-out repo into the agent container, whose environment holds the Neo4j password and internal API key. Every path now resolves through one helper that refuses absolute paths, parent traversal and out-pointing symlinks.
+- **CodeFix took its repository from LLM-written remediation text**; it comes from `targetRepo` in project settings. A session also accepted any remediation id, including another project's, and is now bound to its ticket's project.
+- **An unanswered CodeFix approval prompt auto-ACCEPTED after five minutes.** It rejects, and a rejected edit is reverted on disk rather than left to be committed.
+- **Provider exceptions reached the browser** and were logged with unredacted tracebacks, which is where an SDK puts the key it was called with. Also: `/graph/triage` refuses with 503 when `INTERNAL_API_KEY` is unset or `changeme`, and the remediations route works from a whitelist instead of spreading the request body into the update.
+
+### Fixed
+
+- **The agent's exploitation proof never reached the recon graph.** Chain-writer CVE matches supplied tenant keys, but `CVE` is a shared node that carries none, so every match failed and the board could never show a proven finding.
+- **A rescan deleted everything you had decided about a finding.** Scanners deleted their findings up front and re-created them, taking the mute, the verdict, the cached AI review and the link from a fix item with them. Scans now refresh what they still report and remove only what they stopped reporting.
+- **Two projects scanning the same target collided.** Per-project findings were unique on `id` alone, so one project's scan took over the other's node or lost it to a swallowed constraint error. It is also why importing a project export deleted the project it came from.
+- **Writers destroyed each other's facts.** A crawl set `is_injectable = false` unconditionally, undoing what a fuzzing run proved; JS recon overwrote the HTTP probe's `status_code`, so a live endpoint could read as unreachable; and the AI-surface writer erased its own evidence (`SET v += $props` with None removes the property, and its `COALESCE` arguments were reversed).
+- **`nmap_nse` findings had no id**, so triage could never mute, judge or fix one. A GVM finding that came back stayed "remediated" for ever, and one project's CriminalIP reading overwrote another's NVD score on the shared CVE node.
+- **`RESOLVES_TO` and `WAF_BYPASS_VIA` were duplicated on every run**, because `datetime()` sat inside the MERGE pattern and is part of the key. Separately, every GraphQL vulnerability was dropped when no endpoint was confirmed (`urlparse` imported inside one branch), and an OSINT handler raised on an undefined `logger`, taking the batch with it.
 
 ## [6.14.1] - 2026-09-09
 
