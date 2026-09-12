@@ -699,6 +699,10 @@ class SecretMixin:
         asset_label = self.TRUFFLEHOG_ASSET_LABELS.get(
             asset_kind, "MultiscannerEndpoint")
 
+        # X7: taken BEFORE the clear and the ingest, so everything this run
+        # writes has a later `updated_at` and survives the prune at the end.
+        run_started_at = run_timestamp()
+
         with self.driver.session() as session:
             # SCOPED clear, never the blanket one: this reaps only this source's
             # previous run (and any partial nodes a crashed run left behind).
@@ -881,5 +885,14 @@ class SecretMixin:
 
             if stats["errors"]:
                 print(f"[!][graph-db] {len(stats['errors'])} errors occurred")
+
+        # X7: the clear above spares the findings a person touched, so this is
+        # the only thing that ever marks one of them resolved when the secret is
+        # gone. Scoped to THIS source id (`MultiscannerFinding.source`), so a
+        # Docker run cannot touch HuggingFace findings. Only after an ingest
+        # that wrote something: a run that wrote nothing is a failed scan.
+        if stats["findings_created"]:
+            stats["pruned"] = self.prune_unseen_findings(
+                user_id, project_id, [source], run_started_at)
 
         return stats

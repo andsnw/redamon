@@ -252,5 +252,23 @@ class TestEndToEndOnCollectedRows(unittest.TestCase):
         self.assertGreater(served.score, shipped.score)
 
 
+class TestTheDetectorFieldsReachTheModel(unittest.TestCase):
+    """Strategy row 6. `detector_key` keys a GVM finding on its NVT OID. If the
+    vulnerabilities query does not return one, every GVM finding falls back to a
+    per-finding key, collects one label each, and the board never learns."""
+
+    def test_the_vulnerabilities_query_returns_the_gvm_oid(self):
+        query = next(q for q in FINDING_QUERIES if q["name"] == "vulnerabilities")["query"]
+        self.assertIn("coalesce(v.oid, v.nvt_oid) AS oid", query)
+
+    def test_the_oid_produces_a_per_detector_key(self):
+        row = normalise_finding_row({"id": "gvm-1", "label": "Vulnerability",
+                                     "source": "gvm", "oid": "1.3.6.1.4.1.25623.1.0.9"})
+        other = normalise_finding_row({"id": "gvm-2", "label": "Vulnerability",
+                                       "source": "gvm", "oid": "1.3.6.1.4.1.25623.1.0.9"})
+        self.assertEqual(sm.detector_key(row), sm.detector_key(other))
+        self.assertEqual(sm.detector_key(row), "gvm:1.3.6.1.4.1.25623.1.0.9")
+
+
 if __name__ == "__main__":
     unittest.main()

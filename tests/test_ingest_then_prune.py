@@ -210,6 +210,47 @@ class TestTrufflehogKeepsWhatAPersonJudged(unittest.TestCase):
         self.assertIn("{where}", self._clear())
 
 
+class TestAFindingThatComesBackIsNoLongerStale(unittest.TestCase):
+    """Regression. `stale_since` was only ever SET. The ingest MERGE refreshes
+    `updated_at` and nothing else, so a human-confirmed finding the scanner
+    reported again stayed "Resolved" for ever. The prune now lifts the stamp
+    from anything of its sources that this run touched."""
+
+    SRC = source("graph_db/mixins/base_mixin.py")
+
+    def test_the_prune_revives_what_this_run_saw_again(self):
+        prune = method_body(self.SRC, "prune_unseen_findings")
+        self.assertIn("REMOVE n.stale_since", prune)
+        self.assertIn("n.updated_at >= datetime($since)", prune)
+
+    def test_it_reports_how_many_it_revived(self):
+        self.assertIn('"revived"', method_body(self.SRC, "prune_unseen_findings"))
+
+
+class TestTrufflehogPrunesAfterASuccessfulIngest(unittest.TestCase):
+    """Regression. The clear spared muted and human-judged findings, and then
+    NOTHING ever marked one of them resolved when its secret was gone: a
+    human-confirmed TruffleHog finding stayed open and ranked indefinitely."""
+
+    SRC = source("graph_db/mixins/secret_mixin.py")
+
+    def _ingest(self):
+        return method_body(self.SRC, "update_graph_from_trufflehog")
+
+    def test_it_prunes_by_its_own_source_id(self):
+        """`MultiscannerFinding.source` is the per-source id (docker, github),
+        so a Docker run cannot touch the HuggingFace findings."""
+        self.assertIn("[source], run_started_at", self._ingest())
+
+    def test_it_prunes_only_when_the_ingest_produced_findings(self):
+        self.assertIn('if stats["findings_created"]:', self._ingest())
+
+    def test_the_timestamp_is_taken_before_the_clear(self):
+        body = self._ingest()
+        self.assertLess(body.index("run_started_at = run_timestamp()"),
+                        body.index("self.clear_trufflehog_data("))
+
+
 class TestEverySannerGotTheSameTreatment(unittest.TestCase):
     """The half-fix this guards against: leaving two of four scanners still
     deleting the operator's work, so whether a mute survived depended on which

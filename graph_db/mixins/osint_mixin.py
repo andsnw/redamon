@@ -21,6 +21,7 @@ import json
 from datetime import datetime, timezone
 
 from graph_db.cert_key import build_cert_key
+from graph_db.cpe_resolver import _is_ip_address
 from urllib.parse import urlparse as _urlparse
 
 
@@ -2345,9 +2346,13 @@ class OsintMixin:
                         # The BaseURL, not the Endpoint, is what a host owns.
                         # Subdomain first: uncover expands a target into hosts,
                         # and hanging every URL off the apex Domain loses which
-                        # host it was actually found on.
+                        # host it was actually found on. An IP literal is NOT a
+                        # Subdomain: IP mode mints a dashed placeholder name for
+                        # it ("1.2.3.4" -> "1-2-3-4", http_mixin), so a dotted
+                        # Subdomain would be a duplicate host nothing else
+                        # links to. Those fall through to the Domain.
                         host = _urlparse(url).hostname or ""
-                        if host:
+                        if host and not _is_ip_address(host):
                             session.run(
                                 """
                                 MATCH (u:BaseURL {url: $base_url, user_id: $user_id, project_id: $project_id})

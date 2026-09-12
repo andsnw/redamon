@@ -322,7 +322,7 @@ class TestAHumanVerdictIsNeverOverwritten(unittest.TestCase):
             {"updated": 0, "skipped_human": 1, "skipped_changed": 0}])
         client.apply_triage_scores(UID, PID, [
             {"id": "v1", "score": 10.0, "status": "likely_noise"}])
-        self.assertIn("n.triage_source = 'human'", client.last)
+        self.assertIn("coalesce(n.triage_source, '') = 'human' AS isHuman", client.last)
         self.assertIn("FOREACH", client.last)          # the conditional write
 
     def test_the_facts_still_update_on_a_human_owned_finding(self):
@@ -420,7 +420,7 @@ class TestApplyTriageScores(unittest.TestCase):
     def test_a_human_owned_finding_keeps_its_verdict(self):
         client = self._client(updated=0, skipped_human=1)
         client.apply_triage_scores(UID, PID, [self._row()])
-        self.assertIn("n.triage_source = 'human'", client.last)
+        self.assertIn("coalesce(n.triage_source, '') = 'human' AS isHuman", client.last)
         self.assertIn("isHuman", client.last)
 
     def test_a_verdict_is_written_only_when_one_was_decided(self):
@@ -532,6 +532,21 @@ class TestTheTriageTableExcludesMutedFindings(unittest.TestCase):
         client = FakeClient()
         client.list_muted(UID, PID)
         self.assertIn("MATCH (n:Muted)", client.last)
+
+
+class TestAFreshFindingCanReceiveAVerdict(unittest.TestCase):
+    """Regression. The publish computed `n.triage_source = 'human' AS isHuman`.
+    On a node no run has touched that is NULL, `NOT NULL` is NULL, and the
+    FOREACH guarding the AI verdict never fired: a fresh project's first triage
+    run wrote scores but no verdicts, silently. The live proof is
+    tests/test_triage_scoring_graph_live.py; this pins the clause."""
+
+    def test_is_human_is_null_safe(self):
+        client = FakeClient()
+        client.apply_triage_scores(UID, PID, [{"id": "v1", "score": 1.0}])
+        publish = "\n".join(client.queries)
+        self.assertIn("coalesce(n.triage_source, '') = 'human' AS isHuman", publish)
+        self.assertNotIn("\n             n.triage_source = 'human' AS isHuman", publish)
 
 
 if __name__ == "__main__":

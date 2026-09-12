@@ -804,6 +804,10 @@ _CONFIRMABLE_LABELS = (
     "Vulnerability", "JsReconFinding", "Secret", "MultiscannerFinding",
     "GithubSecret", "GithubSensitiveFile", "MalPackageFinding", "ExploitGvm",
 )
+#: One step proves a handful of findings, not hundreds. The list comes from the
+#: model, and each id costs a label scan of the project, so it is capped rather
+#: than trusted.
+_MAX_CONFIRMS_IDS = 25
 
 _CVE_REGEX = re.compile(r"\bCVE-\d{4}-\d{4,7}\b", re.IGNORECASE)
 _URL_PATH_REGEX = re.compile(r"(?<![\w/])(/[A-Za-z0-9][A-Za-z0-9_\-./]{0,200})")
@@ -877,20 +881,22 @@ def _resolve_finding_bridges(
     # `id`, MalPackageFinding uses `finding_id`), and the edge is created only
     # when the node exists, so a hallucinated id writes nothing.
     finding_ids = [str(fid).strip() for fid in (related_finding_ids or [])
-                   if fid and str(fid).strip()]
+                   if fid and str(fid).strip()][:_MAX_CONFIRMS_IDS]
     if finding_ids:
+        # The labels are in the pattern, not in a WHERE on labels(): an
+        # unlabelled property match is a scan of every node in the database
+        # per id, and this runs inside the agent process.
         session.run(
-            """
+            f"""
             UNWIND $finding_ids AS target_id
-            MATCH (f:ChainFinding {finding_id: $fid})
-            OPTIONAL MATCH (target {user_id: $uid, project_id: $pid})
-            WHERE (target.id = target_id OR target.finding_id = target_id)
-              AND any(l IN labels(target) WHERE l IN $labels)
+            MATCH (f:ChainFinding {{finding_id: $fid}})
+            OPTIONAL MATCH (target:{"|".join(_CONFIRMABLE_LABELS)}
+                            {{user_id: $uid, project_id: $pid}})
+            WHERE target.id = target_id OR target.finding_id = target_id
             FOREACH (_ IN CASE WHEN target IS NOT NULL THEN [1] ELSE [] END |
                 MERGE (f)-[:CONFIRMS]->(target))
             """,
-            {"fid": finding_id, "finding_ids": finding_ids,
-             "labels": list(_CONFIRMABLE_LABELS), "uid": uid, "pid": pid},
+            {"fid": finding_id, "finding_ids": finding_ids, "uid": uid, "pid": pid},
         )
 
     # FOUND_ON -> IP or Subdomain (pre-sort by type, then batch each)

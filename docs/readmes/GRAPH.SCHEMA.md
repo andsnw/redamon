@@ -216,6 +216,11 @@ table at once. The prune runs ONLY after an ingest that actually produced
 findings: a scan that reported nothing is evidence the scan failed, not evidence
 the findings are gone.
 
+The stamp is lifted again the moment the owning scanner reports the finding: the
+same prune REMOVEs `stale_since` from anything of its sources the run touched
+(`updated_at` at or after the run started). Nothing else clears it, so without
+this a human-confirmed finding that came back would stay Resolved for ever.
+
 `Muted` carries no colour in `webapp/src/app/graph/config/colors.ts` on purpose:
 it is never rendered, because it never reaches the renderer.
 

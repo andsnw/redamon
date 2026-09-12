@@ -668,5 +668,38 @@ class TestWorkedExample(unittest.TestCase):
         self.assertGreater(sm.score_for("T1", grouped), sm.score_for("T1", 0.51))
 
 
+class TestProofReadBackFromTheGraph(unittest.TestCase):
+    """Strategy row 3. The CONFIRMS edge is only worth writing if the model reads
+    it back: the proof fact query collects the confirmed finding ids, the facts
+    reducer folds them into `proven_finding_ids`, and `is_proven` turns that into
+    C = 1.0 and Act now. A break in any link leaves a demonstrated finding
+    wherever its detection confidence put it."""
+
+    def _facts(self, finding_ids):
+        from cypherfix_triage.fact_queries import build_project_facts
+        return build_project_facts({"proof": [{
+            "chain_id": "cf1", "finding_type": "vulnerability_confirmed",
+            "cve_ids": [], "finding_ids": finding_ids, "hosts": [],
+            "target_host": "",
+        }]})
+
+    def test_a_confirmed_finding_scores_as_proven(self):
+        row = finding(id="v-proved", source="nuclei", severity="low")
+        result = sm.score(row, self._facts(["v-proved"]), {})
+        self.assertEqual(result.tier, "T1")
+        self.assertEqual(sm.confidence(row, self._facts(["v-proved"])).value, 1.0)
+
+    def test_the_same_finding_without_the_edge_is_not_proven(self):
+        """The control: it is the edge doing the work, not the fixture."""
+        row = finding(id="v-proved", source="nuclei", severity="low")
+        result = sm.score(row, self._facts(["someone-else"]), {})
+        self.assertNotEqual(result.tier, "T1")
+
+    def test_nulls_in_the_collected_ids_are_harmless(self):
+        """Cypher's collect() leaves Nones in when the OPTIONAL MATCH missed."""
+        facts = self._facts([None, "", "v-proved"])
+        self.assertEqual(facts.proven_finding_ids, {"v-proved"})
+
+
 if __name__ == "__main__":
     unittest.main()

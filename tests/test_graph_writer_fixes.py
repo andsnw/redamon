@@ -235,15 +235,25 @@ class TestProofCanBeTiedToTheFindingItProved(unittest.TestCase):
 
     def test_it_is_tenant_scoped(self):
         """A proof must never point at another project's finding."""
-        block = self.SRC[self.SRC.index("[:CONFIRMS]") - 600:
+        block = self.SRC[self.SRC.index("finding_ids = [str(fid)"):
                          self.SRC.index("[:CONFIRMS]") + 100]
         self.assertIn("user_id: $uid, project_id: $pid", block)
 
     def test_it_only_confirms_a_finding_label(self):
         """An unlabelled MATCH would let a hallucinated id point CONFIRMS at any
-        node in the project, so the target label is checked against a fixed
-        list."""
-        self.assertIn("any(l IN labels(target) WHERE l IN $labels)", self.SRC)
+        node in the project. Regression, too: the label used to be checked in a
+        WHERE on labels(), which made the OPTIONAL MATCH a scan of every node in
+        the database per id. The labels now live in the pattern itself."""
+        block = self.SRC[self.SRC.index("UNWIND $finding_ids"):self.SRC.index("[:CONFIRMS]")]
+        self.assertIn('OPTIONAL MATCH (target:{"|".join(_CONFIRMABLE_LABELS)}', block)
+        self.assertNotIn("labels(target)", block)
+
+    def test_the_id_list_is_capped(self):
+        """Regression. The list comes from the model and each id costs a label
+        scan, inside the agent process. Hundreds of ids must not be possible."""
+        self.assertIn("[:_MAX_CONFIRMS_IDS]", self.SRC)
+        m = re.search(r"_MAX_CONFIRMS_IDS = (\d+)", self.SRC)
+        self.assertTrue(m and 1 <= int(m.group(1)) <= 100)
 
     def test_the_confirmable_labels_match_the_scoreable_ones(self):
         """A CONFIRMS to a label the score model does not read back as proof
@@ -260,7 +270,7 @@ class TestProofCanBeTiedToTheFindingItProved(unittest.TestCase):
         """The proof link is only ever created from an id the agent explicitly
         reported, never inferred from evidence text, because a wrong CONFIRMS is
         worse than a missing one."""
-        block = self.SRC[self.SRC.index("[:CONFIRMS]") - 600:
+        block = self.SRC[self.SRC.index("finding_ids = [str(fid)"):
                          self.SRC.index("[:CONFIRMS]") + 100]
         self.assertIn("related_finding_ids", block)
         self.assertNotIn("_auto_extract", block)

@@ -407,7 +407,9 @@ class TriageMixin:
         WHERE (n.id = row.id OR n.finding_id = row.id)
           AND n.user_id = $user_id AND n.project_id = $project_id
         WITH n, row,
-             n.triage_source = 'human' AS isHuman,
+             // coalesce, or a never-triaged node (triage_source NULL) makes
+             // `NOT isHuman` NULL and the verdict is silently never written.
+             coalesce(n.triage_source, '') = 'human' AS isHuman,
              (NOT $guard
               OR row.seen_updated_at IS NULL
               OR toString(n.updated_at) = row.seen_updated_at) AS unchanged

@@ -220,7 +220,26 @@ class BaseMixin:
         RETURN size(doomed) AS pruned, stale
         """
 
+        # A kept finding the scanner reports AGAIN is alive again. Nothing else
+        # ever clears `stale_since` (the ingest MERGE only refreshes
+        # `updated_at`), so without this a human-confirmed finding that came
+        # back would stay "Resolved" on the board for ever.
+        revive = f"""
+        MATCH (n)
+        WHERE n.user_id = $uid AND n.project_id = $pid
+          AND ({_FINDING_LABEL_PREDICATE})
+          AND coalesce(n.source, '') IN $sources
+          AND n.stale_since IS NOT NULL
+          AND n.updated_at >= datetime($since)
+        REMOVE n.stale_since
+        RETURN count(n) AS revived
+        """
+
         with self.driver.session() as session:
+            revived = session.run(
+                revive, uid=user_id, pid=project_id, sources=sources,
+                since=run_started_at,
+            ).single()
             record = session.run(
                 query, uid=user_id, pid=project_id, sources=sources,
                 since=run_started_at,
@@ -229,10 +248,11 @@ class BaseMixin:
         stats = {
             "pruned": int((record["pruned"] if record else 0) or 0),
             "stale": int((record["stale"] if record else 0) or 0),
+            "revived": int((revived["revived"] if revived else 0) or 0),
         }
         print(f"[*][graph-db] Pruned {stats['pruned']} findings no longer "
               f"reported by {', '.join(sources)}; kept {stats['stale']} muted "
-              f"or human-judged as stale")
+              f"or human-judged as stale; revived {stats['revived']}")
         return stats
 
     def clear_recon_data(self, user_id: str, project_id: str) -> dict:
