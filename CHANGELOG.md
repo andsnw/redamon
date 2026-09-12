@@ -163,6 +163,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project's finding was silently lost to a swallowed constraint error. It is
   also why importing a project export deleted the project it came from.
 
+## [6.15.0] - 2026-09-12
+
+### Added
+
+- **Authenticated Session Recording: one logged-in identity per project.** Most of an application only exists after login, and an anonymous scan never sees it. Set the session once and every consumer attaches it to in-scope hosts: httpx, katana, hakrawler, ffuf, the ZAP Ajax Spider, arjun, kiterunner, nuclei, the AI-surface and GraphQL probes, the partial-recon equivalents, and the agent's replay, chromium browser and `execute_curl`. Record it by driving your own browser through the capture proxy and logging in once -- the ingest worker extracts the cookie/bearer/CSRF before redaction, so the raw secret never lands in the traffic corpus -- or paste a cookie, bearer token or custom headers by hand. Two switches decide who uses it, recon and agent independently and both on by default, so the agent can stay anonymous for access-control testing while recon maps the authenticated surface. On a lab target the same scan found 2 URLs logged out and 198 logged in.
+
+  The stored value is **write-only**: served to the scanners and the agent, never returned to a browser. It attaches only to in-scope hosts (exact, `*.suffix` or CIDR, minus RoE exclusions), and because most tools apply one header set to a whole targets file, a single out-of-scope host means the session attaches to none of them rather than leaking cross-origin. With a session attached, nuclei drops OAST and both nuclei and httpx confine redirects to the same host: interactsh callbacks go to a public third-party collector, and a cross-host redirect names a host that was never scope-checked. Recording is time-boxed to 30 minutes, single-active across projects, and the proxy holds no signing key. See [Authenticated Session Recording](https://github.com/samugit83/redamon/wiki/Authenticated-Session-Recording).
+
 ## [6.14.1] - 2026-09-09
 
 ### Fixed
