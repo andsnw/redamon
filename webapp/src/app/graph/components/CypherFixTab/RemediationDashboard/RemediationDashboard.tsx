@@ -117,7 +117,9 @@ export function RemediationDashboard({
           <TriageRunButton
             projectId={projectId ?? null}
             onConfirm={onStartTriage}
-            className={styles.triageBtn}
+            // This dashboard only renders when fix items exist, and fix items
+            // are only ever produced by a triage run.
+            hasPreviousRun={remediations.length > 0}
           />
         </div>
       </div>

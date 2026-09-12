@@ -561,8 +561,10 @@ export function TriageTable({ projectId }: TriageTableProps) {
             projectId={projectId}
             onConfirm={runTriage}
             running={triage.status === 'running'}
+            // A published run stamped triage_run_id on the findings, so this is
+            // authoritative and costs nothing: the board already has the rows.
+            hasPreviousRun={latestRunId !== null}
             disabled={!userId || showProgress}
-            className={styles.button}
           />
           <button className={styles.button} onClick={() => setShowMuted(v => !v)}>
             {showMuted ? <Eye size={14} /> : <EyeOff size={14} />}

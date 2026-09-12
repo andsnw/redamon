@@ -1,21 +1,27 @@
+/* The component owns its appearance. This button exists because triage used to
+   be three differently-named, differently-styled buttons; letting each call
+   site re-skin it with a local class recreated exactly that problem (the
+   Priority Board's looked like a plain secondary control while CypherFix's was
+   the accent one). Call sites pass layout only, never colour. */
 .button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 6px;
-  border: 1px solid var(--border-color, #2a3441);
-  background: var(--accent-bg, #1b2a3a);
-  color: var(--accent-fg, #7dd3fc);
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2-5);
+  background: var(--accent-primary);
+  color: var(--text-on-accent);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: var(--transition-all);
 }
 
 .button:hover:not(:disabled) {
-  background: var(--accent-bg-hover, #22364a);
-  border-color: var(--accent-fg, #7dd3fc);
+  background: var(--accent-primary-hover);
+  border-color: var(--accent-primary-hover);
+  color: var(--text-on-accent);
 }
 
 .button:disabled {

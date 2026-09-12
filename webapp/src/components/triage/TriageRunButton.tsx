@@ -48,7 +48,16 @@ interface TriageRunButtonProps {
   onConfirm: () => void
   /** A run is already in flight (this tab's, or one we re-attached to). */
   running?: boolean
+  /**
+   * Has this project been triaged before? Decides "Re-triage" vs "Start
+   * Triage" on FIRST paint. The preflight call answers this authoritatively,
+   * but it is far too heavy to fire on mount (a Neo4j round trip plus the
+   * liveness checks), so each page passes the answer it already holds and the
+   * preflight response corrects it from the first click onwards.
+   */
+  hasPreviousRun?: boolean
   disabled?: boolean
+  /** Layout only. Colour belongs to the component: see the CSS module. */
   className?: string
 }
 
@@ -154,11 +163,13 @@ export function TriageRunButton({
   projectId,
   onConfirm,
   running = false,
+  hasPreviousRun = false,
   disabled = false,
   className,
 }: TriageRunButtonProps) {
   const { confirm, alertError } = useAlertModal()
   const [checking, setChecking] = useState(false)
+  // null = nothing authoritative yet, so fall back to the caller's hint.
   const [lastRunSeen, setLastRunSeen] = useState<boolean | null>(null)
 
   const start = useCallback(async () => {
@@ -197,9 +208,10 @@ export function TriageRunButton({
   }, [projectId, confirm, alertError, onConfirm])
 
   const busy = checking || running
+  const previouslyRun = lastRunSeen ?? hasPreviousRun
   const label = running
     ? 'Triage running...'
-    : lastRunSeen
+    : previouslyRun
       ? 'Re-triage'
       : 'Start Triage'
 
