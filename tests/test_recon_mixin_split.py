@@ -185,7 +185,8 @@ class TestCombinatorClass(unittest.TestCase):
         # Neo4jClient silently does not have.
         required = {"DomainMixin", "PortMixin", "HttpMixin", "VulnMixin",
                     "ResourceMixin", "JsReconMixin", "UserInputMixin",
-                    "TakeoverMixin", "VhostSniMixin", "AiSurfaceReconMixin",
+                    "TakeoverMixin", "VhostSniMixin",
+        "TlsxMixin", "AiSurfaceReconMixin",
                     "TriageMixin"}
         self.assertEqual(bases, required,
                          f"ReconMixin bases mismatch. got={bases} expected={required}")
