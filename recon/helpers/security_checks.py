@@ -1002,6 +1002,38 @@ def _iter_cert_targets(recon_data: Dict[str, Any]):
         }
 
 
+def _weak_ciphers_from_enum(cipher_enum) -> List[str]:
+    """Flatten tlsx's `-ce -ct weak` output into the cipher names it found.
+
+    tlsx reports one envelope per TLS version it could enumerate, and the
+    `ciphers` map inside is EMPTY when that version offered nothing weak:
+
+        [{"version": "tls12", "ciphers": {}}, {"version": "tls10", "ciphers": {}}]
+
+    Verified against tlsx v1 output; a plain list of names is also accepted
+    because older builds emitted that shape.
+    """
+    names: List[str] = []
+    for entry in cipher_enum or []:
+        if isinstance(entry, str):
+            names.append(entry)
+            continue
+        if not isinstance(entry, dict):
+            continue
+        ciphers = entry.get("ciphers")
+        if isinstance(ciphers, dict):
+            for bucket in ciphers.values():
+                if isinstance(bucket, list):
+                    names.extend(str(c) for c in bucket if c)
+                elif bucket:
+                    names.append(str(bucket))
+        elif isinstance(ciphers, list):
+            names.extend(str(c) for c in ciphers if c)
+    # Order-stable dedup: the same cipher usually recurs across versions.
+    seen = set()
+    return [n for n in names if not (n in seen or seen.add(n))]
+
+
 def _assemble_security_result(all_findings: List[Dict], enabled_checks: Dict[str, bool],
                               hostname_count: int, ip_count: int) -> Dict[str, Any]:
     """The `security_checks` envelope the graph writer and the report both read.
@@ -1118,10 +1150,17 @@ def run_tls_data_checks(recon_data: Dict[str, Any], enabled_checks: Dict[str, bo
             _add("tls_weak_version_supported", "medium", "Weak TLS Version Supported",
                  f"{target_desc}:{port} still supports {', '.join(weak_supported)}.",
                  ", ".join(weak_supported))
-        if enabled_checks.get("tls_weak_cipher", True) and c["cipher_enum"]:
+        # H3: `-ct weak` returns ONE ENTRY PER VERSION it managed to enumerate,
+        # with an empty `ciphers` map when that version offered no weak cipher:
+        #   [{"version":"tls12","ciphers":{}},{"version":"tls10","ciphers":{}}]
+        # Treating the list as the signal reported every enumerable server as
+        # supporting weak ciphers. Count the ciphers, not the envelopes.
+        weak_ciphers = _weak_ciphers_from_enum(c["cipher_enum"])
+        if enabled_checks.get("tls_weak_cipher", True) and weak_ciphers:
+            shown = ", ".join(weak_ciphers[:5])
             _add("tls_weak_cipher_supported", "medium", "Weak TLS Cipher Supported",
-                 f"{target_desc}:{port} supports weak ciphers (tlsx -ct weak).",
-                 "weak cipher_enum non-empty")
+                 f"{target_desc}:{port} supports {len(weak_ciphers)} weak cipher(s): {shown}.",
+                 shown)
 
     return findings
 
