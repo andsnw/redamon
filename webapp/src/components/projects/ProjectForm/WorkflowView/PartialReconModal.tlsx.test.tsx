@@ -13,7 +13,7 @@
  * Run: npx vitest run src/components/projects/ProjectForm/WorkflowView/PartialReconModal.tlsx.test.tsx
  */
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { PartialReconModal } from './PartialReconModal'
 
 vi.mock('@/providers/ProjectProvider', async orig => ({
@@ -84,5 +84,41 @@ describe('PartialReconModal — Tlsx inputs', () => {
     renderModal('Katana')
     expect(await screen.findByRole('button', { name: /Run Partial Recon/i })).toBeDefined()
     expect(screen.queryAllByText(/Custom IPs/i).length).toBe(0)
+  })
+})
+
+describe('PartialReconModal — Tlsx shares Nmap\'s port-dependent guards', () => {
+  test('the input summary reports IP and port counts, like Nmap', async () => {
+    // tlsx has Nmap's input shape (IP + Port). Falling through to the generic
+    // branch hid the very counts that decide whether the run can do anything.
+    renderModal('Tlsx')
+    expect((await screen.findAllByText(/3 IPs, 7 ports/i)).length).toBeGreaterThan(0)
+  })
+
+  test('an empty-port graph explains that a port scan must run first', async () => {
+    vi.stubGlobal('fetch', mockFetch(3, 0))
+    renderModal('Tlsx')
+    expect((await screen.findAllByText(/No ports found in graph/i)).length).toBeGreaterThan(0)
+  })
+
+  test('the port guard names the TLS grab, not Nmap', async () => {
+    // The guard already fired for tlsx, but the warning read "Nmap requires
+    // ports to scan" while the operator was running the certificate grab.
+    vi.stubGlobal('fetch', mockFetch(3, 7))
+    renderModal('Tlsx')
+
+    // Unchecking graph targets with no custom ports is the impossible state.
+    const label = await screen.findByText(/Include existing graph targets in scan/i)
+    const checkbox = label.closest('label')!.querySelector('input[type="checkbox"]') as HTMLInputElement
+    fireEvent.click(checkbox)
+
+    // IPs but no ports is the impossible state: with nothing typed at all the
+    // broader "no targets to scan" warning wins instead, which is correct.
+    const ipBox = document.querySelector('textarea[placeholder^="192.168.1.1"]') as HTMLTextAreaElement
+    fireEvent.change(ipBox, { target: { value: '192.88.98.10' } })
+
+    const warning = await screen.findAllByText(/requires ports to scan/i)
+    expect(warning[0].textContent).toMatch(/TLS Certificate Grab requires ports/i)
+    expect(warning[0].textContent).not.toMatch(/Nmap requires ports/i)
   })
 })

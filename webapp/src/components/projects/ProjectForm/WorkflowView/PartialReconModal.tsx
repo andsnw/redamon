@@ -663,7 +663,7 @@ export function PartialReconModal({
               ))}
             </div>
             <div style={{ fontSize: '13px', fontFamily: 'monospace', color: 'var(--text-primary, #e2e8f0)' }}>
-              {loadingInputs ? 'Loading...' : isNmap
+              {loadingInputs ? 'Loading...' : (isNmap || isTlsx)
                 ? `${domain || 'No domain'} (${graphInputs?.existing_ips_count ?? 0} IPs, ${graphInputs?.existing_ports_count ?? 0} ports, ${graphInputs?.existing_subdomains_count ?? 0} subdomains)`
                 : isHttpx
                 ? `${domain || 'No domain'} (${graphInputs?.existing_subdomains_count ?? 0} subdomains, ${graphInputs?.existing_ports_count ?? 0} ports, ${graphInputs?.existing_baseurls_count ?? 0} existing URLs)`
@@ -781,7 +781,7 @@ export function PartialReconModal({
             fontSize: '11px', color: '#facc15', lineHeight: '1.5', padding: '8px 12px', borderRadius: '6px',
             backgroundColor: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.2)',
           }}>
-            {isNmap
+            {(isNmap || isTlsx)
               ? 'No ports found in graph. Run Naabu first to discover open ports, or provide custom targets below.'
               : isHttpx
               ? 'No subdomains or ports found in graph. Run Subdomain Discovery + Port Scanning first, or provide custom subdomains below.'
@@ -817,7 +817,7 @@ export function PartialReconModal({
             fontSize: '11px', color: '#f87171', lineHeight: '1.5', padding: '8px 12px', borderRadius: '6px',
             backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)',
           }}>
-            Nmap requires ports to scan. Provide custom ports below or enable graph targets (which include existing ports from Naabu/Masscan).
+            {`${isTlsx ? 'TLS Certificate Grab' : 'Nmap'} requires ports to scan. Provide custom ports below or enable graph targets (which include existing ports from Naabu/Masscan).`}
           </div>
         )}
         {httpxNoPorts && !noTargetsToScan && (
@@ -942,7 +942,9 @@ export function PartialReconModal({
                 ))}
               </div>
             ) : (
-              <div style={hintStyle}>{isNmap || isHttpx
+              <div style={hintStyle}>{isTlsx
+                ? 'IPv4, IPv6, or CIDR ranges (/24-/32). Each open non-HTTP port gets one TLS handshake (graph + custom).'
+                : isNmap || isHttpx
                 ? 'IPv4, IPv6, or CIDR ranges (/24-/32). Will be probed on all ports (graph + custom).'
                 : 'IPv4, IPv6, or CIDR ranges (/24-/32)'}</div>
             )}
