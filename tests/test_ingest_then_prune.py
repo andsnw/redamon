@@ -45,6 +45,14 @@ def source(relative: str) -> str:
         return handle.read()
 
 
+def method_body(src: str, name: str) -> str:
+    """One method's source, by name. Handles the LAST method in a class too."""
+    start = src.index(f"def {name}")
+    rest = src[start:]
+    end = rest.find("\n    def ", 10)
+    return rest if end == -1 else rest[:end]
+
+
 class TestThePruneItself(unittest.TestCase):
     SRC = source("graph_db/mixins/base_mixin.py")
 
@@ -84,15 +92,13 @@ class TestTheRecalcClearsSpareFindings(unittest.TestCase):
     SRC = source("graph_db/mixins/base_mixin.py")
 
     def test_the_recon_clear_no_longer_deletes_findings(self):
-        clear = self.SRC[self.SRC.index("def clear_recon_data"):]
-        clear = clear[:clear.index("\n    def ", 10)]
+        clear = method_body(self.SRC, "clear_recon_data")
         self.assertIn("AND NOT ({_FINDING_LABEL_PREDICATE})", clear)
 
     def test_it_still_clears_the_assets(self):
         """Guards the opposite mistake: a clear that now deletes nothing would
         leave every stale host and port in the graph for ever."""
-        clear = self.SRC[self.SRC.index("def clear_recon_data"):]
-        self.assertIn("DETACH DELETE n", clear)
+        self.assertIn("DETACH DELETE n", method_body(self.SRC, "clear_recon_data"))
 
 
 class TestReconPrunesOnlyAfterSuccess(unittest.TestCase):
@@ -130,8 +136,7 @@ class TestTheGithubHuntKeepsWhatAPersonJudged(unittest.TestCase):
         self.assertIn('"source": "github_hunt"', self.SRC)
 
     def test_the_clear_spares_muted_and_human_judged_findings(self):
-        clear = self.SRC[self.SRC.index("def clear_github_hunt_data"):]
-        clear = clear[:clear.index("\n    def ", 10)]
+        clear = method_body(self.SRC, "clear_github_hunt_data")
         self.assertEqual(clear.count("NOT gs:Muted"), 1)
         self.assertEqual(clear.count("NOT gsf:Muted"), 1)
         self.assertIn("coalesce(gs.triage_source, '') <> 'human'", clear)
@@ -139,8 +144,7 @@ class TestTheGithubHuntKeepsWhatAPersonJudged(unittest.TestCase):
     def test_a_path_holding_a_preserved_finding_is_not_deleted(self):
         """Deleting it would orphan the finding, and the orphan sweep would
         take it on the next run - undoing the whole fix."""
-        clear = self.SRC[self.SRC.index("def clear_github_hunt_data"):]
-        clear = clear[:clear.index("\n    def ", 10)]
+        clear = method_body(self.SRC, "clear_github_hunt_data")
         self.assertIn("CONTAINS_SECRET|CONTAINS_SENSITIVE_FILE", clear)
 
     def test_it_prunes_only_when_the_ingest_actually_produced_findings(self):
@@ -152,6 +156,75 @@ class TestTheGithubHuntKeepsWhatAPersonJudged(unittest.TestCase):
 
     def test_the_prune_is_scoped_to_the_hunt(self):
         self.assertIn('["github_hunt"], run_started_at', self.SRC)
+
+
+class TestGvmKeepsWhatAPersonJudged(unittest.TestCase):
+    BASE = source("graph_db/mixins/base_mixin.py")
+    MAIN = source("scanners/gvm_scan/main.py")
+
+    def test_the_clear_spares_muted_and_human_judged_findings(self):
+        clear = method_body(self.BASE, "clear_gvm_data")
+        self.assertIn("NOT v:Muted", clear)
+        self.assertIn("NOT e:Muted", clear)
+
+    def test_an_exploit_is_treated_as_the_finding_it_is(self):
+        """ExploitGvm is what makes something "proven" on the board, so losing
+        a decision about one matters more than any other finding type."""
+        clear = method_body(self.BASE, "clear_gvm_data")
+        self.assertIn("coalesce(e.triage_source, '') <> 'human'", clear)
+
+    def test_it_prunes_only_when_the_scan_actually_found_something(self):
+        """A GVM run that produced no vulnerabilities is far more often a scan
+        that failed than a target that became clean."""
+        self.assertIn('if not graph_stats.get("vulnerabilities_created"):',
+                      self.MAIN)
+
+    def test_it_does_nothing_when_the_clear_never_ran(self):
+        self.assertIn("if not _GVM_RUN_STARTED_AT", self.MAIN)
+
+    def test_gvm_ports_carry_a_source(self):
+        """K20: with none, nothing could tell a port an ACTIVE scan confirmed
+        from one a passive feed reported, and reachability reads that."""
+        self.assertIn("p.source = coalesce(p.source, 'gvm')",
+                      source("graph_db/mixins/gvm_mixin.py"))
+
+
+class TestTrufflehogKeepsWhatAPersonJudged(unittest.TestCase):
+    SRC = source("graph_db/mixins/secret_mixin.py")
+
+    def _clear(self):
+        return method_body(self.SRC, "clear_trufflehog_data")
+
+    def test_the_clear_spares_muted_and_human_judged_findings(self):
+        self.assertIn("NOT n:Muted", self._clear())
+        self.assertIn("coalesce(n.triage_source, '') <> 'human'", self._clear())
+
+    def test_an_asset_holding_a_preserved_finding_survives(self):
+        """Deleting it would orphan the finding, and the board could no longer
+        say where it was found."""
+        self.assertIn("MATCH (n)-[:HAS_FINDING]->(f:MultiscannerFinding)",
+                      self._clear())
+
+    def test_it_is_still_scoped_to_one_source(self):
+        """A Docker scan finishing must not wipe the HuggingFace results."""
+        self.assertIn("{where}", self._clear())
+
+
+class TestEverySannerGotTheSameTreatment(unittest.TestCase):
+    """The half-fix this guards against: leaving two of four scanners still
+    deleting the operator's work, so whether a mute survived depended on which
+    scanner found the thing."""
+
+    def test_all_four_clears_spare_a_persons_decision(self):
+        checks = [
+            ("recon", "graph_db/mixins/base_mixin.py", "_FINDING_LABEL_PREDICATE"),
+            ("gvm", "graph_db/mixins/base_mixin.py", "NOT v:Muted"),
+            ("github hunt", "graph_db/mixins/secret_mixin.py", "NOT gs:Muted"),
+            ("trufflehog", "graph_db/mixins/secret_mixin.py", "NOT n:Muted"),
+        ]
+        for name, path, marker in checks:
+            with self.subTest(scanner=name):
+                self.assertIn(marker, source(path))
 
 
 if __name__ == "__main__":

@@ -211,6 +211,12 @@ class GvmMixin:
                 """
                 MERGE (p:Port {number: $port_number, protocol: $protocol, ip_address: $ip_addr, user_id: $user_id, project_id: $project_id})
                 SET p.state = 'open',
+                    // K20: GVM Ports had no `source`, so nothing could tell a
+                    // port an ACTIVE scan confirmed from one a passive
+                    // intelligence feed merely reported. Reachability reads
+                    // that distinction, and a port with no source was scored as
+                    // if it had never been confirmed.
+                    p.source = coalesce(p.source, 'gvm'),
                     p.updated_at = datetime()
                 """,
                 port_number=port, protocol=effective_protocol, ip_addr=target_ip,

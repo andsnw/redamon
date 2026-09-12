@@ -322,11 +322,18 @@ class BaseMixin:
         }
 
         with self.driver.session() as session:
-            # 1. Delete GVM Vulnerability nodes (and all their relationships)
+            # 1. GVM's Vulnerability findings are NO LONGER deleted here (X7).
+            # Deleting them deleted the operator's mutes and verdicts with them,
+            # every scan. They are pruned after a successful ingest instead.
+            # Only ones a previous run left with no host attached are swept,
+            # because nothing will ever re-MERGE those.
             result = session.run(
                 """
                 MATCH (v:Vulnerability {user_id: $uid, project_id: $pid})
                 WHERE v.source = 'gvm'
+                  AND NOT (v)<-[:HAS_VULNERABILITY]-()
+                  AND NOT v:Muted
+                  AND coalesce(v.triage_source, '') <> 'human'
                 DETACH DELETE v
                 RETURN count(v) as deleted
                 """,
@@ -367,10 +374,14 @@ class BaseMixin:
             if record:
                 stats["certificates_deleted"] = record["deleted"]
 
-            # 1d. Delete ExploitGvm nodes
+            # 1d. ExploitGvm is a FINDING too, and the strongest one the
+            # product has: it is what makes something "proven" on the board.
+            # Same rule (X7): a person's decision on one survives.
             result = session.run(
                 """
                 MATCH (e:ExploitGvm {user_id: $uid, project_id: $pid})
+                WHERE NOT e:Muted
+                  AND coalesce(e.triage_source, '') <> 'human'
                 DETACH DELETE e
                 RETURN count(e) as deleted
                 """,

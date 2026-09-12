@@ -594,10 +594,18 @@ class SecretMixin:
         with self.driver.session() as session:
             # Leaves first, so an interrupted clear cannot leave a finding
             # dangling off a deleted asset.
+            # X7: findings a person touched are NOT deleted. Deleting them
+            # deleted the mute they applied and the verdict they recorded with
+            # them, on every scan of this source. The rest are still cleared
+            # here rather than pruned afterwards, because this clear is already
+            # scoped to ONE source's previous run and the ingest that follows
+            # rebuilds it completely.
             result = session.run(
                 f"""
                 MATCH (n:MultiscannerFinding)
                 WHERE n.user_id = $uid AND n.project_id = $pid{where}
+                  AND NOT n:Muted
+                  AND coalesce(n.triage_source, '') <> 'human'
                 DETACH DELETE n
                 RETURN count(n) as deleted
                 """,
@@ -612,6 +620,13 @@ class SecretMixin:
                     f"""
                     MATCH (n:{label})
                     WHERE n.user_id = $uid AND n.project_id = $pid{where}
+                      // X7: an asset still holding a finding a person touched
+                      // survives, or that finding is orphaned and the board can
+                      // no longer say where it was found.
+                      AND NOT EXISTS {{
+                        MATCH (n)-[:HAS_FINDING]->(f:MultiscannerFinding)
+                        WHERE f:Muted OR coalesce(f.triage_source, '') = 'human'
+                      }}
                     DETACH DELETE n
                     RETURN count(n) as deleted
                     """,
