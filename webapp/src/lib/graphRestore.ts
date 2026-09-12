@@ -28,7 +28,7 @@ import { functionalLabel } from '@/lib/scanSnapshot'
  * they collapse into one node (or the restore throws IndexEntryConflict) AFTER
  * clearProjectGraph has already wiped the live graph — irreversible loss.
  */
-function deriveCertKey(props: Record<string, unknown>): string {
+export function deriveCertKey(props: Record<string, unknown>): string {
   const fp = typeof props.fingerprint_sha256 === 'string' && props.fingerprint_sha256
     ? props.fingerprint_sha256
     : (typeof props.sha256_fingerprint === 'string' ? props.sha256_fingerprint : '')

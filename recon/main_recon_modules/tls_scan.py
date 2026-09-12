@@ -27,10 +27,6 @@ from pathlib import Path
 _HTTPS_PORTS = {443, 8443, 4443, 9443, 8843}
 _HTTP_PORTS = {80, 8080, 8000, 8888, 8008, 3000, 5000, 9000}
 
-# Negotiated-version tokens tlsx emits (NOT "TLS 1.0"); a deny list written
-# against pretty names would never match.
-_WEAK_TLS_VERSIONS = {"ssl30", "tls10", "tls11"}
-
 # Service hint per well-known TLS port (advisory only; never renames a Service).
 _TLS_SERVICE_HINTS = {
     993: "imaps", 995: "pop3s", 465: "smtps", 636: "ldaps", 990: "ftps",
@@ -126,6 +122,18 @@ def build_tlsx_command(targets_file: str, targets_dir: str, settings: dict) -> l
     return cmd
 
 
+def _target_line(host: str, port: int) -> str:
+    """Format one tlsx target line.
+
+    An IPv6 literal MUST be bracketed: "2001:db8::1:993" is ambiguous (is the
+    last group a port or an address group?) and tlsx cannot parse it, so IPv6
+    hosts were silently never scanned.
+    """
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]:{port}"
+    return f"{host}:{port}"
+
+
 def _build_tlsx_targets(combined_result: dict, settings: dict):
     """Return (target_lines, meta) from port_scan.by_ip.
 
@@ -169,12 +177,13 @@ def _build_tlsx_targets(combined_result: dict, settings: dict):
         submit_names = hostnames[:max_hostnames] if hostnames else [ip]
         for port in sorted(set(ports)):
             for submitted in submit_names:
-                target = f"{submitted}:{port}"
+                target = _target_line(submitted, port)
                 if target in seen:
                     continue
                 seen.add(target)
                 lines.append(target)
                 # Key on the SCANNED ip:port so Phase 2's Service MATCH lands.
+                # tlsx echoes `host` unbracketed, so meta is keyed unbracketed.
                 meta[f"{submitted}:{port}"] = ip
                 if len(lines) >= max_targets:
                     _print("*", f"target cap reached ({max_targets}); truncating")
@@ -256,9 +265,24 @@ def _parse_tlsx_output(stdout: str, meta: dict) -> dict:
             "jarm": row.get("jarm_hash"), "ja3": row.get("ja3_hash"), "ja3s": row.get("ja3s_hash"),
             "version_enum": _as_list(row.get("version_enum")),
             "cipher_enum": _as_list(row.get("cipher_enum")),
+            # Derived here rather than in the mixin: graph_db must not import
+            # recon. Advisory only -- it never renames the Service.
+            "tls_service_hint": _TLS_SERVICE_HINTS.get(port),
         }
-        # Last writer wins is fine: one target line -> one connection.
-        by_target[key] = entry
+        # One ip:port can be probed under SEVERAL hostnames when
+        # TLSX_MAX_HOSTNAMES_PER_IP > 1, and a vhost frontend legitimately
+        # presents a DIFFERENT certificate per SNI. Overwriting on the shared
+        # ip:port key silently discarded every cert but the last, defeating the
+        # only reason to raise that setting. Keep the first under the canonical
+        # key (Service MATCH and get_cert_for rely on it) and park the rest
+        # under an SNI-qualified key so consumers that iterate still see them.
+        existing = by_target.get(key)
+        if existing is None:
+            by_target[key] = entry
+        elif existing.get("fingerprint_sha256") == entry.get("fingerprint_sha256"):
+            by_target[key] = entry          # same cert re-observed: refresh
+        else:
+            by_target[f"{key}@{submitted}"] = entry
     return by_target
 
 
@@ -282,7 +306,7 @@ def _enrich_port_details(combined_result: dict, by_target: dict) -> None:
                 "expired": cert.get("expired"), "self_signed": cert.get("self_signed"),
                 "mismatched": cert.get("mismatched"),
             }
-            hint = _TLS_SERVICE_HINTS.get(port)
+            hint = cert.get("tls_service_hint")
             if hint:
                 pd["tls_service_hint"] = hint
 

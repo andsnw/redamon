@@ -470,17 +470,23 @@ def merge_discovered_hostnames(
     # 3. Syntax validation.
     in_scope = [n for n in in_scope if _is_valid_injected_hostname(n)]
 
-    # 4. Resolve-and-check (SAN-derived names only, never the port-scan list).
-    in_scope = [n for n in in_scope if _resolves_to_routable(n)]
-
     # Deterministic order so the cap truncates reproducibly.
     in_scope = sorted(set(in_scope))
 
-    # 5. Cap.
+    # 4. Cap BEFORE resolving. Each resolve is a blocking getaddrinfo, and this
+    # runs in GROUP 3.6, ahead of the HTTP probe: resolving every SAN a scan
+    # collected (one multi-SAN cert per host, unbounded) would put an unbounded
+    # number of sequential DNS timeouts on the pipeline's critical path. Capping
+    # first bounds that work to max_injected lookups. The cost is that a name
+    # dropped in step 5 does not free a slot for the next candidate; bounding
+    # the stall is worth more than filling the quota exactly.
     if max_injected is not None and max_injected >= 0 and len(in_scope) > max_injected:
         dropped = len(in_scope) - max_injected
         print(f"[*][{source}] injected-hostname cap: kept {max_injected}, dropped {dropped}")
         in_scope = in_scope[:max_injected]
+
+    # 5. Resolve-and-check (SAN-derived names only, never the port-scan list).
+    in_scope = [n for n in in_scope if _resolves_to_routable(n)]
 
     # Merge in-scope names into dns.subdomains (the DICT shape). Only in-scope
     # names reach here, so the eventual HAS_SUBDOMAIN edge cannot promote a

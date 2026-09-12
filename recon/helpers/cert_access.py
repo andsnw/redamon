@@ -8,6 +8,7 @@ hygiene consumers keep working either way -- nothing becomes dead code.
 
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlparse
 
 
 def _is_expired(not_after) -> Optional[bool]:
@@ -87,12 +88,28 @@ def get_cert_for(combined_result: dict, host_or_ip: str, port) -> Optional[dict]
             return _from_tlsx(entry)
 
     # 2. http_probe by_url
+    #
+    # Matched on the PARSED url host+port, not a substring. `f"//{host}" in url`
+    # also matched "//acme.com.evil.com", attributing a foreign host's cert to
+    # acme.com, and ignoring the port returned an 8443 certificate when the
+    # caller asked about 443 -- both silently wrong inputs to takeover scoring.
     by_url = ((combined_result.get("http_probe") or {}).get("by_url")) or {}
     for url, info in by_url.items():
         if not isinstance(info, dict):
             continue
-        if info.get("host") == host_or_ip or info.get("ip") == host_or_ip or f"//{host_or_ip}" in str(url):
-            cert = ((info.get("tls") or {}).get("certificate")) or {}
-            if cert.get("subject_cn") or cert.get("san"):
-                return _from_httpx(cert)
+        try:
+            parsed = urlparse(str(url))
+            url_host = (parsed.hostname or "").lower()
+            url_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except (ValueError, TypeError):
+            url_host, url_port = "", None
+        host_matches = host_or_ip.lower() in (
+            url_host, str(info.get("host") or "").lower(), str(info.get("ip") or "").lower())
+        if not host_matches:
+            continue
+        if port_int is not None and url_port is not None and url_port != port_int:
+            continue
+        cert = ((info.get("tls") or {}).get("certificate")) or {}
+        if cert.get("subject_cn") or cert.get("san"):
+            return _from_httpx(cert)
     return None

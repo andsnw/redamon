@@ -1469,7 +1469,7 @@ function renderVhostSni(data: ReportData): string {
 </div>`
 }
 
-function renderTlsx(data: ReportData): string {
+export function renderTlsx(data: ReportData): string {
   const t = data.tlsx
   if (!t || t.totalCertificates === 0) return ''
 

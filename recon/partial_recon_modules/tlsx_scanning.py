@@ -135,11 +135,17 @@ def run_tlsx(config: dict) -> None:
             # Track generic user IPs via a UserInput node (parity with Nmap).
             if user_ip_addrs and not ip_attach_to:
                 try:
+                    # create_user_input_node reads input_type / values / tool_id.
+                    # Passing anything else does not raise -- it .get()s past them
+                    # and writes a UserInput with values=[] and tool_id='',
+                    # silently losing the operator's manually-entered IPs.
                     graph_client.create_user_input_node(
                         domain=domain,
                         user_input_data={
-                            "id": str(uuid.uuid4()), "tool": "Tlsx",
-                            "ips": user_ip_addrs, "ports": user_ports,
+                            "id": str(uuid.uuid4()),
+                            "input_type": "ips",
+                            "values": user_ip_addrs,
+                            "tool_id": "Tlsx",
                         },
                         user_id=user_id, project_id=project_id,
                     )

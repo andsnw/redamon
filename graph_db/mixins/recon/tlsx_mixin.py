@@ -72,7 +72,7 @@ class TlsxMixin:
                                 "tls_cipher": entry.get("cipher"),
                                 "tls_key_exchange": entry.get("key_exchange"),
                                 "tls_connection": entry.get("tls_connection"),
-                                "tls_service_hint": None,  # set below if known
+                                "tls_service_hint": entry.get("tls_service_hint"),
                                 "tls_versions_supported": entry.get("version_enum") or None,
                                 "tls_ciphers_weak": entry.get("cipher_enum") or None,
                                 "tls_probe_failed": False,
