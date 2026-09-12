@@ -8,6 +8,7 @@ Provides methods to ingest secret detection results:
 - update_graph_from_trufflehog: ingest one TruffleHog source's scan results
 """
 
+from graph_db.mixins.base_mixin import run_timestamp
 import hashlib
 from datetime import datetime
 from typing import Optional
@@ -62,10 +63,20 @@ class SecretMixin:
         }
 
         with self.driver.session() as session:
-            # 1. Delete leaf nodes first (GithubSecret)
+            # 1. Leaf FINDINGS are no longer deleted here (X7). Deleting them
+            # up front deleted the operator's mutes and verdicts with them, and
+            # orphaned any fix item linked to one. They are pruned after a
+            # SUCCESSFUL ingest instead, by `prune_unseen_findings`, which keeps
+            # anything a person touched and stamps it stale.
+            #
+            # Only nodes this scanner LOST TRACK OF are removed: a partial node
+            # from a crashed run with no path above it.
             result = session.run(
                 """
                 MATCH (gs:GithubSecret {user_id: $uid, project_id: $pid})
+                WHERE NOT EXISTS { (:GithubPath)-[:CONTAINS_SECRET]->(gs) }
+                  AND NOT gs:Muted
+                  AND coalesce(gs.triage_source, '') <> 'human'
                 DETACH DELETE gs
                 RETURN count(gs) as deleted
                 """,
@@ -75,10 +86,13 @@ class SecretMixin:
             if record:
                 stats["secrets_deleted"] = record["deleted"]
 
-            # 2. Delete leaf nodes (GithubSensitiveFile)
+            # 2. Same for the sensitive-file findings (X7).
             result = session.run(
                 """
                 MATCH (gsf:GithubSensitiveFile {user_id: $uid, project_id: $pid})
+                WHERE NOT EXISTS { (:GithubPath)-[:CONTAINS_SENSITIVE_FILE]->(gsf) }
+                  AND NOT gsf:Muted
+                  AND coalesce(gsf.triage_source, '') <> 'human'
                 DETACH DELETE gsf
                 RETURN count(gsf) as deleted
                 """,
@@ -94,10 +108,17 @@ class SecretMixin:
                 uid=user_id, pid=project_id
             )
 
-            # 4. Delete GithubPath nodes
+            # 4. Delete GithubPath nodes, EXCEPT any still holding a finding a
+            #    person touched. Deleting those would orphan the preserved
+            #    finding, and the sweep in step 1 would take it on the next run,
+            #    undoing the whole point of X7.
             result = session.run(
                 """
                 MATCH (gp:GithubPath {user_id: $uid, project_id: $pid})
+                WHERE NOT EXISTS {
+                  MATCH (gp)-[:CONTAINS_SECRET|CONTAINS_SENSITIVE_FILE]->(f)
+                  WHERE f:Muted OR coalesce(f.triage_source, '') = 'human'
+                }
                 DETACH DELETE gp
                 RETURN count(gp) as deleted
                 """,
@@ -201,9 +222,15 @@ class SecretMixin:
 
         scan_statistics = github_hunt_data.get("statistics", {})
 
+        # Taken BEFORE the ingest: everything it writes gets a later
+        # `updated_at` and therefore survives the prune at the end (X7).
+        run_started_at = run_timestamp()
+
         with self.driver.session() as session:
 
-            # Clear previous GitHub hunt data for this project
+            # Clear the hunt's CONTAINERS (paths, repos, the hunt node). The
+            # findings are no longer deleted here; they are pruned after a
+            # successful ingest, below.
             clear_stats = self.clear_github_hunt_data(user_id, project_id)
             print(f"[*][graph-db] Pre-cleared: {clear_stats}")
 
@@ -374,6 +401,10 @@ class SecretMixin:
                         "id": node_id,
                         "user_id": user_id,
                         "project_id": project_id,
+                        # X7: the prune is scoped BY SOURCE, so a finding with
+                        # none can never be pruned, and a GitHub-hunt finding
+                        # would then never be cleaned up at all.
+                        "source": "github_hunt",
                         "secret_type": secret_type,
                         "repository": repository,
                         "path": clean_path,
@@ -413,6 +444,10 @@ class SecretMixin:
                         "id": node_id,
                         "user_id": user_id,
                         "project_id": project_id,
+                        # X7: the prune is scoped BY SOURCE, so a finding with
+                        # none can never be pruned, and a GitHub-hunt finding
+                        # would then never be cleaned up at all.
+                        "source": "github_hunt",
                         "secret_type": secret_type,
                         "repository": repository,
                         "path": clean_path,
@@ -455,6 +490,14 @@ class SecretMixin:
 
             if stats["errors"]:
                 print(f"[!][graph-db] {len(stats['errors'])} errors occurred")
+
+        # X7: remove the findings this scan stopped reporting, now that the
+        # ingest has actually produced some. A run that wrote NOTHING is not
+        # evidence the findings are gone - it is evidence the scan failed - so
+        # the prune is skipped rather than emptying the project.
+        if stats["secrets_created"] or stats["sensitive_files_created"]:
+            stats["pruned"] = self.prune_unseen_findings(
+                user_id, project_id, ["github_hunt"], run_started_at)
 
         return stats
 

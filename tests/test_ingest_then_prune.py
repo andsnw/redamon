@@ -1,0 +1,158 @@
+"""A rescan no longer deletes the operator's work (X7).
+
+WHAT IT USED TO DO
+Every scanner DELETED its findings up front and re-created them. That deleted
+everything a person had put on those nodes along with them: the mute they
+applied, the verdict they recorded, the AI's cached review, and the link from a
+fix item back to the finding it was written for. Re-muting the same noise after
+every scan was the visible symptom. The invisible one was a fix item pointing at
+a finding id that no longer existed.
+
+WHAT IT DOES NOW
+A scan MERGEs its findings, which refreshes `updated_at`, and afterwards removes
+the ones it did not touch. No new "last seen" property was needed: `updated_at`
+is already stamped by every node write and already has a test asserting that, so
+"not seen in this run" is exactly "older than the run started".
+
+THE TWO RULES THAT MAKE IT SAFE, and the two ways to get it catastrophically
+wrong:
+
+1. A finding a PERSON touched is never deleted, only stamped `stale_since`.
+2. The prune runs ONLY after an ingest that actually produced findings. A scan
+   that failed halfway reported nothing, and pruning on that would empty the
+   project. That is why the caller decides, not the prune.
+
+The live behaviour (three duplicates collapsing, a mute surviving) was verified
+against Neo4j during development; what is pinned here is everything that can
+regress from an edit to these files alone.
+
+Run: python -m pytest tests/test_ingest_then_prune.py
+"""
+
+import os
+import sys
+import unittest
+
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+
+from graph_db.mixins.base_mixin import FINDING_LABELS  # noqa: E402
+
+
+def source(relative: str) -> str:
+    with open(os.path.join(_REPO, relative)) as handle:
+        return handle.read()
+
+
+class TestThePruneItself(unittest.TestCase):
+    SRC = source("graph_db/mixins/base_mixin.py")
+
+    def test_it_never_deletes_something_a_person_touched(self):
+        """The single most important line in the change."""
+        self.assertIn("n:Muted OR coalesce(n.triage_source, '') = 'human'",
+                      self.SRC)
+
+    def test_a_kept_finding_is_stamped_stale_rather_than_left_looking_live(self):
+        self.assertIn("SET n.stale_since = coalesce(n.stale_since, datetime())",
+                      self.SRC)
+
+    def test_it_only_touches_the_sources_it_was_asked_about(self):
+        """Otherwise a recon run would prune GVM's findings, and vice versa."""
+        self.assertIn("coalesce(n.source, '') IN $sources", self.SRC)
+
+    def test_it_refuses_to_run_with_no_source_or_no_timestamp(self):
+        """Either missing would turn the query into 'delete everything'."""
+        self.assertIn("if not sources or not run_started_at:", self.SRC)
+
+    def test_it_only_touches_finding_labels(self):
+        self.assertIn("_FINDING_LABEL_PREDICATE", self.SRC)
+
+    def test_the_finding_labels_match_the_muteable_ones(self):
+        """These are the labels carrying operator state; the two lists drifting
+        apart would leave a muteable finding unprotected."""
+        from graph_db.mixins.recon.triage_mixin import MUTEABLE_LABELS
+        self.assertEqual(set(FINDING_LABELS), set(MUTEABLE_LABELS))
+
+    def test_the_run_timestamp_is_taken_before_the_ingest(self):
+        """Taken after, everything the ingest wrote would look older than the
+        run and the prune would delete the results it had just produced."""
+        self.assertIn("Taken BEFORE the ingest", self.SRC)
+
+
+class TestTheRecalcClearsSpareFindings(unittest.TestCase):
+    SRC = source("graph_db/mixins/base_mixin.py")
+
+    def test_the_recon_clear_no_longer_deletes_findings(self):
+        clear = self.SRC[self.SRC.index("def clear_recon_data"):]
+        clear = clear[:clear.index("\n    def ", 10)]
+        self.assertIn("AND NOT ({_FINDING_LABEL_PREDICATE})", clear)
+
+    def test_it_still_clears_the_assets(self):
+        """Guards the opposite mistake: a clear that now deletes nothing would
+        leave every stale host and port in the graph for ever."""
+        clear = self.SRC[self.SRC.index("def clear_recon_data"):]
+        self.assertIn("DETACH DELETE n", clear)
+
+
+class TestReconPrunesOnlyAfterSuccess(unittest.TestCase):
+    SRC = source("recon/main.py")
+
+    def test_the_prune_runs_on_the_success_path(self):
+        self.assertIn("_prune_recon_findings()", self.SRC)
+
+    def test_it_does_nothing_when_the_clear_never_ran(self):
+        """A run that failed before the clear has no run timestamp, and
+        pruning against no timestamp would be 'delete everything'."""
+        self.assertIn("if not UPDATE_GRAPH_DB or not _RUN_STARTED_AT:", self.SRC)
+
+    def test_it_only_names_recon_s_own_sources(self):
+        """A recon run must never prune a GVM or supply-chain finding."""
+        self.assertIn("RECON_FINDING_SOURCES", self.SRC)
+        for foreign in ("gvm", "github_hunt", "osv", "trufflehog"):
+            block = self.SRC[self.SRC.index("RECON_FINDING_SOURCES = ("):]
+            block = block[:block.index(")")]
+            with self.subTest(source=foreign):
+                self.assertNotIn(f'"{foreign}"', block)
+
+    def test_a_housekeeping_failure_does_not_fail_a_completed_scan(self):
+        prune = self.SRC[self.SRC.index("def _prune_recon_findings"):]
+        prune = prune[:prune.index("\ndef ", 10)]
+        self.assertIn("except Exception", prune)
+
+
+class TestTheGithubHuntKeepsWhatAPersonJudged(unittest.TestCase):
+    SRC = source("graph_db/mixins/secret_mixin.py")
+
+    def test_its_findings_carry_a_source_so_they_can_be_pruned_at_all(self):
+        """The prune is scoped by source. A finding with none could never be
+        pruned, so the fix for one bug would have created a leak."""
+        self.assertIn('"source": "github_hunt"', self.SRC)
+
+    def test_the_clear_spares_muted_and_human_judged_findings(self):
+        clear = self.SRC[self.SRC.index("def clear_github_hunt_data"):]
+        clear = clear[:clear.index("\n    def ", 10)]
+        self.assertEqual(clear.count("NOT gs:Muted"), 1)
+        self.assertEqual(clear.count("NOT gsf:Muted"), 1)
+        self.assertIn("coalesce(gs.triage_source, '') <> 'human'", clear)
+
+    def test_a_path_holding_a_preserved_finding_is_not_deleted(self):
+        """Deleting it would orphan the finding, and the orphan sweep would
+        take it on the next run - undoing the whole fix."""
+        clear = self.SRC[self.SRC.index("def clear_github_hunt_data"):]
+        clear = clear[:clear.index("\n    def ", 10)]
+        self.assertIn("CONTAINS_SECRET|CONTAINS_SENSITIVE_FILE", clear)
+
+    def test_it_prunes_only_when_the_ingest_actually_produced_findings(self):
+        """A scan that wrote nothing is evidence the scan failed, not evidence
+        the findings are gone."""
+        self.assertIn(
+            'if stats["secrets_created"] or stats["sensitive_files_created"]:',
+            self.SRC)
+
+    def test_the_prune_is_scoped_to_the_hunt(self):
+        self.assertIn('["github_hunt"], run_started_at', self.SRC)
+
+
+if __name__ == "__main__":
+    unittest.main()

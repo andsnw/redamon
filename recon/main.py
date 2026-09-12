@@ -1706,25 +1706,74 @@ def run_domain_recon(target: str, bruteforce: bool = False,
     return combined_result
 
 
-def _clear_recon_graph():
-    """Wipe this project's previous recon nodes. Runs ONCE per pipeline run.
+#: The recon pipeline's own finding sources. A prune only ever touches these,
+#: so a recon run can never remove a GVM, GitHub-hunt or supply-chain finding.
+RECON_FINDING_SOURCES = (
+    "nuclei", "security_check", "js_recon", "jsluice", "takeover_scan",
+    "cache_poisoning", "graphql_scan", "graphql_cop", "ai_surface_recon",
+    "vhost_sni_enum", "origin_discovery", "nmap_nse", "resource_enum",
+    "http_probe", "vuln_scan", "wcvs",
+)
 
-    Domain batch depends on that: the groups accumulate into a single graph, so
-    clearing per group would leave only the last domain standing.
+#: When this run started. Everything it writes gets a later `updated_at`, so the
+#: prune at the end can tell "still reported" from "gone".
+_RUN_STARTED_AT = None
+
+
+def _clear_recon_graph():
+    """Clear this project's previous recon ASSETS. Runs ONCE per pipeline run.
+
+    Findings are deliberately NOT cleared here any more (X7). Deleting them up
+    front deleted the operator's work with them: the mute they applied, the
+    verdict they recorded, the AI's cached review, and the link from a fix item
+    back to the finding. They are pruned after a SUCCESSFUL run instead, by
+    `_prune_recon_findings`.
+
+    Domain batch depends on this running once: the groups accumulate into a
+    single graph, so clearing per group would leave only the last domain.
     """
+    global _RUN_STARTED_AT
     if not UPDATE_GRAPH_DB:
         return
-    print("[*][graph-db] Clearing previous graph data for this project...")
+    print("[*][graph-db] Clearing previous recon assets for this project...")
     try:
         from graph_db import Neo4jClient
         with Neo4jClient() as graph_client:
             if graph_client.verify_connection():
+                from graph_db.mixins.base_mixin import run_timestamp
+                _RUN_STARTED_AT = run_timestamp()
                 clear_stats = graph_client.clear_recon_data(USER_ID, PROJECT_ID)
-                print(f"[+][graph-db] Previous recon data cleared: {clear_stats['nodes_deleted']} nodes removed\n")
+                print(f"[+][graph-db] Previous recon assets cleared: {clear_stats['nodes_deleted']} nodes removed\n")
             else:
                 print("[!][graph-db] Could not connect to Neo4j - skipping clear\n")
     except Exception as e:
         print(f"[!][graph-db] Failed to clear previous graph data: {e}\n")
+
+
+def _prune_recon_findings():
+    """Remove the findings this run stopped reporting. AFTER a successful run.
+
+    Only called on the success path, and never when the clear did not run: a
+    scan that failed halfway reported nothing, and pruning on that would delete
+    the project's entire finding set.
+
+    Muted and human-judged findings are kept and stamped stale rather than
+    deleted, so an operator can see that a scanner stopped reporting something
+    they had already suppressed.
+    """
+    if not UPDATE_GRAPH_DB or not _RUN_STARTED_AT:
+        return
+    try:
+        from graph_db import Neo4jClient
+        with Neo4jClient() as graph_client:
+            if graph_client.verify_connection():
+                graph_client.prune_unseen_findings(
+                    USER_ID, PROJECT_ID, list(RECON_FINDING_SOURCES),
+                    _RUN_STARTED_AT)
+    except Exception as e:
+        # Never fail a completed scan over housekeeping: a finding that should
+        # have been pruned is visible and wrong, which beats losing the run.
+        print(f"[!][graph-db] Could not prune stale findings: {e}\n")
 
 
 def run_domain_batch(groups: list, start_time) -> int:
@@ -1832,6 +1881,8 @@ def main():
         _clear_recon_graph()
 
         run_ip_recon(TARGET_IPS, _settings)
+
+        _prune_recon_findings()
 
         end_time = datetime.now()
         duration = end_time - start_time
@@ -2271,6 +2322,8 @@ def run_domain_group(target_domain: str, subdomain_list: list, start_time=None) 
     print("  [+][Pipeline] Output: recon_{}.json".format(PROJECT_ID))
     print("─" * 50)
     print()
+
+    _prune_recon_findings()
 
     return 0
 

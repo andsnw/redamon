@@ -136,6 +136,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **JS recon overwrote the HTTP probe's `status_code`**, which is what
   reachability is read from, so a finding on a live endpoint could read as
   unreachable.
+- **A rescan deleted everything you had decided about a finding.** Every
+  scanner deleted its findings up front and re-created them, which took the
+  mute you applied, the verdict you recorded, the AI's cached review and the
+  link from a fix item back to the finding with them. Re-muting the same noise
+  after every scan was the visible half; a fix item pointing at a finding id
+  that no longer existed was the invisible one. Scans now refresh what they
+  still report and remove only what they stopped reporting, and a finding a
+  person touched is kept and marked resolved rather than deleted.
+- **Two projects scanning the same target collided.** Per-project findings were
+  unique on `id` alone, so one id could exist once in the whole database. Either
+  one project's scan took over and re-pointed the other's node, or the second
+  project's finding was silently lost to a swallowed constraint error. It is
+  also why importing a project export deleted the project it came from.
 
 ## [6.14.1] - 2026-09-09
 

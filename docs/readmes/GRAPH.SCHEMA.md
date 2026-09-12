@@ -199,9 +199,21 @@ who cannot see WHY a finding ranked where it did has no way to disagree with it.
 > because those are measurements and a stale rank helps nobody. Only
 > `triage_status`, `triage_reason` and `triage_confidence` are left alone.
 
-**Retention.** `stale_since` marks a finding a completed scan of its owning
-source no longer reports but which was kept because it is muted or human-owned;
-triage reads it as `state = fixed`. `last_seen_at` is stamped by each ingest.
+**Retention: ingest-then-prune.** A scan no longer deletes its findings up front
+and re-creates them; that deleted the operator's mute, their verdict, the AI's
+cached review and the link from a fix item back to the finding. A scan now
+MERGEs what it still reports, which refreshes `updated_at`, and afterwards
+`prune_unseen_findings` removes what it did not touch.
+
+No new "last seen" property was needed: `updated_at` is already stamped by every
+node write, so "not seen in this run" is exactly "older than the run started".
+
+A finding carrying `:Muted` or `triage_source = 'human'` is never deleted by a
+prune. It is stamped `stale_since` instead, which triage reads as
+`state = fixed` and `notMuted()` excludes, so it leaves every count and every
+table at once. The prune runs ONLY after an ingest that actually produced
+findings: a scan that reported nothing is evidence the scan failed, not evidence
+the findings are gone.
 
 `Muted` carries no colour in `webapp/src/app/graph/config/colors.ts` on purpose:
 it is never rendered, because it never reaches the renderer.
