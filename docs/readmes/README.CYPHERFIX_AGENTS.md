@@ -325,6 +325,26 @@ and `SCORE_MODEL_VERSION` changes with them. All eight guarantees of the design
 are tests in `agentic/tests/test_score_model.py`; monotonicity, the missing-data
 rule and group risk are checked over seeded random cases.
 
+**C is the one factor that learns.** Every Real / False positive click is a
+label for the DETECTOR that produced the finding (`detector_key`: a nuclei
+template, a GVM OID, a TruffleHog detector; advisories key on the source, since
+a verdict on one CVE says nothing about another). C then becomes a Beta
+posterior over this user's own verdicts, with the rule-based C as its prior:
+
+```
+C = (10 x C_rule + real) / (10 + real + fp)        bounded to [0.1, 0.99]
+```
+
+Ten pseudo-counts is deliberately slow: a detector is judged on a handful of
+findings at first, and three unlucky clicks must not switch a real one off. The
+counts come from `detector_labels`, the only fact query scoped to `$userId`
+rather than to a project, because a detector that is noise on one of your
+projects is noise on the next. It is never scoped wider than one user. Proven
+findings are exempt, the same rule the review obeys. With no labels stored the
+rule stands unchanged, which is why the v3.1.0 ranking is byte-identical to
+v3.0.0 on a graph nobody has clicked. Tests:
+`agentic/tests/test_triage_detector_learning.py`.
+
 ### Grouping, review and remediation
 
 - **Group** (`cypherfix_triage/grouping.py`): deterministic keys, no LLM. The

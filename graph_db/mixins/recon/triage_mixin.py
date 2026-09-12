@@ -84,6 +84,7 @@ TRIAGE_PROPS = (
     "triage_risk",            # C x L x I x R, before the tier is folded in
     "triage_host",            # the host the model resolved, deterministically
     "triage_group_key",       # one problem, one fix (replaces triage_cluster_id)
+    "triage_detector",        # which detector fired, so Real/False clicks teach it
     "triage_run_id",          # drives "new since the last triage"
     "triage_model_version",
     "triage_intel_date",
@@ -422,6 +423,7 @@ class TriageMixin:
               n.triage_factors        = row.factors,
               n.triage_host           = row.host,
               n.triage_group_key      = row.group_key,
+              n.triage_detector       = row.detector,
               n.triage_run_id         = row.run_id,
               n.triage_model_version  = row.model_version,
               n.triaged_at            = datetime()
@@ -535,6 +537,7 @@ class TriageMixin:
             "factors": _json_text(r.get("factors")) or "{}",
             "host": _text(r.get("host"), 300) or "",
             "group_key": _text(r.get("group_key"), 200) or "",
+            "detector": _text(r.get("detector"), 200) or "",
             "run_id": _text(r.get("run_id"), 60) or "",
             "model_version": _text(r.get("model_version"), 40) or "",
             "intel_date": _text(r.get("intel_date"), 40),

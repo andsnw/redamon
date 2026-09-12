@@ -1123,6 +1123,7 @@ Use goal/outcome types when an attack objective is achieved: exploit_success, ac
     "evidence": "Raw evidence excerpt from output",
     "related_cves": ["CVE-XXXX-XXXXX"],
     "related_ips": ["1.2.3.4", "sub.example.com"],
+    "related_finding_ids": ["<id of a finding you PROVED, copied verbatim from the evidence you were given; omit if none>"],
     "confidence": 90
   }}
 ]
@@ -1168,6 +1169,7 @@ Your `output_analysis` should cover ALL tool outputs holistically. Use this EXAC
         "title": "Short finding description",
         "evidence": "Raw evidence excerpt from output",
         "related_cves": ["CVE-XXXX-XXXXX"],
+        "related_finding_ids": ["<id of a finding you PROVED, copied verbatim from the evidence; omit if none>"],
         "confidence": 90
       }}
     ],
@@ -2332,7 +2334,7 @@ Note: Bridge relationships are only created for tool-execution steps. Steps usin
 - `(f:ChainFinding)-[:FOUND_ON]->(i:IP)` - Finding relates to IP (when related_ips value is an IP)
 - `(f:ChainFinding)-[:FOUND_ON]->(sub:Subdomain)` - Finding relates to hostname (when related_ips value is a hostname)
 - `(f:ChainFinding)-[:FINDING_RELATES_CVE]->(c:CVE)` - Finding relates to CVE
-- `(f:ChainFinding)-[:CREDENTIAL_FOR]->(svc:Service)` - Credential found for service
+- `(f:ChainFinding)-[:CONFIRMS]->(v)` - the agent proved this recon finding (Vulnerability, Secret, MultiscannerFinding, GithubSecret, GithubSensitiveFile, JsReconFinding, MalPackageFinding or ExploitGvm); it is why that finding shows as proven on the Priority Board
 
 ## Common Query Patterns
 

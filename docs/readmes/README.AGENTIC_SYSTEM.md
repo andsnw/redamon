@@ -3987,7 +3987,8 @@ classDiagram
 | `STEP_IDENTIFIED` | ChainStep → Technology | Technology identified during this step |
 | `FOUND_ON` | ChainFinding → IP / Subdomain | Where the finding was discovered |
 | `FINDING_RELATES_CVE` | ChainFinding → CVE | CVE related to the finding |
-| `CREDENTIAL_FOR` | ChainFinding → Service / Port | Service/port the credential works on |
+| `FINDING_AFFECTS_ENDPOINT` / `_PORT` / `_TECH` | ChainFinding → Endpoint / Port / Technology | Regex-matched from the finding's evidence text |
+| `CONFIRMS` | ChainFinding → a recon finding | The agent proved this specific finding, so the Priority Board scores it as proven (from a reported id only, tenant-scoped) |
 
 ```mermaid
 flowchart LR

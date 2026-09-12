@@ -66,6 +66,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on, is never rewritten or deleted: the old path deleted every pending item and
   then recreated them, outside a transaction.
 
+  **The board learns from Real and False positive clicks.** A detector that is
+  right everywhere is still wrong on somebody's estate, and nothing in the model
+  could ever learn that: muting the same class of noise after every scan was the
+  only recourse. Each verdict is now counted against the detector that produced
+  the finding (a nuclei template, a TruffleHog detector, a GVM test), and the
+  "real" factor for that detector becomes a Beta posterior over those verdicts,
+  with the detection rule as its prior. Ten labels move it halfway, so one
+  unlucky click cannot re-rank a board. It never crosses users, never learns a
+  detector below 0.1 (a detector nobody can see is one nobody discovers was
+  right), and never talks down something an exploit proved. The factor line says
+  so on hover: `real 34%; detected by github_hunt; you judged 2 of 30 of these
+  real`.
+
   Three settings that no code ever read (`triageConfidenceThreshold`,
   `triageAutoMute`, `triageTopNForLlm`) are replaced by one that does:
   **Priority Board: findings the AI reviews**, which caps what a run costs. Set

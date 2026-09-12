@@ -216,6 +216,29 @@ WHERE (n:Subdomain OR n:IP)
 RETURN collect(DISTINCT coalesce(n.name, n.address)) AS hosts
 """,
     },
+    {
+        "name": "detector_labels",
+        "description": "this user's own Real / False positive verdicts, per detector",
+        # Phase 8a. Scoped to $userId and NOT to $projectId on purpose: a
+        # detector that is noise on one of your projects is noise on the next
+        # one, and the whole point is that the board arrives already knowing
+        # that. It is never scoped wider than the one user: pooling clicks
+        # across accounts would let one operator re-rank another's board.
+        #
+        # `triage_detector` is written by the publish step, so a finding only
+        # gets a vote after a run has ranked it. That is exactly right: the
+        # click happened on the board, which means a run produced it.
+        "query": """
+MATCH (n:Vulnerability|JsReconFinding|Secret|MultiscannerFinding|GithubSecret
+       |GithubSensitiveFile|MalPackageFinding|ExploitGvm {user_id: $userId})
+WHERE n.triage_source = 'human'
+  AND n.triage_status IN ['confirmed', 'likely_noise']
+  AND n.triage_detector IS NOT NULL
+RETURN n.triage_detector AS detector,
+       count(CASE WHEN n.triage_status = 'confirmed' THEN 1 END) AS real,
+       count(CASE WHEN n.triage_status = 'likely_noise' THEN 1 END) AS fp
+""",
+    },
 ]
 
 
@@ -254,6 +277,7 @@ RETURN v.id AS id, 'Vulnerability' AS label,
        v.matcher_status AS matcher_status, v.matched_at AS matched_at,
        v.extracted_results AS extracted_results, v.is_dast_finding AS is_dast_finding,
        v.template_id AS template_id, v.tags AS tags, v.state AS state,
+       coalesce(v.oid, v.nvt_oid) AS oid,
        v.verdict AS verdict, v.confidence_tier AS confidence_tier,
        v.takeover_method AS takeover_method, v.cache_impact AS cache_impact,
        v.confidence_score AS confidence_score, v.confidence AS confidence,
@@ -448,6 +472,14 @@ def _clean(values) -> set:
     return {v for v in cleaned if v and v not in ("[]", "None")}
 
 
+def _int(value) -> int:
+    """A count from a Cypher row. A missing or odd value is 0, never a crash."""
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
 def build_project_facts(raw: dict) -> ProjectFacts:
     """Turn the PROJECT_FACT_QUERIES rows into the model's fact sets.
 
@@ -516,6 +548,15 @@ def build_project_facts(raw: dict) -> ProjectFacts:
                 "chain_id": row.get("chain_id"),
                 "finding_type": row.get("finding_type"),
             })
+
+    for row in raw.get("detector_labels") or []:
+        detector = str(row.get("detector") or "").strip()
+        if not detector:
+            continue
+        real = _int(row.get("real"))
+        false_positive = _int(row.get("fp"))
+        if real + false_positive:
+            facts.detector_labels[detector] = {"real": real, "fp": false_positive}
 
     # A gone host cannot also be live: the liveness evidence is the stronger
     # statement, and the two queries can disagree across a rescan boundary.

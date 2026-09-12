@@ -539,6 +539,8 @@ class TriageOrchestrator:
                 "name": row.get("name") or "",
                 "severity": row.get("severity") or "",
                 "source": row.get("source") or "",
+                # Phase 8a: the detector this operator's clicks are attached to.
+                "detector": score_model.detector_key(row),
                 "host": result.host,
                 "state": result.state,
                 "tier": result.tier,
@@ -625,6 +627,7 @@ class TriageOrchestrator:
             "factors": row.get("factors"),
             "host": row.get("host"),
             "group_key": row.get("group_key"),
+            "detector": row.get("detector"),
             "run_id": run_id,
             "model_version": row.get("model_version"),
             "intel_date": self.intel_date,

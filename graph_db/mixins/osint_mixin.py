@@ -23,6 +23,21 @@ from datetime import datetime, timezone
 from graph_db.cert_key import build_cert_key
 from urllib.parse import urlparse as _urlparse
 
+
+def _split_url(url: str) -> tuple[str, str]:
+    """(base_url, path), where base_url is scheme://netloc and path defaults to
+    '/'. Query and fragment are dropped.
+
+    Endpoint identity is (path, method, baseurl) everywhere in the graph. This
+    MUST stay byte-identical to `_split_url` in
+    graph_db/mixins/recon/http_mixin.py: the two producing different splits for
+    one URL would create a duplicate Endpoint (K23). It is copied rather than
+    imported because that module pulls a heavy dependency chain the hand-stubbed
+    osint tests do not load.
+    """
+    parsed = _urlparse(url)
+    return f"{parsed.scheme}://{parsed.netloc}", (parsed.path or "/")
+
 # K19: one except block logs through `logger`, which was never defined here, so
 # the handler raised NameError while handling an error and took the whole
 # ExternalDomain batch with it.
@@ -2297,28 +2312,62 @@ class OsintMixin:
                     except Exception as e:
                         stats["errors"].append(f"Uncover IP {ip}: {e}")
 
+                # K23. These used to MERGE on `url` and hang off the Domain,
+                # which is the key nothing else in the graph uses. An uncover
+                # URL therefore became a SECOND Endpoint for a path http_probe
+                # had already written, outside the BaseURL tree, so it was
+                # invisible to every reachability read (which walks
+                # BaseURL -> HAS_ENDPOINT) and to the liveness facts the
+                # Priority Board scores R from.
                 for url in urls:
                     if not url:
                         continue
                     try:
+                        base_url, path = _split_url(url)
+                        if not base_url or base_url == "://":
+                            stats["errors"].append(f"Uncover URL {url}: no host")
+                            continue
                         session.run(
                             """
-                            MERGE (e:Endpoint {url: $url, user_id: $user_id, project_id: $project_id})
-                            ON CREATE SET e.discovered_at = datetime(), e.updated_at = datetime(),
-                                          e.source = 'uncover', e.method = 'GET'
+                            MERGE (u:BaseURL {url: $base_url, user_id: $user_id, project_id: $project_id})
+                            ON CREATE SET u.source = 'uncover', u.updated_at = datetime()
+                            MERGE (e:Endpoint {path: $path, method: 'GET', baseurl: $base_url,
+                                               user_id: $user_id, project_id: $project_id})
+                            ON CREATE SET e.discovered_at = datetime(), e.source = 'uncover'
+                            SET e.url = $url, e.updated_at = datetime()
+                            MERGE (u)-[:HAS_ENDPOINT]->(e)
                             """,
-                            url=url, user_id=user_id, project_id=project_id,
+                            url=url, base_url=base_url, path=path,
+                            user_id=user_id, project_id=project_id,
                         )
                         stats["urls_created"] += 1
-                        # Link Endpoint to Domain
-                        if domain:
+                        stats["relationships_created"] += 1
+                        # The BaseURL, not the Endpoint, is what a host owns.
+                        # Subdomain first: uncover expands a target into hosts,
+                        # and hanging every URL off the apex Domain loses which
+                        # host it was actually found on.
+                        host = _urlparse(url).hostname or ""
+                        if host:
                             session.run(
                                 """
-                                MATCH (e:Endpoint {url: $url, user_id: $user_id, project_id: $project_id})
-                                MATCH (d:Domain {name: $domain, user_id: $user_id, project_id: $project_id})
-                                MERGE (d)-[:HAS_ENDPOINT]->(e)
+                                MATCH (u:BaseURL {url: $base_url, user_id: $user_id, project_id: $project_id})
+                                MERGE (s:Subdomain {name: $host, user_id: $user_id, project_id: $project_id})
+                                ON CREATE SET s.source = 'uncover', s.status = 'unverified',
+                                              s.updated_at = datetime()
+                                MERGE (s)-[:HAS_BASE_URL]->(u)
                                 """,
-                                url=url, domain=domain,
+                                base_url=base_url, host=host,
+                                user_id=user_id, project_id=project_id,
+                            )
+                            stats["relationships_created"] += 1
+                        elif domain:
+                            session.run(
+                                """
+                                MATCH (u:BaseURL {url: $base_url, user_id: $user_id, project_id: $project_id})
+                                MATCH (d:Domain {name: $domain, user_id: $user_id, project_id: $project_id})
+                                MERGE (d)-[:HAS_BASE_URL]->(u)
+                                """,
+                                base_url=base_url, domain=domain,
                                 user_id=user_id, project_id=project_id,
                             )
                             stats["relationships_created"] += 1

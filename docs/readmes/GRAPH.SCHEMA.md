@@ -167,6 +167,7 @@ who cannot see WHY a finding ranked where it did has no way to disagree with it.
 | `triage_state` | String | `open` \| `fixed` \| `gone` \| `inactive` \| `false_positive`. Only `open` is ranked |
 | `triage_host` | String | The host the model resolved and scored against, deterministically |
 | `triage_group_key` | String | One problem, one fix. Replaces `triage_cluster_id` |
+| `triage_detector` | String | Which detector fired (`nuclei:<template>`, `gvm:<oid>`, `trufflehog:<detector>`). Real / False positive clicks are counted per detector, per user, and feed back into C |
 | `triage_run_id` | String | Which run produced this. Drives "new since the last triage" |
 | `triage_model_version` | String | `SCORE_MODEL_VERSION`; two runs are comparable only when it matches |
 | `triage_intel_date` | String | When the CVE intelligence behind it was fetched |
@@ -3086,13 +3087,16 @@ A discovery made during an attack chain. Replaces the standalone `Exploit` node 
 })
 ```
 
-**Finding types:** `vulnerability_confirmed`, `credential_found`, `exploit_success`, `access_gained`, `privilege_escalation`, `service_identified`, `exploit_module_found`, `defense_detected`, `configuration_found`, `custom`
+**Finding types:** `vulnerability_confirmed`, `credential_found`, `exploit_success`, `access_gained`, `privilege_escalation`, `service_identified`, `exploit_module_found`, `defense_detected`, `configuration_found`, `information_disclosure`, `outbound_fetch`, `boolean_differential`, `data_exfiltration`, `lateral_movement`, `persistence_established`, `denial_of_service_success`, `social_engineering_success`, `remote_code_execution`, `session_hijacked`, `custom`
 
 **Relationships:**
 - `ChainFinding -[:FOUND_ON]-> IP` — Finding discovered on IP (bridge to recon)
 - `ChainFinding -[:FOUND_ON]-> Subdomain` — Finding discovered on subdomain (bridge to recon)
 - `ChainFinding -[:FINDING_RELATES_CVE]-> CVE` — Finding relates to CVE (bridge to recon)
-- `ChainFinding -[:CREDENTIAL_FOR]-> Service` — Credential found for service (bridge to recon)
+- `ChainFinding -[:FINDING_AFFECTS_ENDPOINT]-> Endpoint` — regex-matched from evidence
+- `ChainFinding -[:FINDING_AFFECTS_PORT]-> Port` — regex-matched from evidence
+- `ChainFinding -[:FINDING_AFFECTS_TECH]-> Technology` — name found in evidence
+- `ChainFinding -[:CONFIRMS]-> Vulnerability | Secret | MultiscannerFinding | GithubSecret | GithubSensitiveFile | JsReconFinding | MalPackageFinding | ExploitGvm` — the agent proved this specific recon finding, so the Priority Board scores it as proven (K1). Written only from a finding id the agent explicitly reported, tenant-scoped
 
 ### ChainDecision (Strategic Pivot)
 
@@ -3159,7 +3163,8 @@ Note: Bridges are only created for tool-execution steps. query_graph steps (read
     ChainStep -[:STEP_IDENTIFIED]-> Technology  (case-insensitive match on Technology.name)
     ChainFinding -[:FOUND_ON]-> IP / Subdomain  (IP vs Subdomain depends on whether related_ips value is an IP or hostname)
     ChainFinding -[:FINDING_RELATES_CVE]-> CVE
-    ChainFinding -[:CREDENTIAL_FOR]-> Service
+    ChainFinding -[:FINDING_AFFECTS_ENDPOINT|FINDING_AFFECTS_PORT|FINDING_AFFECTS_TECH]-> Endpoint / Port / Technology
+    ChainFinding -[:CONFIRMS]-> Vulnerability / Secret / MultiscannerFinding / GithubSecret / GithubSensitiveFile / JsReconFinding / MalPackageFinding / ExploitGvm  (the recon finding the agent proved, tenant-scoped, from a reported id only)
 ```
 
 ### Constraints & Indexes

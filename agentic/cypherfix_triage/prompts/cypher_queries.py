@@ -121,7 +121,6 @@ WHERE cf.finding_type IN ['exploit_success', 'credential_found', 'access_gained'
 OPTIONAL MATCH (cf)-[:FOUND_ON]->(target)
   WHERE target:IP OR target:Subdomain
 OPTIONAL MATCH (cf)-[:FINDING_RELATES_CVE]->(cve:CVE)
-OPTIONAL MATCH (cf)-[:CREDENTIAL_FOR]->(svc:Service)
 OPTIONAL MATCH (step:ChainStep)-[:PRODUCED]->(cf)
 OPTIONAL MATCH (ac:AttackChain)-[:HAS_STEP]->(step)
 RETURN cf.finding_id AS finding_id, cf.finding_type AS finding_type,
@@ -133,7 +132,6 @@ RETURN cf.finding_id AS finding_id, cf.finding_type AS finding_type,
        labels(target)[0] AS target_type,
        CASE WHEN target:IP THEN target.address ELSE target.name END AS target_value,
        collect(DISTINCT cve.id) AS related_cves,
-       svc.name AS credential_service,
        ac.chain_id AS chain_id, ac.status AS chain_status,
        ac.attack_path_type AS attack_path_type
 """,

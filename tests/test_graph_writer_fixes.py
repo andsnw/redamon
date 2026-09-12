@@ -216,5 +216,98 @@ class TestImportsAreNotInsideBranches(unittest.TestCase):
         self.assertIn("import logging", src.split("class ")[0])
 
 
+class TestProofCanBeTiedToTheFindingItProved(unittest.TestCase):
+    """K1, the CONFIRMS edge. FINDING_RELATES_CVE links a proof to a CVE, but a
+    finding is not always a CVE (a secret, a takeover, a graphql flaw), and the
+    board's `is_proven` reads a direct ChainFinding->finding link. Without it,
+    an agent that demonstrably popped a box still could not mark the specific
+    finding proven, so it stayed wherever its detection confidence put it."""
+
+    SRC = source("agentic/orchestrator_helpers/chain_graph_writer.py")
+
+    def test_the_edge_is_written(self):
+        self.assertIn("[:CONFIRMS]->(target)", self.SRC)
+
+    def test_it_matches_either_finding_key(self):
+        """Findings key on `id`, MalPackageFinding on `finding_id`."""
+        self.assertIn("target.id = target_id OR target.finding_id = target_id",
+                      self.SRC)
+
+    def test_it_is_tenant_scoped(self):
+        """A proof must never point at another project's finding."""
+        block = self.SRC[self.SRC.index("[:CONFIRMS]") - 600:
+                         self.SRC.index("[:CONFIRMS]") + 100]
+        self.assertIn("user_id: $uid, project_id: $pid", block)
+
+    def test_it_only_confirms_a_finding_label(self):
+        """An unlabelled MATCH would let a hallucinated id point CONFIRMS at any
+        node in the project, so the target label is checked against a fixed
+        list."""
+        self.assertIn("any(l IN labels(target) WHERE l IN $labels)", self.SRC)
+
+    def test_the_confirmable_labels_match_the_scoreable_ones(self):
+        """A CONFIRMS to a label the score model does not read back as proof
+        would be a silent no-op, so the two lists must not drift."""
+        # Both read by regex rather than imported: the writer pulls the neo4j
+        # driver, and the mixin is not importable as a package in this harness.
+        m = re.search(r"_CONFIRMABLE_LABELS = \(([^)]*)\)", self.SRC)
+        labels = set(re.findall(r'"([^"]+)"', m.group(1)))
+        triage = source("graph_db/mixins/recon/triage_mixin.py")
+        muteable = re.search(r"MUTEABLE_LABELS = \(([^)]*)\)", triage)
+        self.assertEqual(labels, set(re.findall(r'"([^"]+)"', muteable.group(1))))
+
+    def test_a_reported_id_is_not_regex_guessed(self):
+        """The proof link is only ever created from an id the agent explicitly
+        reported, never inferred from evidence text, because a wrong CONFIRMS is
+        worse than a missing one."""
+        block = self.SRC[self.SRC.index("[:CONFIRMS]") - 600:
+                         self.SRC.index("[:CONFIRMS]") + 100]
+        self.assertIn("related_finding_ids", block)
+        self.assertNotIn("_auto_extract", block)
+
+
+class TestUncoverEndpointsJoinTheGraph(unittest.TestCase):
+    """K23. uncover keyed its Endpoints on `url` and hung them off the Domain,
+    the one key nothing else uses. Each was therefore a SECOND Endpoint for a
+    path http_probe had already written, outside the BaseURL tree, invisible to
+    every reachability read (which walks BaseURL->HAS_ENDPOINT) and to the
+    liveness facts the board scores reach from."""
+
+    SRC = source("graph_db/mixins/osint_mixin.py")
+
+    def _block(self):
+        start = self.SRC.index("# K23.")
+        return self.SRC[start:self.SRC.index("def update_graph_from_origin_discovery")]
+
+    def test_the_endpoint_uses_the_canonical_identity(self):
+        self.assertIn(
+            "MERGE (e:Endpoint {path: $path, method: 'GET', baseurl: $base_url,",
+            self._block())
+
+    def test_it_no_longer_keys_on_the_full_url(self):
+        self.assertNotIn("MERGE (e:Endpoint {url: $url", self._block())
+
+    def test_it_hangs_off_a_baseurl(self):
+        self.assertIn("MERGE (u)-[:HAS_ENDPOINT]->(e)", self._block())
+
+    def test_the_baseurl_hangs_off_the_host_not_the_apex_domain(self):
+        """An uncover URL on sub.example.com belongs to that host, not to the
+        apex; the old code lost which host a URL was found on."""
+        block = self._block()
+        self.assertIn("MERGE (s:Subdomain {name: $host,", block)
+        self.assertIn("[:HAS_BASE_URL]->(u)", block)
+
+    def test_the_splitter_agrees_with_the_canonical_one(self):
+        """_split_url is copied, not imported, so pin that the two producers
+        compute the same (base, path): a drift of one trailing slash duplicates
+        Endpoints. Both build scheme://netloc and path-or-'/', so the two bodies
+        must contain the same identity expressions."""
+        http = source("graph_db/mixins/recon/http_mixin.py")
+        for expr in ('f"{parsed.scheme}://{parsed.netloc}"', 'parsed.path or "/"'):
+            with self.subTest(expr=expr):
+                self.assertIn(expr, self.SRC)
+                self.assertIn(expr, http)
+
+
 if __name__ == "__main__":
     unittest.main()

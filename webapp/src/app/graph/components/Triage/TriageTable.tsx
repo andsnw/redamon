@@ -170,6 +170,28 @@ function factorLine(factors: Record<string, Factor> | null): string {
   )
 }
 
+/** The evidence behind each factor, for the hover.
+ *
+ * The line above is four numbers, and a number an operator cannot interrogate
+ * is a number they cannot disagree with. This matters most for C, which now
+ * also carries what their own Real / False positive clicks on that detector
+ * have taught it ("you judged 2 of 10 of these real"): a score that moved for
+ * an invisible reason is how a ranking loses its users.
+ */
+function factorEvidence(factors: Record<string, Factor> | null): string {
+  if (!factors) return ''
+  const labels: Record<string, string> = {
+    C: 'real', L: 'exploit', I: 'impact', R: 'reach',
+  }
+  return ['C', 'L', 'I', 'R']
+    .map(key => {
+      const evidence = factors[key]?.evidence
+      return evidence ? `${labels[key]}: ${evidence}` : ''
+    })
+    .filter(Boolean)
+    .join('\n')
+}
+
 /** Worst-first, so the operator's attention lands where it should. */
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info', '']
 
@@ -650,7 +672,10 @@ export function TriageTable({ projectId }: TriageTableProps) {
                                 {TIER_LABELS[tier]}
                               </span>
                               {factors ? (
-                                <span className={styles.factorLine}>
+                                <span
+                                  className={styles.factorLine}
+                                  title={factorEvidence(factors)}
+                                >
                                   {factorLine(factors)}
                                 </span>
                               ) : (

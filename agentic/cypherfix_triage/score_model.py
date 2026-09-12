@@ -51,7 +51,7 @@ from typing import Any, Iterable, Optional
 
 #: Bump on ANY change to a table, a threshold or a rule below. Stored with each
 #: run so two runs are only comparable when this matches.
-SCORE_MODEL_VERSION = "v3.0.0"
+SCORE_MODEL_VERSION = "v3.1.0"
 
 
 # ===========================================================================
@@ -518,6 +518,19 @@ CONFIDENCE_BY_SOURCE = {
 #: What an unknown source gets, plus a log line. Never silently right.
 CONFIDENCE_UNKNOWN_SOURCE = 0.75
 
+#: How many labels it takes to move a detector's C halfway from its class prior
+#: to what an operator's clicks say. Ten is deliberately slow: a detector is
+#: judged on a handful of findings at first, and three unlucky clicks must not
+#: be able to switch a real detector off.
+DETECTOR_PRIOR_WEIGHT = 10
+
+#: C is never learned all the way to 0 or 1. A detector a person has called
+#: wrong twenty times still fires, just near the bottom of the board, because a
+#: silenced detector is invisible and nobody ever finds out it went wrong. The
+#: top bound is below 1.0 because 1.0 is reserved for PROVEN.
+DETECTOR_MIN_CONFIDENCE = 0.1
+DETECTOR_MAX_CONFIDENCE = 0.99
+
 #: GVM `qod_type` values that mean the detection actually interacted with the
 #: vulnerability rather than reading a banner.
 GVM_ACTIVE_QOD_TYPES = frozenset({
@@ -561,6 +574,12 @@ class ProjectFacts:
     cdn_only_hosts: set = field(default_factory=set)
     #: hosts whose matched URL answered 401/403
     auth_required_hosts: set = field(default_factory=set)
+    #: detector key -> {"real": n, "fp": n}, this USER's own verdicts across
+    #: every project of theirs. Never shared between users: one operator's
+    #: "that detector is noise here" is about their estate, not about the
+    #: detector, and pooling them would let one account's clicks re-rank
+    #: another's board. See `learned_confidence`.
+    detector_labels: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -662,9 +681,115 @@ def finding_state(finding: dict, facts: ProjectFacts) -> tuple[str, str]:
 
 
 # ===========================================================================
-# C (3.2.3)
+# C (3.2.3), and what an operator's clicks teach it (Phase 8a)
 # ===========================================================================
+def detector_key(finding: dict) -> str:
+    """Which DETECTOR produced this, as a stable string.
+
+    Not the same thing as `group_key`. A group is one problem with one fix, so
+    it merges by CVE. A detector key is the rule that fired, so that clicking
+    "false positive" on one of its findings says something about the next one:
+    a nuclei template, a secret detector, a GVM test, a deterministic check.
+
+    Deliberately NOT per advisory. "CVE-2021-23337 was a false positive here"
+    says nothing about CVE-2022-0001, so OSV-style sources key on the source
+    alone and learn how much this operator trusts advisory matching at all.
+    """
+    finding = finding or {}
+    source = _lower(finding.get("source"))
+    label = str(finding.get("label") or "")
+
+    def part(*values, cap=100):
+        for value in values:
+            text = str(value or "").strip().lower()
+            if text:
+                # A tight charset on purpose: this string is written to the
+                # graph and read back as a grouping key, so a template id
+                # carrying separators must not be able to look like another
+                # detector's key.
+                return re.sub(r"[^a-z0-9._-]+", "-", text)[:cap]
+        return ""
+
+    if source == "nuclei":
+        template = part(finding.get("template_id"))
+        return f"nuclei:{template}" if template else "nuclei"
+
+    if source == "gvm" or label == "ExploitGvm":
+        # The OID identifies the NVT. It is the closest thing GVM has to a
+        # rule id, and its families are far too broad to learn on.
+        oid = part(finding.get("oid"), finding.get("nvt_oid"))
+        return f"gvm:{oid}" if oid else "gvm"
+
+    if source == "security_check":
+        check = part(finding.get("type"), finding.get("name"))
+        return f"check:{check}" if check else "security_check"
+
+    if label in ("Secret", "GithubSecret", "GithubSensitiveFile",
+                 "MultiscannerFinding") or source in ("trufflehog", "github_hunt"):
+        detector = part(finding.get("detector_name"), finding.get("secret_type"),
+                        finding.get("key_type"))
+        prefix = source or "secret"
+        return f"{prefix}:{detector}" if detector else prefix
+
+    if source in ("ai_surface_recon", "ai_attack"):
+        owasp = part(finding.get("ai_owasp_llm_id"))
+        return f"{source}:{owasp}" if owasp else source
+
+    if source:
+        return source
+    return f"label:{part(label) or 'unknown'}"
+
+
+def learned_confidence(base: float, real: int, false_positive: int) -> Optional[float]:
+    """This user's verdicts on this detector, folded into its class prior.
+
+    A Beta posterior with the class prior as its pseudo-counts:
+
+        C = (W x base + real) / (W + real + fp)      W = DETECTOR_PRIOR_WEIGHT
+
+    With no labels it returns None and the rule stands. With one label it barely
+    moves. With twenty it is mostly what the operator said. Bounded on both
+    sides so a detector is never learned into silence or into certainty.
+    """
+    real = max(0, as_int(real))
+    false_positive = max(0, as_int(false_positive))
+    if real + false_positive == 0:
+        return None
+    weight = DETECTOR_PRIOR_WEIGHT
+    posterior = (weight * float(base) + real) / (weight + real + false_positive)
+    return min(DETECTOR_MAX_CONFIDENCE, max(DETECTOR_MIN_CONFIDENCE, posterior))
+
+
 def confidence(finding: dict, facts: ProjectFacts) -> Factor:
+    """C: P(the finding is real), from how it was detected and how this
+    operator's own verdicts on that detector have turned out.
+
+    PROVEN is exempt. Something an exploit demonstrated is real whatever anyone
+    clicked, and letting clicks talk it down is the same mistake the AI review
+    is forbidden from making.
+    """
+    rule = _rule_confidence(finding, facts)
+    if is_proven(finding, facts):
+        return rule
+
+    counts = (facts.detector_labels or {}).get(detector_key(finding))
+    if not counts:
+        return rule
+
+    real = as_int(counts.get("real"))
+    false_positive = as_int(counts.get("fp"))
+    learned = learned_confidence(rule.value, real, false_positive)
+    if learned is None:
+        return rule
+
+    verdicts = real + false_positive
+    return Factor(
+        learned,
+        f"{rule.evidence}; you judged {real} of {verdicts} of these real",
+    )
+
+
+def _rule_confidence(finding: dict, facts: ProjectFacts) -> Factor:
     source = _lower(finding.get("source"))
     label = str(finding.get("label") or "")
 
