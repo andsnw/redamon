@@ -145,6 +145,25 @@ interface Factor {
   evidence: string
 }
 
+/** One section's title, count and blurb, on a single line.
+ *
+ *  The FIRST section's header is rendered into the toolbar's empty left slot
+ *  rather than above its own table, which buys back another row of vertical
+ *  space on a board that is mostly table. Later sections keep theirs in place,
+ *  because there is no toolbar to share.
+ */
+function SectionHead({ sectionKey, count }: { sectionKey: number; count: number }) {
+  return (
+    <div className={styles.sectionHead}>
+      <h3 className={styles.sectionHeading}>
+        {SECTION_TITLES[sectionKey]}
+        <span className={styles.sectionCount}>{count}</span>
+      </h3>
+      <p className={styles.sectionBlurb}>{SECTION_BLURBS[sectionKey]}</p>
+    </div>
+  )
+}
+
 /** The four factors, parsed from the JSON the server stores. Never throws: a
  *  row written by an older run simply has no breakdown to show. */
 function parseFactors(raw: string | null | undefined): Record<string, Factor> | null {
@@ -537,6 +556,12 @@ export function TriageTable({ projectId }: TriageTableProps) {
   return (
     <div className={styles.wrap}>
       <div className={styles.toolbar}>
+        {sections.length > 0 && (
+          <SectionHead
+            sectionKey={sections[0].key}
+            count={sections[0].rows.length}
+          />
+        )}
         <div className={styles.filters}>
           <button
             className={`${styles.chip} ${tierFilter === 'all' ? styles.chipActive : ''}`}
@@ -604,15 +629,11 @@ export function TriageTable({ projectId }: TriageTableProps) {
             : 'No findings match this filter.'}
         </div>
       ) : (
-        sections.map(section => (
+        sections.map((section, sectionIndex) => (
           <div key={section.key} className={styles.section}>
-            <div className={styles.sectionHead}>
-              <h3 className={styles.sectionHeading}>
-                {SECTION_TITLES[section.key]}
-                <span className={styles.sectionCount}>{section.rows.length}</span>
-              </h3>
-              <p className={styles.sectionBlurb}>{SECTION_BLURBS[section.key]}</p>
-            </div>
+            {sectionIndex > 0 && (
+              <SectionHead sectionKey={section.key} count={section.rows.length} />
+            )}
             <div className={styles.tableScroll}>
               <table className={styles.table}>
                 <thead>

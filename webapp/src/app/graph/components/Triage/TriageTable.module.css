@@ -10,12 +10,12 @@
   overflow: auto;
 }
 
-/* One right-aligned group: the tier filters sit directly beside the run button,
-   so the toolbar costs a single line and the sections below start higher. */
+/* One line for everything: the leading section's header on the left, the tier
+   filters and the run button together on the right. The board is mostly table,
+   so every row of chrome removed is a row of findings gained. */
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: var(--space-2);
   flex-wrap: wrap;
 }
@@ -24,6 +24,9 @@
   display: flex;
   gap: var(--space-1);
   flex-wrap: wrap;
+  /* Right-aligns the filters + buttons whether or not a section header is
+     present on the left, so the toolbar looks the same on an empty board. */
+  margin-left: auto;
 }
 
 .actions {
@@ -378,6 +381,11 @@
   align-items: baseline;
   gap: 8px;
   flex-wrap: wrap;
+  min-width: 0;        /* lets the blurb ellipsise rather than push the chips */
+}
+
+/* Only the headers that still sit above their own table need the gap. */
+.section > .sectionHead {
   margin-bottom: 4px;
 }
 
