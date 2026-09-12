@@ -508,3 +508,42 @@ def merge_discovered_hostnames(
     if injected:
         print(f"[*][{source}] merged {injected} in-scope hostname(s) into dns.subdomains")
     return result
+
+
+def collect_certificate_sans(combined_result: dict) -> list:
+    """Every hostname named by a certificate already captured in memory.
+
+    Phase 0.6: httpx grabs the full SAN list on every HTTPS port it probes and
+    the pipeline never looked at it again, so names the target itself advertised
+    were thrown away. Reads BOTH sources so the feedback path does not depend on
+    tlsx being enabled (the Phase 1.0 rule):
+
+      - http_probe.by_url[*].tls.certificate.san
+      - tlsx.by_target[*].san
+
+    Returns raw names (wildcards included); scoping, validation and the cap are
+    ``merge_discovered_hostnames``'s job, not this one's.
+    """
+    names: set = set()
+
+    by_url = ((combined_result.get("http_probe") or {}).get("by_url")) or {}
+    for info in by_url.values():
+        if not isinstance(info, dict):
+            continue
+        cert = ((info.get("tls") or {}).get("certificate")) or {}
+        for san in cert.get("san") or []:
+            if isinstance(san, str) and san.strip():
+                names.add(san.strip().lower())
+        cn = cert.get("subject_cn")
+        if isinstance(cn, str) and cn.strip():
+            names.add(cn.strip().lower())
+
+    by_target = ((combined_result.get("tlsx") or {}).get("by_target")) or {}
+    for entry in by_target.values():
+        if not isinstance(entry, dict):
+            continue
+        for san in entry.get("san") or []:
+            if isinstance(san, str) and san.strip():
+                names.add(san.strip().lower())
+
+    return sorted(names)

@@ -317,6 +317,50 @@ def _enrich_port_details(combined_result: dict, by_target: dict) -> None:
                 pd["tls_service_hint"] = hint
 
 
+def _attribute_cdn(combined_result: dict, by_target: dict) -> int:
+    """Fill is_cdn/cdn from the certificate issuer where naabu left them unset.
+
+    Phase 2.3. naabu reports a CDN only when its own fingerprinting says so, and
+    ``response_is_cdn_edge`` needs a requests.Response, so neither can attribute
+    a CDN on a non-HTTP TLS port. A certificate issuer works from the handshake
+    alone. Only fills a BLANK value -- naabu's own attribution always wins --
+    and ip_filter consumes the result with no change to that module.
+    """
+    from recon.helpers.cdn_ranges import cdn_from_certificate
+
+    port_scan = combined_result.get("port_scan") or {}
+    by_ip = port_scan.get("by_ip") or {}
+    by_host = port_scan.get("by_host") or {}
+
+    cdn_by_ip = {}
+    for entry in by_target.values():
+        if not isinstance(entry, dict) or not entry.get("probe_status"):
+            continue
+        name = cdn_from_certificate(entry.get("issuer_dn") or entry.get("issuer_cn")
+                                    or entry.get("issuer_org"))
+        if name:
+            cdn_by_ip.setdefault(entry.get("scanned_ip") or entry.get("ip"), name)
+
+    filled = 0
+    for ip, name in cdn_by_ip.items():
+        if not ip:
+            continue
+        info = by_ip.get(ip)
+        if isinstance(info, dict) and not info.get("cdn"):
+            info["cdn"] = name
+            info["is_cdn"] = True
+            info["cdn_source"] = "tls_certificate"
+            filled += 1
+        for hinfo in by_host.values():
+            if isinstance(hinfo, dict) and hinfo.get("ip") == ip and not hinfo.get("cdn"):
+                hinfo["cdn"] = name
+                hinfo["is_cdn"] = True
+                hinfo["cdn_source"] = "tls_certificate"
+    if filled:
+        _print("+", f"attributed a CDN from the certificate issuer on {filled} IP(s)")
+    return filled
+
+
 def _discovered_hostnames(by_target: dict) -> list:
     out = set()
     for cert in by_target.values():
@@ -376,6 +420,7 @@ def run_tlsx_enrichment(combined_result: dict, settings: dict) -> dict:
 
         by_target = _parse_tlsx_output(stdout, meta)
         _enrich_port_details(combined_result, by_target)
+        _attribute_cdn(combined_result, by_target)
 
         with_cert = sum(1 for c in by_target.values() if c.get("fingerprint_sha256") or c.get("subject_cn"))
         combined_result["tlsx"] = {

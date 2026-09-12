@@ -1504,6 +1504,32 @@ def run_domain_recon(target: str, bruteforce: bool = False,
                 combined_result["metadata"].setdefault("phase_errors", {})["http_probe"] = str(e)
                 save_recon_file(combined_result, output_file)
 
+    # =====================================================================
+    # Certificate SAN feedback (Phase 0.6)
+    # httpx captures the full SAN list on every HTTPS port it probes and the
+    # pipeline never read it back, so hostnames the target itself advertised
+    # were discarded. Runs here, after GROUP 4, so the names reach vhost
+    # (GROUP 6) and the graph; tlsx's own SANs were already merged at GROUP 3.6
+    # and the scope filter is idempotent, so re-offering them is harmless.
+    # Deliberately NOT gated on tlsx: this is the Phase 1.0 rule, gate on the
+    # data you have, not on which tool produced it.
+    # =====================================================================
+    if _settings.get('TLSX_INJECT_HOSTNAMES', True):
+        try:
+            from recon.helpers.target_helpers import (
+                collect_certificate_sans, merge_discovered_hostnames,
+            )
+            _san_names = collect_certificate_sans(combined_result)
+            if _san_names:
+                merge_discovered_hostnames(
+                    combined_result, _san_names, source="certificate_san",
+                    root_domain=root_domain, settings=_settings,
+                    max_injected=_settings.get('TLSX_MAX_INJECTED_HOSTNAMES', 200),
+                )
+                save_recon_file(combined_result, output_file)
+        except Exception as e:
+            print(f"[!][Pipeline] certificate SAN feedback failed: {e}")
+
     # Check if we should skip active scanning modules (resource_enum, vuln_scan)
     # These require live targets from http_probe to work
     skip_active_scans, skip_reason = should_skip_active_scans(combined_result)

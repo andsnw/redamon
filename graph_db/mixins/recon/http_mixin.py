@@ -323,7 +323,13 @@ class HttpMixin:
                             "san": cert_data.get("san", []),  # full SAN list as presented
                             "cipher": tls_data.get("cipher"),
                             "tls_version": tls_data.get("version"),
-                            "jarm": cert_data.get("jarm") or tls_data.get("jarm"),
+                            # Phase 0.6: httpx already pays ~10 TLS handshakes for
+                            # -jarm (default on) and writes it at the URL level,
+                            # NOT inside tls.certificate -- so reading it from the
+                            # cert dict found nothing and the fingerprint was
+                            # thrown away every scan.
+                            "jarm": (cert_data.get("jarm") or tls_data.get("jarm")
+                                     or url_info.get("jarm")),
                         }
                         if fingerprint:
                             cert_props["fingerprint_sha256"] = fingerprint

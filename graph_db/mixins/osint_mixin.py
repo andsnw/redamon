@@ -128,6 +128,53 @@ class OsintMixin:
                         stats["ports_created"] += 1
                         stats["relationships_created"] += 1
 
+                        # Certificate from Shodan's per-service ssl block
+                        # (Phase 0.6). Free data: Shodan already handshook.
+                        ssl_cert = svc.get("ssl") or {}
+                        if ssl_cert.get("subject_cn") or ssl_cert.get("fingerprint_sha256"):
+                            try:
+                                cert_key = build_cert_key(
+                                    fingerprint_sha256=ssl_cert.get("fingerprint_sha256"),
+                                    subject_cn=ssl_cert.get("subject_cn"),
+                                    issuer=ssl_cert.get("issuer"),
+                                    not_before=ssl_cert.get("not_before"),
+                                    not_after=ssl_cert.get("not_after"),
+                                )
+                                cert_props = {k: v for k, v in {
+                                    "subject_cn": ssl_cert.get("subject_cn") or None,
+                                    "issuer": ssl_cert.get("issuer"),
+                                    "issuer_cn": ssl_cert.get("issuer_cn"),
+                                    "serial": ssl_cert.get("serial"),
+                                    "not_before": ssl_cert.get("not_before"),
+                                    "not_after": ssl_cert.get("not_after"),
+                                    "fingerprint_sha256": ssl_cert.get("fingerprint_sha256"),
+                                    "expired": ssl_cert.get("expired"),
+                                    "jarm": ssl_cert.get("jarm"),
+                                    "ja3s": ssl_cert.get("ja3s"),
+                                    "cipher": ssl_cert.get("cipher"),
+                                    "tls_versions_supported": ssl_cert.get("versions") or None,
+                                }.items() if v is not None}
+                                session.run(
+                                    """
+                                    MERGE (c:Certificate {cert_key: $cert_key, user_id: $user_id,
+                                                          project_id: $project_id})
+                                    ON CREATE SET c.source = 'shodan'
+                                    SET c += $props,
+                                        c.observed_by = CASE WHEN 'shodan' IN coalesce(c.observed_by, [])
+                                                             THEN c.observed_by
+                                                             ELSE coalesce(c.observed_by, []) + 'shodan' END,
+                                        c.updated_at = datetime()
+                                    WITH c
+                                    MATCH (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
+                                    MERGE (i)-[:HAS_CERTIFICATE]->(c)
+                                    """,
+                                    cert_key=cert_key, user_id=user_id, project_id=project_id,
+                                    props=cert_props, ip=ip,
+                                )
+                                stats["relationships_created"] += 1
+                            except Exception as e:
+                                stats.setdefault("errors", []).append(f"Shodan cert {ip}: {e}")
+
                         # MERGE Service (if product is known)
                         product = svc.get("product", "").strip()
                         if product:
@@ -606,6 +653,13 @@ class OsintMixin:
                         "urlscan_server": data["server"] or None,
                         "urlscan_title": data["title"] or None,
                         "urlscan_enriched": True,
+                        # Phase 0.6: urlscan already parses these and they were
+                        # dropped on the floor. Certificate posture for free, on
+                        # a page we never had to fetch ourselves.
+                        "urlscan_tls_issuer": data.get("tls_issuer") or None,
+                        "urlscan_tls_valid_days": data.get("tls_valid_days"),
+                        "urlscan_tls_valid_from": data.get("tls_valid_from") or None,
+                        "urlscan_tls_age_days": data.get("tls_age_days"),
                     }.items() if v is not None}
 
                     if props:
@@ -1831,6 +1885,11 @@ class OsintMixin:
                                 ("isp",         "isp"),
                                 ("asn",         "asn"),
                                 ("update_time", "zoomeye_last_seen"),
+                                # Phase 0.6: ZoomEye hands us these TLS stack
+                                # fingerprints for free; they were parsed and
+                                # then discarded.
+                                ("ssl_jarm",    "jarm"),
+                                ("ssl_ja3s",    "ja3s"),
                             ):
                                 val = row.get(field)
                                 if val:
