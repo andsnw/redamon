@@ -437,7 +437,7 @@ The platform is built around six pillars:
 | **AI Agent Orchestrator** | A LangGraph-based autonomous agent that reasons about the graph, selects security tools via MCP, transitions through informational / exploitation / post-exploitation phases, and can be steered in real-time via chat. |
 | **Attack Surface Graph** | A Neo4j knowledge graph with 17 node types and 20+ relationship types that serves as the single source of truth for every finding, and the primary data source the AI agent queries before every decision. |
 | **EvoGraph** | A persistent, evolutionary attack chain graph in Neo4j that tracks every step, finding, decision, and failure across the attack lifecycle, bridging the recon graph and enabling cross-session intelligence accumulation. |
-| **CypherFix** | Automated vulnerability remediation pipeline: an AI triage agent correlates and prioritizes findings from the graph, then a CodeFix agent clones the target repository, implements fixes using a ReAct loop with 11 code tools, and opens a GitHub pull request. |
+| **CypherFix** | Automated vulnerability remediation pipeline: one triage run scores every finding from the graph with a fixed risk model, groups the ones that share a fix, has an LLM check the evidence behind each, and writes one fix item per group. A CodeFix agent then clones the target repository, implements a fix using a ReAct loop with 11 code tools, and opens a GitHub pull request. |
 | **Project Settings Engine** | 500+ per-project parameters (exposed through the webapp UI) that control every tool's behavior, from Naabu thread counts to Nuclei severity filters to agent approval gates. |
 
 ---
@@ -726,7 +726,7 @@ Full interactive **PTY shell access** to the Kali sandbox container directly fro
 
 ### CypherFix: Automated Vulnerability Remediation
 
-Two-agent pipeline: a **Triage Agent** runs 9 hardcoded Cypher queries then uses an LLM to correlate, deduplicate, and prioritize findings. A **CodeFix Agent** clones the target repo, explores the codebase with 11 tools, implements fixes, and opens a GitHub PR, replicating Claude Code's agentic design. Because the cloned repo is untrusted, its **build/test commands run in an isolated, secret-free sandbox container** (not in the agent), and the GitHub token never enters it.
+Two-agent pipeline. A **Triage Agent** scores every finding in the graph with a fixed risk model (how likely it is to be real, times how likely it is to be exploited, times how bad that would be, times how reachable it is), groups the findings that share a fix, and has an LLM check the evidence behind each one it can judge. The model corrects the factors and never produces a score, every quote it gives is verified against the evidence it was sent, and it binds no tools. The ranking is complete and correct with no model configured at all. A **CodeFix Agent** clones the target repo, explores the codebase with 11 tools, implements fixes, and opens a GitHub PR, replicating Claude Code's agentic design. Because the cloned repo is untrusted, its **build/test commands run in an isolated, secret-free sandbox container** (not in the agent), and the GitHub token never enters it.
 
 > **[Wiki: CypherFix](https://github.com/samugit83/redamon/wiki/CypherFix-Automated-Remediation)** | **[Technical: README.CYPHERFIX_AGENTS.md](docs/readmes/README.CYPHERFIX_AGENTS.md)**
 

@@ -147,19 +147,60 @@ loader (`webapp/src/app/api/graph/liveRead.ts`), the fixed-op node-type query
 | `muted_by` | String | `user_id` of the operator who suppressed it |
 | `muted_reason` | String | Optional operator note |
 
-### Triage verdict properties (any finding node, independent of mute)
+### Triage properties (any finding node, independent of mute)
 
-Written by the AI triage pass; a verdict ranks a finding but never hides it, and
-mute stays a human action.
+Written by a triage run. They RANK a finding and never hide it; mute stays a
+human action, and there is no code path from a run to the `Muted` label.
+
+**The score and how it was reached.** All of it is stored, because an operator
+who cannot see WHY a finding ranked where it did has no way to disagree with it.
 
 | Property | Type | Meaning |
 | --- | --- | --- |
-| `triage_status` | String | `confirmed` \| `likely_noise` \| `needs_verification` \| `unreviewed` (absent = unreviewed) |
+| `triage_priority_score` | Float | 0-100, the sort key. Bigger is more urgent |
+| `triage_math_score` | Float | The score before any AI correction |
+| `triage_tier` | String | `T1` Act now \| `T2` Act soon \| `T3` Plan \| `T4` Track |
+| `triage_tier_rule` | String | Which rule placed it in that tier |
+| `triage_factors` | String (JSON) | `C`, `L`, `I`, `R`, each with the evidence it came from |
+| `triage_signals` | String[] | The readable fact chips: `KEV`, `EPSS 0.94`, `live endpoint` |
+| `triage_state` | String | `open` \| `fixed` \| `gone` \| `inactive` \| `false_positive`. Only `open` is ranked |
+| `triage_host` | String | The host the model resolved and scored against, deterministically |
+| `triage_group_key` | String | One problem, one fix. Replaces `triage_cluster_id` |
+| `triage_run_id` | String | Which run produced this. Drives "new since the last triage" |
+| `triage_model_version` | String | `SCORE_MODEL_VERSION`; two runs are comparable only when it matches |
+| `triage_intel_date` | String | When the CVE intelligence behind it was fetched |
+| `triage_proof` | String (JSON) | The chain findings that proved it, so proof survives a lost edge |
+| `triaged_at` | datetime | When the run wrote this |
+
+**What the AI concluded.** It corrects factors and never produces a score.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `triage_ai_verdict` | String | `real` \| `doubtful` \| `false_positive` \| `unclear` \| `not_reviewed` |
+| `triage_ai_corrections` | String (JSON) | What it changed, and the disputes it raised |
+| `triage_ai_quote` | String | The exact evidence text, VERIFIED as a substring of what was sent |
+| `triage_ai_model` | String | Which model reviewed it |
+| `triage_ai_at` | datetime | When |
+| `triage_evidence_hash` | String | The review cache key: evidence + prompt version + model |
+| `triage_fix_lever` | String | The short phrase describing what would fix it |
+
+**The verdict, which a person owns.**
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `triage_status` | String | `confirmed` \| `likely_noise` \| `unreviewed` (absent = unreviewed) |
 | `triage_confidence` | Float | 0.0 - 1.0 |
 | `triage_reason` | String | One line, why |
-| `triage_source` | String | `ai` \| `human`; a human verdict is never overwritten by a re-run |
-| `triage_cluster_id` | String | Cross-tool dedup group |
-| `triaged_at` | datetime | When the verdict was written |
+| `triage_source` | String | `ai` \| `human`. A human verdict is never overwritten |
+
+> **A human owns the verdict, not the measurements.** When `triage_source` is
+> `human`, later runs keep updating the facts, the factors and the score,
+> because those are measurements and a stale rank helps nobody. Only
+> `triage_status`, `triage_reason` and `triage_confidence` are left alone.
+
+**Retention.** `stale_since` marks a finding a completed scan of its owning
+source no longer reports but which was kept because it is muted or human-owned;
+triage reads it as `state = fixed`. `last_seen_at` is stamped by each ingest.
 
 `Muted` carries no colour in `webapp/src/app/graph/config/colors.ts` on purpose:
 it is never rendered, because it never reaches the renderer.
