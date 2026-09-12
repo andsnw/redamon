@@ -513,6 +513,7 @@ Everything runs on a **fan-out / fan-in** architecture: each phase fires as many
 | | **Threat Intel Enrichment** | Censys, FOFA, OTX (AlienVault), Netlas, VirusTotal, ZoomEye, CriminalIP | Passive | 7 tools parallel (GROUP 3b) |
 | **Port Scanning** | **Port Scanning** | Masscan, Naabu | Active / Passive | Both parallel (Naabu supports passive InternetDB mode) |
 | **Nmap Service Detection** | **Service Version Detection** | Nmap (-sV, --script vuln) | Active | Sequential per target |
+| **Port Scanning** | **TLS Certificate Grab** | tlsx: one handshake per open **non-HTTP** port (SMTPS 465, IMAPS 993, POP3S 995, LDAPS 636, FTPS 990, and any odd TLS port the port scan found), capturing issuer / SAN / validity / posture where httpx only reaches the five HTTPS ports it dials. In-scope SAN hostnames feed back as scan targets (apex-scoped, resolve-checked); optional JARM / JA3 fingerprints and TLS version / cipher enumeration | Active | After Nmap, before HTTP probing so discovered hostnames become probe targets (GROUP 3.6) |
 | **HTTP Probing** | **HTTP Probing** | httpx | Active | Internal parallel |
 | | **Tech Detection** | Wappalyzer | Passive | Sequential (post-probe) |
 | | **Banner Grabbing** | Custom (Python sockets: SSH, FTP, SMTP, MySQL, etc.) | Active | Parallel workers |
