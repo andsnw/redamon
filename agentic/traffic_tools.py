@@ -524,16 +524,34 @@ def _ci_set(out: Dict[str, str], key: str, value: str) -> Dict[str, str]:
     return out
 
 
+_REDACTED_RE = re.compile(r"^\[redacted:[0-9a-f]+\]$")
+
+
+def _is_redacted(value: Any) -> bool:
+    """True for the ingest worker's at-rest mask (`_mask` in ingest_worker.py)."""
+    return isinstance(value, str) and bool(_REDACTED_RE.match(value.strip()))
+
+
 def _apply_header_mutations(headers: Dict[str, Any], mutate: Dict[str, Any],
                             base_headers: Dict[str, str] = None) -> Dict[str, str]:
     # Precedence: explicit mutate > origin transaction header > profile (base).
     # The AuthProfile seeds the lowest layer so an in-scope authenticated identity
     # rides along, but the origin request's own auth (and any agent mutate for
     # IDOR/BOLA) still wins. The target host is NEVER mutable (scope safety).
+    #
+    # A redacted origin header is the one exception. The ingest worker masks
+    # Cookie/Authorization at rest, so the stored value is `[redacted:<digest>]`,
+    # a placeholder that authenticates nothing. Letting it outrank the profile
+    # meant every replay of a captured authenticated request went out with a dead
+    # cookie and came back logged out, which is precisely the case replay exists
+    # for. Treat it as absent so the profile (or an explicit mutate) supplies the
+    # live value; a genuinely stored header still wins as before.
     out: Dict[str, str] = {}
     for k, v in (base_headers or {}).items():
         out = _ci_set(out, str(k), v if isinstance(v, str) else json.dumps(v))
     for k, v in (headers or {}).items():
+        if _is_redacted(v):
+            continue
         out = _ci_set(out, str(k), v if isinstance(v, str) else json.dumps(v))
     drop = {str(h).lower() for h in mutate.get("dropHeaders", [])}
     if "cookie" in mutate and not mutate["cookie"]:
