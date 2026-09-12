@@ -130,12 +130,22 @@ def dcg(grades: list[int]) -> float:
     return total
 
 
-def ndcg_at(graded_ranking: list[int], k: int) -> float:
-    """NDCG@k, 0.0 when the ideal ranking has no gain to give."""
+def ndcg_at(graded_ranking: list[int], k: int) -> float | None:
+    """NDCG@k, or None when there is nothing to measure.
+
+    None, not 0.0. A project whose findings the truth file says nothing about
+    is UNMEASURED, and 0.0 says "the worst possible ordering" - which the
+    release gate would then read as a catastrophic regression caused by
+    whatever changed last. The two have to be distinguishable.
+    """
+    if not graded_ranking:
+        return None
     ideal = sorted(graded_ranking, reverse=True)[:k]
     ideal_dcg = dcg(ideal)
     if ideal_dcg <= 0:
-        return 0.0
+        # Everything known about this board is a false positive or a
+        # fingerprint, so there is no "right" order to score against.
+        return None
     return dcg(graded_ranking[:k]) / ideal_dcg
 
 
@@ -144,6 +154,10 @@ def precision_at(graded_ranking: list[int], k: int) -> float:
     if not top:
         return 0.0
     return sum(1 for g in top if g >= RELEVANT_GRADE) / len(top)
+
+
+def _round(value):
+    return None if value is None else round(value, 4)
 
 
 def evaluate(findings: list[dict], truth_entries: list[dict]) -> dict[str, Any]:
@@ -185,8 +199,8 @@ def evaluate(findings: list[dict], truth_entries: list[dict]) -> dict[str, Any]:
         "findings": len(findings),
         "graded": len(graded),
         "coverage": round(len(graded) / total, 3),
-        "ndcg@25": round(ndcg_at(graded, 25), 4),
-        "ndcg@10": round(ndcg_at(graded, 10), 4),
+        "ndcg@25": _round(ndcg_at(graded, 25)),
+        "ndcg@10": _round(ndcg_at(graded, 10)),
         "precision@10": round(precision_at(graded, 10), 4),
         "precision@25": round(precision_at(graded, 25), 4),
         "ranks": [
@@ -296,7 +310,12 @@ def print_report(name: str, report: dict, show_ranks: bool = True) -> None:
     print(f"\n=== {name} ===")
     print(f"  findings {report['findings']}, graded {report['graded']} "
           f"(coverage {report['coverage']:.0%})")
-    print(f"  NDCG@25 {report['ndcg@25']:.4f}   NDCG@10 {report['ndcg@10']:.4f}")
+    if report["ndcg@25"] is None:
+        print("  NDCG: not measurable - the truth file grades none of these "
+              "findings")
+    else:
+        print(f"  NDCG@25 {report['ndcg@25']:.4f}   "
+              f"NDCG@10 {report['ndcg@10']:.4f}")
     print(f"  P@10 {report['precision@10']:.2f}   P@25 {report['precision@25']:.2f}")
     print(f"  flagged false positive: {report['false_positive_flag_rate']:.1%} "
           f"of all findings")
@@ -384,8 +403,13 @@ def main(argv: list[str] | None = None) -> int:
         regressed = []
         for name, report in reports.items():
             was = (previous.get(name) or {}).get("ndcg@25")
-            if was is not None and report["ndcg@25"] < was - 1e-9:
-                regressed.append(f"{name}: {was:.4f} -> {report['ndcg@25']:.4f}")
+            now = report["ndcg@25"]
+            if was is None or now is None:
+                # One side is unmeasured, so there is no comparison to make.
+                # Saying so beats inventing a verdict from a missing number.
+                print(f"  {name}: not comparable (nothing graded on one side)")
+            elif now < was - 1e-9:
+                regressed.append(f"{name}: {was:.4f} -> {now:.4f}")
             if report["real_flagged_as_false"]:
                 regressed.append(
                     f"{name}: {report['real_flagged_as_false']} real findings "

@@ -153,11 +153,30 @@ synthetic_dev_shape:
     - detector: "AWS"
       grade: 2
       note: a real cloud credential shape; grade 3 only once validated
-    - advisory: PYSEC-
+    - advisory: MAL-
       match: prefix
-      grade: 0
-    - advisory: GHSA-
-      match: prefix
-      grade: 1
+      grade: 3
+      note: a malicious package, which is the one OSV verdict that is proof
+    - type: "Malicious code in"
+      grade: 3
+      note: >
+        The same thing by its title. Not every writer stores the MAL- advisory
+        id as the node id, and OSV's own title for these is literally
+        "Malicious code in <package>", so this catches them either way. It names
+        no target: the package is a public dependency, not the customer.
     - type: missing_hsts
       grade: 1
+
+  # DELIBERATELY NOT GRADED HERE: plain GHSA- and PYSEC- advisories.
+  #
+  # The first draft graded GHSA 1 and PYSEC 0, which asserts that a graded
+  # advisory matters more than an ungraded one. That is precisely the claim the
+  # score model rejects: OSV writes `severity: info` to mean "nobody graded
+  # this", and reading that as "this is harmless" is the bug that buried real
+  # advisories at the bottom of the board.
+  #
+  # NDCG has no way to say "unknown", so grading them at all makes the metric
+  # punish the behaviour the model is supposed to have. They are excluded, and
+  # `coverage` in the report says how much of the board that leaves unmeasured.
+  # Where an advisory CAN be judged, it is judged with real context, in the
+  # supply_chain_target section above.

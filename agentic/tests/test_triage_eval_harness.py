@@ -75,8 +75,15 @@ class TestMetrics(unittest.TestCase):
         without = triage_eval.ndcg_at([3, 2], 25)
         self.assertLess(with_noise, without)
 
-    def test_no_gain_anywhere_gives_zero_not_a_divide_by_zero(self):
-        self.assertEqual(triage_eval.ndcg_at([0, 0, 0], 25), 0.0)
+    def test_nothing_graded_is_unmeasured_not_zero(self):
+        """0.0 means "the worst possible ordering". A project the truth file
+        says nothing about is UNMEASURED, and the release gate has to be able
+        to tell those apart or it reads silence as a catastrophic regression."""
+        self.assertIsNone(triage_eval.ndcg_at([], 25))
+
+    def test_a_board_of_only_noise_is_also_unmeasured(self):
+        """There is no "right" order for a list with no gain in it."""
+        self.assertIsNone(triage_eval.ndcg_at([0, 0, 0], 25))
 
     def test_precision_counts_only_actionable_grades(self):
         self.assertAlmostEqual(triage_eval.precision_at([3, 2, 1, 0], 4), 0.5)
@@ -121,7 +128,12 @@ class TestEvaluate(unittest.TestCase):
     def test_an_empty_board_does_not_raise(self):
         report = triage_eval.evaluate([], self.ENTRIES)
         self.assertEqual(report["findings"], 0)
-        self.assertEqual(report["ndcg@25"], 0.0)
+        self.assertIsNone(report["ndcg@25"])
+
+    def test_a_board_with_no_graded_findings_reports_unmeasured(self):
+        report = triage_eval.evaluate([{"id": "unknown-1"}], self.ENTRIES)
+        self.assertIsNone(report["ndcg@25"])
+        self.assertEqual(report["graded"], 0)
 
 
 class TestTruthFile(unittest.TestCase):
