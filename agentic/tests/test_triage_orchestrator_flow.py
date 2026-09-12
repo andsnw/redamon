@@ -30,6 +30,14 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cypherfix_triage import score_model  # noqa: E402
+
+
+_AGENTIC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def source(relative: str) -> str:
+    with open(os.path.join(_AGENTIC, relative)) as handle:
+        return handle.read()
 from cypherfix_triage.orchestrator import TriageOrchestrator  # noqa: E402
 from cypherfix_triage.run_client import TriageRunAborted  # noqa: E402
 from cypherfix_triage.state import RemediationDraft  # noqa: E402
@@ -401,6 +409,47 @@ class TestPublishBatching(unittest.TestCase):
         totals = run(orch._publish(
             [{"id": f"f{i}", "score": 1.0} for i in range(700)], "run-1"))
         self.assertEqual(totals["updated"], 200)
+
+
+class TestTheModelNameIsCarriedThrough(unittest.TestCase):
+    """Regression, found by running a real triage.
+
+    `load_cypherfix_settings` returns the model under `llm_model`. The
+    orchestrator read `settings.get("model")`, a key that does not exist, so it
+    silently got "" in all three places it is used:
+
+      - the TriageRun row, so the dialog's "Last triaged with X" was blank;
+      - `triage_ai_model` on every reviewed finding, so the board's
+        "Reviewed by X" tooltip was blank;
+      - the review CACHE KEY. The model is deliberately part of
+        `evidence_hash`, so with "" a verdict produced by one model was reused
+        after switching to another - the one consequence that is wrong rather
+        than merely missing.
+
+    Observed live: run cmty9wk3r had model='' with 13 deepseek calls, and all
+    150 reviewed findings had an empty triage_ai_model.
+    """
+
+    SRC = source("cypherfix_triage/orchestrator.py")
+    SETTINGS = source("cypherfix_triage/project_settings.py")
+
+    def test_the_orchestrator_reads_the_key_the_settings_actually_return(self):
+        self.assertIn('settings.get("llm_model")', self.SRC)
+        self.assertNotIn('settings.get("model")', self.SRC)
+
+    def test_that_key_is_the_one_the_settings_loader_writes(self):
+        """The two drifting apart is the whole bug, so pin them together."""
+        self.assertIn('"llm_model":', self.SETTINGS)
+
+    def test_every_place_that_needs_the_model_gets_it(self):
+        """Three readers: authorize, the review cache key, and the per-finding
+        ai_model. All three read the same local, so count them."""
+        self.assertEqual(self.SRC.count('settings.get("llm_model")'), 2)
+
+    def test_the_model_is_part_of_the_review_cache_key(self):
+        """If it ever stops being, switching models silently reuses verdicts."""
+        self.assertIn("evidence_hash(\n                bundle, review.REVIEW_PROMPT_VERSION, model)",
+                      self.SRC)
 
 
 if __name__ == "__main__":

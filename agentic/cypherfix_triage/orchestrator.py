@@ -80,7 +80,12 @@ class TriageOrchestrator:
 
         settings = await load_cypherfix_settings(self.project_id)
         state["settings"] = settings
-        model = str(settings.get("model") or "")
+        # `llm_model` is the key load_cypherfix_settings actually returns.
+        # Reading "model" silently yielded "" everywhere it was used: the
+        # run recorded no model, every reviewed finding recorded no model,
+        # and the review cache key omitted it, so switching models reused
+        # the previous one's verdicts.
+        model = str(settings.get("llm_model") or "")
 
         self.run_client = TriageRunClient(
             self.project_id, self.user_id, self.real_actor_user_id)
@@ -277,7 +282,12 @@ class TriageOrchestrator:
         candidates.sort(key=lambda r: (-float(r.get("group_score") or r["score"]),
                                        str(r["id"])))
         candidates = candidates[:budget]
-        model = str(settings.get("model") or "")
+        # `llm_model` is the key load_cypherfix_settings actually returns.
+        # Reading "model" silently yielded "" everywhere it was used: the
+        # run recorded no model, every reviewed finding recorded no model,
+        # and the review cache key omitted it, so switching models reused
+        # the previous one's verdicts.
+        model = str(settings.get("llm_model") or "")
 
         pending = []
         for row in candidates:
