@@ -311,7 +311,11 @@ async def _write_cached(graph_client, fetched: dict) -> None:
                     c.epss_percentile = row.epss_percentile,
                     c.has_poc = coalesce(row.has_poc, false),
                     c.has_template = coalesce(row.has_template, false),
-                    c.intel_at = datetime()
+                    c.intel_at = datetime(),
+                    // Every node write stamps this: the Updated column in the
+                    // graph tables reads it, and a blank one looks like a node
+                    // nothing has touched.
+                    c.updated_at = datetime()
                 """,
                 rows=rows,
             )

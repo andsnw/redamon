@@ -5,6 +5,7 @@
 
 import prisma from '@/lib/prisma'
 import { getGraphSession } from '@/app/api/graph/neo4j'
+import { RISK_TOP_N, projectRisk } from '@/lib/projectRisk'
 import { notMuted } from '@/lib/graphMute'
 import type { Project, Remediation } from '@prisma/client'
 import { corroborateAttackFindings } from './aiAttackFindings'
@@ -496,6 +497,35 @@ export interface ReportData {
   }
 }
 
+/**
+ * The per-finding risks a triage run produced, worst first.
+ *
+ * Feeds `projectRisk`, which combines them properly instead of adding up a
+ * weight per finding. Returns an empty list when nothing has been triaged, and
+ * the caller falls back rather than reporting a project as risk-free because
+ * nobody has looked at it yet.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function queryTriageRisks(session: any, projectId: string) {
+  const res = await session.run(
+    `MATCH (n:Vulnerability|JsReconFinding|Secret|MultiscannerFinding|GithubSecret
+            |GithubSensitiveFile|MalPackageFinding|ExploitGvm)
+     WHERE n.project_id = $projectId AND ${notMuted('n')}
+       AND n.triage_risk IS NOT NULL
+       AND coalesce(n.triage_state, 'open') = 'open'
+       AND coalesce(n.triage_status, '') <> 'likely_noise'
+     RETURN n.triage_risk AS risk
+     ORDER BY n.triage_risk DESC
+     LIMIT ${RISK_TOP_N}`,
+    { projectId }
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return res.records.map((r: any) => ({
+    triage_risk: typeof r.get('risk') === 'number' ? r.get('risk') : toNum(r.get('risk')),
+    triage_state: 'open',
+  }))
+}
+
 // ── Main Data Gathering ─────────────────────────────────────────────────────
 
 export async function gatherReportData(projectId: string): Promise<ReportData> {
@@ -546,6 +576,9 @@ export async function gatherReportData(projectId: string): Promise<ReportData> {
     withSession(s => queryAiSurface(s, projectId)),
     withSession(s => queryOtx(s, projectId)),
   ])
+
+  const triageRisks = await withSession(s => queryTriageRisks(s, projectId))
+    .catch(() => [])
 
   // Compute metrics
     const totalVulns = vulnData.severityDistribution.reduce((s: number, d: { count: number }) => s + d.count, 0)
@@ -676,10 +709,24 @@ export async function gatherReportData(projectId: string): Promise<ReportData> {
       + expiredCertScore + missingHeaderScore
       + trufflehogScore + jsReconScore + graphqlScore + otxScore + vhostSniScore
       + webCachePoisonScore + aiSurfaceScore + supplyChainScore
-    const riskScore = Math.min(100, Math.round(15 * Math.log(rawRisk + 1)))
+    // K15: the weighted sum above was a THIRD scoring system, and its real
+    // problem was its shape rather than its weights: a term per finding meant
+    // it measured how BIG a project is as much as how exposed it is. Scanning
+    // more hosts raised it even when every new finding was a missing header.
+    //
+    // When a triage run has produced per-finding risks, the project's risk is
+    // the chance at least one of its worst findings gets exploited, which is
+    // what the question actually means. The sum below stays ONLY as the
+    // fallback for a project nobody has triaged: reporting such a project as
+    // risk-free would be worse than reporting an imperfect number.
+    const measured = projectRisk(triageRisks)
+    const legacyRisk = Math.min(100, Math.round(15 * Math.log(rawRisk + 1)))
+    const riskScore = measured.unmeasured ? legacyRisk : measured.score
     const riskLabel: 'Critical' | 'High' | 'Medium' | 'Low' | 'Minimal' =
-      riskScore >= 80 ? 'Critical' : riskScore >= 60 ? 'High'
-      : riskScore >= 40 ? 'Medium' : riskScore >= 20 ? 'Low' : 'Minimal'
+      measured.unmeasured
+        ? (legacyRisk >= 80 ? 'Critical' : legacyRisk >= 60 ? 'High'
+           : legacyRisk >= 40 ? 'Medium' : legacyRisk >= 20 ? 'Low' : 'Minimal')
+        : measured.label
 
     // Fireteam (multi-agent) deployments, keyed by this project's conversations.
     // Authoritative findings-per-member come from Neo4j ChainFinding rows

@@ -617,6 +617,7 @@ class TriageOrchestrator:
             "id": row["id"],
             "score": row["score"],
             "math_score": row.get("math_score", row["score"]),
+            "risk": row.get("risk"),
             "signals": row.get("signals") or [],
             "state": row.get("state"),
             "tier": row.get("tier"),
