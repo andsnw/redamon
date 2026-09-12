@@ -833,8 +833,9 @@ def build_httpx_command(targets_file: str, output_file: str, settings: dict,
     # includes every discovered subdomain, so checking the configured list would
     # send the session to hosts that were never scope-checked. No probe_hosts =>
     # no auth (fail closed).
-    from recon.helpers.auth_profile import merge_auth_headers as _merge_auth
-    HTTPX_CUSTOM_HEADERS = _merge_auth(HTTPX_CUSTOM_HEADERS, settings, probe_hosts or [])
+    from recon.helpers.auth_profile import merge_auth_headers_ex as _merge_auth_ex
+    HTTPX_CUSTOM_HEADERS, _has_auth = _merge_auth_ex(HTTPX_CUSTOM_HEADERS, settings,
+                                                     probe_hosts or [])
     HTTPX_MATCH_CODES = settings.get('HTTPX_MATCH_CODES', [])
     HTTPX_FILTER_CODES = settings.get('HTTPX_FILTER_CODES', [])
 
@@ -877,9 +878,11 @@ def build_httpx_command(targets_file: str, output_file: str, settings: dict,
     if HTTPX_RATE_LIMIT > 0:
         cmd.extend(["-rl", str(HTTPX_RATE_LIMIT)])
 
-    # Redirect handling
+    # Redirect handling. httpx re-sends its -H set to whatever host a redirect
+    # names, so with a session attached -fhr (same-host only) keeps redirect
+    # coverage without handing the credentials to an off-scope host.
     if HTTPX_FOLLOW_REDIRECTS:
-        cmd.append("-fr")
+        cmd.append("-fhr" if _has_auth else "-fr")
         cmd.extend(["-maxr", str(HTTPX_MAX_REDIRECTS)])
 
     # Probing options

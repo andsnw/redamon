@@ -20,7 +20,7 @@ Two controls live here and nowhere else, so every consumer gets them:
 import base64
 import ipaddress
 import re
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 from .roe_scope import _is_roe_excluded
@@ -329,6 +329,21 @@ def merge_auth_headers(custom_headers: Optional[Iterable[str]], settings: Option
         profile_names = {line.split(':', 1)[0].strip().lower() for line in auth_lines}
         base = [h for h in base if h.split(':', 1)[0].strip().lower() not in profile_names]
     return auth_lines + base
+
+
+def merge_auth_headers_ex(custom_headers: Optional[Iterable[str]], settings: Optional[dict],
+                          hosts: Iterable[str]) -> Tuple[List[str], bool]:
+    """``merge_auth_headers`` plus whether a session was actually attached.
+
+    Callers need the flag to tighten a tool's own cross-host behaviour (httpx and
+    nuclei re-send ``-H`` headers on a redirect to ANY host, so an authenticated
+    run must confine them to the scope-checked host). Counting the returned lines
+    cannot answer it: the merge also drops base headers the profile overrides, so
+    attaching auth can leave the list the same length.
+    """
+    base = [h for h in (custom_headers or []) if h]
+    merged = merge_auth_headers(custom_headers, settings, hosts)
+    return merged, merged != base
 
 
 def auth_header_lines(profile: Optional[dict], target_host, settings: Optional[dict] = None,

@@ -12,6 +12,14 @@ curl -s http://127.0.0.1:9010/healthz
 Loopback-published on `127.0.0.1:9010`; on `pentest-net` it answers to several
 aliases so the scope rules are testable for real.
 
+The in-container port is **also** 9010, and it must stay that way. Recon tools
+run with `--net=host`, so they resolve the aliases to `127.0.0.1` and hit the
+published port — but every HTTP tool is routed through the capture proxy, which
+sits on `pentest-net` and re-resolves the alias to the container IP. With a
+`9010:5000` mapping the two views disagree: the host-side port scan reports the
+service up while the proxy dials a closed port, so every crawl request 502s and
+the pipeline reports an empty crawl with no error.
+
 ## Why the aliases matter
 
 | Alias | In scope? | Proves |

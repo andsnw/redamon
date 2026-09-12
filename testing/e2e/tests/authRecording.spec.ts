@@ -18,17 +18,38 @@ const USER = process.env.REDAMON_USER || 'cmrzlj3xk0000ob3vo67o3igg'
 const PROXY = process.env.REDAMON_CAPTURE_PROXY || 'http://127.0.0.1:8888'
 // Deliberately a SUBDOMAIN: the recording scope must cover it via *.root, not
 // just the apex.
-const TARGET = 'http://app.authpig.test:5000'
+//
+// 9010 is BOTH the pig's published port and its in-container port, and they are
+// kept equal on purpose. This request is proxied, and the capture proxy sits on
+// pentest-net where the alias resolves to the container IP, so the port that
+// works from the host must also be open inside the network.
+const TARGET = 'http://app.authpig.test:9010'
 
 let projectId = ''
-let api: APIRequestContext
+let api: APIRequestContext | undefined
+let pigUp = false
+
+const PIG_HINT = `guinea pig not reachable at ${TARGET}. Start it with: `
+  + 'cd testing/guinea_pigs/auth_target && docker compose up -d --build'
 
 test.beforeAll(async ({ playwright, baseURL }) => {
+  // The guinea pig is a separate compose project that is often not running.
+  // Without this the suite dies deep inside the recording flow on "target did
+  // not issue a session cookie", which reads like a product bug rather than a
+  // missing prerequisite. Record the verdict and skip per-test in beforeEach:
+  // a test.skip() thrown from beforeAll leaves the rest of the group running
+  // against an unset projectId.
+  const probe = await playwright.request.newContext({ ignoreHTTPSErrors: true })
+  pigUp = await probe.get(`${TARGET}/healthz`, { timeout: 5_000 })
+    .then(r => r.ok()).catch(() => false)
+  await probe.dispose()
+  if (!pigUp) return
+
   api = await playwright.request.newContext({
     baseURL,
     extraHTTPHeaders: { cookie: `redamon-auth=${mintToken(USER)}` },
   })
-  const res = await api.post('/api/projects', {
+  const res = await api!.post('/api/projects', {
     data: {
       name: `e2e-auth-recording-${Date.now()}`,
       targetDomain: 'authpig.test',
@@ -41,11 +62,13 @@ test.beforeAll(async ({ playwright, baseURL }) => {
 })
 
 test.afterAll(async () => {
+  if (!api) return
   if (projectId) await api.delete(`/api/projects/${projectId}`)
   await api.dispose()
 })
 
 test.beforeEach(async ({ context, baseURL }) => {
+  test.skip(!pigUp, PIG_HINT)
   await signIn(context, USER, baseURL!)
   await context.addInitScript(([pid, uid]) => {
     localStorage.setItem('redamon-current-project', pid)

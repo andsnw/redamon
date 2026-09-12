@@ -237,7 +237,10 @@ export function AuthenticationSection({ projectId, mode }: AuthenticationSection
                     placeholder="blank = the project's target hosts"
                     onChange={(e) => { setScopeHosts(e.target.value); markDirty() }} />
                   <p className={styles.fieldHint}>
-                    Comma-separated. Auth is attached ONLY to these hosts (exact, <code>*.suffix</code> or CIDR),
+                    {/* Plain text, not <code>: global.css pins code to --text-sm,
+                        which is larger than the hint and made "*.suffix" tower
+                        over the sentence around it. */}
+                    Comma-separated. Auth is attached ONLY to these hosts (exact, *.suffix or CIDR),
                     never cross-origin. Leave blank to default to the project&apos;s own target hosts.
                   </p>
                 </div>

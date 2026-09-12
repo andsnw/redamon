@@ -17,9 +17,17 @@ services:
     image: redamon-auth-target:latest
     container_name: authpig
     restart: unless-stopped
+    # The in-container port MUST equal the published port. Recon tools run with
+    # --net=host and see 127.0.0.1:9010, but every HTTP tool is routed through
+    # the capture proxy, which sits on pentest-net and re-resolves the alias to
+    # the container IP. If the two ports differ, the proxy dials a closed port
+    # and every crawl request 502s while the host-side port scan still reports
+    # the service as up.
+    environment:
+      PORT: "9010"
     # Loopback only: intentionally vulnerable, never expose this.
     ports:
-      - "127.0.0.1:9010:5000"
+      - "127.0.0.1:9010:9010"
     networks:
       pentest:
         aliases:

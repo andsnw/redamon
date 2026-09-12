@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Modal, useAlertModal, WikiInfoButton } from '@/components/ui'
+import { Modal, useAlertModal } from '@/components/ui'
 
 interface RecordingSummary {
   hasCookie: boolean
@@ -32,7 +32,6 @@ export function RecordingModal({ isOpen, onClose, projectId, onSaved }: {
   const [session, setSession] = useState<RecordingSessionView | null>(null)
   const [summary, setSummary] = useState<RecordingSummary | null>(null)
   const [blocked, setBlocked] = useState<string | null>(null)
-  const [showCertHelp, setShowCertHelp] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const stopPolling = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null } }
@@ -111,26 +110,27 @@ export function RecordingModal({ isOpen, onClose, projectId, onSaved }: {
           identity. The raw value is never shown back to you.
         </p>
 
+        {/* The proxy gate is the usual reason a recording captures nothing: the
+            modal happily starts, the operator logs in, and no request is ever
+            tagged. State the prerequisite before the steps, not after. */}
+        <p style={{
+          margin: 0, fontSize: 12, color: 'var(--text-secondary)',
+          borderLeft: '3px solid #7aa2f7', paddingLeft: 10,
+        }}>
+          <strong>Before you start:</strong> HTTP capture must be on, or nothing is
+          recorded. Enable the capture proxy in <strong>Settings → TrafficMind</strong>
+          {' '}(admin), and turn on <strong>HTTP capture</strong> for this project.
+        </p>
+
         <div style={{ background: 'var(--bg-secondary, rgba(255,255,255,0.03))', borderRadius: 8, padding: 12, fontSize: 13 }}>
           <div>1. Set your browser&apos;s HTTP(S) proxy to <strong>{PROXY_ADDR}</strong></div>
           <div>
-            2. Open <a href="http://mitm.it" target="_blank" rel="noreferrer">http://mitm.it</a> and install the CA{' '}
-            <button type="button" onClick={() => setShowCertHelp(v => !v)}
-              style={{ background: 'none', border: 'none', color: 'var(--accent-primary,#7aa2f7)', cursor: 'pointer', fontSize: 12 }}>
-              ⓘ How do I trust the certificate?
-            </button>
+            2. Open <a href="http://mitm.it" target="_blank" rel="noreferrer">http://mitm.it</a> and install the CA
           </div>
-          <div>3. Browse the target and log in. 4. Come back and press <strong>Stop</strong>.</div>
-          {showCertHelp && (
-            <p style={{ marginTop: 8, color: 'var(--text-tertiary)', fontSize: 12 }}>
-              Point your browser&apos;s proxy at {PROXY_ADDR}, open <code>http://mitm.it</code>, install the CA, and use a
-              dedicated/clean browser profile — remove the CA afterward.{' '}
-              <WikiInfoButton target="Authenticated-Session-Recording#trusting-the-certificate"
-                title="Per-browser certificate steps" label="Per-browser steps" />
-            </p>
-          )}
+          <div>3. Browse the target and log in.</div>
+          <div>4. Come back and press <strong>Stop</strong>.</div>
           <p style={{ marginTop: 8, color: '#e0af68', fontSize: 12 }}>
-            ⚠ Use a clean/dedicated browser profile, browse only the target, and remove the CA when finished — while
+            ⚠ Use a clean/dedicated browser profile, browse only the target, and remove the CA when finished. While
             recording, all of that browser&apos;s traffic is decrypted by the proxy.
           </p>
         </div>
@@ -140,7 +140,7 @@ export function RecordingModal({ isOpen, onClose, projectId, onSaved }: {
         {phase === 'recording' && session && (
           <div style={{ fontSize: 13 }}>
             <span style={{ color: '#e0af68' }}>● Recording…</span>{' '}
-            captured {session.observedCount} request(s){session.observedCount === 0 ? ' — waiting for login traffic' : ''}.
+            captured {session.observedCount} request(s){session.observedCount === 0 ? ', waiting for login traffic' : ''}.
             {session.lastError && <div style={{ color: '#f7768e' }}>{session.lastError}</div>}
           </div>
         )}
@@ -158,7 +158,7 @@ export function RecordingModal({ isOpen, onClose, projectId, onSaved }: {
                 </ul>
               </>
             ) : (
-              <div style={{ color: '#f7768e' }}>No login detected — nothing was captured, so the existing profile is unchanged.</div>
+              <div style={{ color: '#f7768e' }}>No login detected. Nothing was captured, so the existing profile is unchanged.</div>
             )}
           </div>
         )}
