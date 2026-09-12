@@ -291,7 +291,11 @@ def _write_attack_chain(
         MERGE (ac)-[:CHAIN_TARGETS]->(p))
     WITH ac
     UNWIND (CASE WHEN size($target_cves) > 0 THEN $target_cves ELSE [null] END) AS cve_id
-    OPTIONAL MATCH (c:CVE {id: cve_id, user_id: $user_id, project_id: $project_id})
+    // K1: CVE is a shared reference node and carries NO tenant keys, so a
+    // tenant map here matched nothing, every time. That is why the dev graph
+    // had 0 FINDING_RELATES_CVE relationships and the board never saw a
+    // single proven finding.
+    OPTIONAL MATCH (c:CVE {id: cve_id})
     FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
         MERGE (ac)-[:CHAIN_TARGETS]->(c))
     // Fallback: Domain when no CHAIN_TARGETS was actually created
@@ -643,7 +647,7 @@ def _resolve_step_bridges(session, step_id, extracted_info, user_id, project_id)
             """
             UNWIND $vulns AS cve_id
             MATCH (s:ChainStep {step_id: $step_id})
-            OPTIONAL MATCH (c:CVE {id: cve_id, user_id: $uid, project_id: $pid})
+            OPTIONAL MATCH (c:CVE {id: cve_id})   // K1: no tenant keys on CVE
             FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
                 MERGE (s)-[:STEP_EXPLOITED]->(c))
             """,
@@ -897,7 +901,7 @@ def _resolve_finding_bridges(
             """
             UNWIND $cves AS cve_id
             MATCH (f:ChainFinding {finding_id: $fid})
-            OPTIONAL MATCH (c:CVE {user_id: $uid, project_id: $pid})
+            OPTIONAL MATCH (c:CVE)   // K1: no tenant keys on CVE
             WHERE toUpper(coalesce(c.id, c.cve_id, '')) = cve_id
             FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
                 MERGE (f)-[:FINDING_RELATES_CVE]->(c))
@@ -1301,7 +1305,7 @@ def _write_exploit_success(
                 """
                 UNWIND $cves AS cve_id
                 MATCH (f:ChainFinding {finding_id: $fid})
-                OPTIONAL MATCH (c:CVE {id: cve_id, user_id: $uid, project_id: $pid})
+                OPTIONAL MATCH (c:CVE {id: cve_id})   // K1: no tenant keys on CVE
                 FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
                     MERGE (f)-[:FINDING_RELATES_CVE]->(c))
                 """,
@@ -1337,7 +1341,7 @@ def _write_exploit_success(
                 """
                 UNWIND $cves AS cve_id
                 MATCH (s:ChainStep {step_id: $step_id})
-                OPTIONAL MATCH (c:CVE {id: cve_id, user_id: $uid, project_id: $pid})
+                OPTIONAL MATCH (c:CVE {id: cve_id})   // K1: no tenant keys on CVE
                 FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
                     MERGE (s)-[:STEP_EXPLOITED]->(c))
                 """,

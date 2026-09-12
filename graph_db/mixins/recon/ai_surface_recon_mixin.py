@@ -135,7 +135,10 @@ class AiSurfaceReconMixin:
                                    user_id: $uid, project_id: $pid})
                 SET e.user_id = $uid, e.project_id = $pid,
                     e.source = COALESCE(e.source, 'ai_surface_recon'),
-                    e.ai_interface_type        = COALESCE('mcp', e.ai_interface_type),
+                    // K17: the arguments were the wrong way round. COALESCE's
+                    // first argument is a literal, so it always won and the
+                    // existing value was never kept.
+                    e.ai_interface_type        = COALESCE(e.ai_interface_type, 'mcp'),
                     e.ai_mcp_server_name       = COALESCE($name, e.ai_mcp_server_name),
                     e.ai_mcp_server_version    = COALESCE($ver, e.ai_mcp_server_version),
                     e.ai_mcp_protocol_version  = COALESCE($proto, e.ai_mcp_protocol_version),
@@ -229,6 +232,11 @@ class AiSurfaceReconMixin:
             "ai_atlas_technique": finding.get("atlas_technique"),
             "ai_payload_class": "mcp_static",
         }
+        # K17: `SET v += $props` writes every key, and a None value REMOVES that
+        # property in Cypher. A rescan that could not read, say, the evidence
+        # therefore deleted the evidence a previous scan had captured. Dropping
+        # the Nones turns "I did not see it" back into "leave it alone".
+        props = {k: v for k, v in props.items() if v is not None}
         # Create the Vulnerability, then attach to the most-specific existing node.
         session.run(
             """

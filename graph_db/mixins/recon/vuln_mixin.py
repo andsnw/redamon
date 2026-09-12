@@ -326,7 +326,7 @@ class VulnMixin:
                                     SET p.user_id = $user_id,
                                         p.project_id = $project_id,
                                         p.sample_value = $sample_value,
-                                        p.is_injectable = false,
+                                        p.is_injectable = coalesce(p.is_injectable, false),
                                         p.updated_at = datetime()
                                     """,
                                     name=param_name, position="query", endpoint_path=path, baseurl=base_url,
@@ -834,10 +834,13 @@ class VulnMixin:
                                 """
                                 MATCH (s:Subdomain {name: $subdomain, user_id: $user_id, project_id: $project_id})
                                 MATCH (i:IP {address: $ip_addr, user_id: $user_id, project_id: $project_id})
-                                MERGE (s)-[:WAF_BYPASS_VIA {
-                                    discovered_at: datetime(),
-                                    evidence: $evidence
-                                }]->(i)
+                                // K12: `datetime()` inside the MERGE pattern is
+                                // part of the KEY, so every run produced a
+                                // different key and a brand-new relationship.
+                                // The timestamp belongs in ON CREATE.
+                                MERGE (s)-[w:WAF_BYPASS_VIA {evidence: $evidence}]->(i)
+                                ON CREATE SET w.discovered_at = datetime()
+                                SET w.last_seen_at = datetime()
                                 """,
                                 subdomain=target_host, ip_addr=ip_address,
                                 evidence=evidence or "",

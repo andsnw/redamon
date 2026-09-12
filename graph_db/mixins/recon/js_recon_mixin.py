@@ -625,6 +625,7 @@ class JsReconMixin:
                             e.category = $category,
                             e.full_url = $full_url,
                             e.status_code = $status_code,
+                            e.js_status_code = $status_code,
                             e.resolved_url = $resolved_url,
                             e.validation_status = $validation_status,
                             e.endpoint_type = $ep_type,
@@ -634,7 +635,12 @@ class JsReconMixin:
                             e.js_recon_source = true,
                             e.endpoint_type = COALESCE(e.endpoint_type, $ep_type),
                             e.full_url = COALESCE(e.full_url, $full_url),
-                            e.status_code = COALESCE($status_code, e.status_code),
+                            // K2: `status_code` is what the score model reads
+                            // liveness from, and the HTTP probe owns it. JS
+                            // recon's own probe goes in its own property rather
+                            // than overwriting a stronger measurement.
+                            e.js_status_code = COALESCE($status_code, e.js_status_code),
+                            e.status_code = COALESCE(e.status_code, $status_code),
                             e.resolved_url = CASE WHEN $resolved_url <> '' THEN $resolved_url ELSE e.resolved_url END,
                             e.validation_status = COALESCE($validation_status, e.validation_status),
                             e.updated_at = datetime()

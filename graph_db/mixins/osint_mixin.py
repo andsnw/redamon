@@ -15,12 +15,18 @@ Provides methods to ingest OSINT enrichment data:
 - update_graph_from_criminalip
 """
 
+import logging
 import re
 import json
 from datetime import datetime, timezone
 
 from graph_db.cert_key import build_cert_key
 from urllib.parse import urlparse as _urlparse
+
+# K19: one except block logs through `logger`, which was never defined here, so
+# the handler raised NameError while handling an error and took the whole
+# ExternalDomain batch with it.
+logger = logging.getLogger(__name__)
 
 
 class OsintMixin:
@@ -178,7 +184,9 @@ class OsintMixin:
                                               s.discovered_at = datetime(), s.updated_at = datetime()
                                 MERGE (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
                                 SET i.updated_at = datetime()
-                                MERGE (s)-[:RESOLVES_TO {record_type: 'A', timestamp: datetime()}]->(i)
+                                MERGE (s)-[r:RESOLVES_TO {record_type: 'A'}]->(i)
+                                ON CREATE SET r.timestamp = datetime()
+                                SET r.last_seen_at = datetime()
                                 """,
                                 name=hostname, ip=ip, user_id=user_id, project_id=project_id
                             )
@@ -298,7 +306,9 @@ class OsintMixin:
                             MATCH (s:Subdomain {name: $subdomain, user_id: $user_id, project_id: $project_id})
                             MERGE (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
                             SET i.updated_at = datetime()
-                            MERGE (s)-[:RESOLVES_TO {record_type: $type, timestamp: datetime()}]->(i)
+                            MERGE (s)-[r:RESOLVES_TO {record_type: $type}]->(i)
+                            ON CREATE SET r.timestamp = datetime()
+                            SET r.last_seen_at = datetime()
                             """,
                             subdomain=fqdn, ip=rec_value, type=rec_type,
                             user_id=user_id, project_id=project_id
@@ -933,7 +943,9 @@ class OsintMixin:
                                             s.updated_at = datetime()
                                         MERGE (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
                                         SET i.updated_at = datetime()
-                                        MERGE (s)-[:RESOLVES_TO {record_type: 'A', timestamp: datetime()}]->(i)
+                                        MERGE (s)-[r:RESOLVES_TO {record_type: 'A'}]->(i)
+                                        ON CREATE SET r.timestamp = datetime()
+                                        SET r.last_seen_at = datetime()
                                         """,
                                         name=hostname, ip=ip, user_id=user_id, project_id=project_id,
                                     )
@@ -1114,7 +1126,9 @@ class OsintMixin:
                                     SET s.source = 'fofa', s.updated_at = datetime()
                                     MERGE (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
                                     SET i.updated_at = datetime()
-                                    MERGE (s)-[:RESOLVES_TO {record_type: 'A', timestamp: datetime()}]->(i)
+                                    MERGE (s)-[r:RESOLVES_TO {record_type: 'A'}]->(i)
+                                    ON CREATE SET r.timestamp = datetime()
+                                    SET r.last_seen_at = datetime()
                                     """,
                                     name=host, ip=ip, user_id=user_id, project_id=project_id,
                                 )
@@ -1902,8 +1916,9 @@ class OsintMixin:
                                         MERGE (i:IP {address: $ip, user_id: $user_id,
                                                      project_id: $project_id})
                                         SET i.updated_at = datetime()
-                                        MERGE (s)-[:RESOLVES_TO {record_type: 'A',
-                                                                  timestamp: datetime()}]->(i)
+                                        MERGE (s)-[r:RESOLVES_TO {record_type: 'A'}]->(i)
+                                        ON CREATE SET r.timestamp = datetime()
+                                        SET r.last_seen_at = datetime()
                                         """,
                                         name=hostname_val, ip=ip,
                                         user_id=user_id, project_id=project_id,
@@ -2112,10 +2127,19 @@ class OsintMixin:
 
                                     session.run(
                                         """
-                                        // Global reference node: no tenant stamp.
+                                        // Global reference node: no tenant stamp,
+                                        // and therefore SHARED by every project.
+                                        // K22: an unconditional SET here let one
+                                        // project's CriminalIP reading overwrite the
+                                        // authoritative NVD score and description that
+                                        // another project's GVM scan had written. Fill
+                                        // in only what is missing.
                                         MERGE (c:CVE {id: $cve_id})
                                         ON CREATE SET c.source = 'criminalip'
-                                        SET c.cvss = $cvss, c.description = $description,
+                                        SET c.cvss = coalesce(c.cvss, $cvss),
+                                            c.description = CASE
+                                              WHEN coalesce(c.description, '') = ''
+                                              THEN $description ELSE c.description END,
                                             c.updated_at = datetime()
                                         """,
                                         cve_id=cve_id, cvss=cvss,

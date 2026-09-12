@@ -560,6 +560,12 @@ class GvmMixin:
                             MERGE (v:Vulnerability {id: $id})
                             SET v += $props,
                                 v.updated_at = datetime()
+                            // K21: `remediated` was set when a scan stopped
+                            // reporting a CVE and never cleared. GVM is
+                            // reporting it RIGHT NOW, so it is not remediated,
+                            // and without this it stayed in the board's
+                            // Resolved section for ever.
+                            REMOVE v.remediated, v.remediated_at
                             """,
                             id=vuln_id, props=vuln_props
                         )
@@ -737,7 +743,9 @@ class GvmMixin:
                                 """
                                 MATCH (v:Vulnerability {user_id: $uid, project_id: $pid, source: 'gvm'})
                                 WHERE $cve_id IN v.cve_ids
-                                SET v.remediated = true, v.updated_at = datetime()
+                                SET v.remediated = true,
+                                    v.remediated_at = datetime(),
+                                    v.updated_at = datetime()
                                 """,
                                 uid=user_id, pid=project_id, cve_id=cve_id
                             )
