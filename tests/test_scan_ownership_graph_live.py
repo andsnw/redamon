@@ -303,13 +303,19 @@ class TestCrossSourceCertificateOwnership(LiveGraphCase):
     """
 
     def _cert(self, key, observed_by, source):
+        # .consume() is load-bearing: session.run() is LAZY. clear_gvm_data /
+        # clear_recon_data open their OWN session, so without forcing this write
+        # to commit first the code under test can run before the fixture exists
+        # -- which makes a "the certificate survived" assertion pass for the
+        # wrong reason, and flakes the "it was deleted" one.
         self.session.run(
             """
             CREATE (c:Certificate {cert_key: $key, user_id: $uid, project_id: $pid,
                                    subject_cn: 'mail.acme.test', source: $source,
                                    observed_by: $observed})
             """,
-            key=key, uid=self.uid, pid=self.p1, source=source, observed=observed_by)
+            key=key, uid=self.uid, pid=self.p1, source=source,
+            observed=observed_by).consume()
 
     def _alive(self, key):
         return self.count(
@@ -346,7 +352,7 @@ class TestCrossSourceCertificateOwnership(LiveGraphCase):
         self.session.run(
             """CREATE (c:Certificate {cert_key: 'sha256:legacygvm', user_id: $uid,
                                       project_id: $pid, source: 'gvm'})""",
-            uid=self.uid, pid=self.p1)
+            uid=self.uid, pid=self.p1).consume()
         self.client.clear_gvm_data(self.uid, self.p1)
         self.assertEqual(self._alive("sha256:legacygvm"), 0)
 

@@ -112,7 +112,7 @@ class TlsxGraphWriteLive(unittest.TestCase):
                 SET svc.product = 'dovecot', svc.version = '2.3'
                 MERGE (p)-[:RUNS_SERVICE]->(svc)
                 """,
-                ip=self.IP, port=self.PORT, uid=self.uid, pid=self.pid)
+                ip=self.IP, port=self.PORT, uid=self.uid, pid=self.pid).consume()
 
     def tearDown(self):
         try:
@@ -221,6 +221,39 @@ class TlsxGraphWriteLive(unittest.TestCase):
                 port=self.PORT, ip=self.IP, uid=self.uid, pid=self.pid).single()["svc"]
         self.assertTrue(svc["tls_probe_failed"])
         self.assertEqual(svc["tls_probe_error"], "no tls")
+
+    # -- Legacy reconcile must not cross scanner boundaries ------------------
+    def _legacy_cert(self, source, cn="mail.acme.test", key="legacy:mail.acme.test:9999"):
+        with self.client.driver.session() as s:
+            s.run(
+                """CREATE (c:Certificate {cert_key: $key, subject_cn: $cn, source: $source,
+                                          user_id: $uid, project_id: $pid})""",
+                key=key, cn=cn, source=source, uid=self.uid, pid=self.pid).consume()
+
+    def test_legacy_reconcile_does_not_delete_another_scanners_certificate(self):
+        """The reconcile removes the pre-migration duplicate of the cert being
+        written. It matched on subject_cn alone, with no source guard -- so a
+        GVM certificate that predates the re-key (still legacy-keyed) and merely
+        SHARES a common name was DETACH DELETEd by a recon scan. That is exactly
+        the cross-source data loss Phase 0.3 exists to prevent, reintroduced on
+        the legacy path.
+        """
+        self._legacy_cert("gvm")
+        self._write()
+        n = self._one(
+            "MATCH (c:Certificate {cert_key: 'legacy:mail.acme.test:9999', "
+            "user_id: $uid, project_id: $pid}) RETURN count(c)")
+        self.assertEqual(n, 1, "a recon scan deleted GVM's legacy certificate")
+
+    def test_legacy_reconcile_still_removes_our_own_pre_migration_duplicate(self):
+        """Control: the reconcile must still do its job for recon's own rows,
+        or partial recon leaves a duplicate per certificate forever."""
+        self._legacy_cert("http_probe")
+        self._write()
+        n = self._one(
+            "MATCH (c:Certificate {cert_key: 'legacy:mail.acme.test:9999', "
+            "user_id: $uid, project_id: $pid}) RETURN count(c)")
+        self.assertEqual(n, 0, "the legacy duplicate was not reconciled away")
 
     # -- Idempotency + tenancy ----------------------------------------------
     def test_running_twice_leaves_one_certificate(self):

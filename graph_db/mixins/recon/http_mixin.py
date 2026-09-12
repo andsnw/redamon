@@ -21,6 +21,7 @@ from urllib.parse import urlparse, parse_qs
 
 from graph_db.cpe_resolver import _is_ip_address
 from graph_db.cert_key import build_cert_key
+from graph_db.schema import NON_RECON_SOURCES
 
 
 #: Every relationship type a Technology node can carry, and which way it points
@@ -344,17 +345,21 @@ class HttpMixin:
                         )
                         stats["certificates_created"] += 1
 
-                        # Reconcile a pre-migration 'legacy:'-keyed duplicate for the
-                        # same cert. Partial recon never clears, so without this a
-                        # legacy node lingers beside the re-keyed one.
+                        # Reconcile a pre-migration 'legacy:'-keyed duplicate of THIS
+                        # cert. Scoped to recon-owned rows: matching on subject_cn
+                        # alone deleted a GVM certificate that merely shared a
+                        # common name, which is the cross-source data loss Phase
+                        # 0.3 exists to prevent.
                         if subject_cn:
                             session.run(
                                 """
                                 MATCH (old:Certificate {subject_cn: $subject_cn, user_id: $user_id, project_id: $project_id})
                                 WHERE old.cert_key STARTS WITH 'legacy:'
+                                  AND NOT coalesce(old.source, '') IN $non_recon
                                 DETACH DELETE old
                                 """,
-                                subject_cn=subject_cn, user_id=user_id, project_id=project_id
+                                subject_cn=subject_cn, user_id=user_id, project_id=project_id,
+                                non_recon=list(NON_RECON_SOURCES)
                             )
 
                         # BaseURL -[:HAS_CERTIFICATE]-> Certificate: the documented

@@ -1744,81 +1744,94 @@ async function queryVhostSni(session: any, pid: string) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function queryTlsx(session: any, pid: string) {
+export async function queryTlsx(session: any, pid: string) {
   // Reads the FIXED anchors from Phase 0 (BaseURL OR IP), or it reproduces the
-  // empty-certificate-health bug this plan exists to fix.
-  const res = await session.run(
-    `MATCH (c:Certificate {project_id: $pid})
+  // empty-certificate-health bug this work exists to fix.
+  //
+  // Split into an AGGREGATE and a BOUNDED list, matching every other query in
+  // this file. Pulling every Certificate row and slicing in JS made report
+  // generation scale with the certificate population -- exactly the population
+  // tlsx exists to grow.
+  const ANCHORED = `MATCH (c:Certificate {project_id: $pid})
      WHERE (:BaseURL {project_id: $pid})-[:HAS_CERTIFICATE]->(c)
         OR (:IP {project_id: $pid})-[:HAS_CERTIFICATE]->(c)
      WITH DISTINCT c,
           CASE WHEN c.not_after IS NOT NULL
                THEN datetime(replace(c.not_after, 'Z', '+00:00'))
                ELSE null END AS expiry
-     RETURN c.subject_cn AS subjectCn, c.issuer AS issuer, c.san AS san,
-            c.not_after AS notAfter, c.source AS source,
-            coalesce(c.expired, false) OR (expiry IS NOT NULL AND expiry < datetime()) AS expired,
-            coalesce(c.self_signed, false) AS selfSigned,
-            coalesce(c.mismatched, false) AS mismatched,
-            coalesce(c.wildcard, false) AS wildcard,
-            (expiry IS NOT NULL AND expiry >= datetime() AND expiry < datetime() + duration('P30D')) AS expiringSoon`,
+     WITH c,
+          coalesce(c.expired, false) OR (expiry IS NOT NULL AND expiry < datetime()) AS expired,
+          coalesce(c.self_signed, false) AS selfSigned,
+          coalesce(c.mismatched, false) AS mismatched,
+          coalesce(c.wildcard, false) AS wildcard,
+          (expiry IS NOT NULL AND expiry >= datetime()
+             AND expiry < datetime() + duration('P30D')) AS expiringSoon`
+
+  const totalsRes = await session.run(
+    `${ANCHORED}
+     RETURN count(c) AS total,
+            count(CASE WHEN expired THEN 1 END) AS expired,
+            count(CASE WHEN selfSigned THEN 1 END) AS selfSigned,
+            count(CASE WHEN mismatched THEN 1 END) AS mismatched,
+            count(CASE WHEN wildcard THEN 1 END) AS wildcard,
+            count(CASE WHEN expiringSoon THEN 1 END) AS expiringSoon`,
     { pid }
   )
-  type TlsRow = {
-    subjectCn: string | null; issuer: string | null; san: string[]; notAfter: string | null;
-    source: string | null; expired: boolean; selfSigned: boolean; mismatched: boolean;
-    wildcard: boolean; expiringSoon: boolean
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows: TlsRow[] = res.records.map((r: any) => ({
-    subjectCn: (r.get('subjectCn') as string) || null,
-    issuer: (r.get('issuer') as string) || null,
-    san: (r.get('san') as string[]) || [],
-    notAfter: (r.get('notAfter') as string) || null,
-    source: (r.get('source') as string) || null,
-    expired: r.get('expired') === true,
-    selfSigned: r.get('selfSigned') === true,
-    mismatched: r.get('mismatched') === true,
-    wildcard: r.get('wildcard') === true,
-    expiringSoon: r.get('expiringSoon') === true,
-  }))
+  const t = totalsRes.records[0]
 
-  const issuerCounts = new Map<string, number>()
-  for (const row of rows) {
-    const key = row.issuer || 'Unknown'
-    issuerCounts.set(key, (issuerCounts.get(key) || 0) + 1)
-  }
-  const topIssuers = [...issuerCounts.entries()]
-    .map(([issuer, count]) => ({ issuer, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10)
+  const issuerRes = await session.run(
+    `${ANCHORED}
+     WITH coalesce(c.issuer, 'Unknown') AS issuer, count(*) AS count
+     RETURN issuer, count ORDER BY count DESC LIMIT 10`,
+    { pid }
+  )
 
-  // Notable certs first (posture problems), capped at the house limit of 50.
-  const notable = (row: typeof rows[number]) =>
-    row.expired || row.selfSigned || row.mismatched || row.expiringSoon || row.wildcard
-  const ordered = [...rows].sort((a, b) => Number(notable(b)) - Number(notable(a)))
+  // Posture problems first, then a stable tiebreak so the capped list does not
+  // reshuffle between two runs of the same report.
+  const listRes = await session.run(
+    `${ANCHORED}
+     WITH c, expired, selfSigned, mismatched, wildcard, expiringSoon,
+          CASE WHEN expired OR selfSigned OR mismatched OR expiringSoon OR wildcard
+               THEN 1 ELSE 0 END AS notable
+     RETURN c.subject_cn AS subjectCn, c.issuer AS issuer, c.san AS san,
+            c.not_after AS notAfter, c.source AS source,
+            expired, selfSigned, mismatched, wildcard
+     ORDER BY notable DESC, coalesce(c.subject_cn, c.cert_key) ASC
+     LIMIT 50`,
+    { pid }
+  )
 
+  const num = (v: unknown) => toNum(v)
   return {
-    totalCertificates: rows.length,
-    expired: rows.filter(r => r.expired).length,
-    selfSigned: rows.filter(r => r.selfSigned).length,
-    mismatched: rows.filter(r => r.mismatched).length,
-    wildcard: rows.filter(r => r.wildcard).length,
-    expiringSoon: rows.filter(r => r.expiringSoon).length,
-    topIssuers,
-    findings: ordered.slice(0, 50).map(r => ({
-      subjectCn: r.subjectCn,
-      issuer: r.issuer,
-      sanCount: Array.isArray(r.san) ? r.san.length : 0,
-      notAfter: r.notAfter,
-      expired: r.expired,
-      selfSigned: r.selfSigned,
-      mismatched: r.mismatched,
-      wildcard: r.wildcard,
-      source: r.source,
+    totalCertificates: t ? num(t.get('total')) : 0,
+    expired: t ? num(t.get('expired')) : 0,
+    selfSigned: t ? num(t.get('selfSigned')) : 0,
+    mismatched: t ? num(t.get('mismatched')) : 0,
+    wildcard: t ? num(t.get('wildcard')) : 0,
+    expiringSoon: t ? num(t.get('expiringSoon')) : 0,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    topIssuers: issuerRes.records.map((r: any) => ({
+      issuer: (r.get('issuer') as string) || 'Unknown',
+      count: num(r.get('count')),
     })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    findings: listRes.records.map((r: any) => {
+      const san = r.get('san')
+      return {
+        subjectCn: (r.get('subjectCn') as string) || null,
+        issuer: (r.get('issuer') as string) || null,
+        sanCount: Array.isArray(san) ? san.length : 0,
+        notAfter: (r.get('notAfter') as string) || null,
+        expired: r.get('expired') === true,
+        selfSigned: r.get('selfSigned') === true,
+        mismatched: r.get('mismatched') === true,
+        wildcard: r.get('wildcard') === true,
+        source: (r.get('source') as string) || null,
+      }
+    }),
   }
 }
+
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function queryWebCachePoison(session: any, pid: string) {

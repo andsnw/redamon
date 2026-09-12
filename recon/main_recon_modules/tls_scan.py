@@ -155,6 +155,12 @@ def _build_tlsx_targets(combined_result: dict, settings: dict):
 
     excluded_ports = set() if include_http else (_HTTPS_PORTS | _HTTP_PORTS)
 
+    # A cap of 0 means scan nothing. The check below fires only after a target
+    # has been appended, so without this an explicit 0 still sent one handshake.
+    if max_targets <= 0:
+        _print("-", "TLSX_MAX_TARGETS is 0; no targets will be scanned")
+        return [], {}
+
     by_ip = ((combined_result.get("port_scan") or {}).get("by_ip")) or {}
 
     lines = []

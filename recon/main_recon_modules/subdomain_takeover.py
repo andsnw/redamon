@@ -340,6 +340,12 @@ def run_subdomain_takeover(
                     # Never let AI failure abort the takeover scan -- emit warning
                     # and continue with the static findings.
                     print(f"[!][Takeover-AI] Cascade pass failed: {e}")
+            elif normalized:
+                # Candidates exist but a clean certificate already settled every
+                # one of them. Saying "no candidates" here would misreport a
+                # working cost optimisation as an empty scan.
+                print(f"[*][Takeover-AI] All {len(normalized)} candidate(s) settled by "
+                      "certificate evidence -- no LLM calls needed")
             else:
                 # Cascade is on but Subjack/Nuclei produced zero candidates,
                 # so there's nothing for the LLM to classify. Log explicitly

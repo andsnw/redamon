@@ -25,6 +25,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from graph_db.cert_key import build_cert_key
+from graph_db.schema import NON_RECON_SOURCES
 
 
 def _join(value):
@@ -165,9 +166,11 @@ class TlsxMixin:
                             """
                             MATCH (old:Certificate {subject_cn: $cn, user_id: $uid, project_id: $pid})
                             WHERE old.cert_key STARTS WITH 'legacy:'
+                              AND NOT coalesce(old.source, '') IN $non_recon
                             DETACH DELETE old
                             """,
                             cn=subject_cn, uid=user_id, pid=project_id,
+                            non_recon=list(NON_RECON_SOURCES),
                         )
 
                     # --- COVERS_HOST for each in-scope SAN --------------------
