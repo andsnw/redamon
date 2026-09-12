@@ -369,11 +369,27 @@ class VulnMixin:
                         raw_info = raw.get("info", {})
                         raw_metadata = raw_info.get("metadata", {})
 
-                        # Generate unique vulnerability ID
+                        # G1: a STABLE id for this finding.
+                        #
+                        # This used to end in `hash(matched_at) % 10000`, and
+                        # Python's builtin hash() is randomised per process
+                        # unless PYTHONHASHSEED is pinned, which it is not here.
+                        # So the same nuclei finding got a different id on every
+                        # single scan: the MERGE missed, a duplicate node was
+                        # created, and the operator's mute, their verdict and
+                        # the AI's cached review all stayed behind on a node
+                        # nothing pointed at any more.
+                        #
+                        # sha1 of the natural key instead: same finding, same
+                        # id, for ever. (sha1 for length, not for security -
+                        # there is nothing to forge here.)
                         template_id = finding.get("template_id", "unknown")
                         matched_at = finding.get("matched_at", "")
                         fuzzing_param = raw.get("fuzzing_parameter", "")
-                        vuln_id = f"{template_id}-{target_host}-{fuzzing_param}-{hash(matched_at) % 10000}"
+                        vuln_id = "nuclei-" + hashlib.sha1(
+                            f"{template_id}|{target_host}|{fuzzing_param}|{matched_at}"
+                            .encode("utf-8", "replace")
+                        ).hexdigest()[:16]
 
                         # Extract path from matched_at URL
                         matched_parsed = urlparse(matched_at)
@@ -453,7 +469,8 @@ class VulnMixin:
 
                         session.run(
                             """
-                            MERGE (v:Vulnerability {id: $id})
+                            MERGE (v:Vulnerability {id: $id, user_id: $props.user_id,
+                                                    project_id: $props.project_id})
                             SET v += $props,
                                 v.updated_at = datetime()
                             """,
@@ -505,7 +522,7 @@ class VulnMixin:
                         # Create relationship: Vulnerability -[:FOUND_AT]-> Endpoint
                         session.run(
                             """
-                            MATCH (v:Vulnerability {id: $vuln_id})
+                            MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                             MATCH (e:Endpoint {path: $path, method: $method, baseurl: $baseurl, user_id: $user_id, project_id: $project_id})
                             MERGE (v)-[:FOUND_AT]->(e)
                             """,
@@ -554,7 +571,7 @@ class VulnMixin:
                             # Create relationship: Vulnerability -[:AFFECTS_PARAMETER]-> Parameter
                             session.run(
                                 """
-                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                 MATCH (p:Parameter {name: $param_name, position: $position, endpoint_path: $path, baseurl: $baseurl, user_id: $user_id, project_id: $project_id})
                                 MERGE (v)-[:AFFECTS_PARAMETER]->(p)
                                 """,
@@ -795,7 +812,8 @@ class VulnMixin:
 
                         session.run(
                             """
-                            MERGE (v:Vulnerability {id: $id})
+                            MERGE (v:Vulnerability {id: $id, user_id: $props.user_id,
+                                                    project_id: $props.project_id})
                             SET v += $props,
                                 v.updated_at = datetime()
                             """,
@@ -818,7 +836,7 @@ class VulnMixin:
                             session.run(
                                 """
                                 MATCH (i:IP {address: $ip_addr, user_id: $user_id, project_id: $project_id})
-                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                 MERGE (i)-[:HAS_VULNERABILITY]->(v)
                                 """,
                                 ip_addr=ip_address, vuln_id=vuln_id,
@@ -919,7 +937,8 @@ class VulnMixin:
 
                     session.run(
                         """
-                        MERGE (v:Vulnerability {id: $id})
+                        MERGE (v:Vulnerability {id: $id, user_id: $props.user_id,
+                                                project_id: $props.project_id})
                         SET v += $props,
                             v.updated_at = datetime()
                         """,
@@ -946,7 +965,7 @@ class VulnMixin:
                             result = session.run(
                                 """
                                 MATCH (i:IP {address: $address, user_id: $user_id, project_id: $project_id})
-                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                 MERGE (i)-[:HAS_VULNERABILITY]->(v)
                                 RETURN count(*) as matched
                                 """,
@@ -961,7 +980,7 @@ class VulnMixin:
                             result = session.run(
                                 """
                                 MATCH (bu:BaseURL {url: $baseurl, user_id: $user_id, project_id: $project_id})
-                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                 MERGE (bu)-[:HAS_VULNERABILITY]->(v)
                                 RETURN count(*) as matched
                                 """,
@@ -975,7 +994,7 @@ class VulnMixin:
                                 result = session.run(
                                     """
                                     MATCH (s:Subdomain {name: $hostname, user_id: $user_id, project_id: $project_id})
-                                    MATCH (v:Vulnerability {id: $vuln_id})
+                                    MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                     MERGE (s)-[:HAS_VULNERABILITY]->(v)
                                     RETURN count(*) as matched
                                     """,
@@ -989,7 +1008,7 @@ class VulnMixin:
                                     session.run(
                                         """
                                         MATCH (d:Domain {name: $hostname, user_id: $user_id, project_id: $project_id})
-                                        MATCH (v:Vulnerability {id: $vuln_id})
+                                        MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                         MERGE (d)-[:HAS_VULNERABILITY]->(v)
                                         """,
                                         hostname=url_host, user_id=user_id, project_id=project_id, vuln_id=vuln_id
@@ -1003,7 +1022,7 @@ class VulnMixin:
                         result = session.run(
                             """
                             MATCH (s:Subdomain {name: $hostname, user_id: $user_id, project_id: $project_id})
-                            MATCH (v:Vulnerability {id: $vuln_id})
+                            MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                             MERGE (s)-[:HAS_VULNERABILITY]->(v)
                             RETURN count(*) as matched
                             """,
@@ -1017,7 +1036,7 @@ class VulnMixin:
                             session.run(
                                 """
                                 MATCH (d:Domain {name: $hostname, user_id: $user_id, project_id: $project_id})
-                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                 MERGE (d)-[:HAS_VULNERABILITY]->(v)
                                 """,
                                 hostname=hostname, user_id=user_id, project_id=project_id, vuln_id=vuln_id
@@ -1030,7 +1049,7 @@ class VulnMixin:
                         session.run(
                             """
                             MATCH (i:IP {address: $address, user_id: $user_id, project_id: $project_id})
-                            MATCH (v:Vulnerability {id: $vuln_id})
+                            MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                             MERGE (i)-[:HAS_VULNERABILITY]->(v)
                             """,
                             address=matched_ip, user_id=user_id, project_id=project_id, vuln_id=vuln_id
@@ -1045,7 +1064,7 @@ class VulnMixin:
                             result = session.run(
                                 """
                                 MATCH (d:Domain {name: $domain, user_id: $user_id, project_id: $project_id})
-                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                 MERGE (d)-[:HAS_VULNERABILITY]->(v)
                                 RETURN count(*) as matched
                                 """,

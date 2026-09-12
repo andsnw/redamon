@@ -81,6 +81,7 @@ TRIAGE_PROPS = (
     "triage_tier_rule",       # the rule that placed it in that tier
     "triage_factors",         # JSON: C, L, I, R with the evidence for each
     "triage_math_score",      # the score before any AI correction
+    "triage_risk",            # C x L x I x R, before the tier is folded in
     "triage_host",            # the host the model resolved, deterministically
     "triage_group_key",       # one problem, one fix (replaces triage_cluster_id)
     "triage_run_id",          # drives "new since the last triage"
@@ -274,6 +275,7 @@ class TriageMixin:
                coalesce(n.triage_tier_rule, '')    AS triage_tier_rule,
                n.triage_factors                    AS triage_factors,
                n.triage_math_score                 AS triage_math_score,
+               n.triage_risk                       AS triage_risk,
                n.triage_priority_score             AS triage_priority_score,
                coalesce(n.triage_signals, [])      AS triage_signals,
                coalesce(n.triage_group_key, n.triage_cluster_id, '') AS triage_group_key,
@@ -412,6 +414,7 @@ class TriageMixin:
           // Measurements: always written, human-owned or not (C14).
           SET n.triage_priority_score = row.score,
               n.triage_math_score     = row.math_score,
+              n.triage_risk           = row.risk,
               n.triage_signals        = row.signals,
               n.triage_state          = row.state,
               n.triage_tier           = row.tier,
@@ -521,6 +524,10 @@ class TriageMixin:
             "id": str(r.get("id")),
             "score": max(0.0, min(100.0, _float(r.get("score")))),
             "math_score": max(0.0, min(100.0, _float(r.get("math_score", r.get("score"))))),
+            # The raw risk, kept separate from the score so the project-level
+            # roll-up can combine findings properly instead of averaging a
+            # number that already has the tier folded into it.
+            "risk": max(0.0, min(1.0, _float(r.get("risk")))),
             "signals": [str(x)[:120] for x in signals][:30],
             "state": state,
             "tier": tier,

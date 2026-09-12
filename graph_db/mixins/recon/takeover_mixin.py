@@ -132,12 +132,14 @@ class TakeoverMixin:
                     # first_seen only on create).
                     session.run(
                         """
-                        MERGE (v:Vulnerability {id: $id})
+                        MERGE (v:Vulnerability {id: $id, user_id: $uid,
+                                                project_id: $pid})
                         ON CREATE SET v.first_seen = $detected_at
                         SET v += $props,
                             v.updated_at = datetime()
                         """,
                         id=vuln_id, props=vuln_props, detected_at=detected_at,
+                        uid=user_id, pid=project_id,
                     )
                     stats["vulnerabilities_created"] += 1
 
@@ -146,7 +148,7 @@ class TakeoverMixin:
                     rel = session.run(
                         """
                         MATCH (s:Subdomain {name: $hostname, user_id: $uid, project_id: $pid})
-                        MATCH (v:Vulnerability {id: $id})
+                        MATCH (v:Vulnerability {id: $id, user_id: $uid, project_id: $pid})
                         MERGE (s)-[:HAS_VULNERABILITY]->(v)
                         RETURN count(*) AS matched
                         """,
@@ -160,7 +162,7 @@ class TakeoverMixin:
                         rel = session.run(
                             """
                             MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
-                            MATCH (v:Vulnerability {id: $id})
+                            MATCH (v:Vulnerability {id: $id, user_id: $uid, project_id: $pid})
                             MERGE (d)-[:HAS_VULNERABILITY]->(v)
                             RETURN count(*) AS matched
                             """,
@@ -182,7 +184,7 @@ class TakeoverMixin:
                                           s.created_at = datetime()
                             SET s.updated_at = datetime()
                             WITH s
-                            MATCH (v:Vulnerability {id: $id})
+                            MATCH (v:Vulnerability {id: $id, user_id: $uid, project_id: $pid})
                             MERGE (s)-[:HAS_VULNERABILITY]->(v)
                             """,
                             hostname=hostname, uid=user_id, pid=project_id, id=vuln_id,

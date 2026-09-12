@@ -329,7 +329,8 @@ class OsintMixin:
                 try:
                     session.run(
                         """
-                        MERGE (v:Vulnerability {id: $vuln_id})
+                        MERGE (v:Vulnerability {id: $vuln_id, user_id: $user_id,
+                                                project_id: $project_id})
                         ON CREATE SET v.source = $source, v.name = $cve_id,
                                       v.cves = [$cve_id], v.user_id = $user_id,
                                       v.project_id = $project_id, v.updated_at = datetime()
@@ -353,18 +354,20 @@ class OsintMixin:
 
                     session.run(
                         """
-                        MATCH (v:Vulnerability {id: $vuln_id})
+                        MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id,
+                                                project_id: $project_id})
                         MATCH (c:CVE {id: $cve_id})
                         MERGE (v)-[:INCLUDES_CVE]->(c)
                         """,
-                        vuln_id=vuln_id, cve_id=cve_id
+                        vuln_id=vuln_id, cve_id=cve_id,
+                        user_id=user_id, project_id=project_id
                     )
                     stats["relationships_created"] += 1
 
                     session.run(
                         """
                         MATCH (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
-                        MATCH (v:Vulnerability {id: $vuln_id})
+                        MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                         MERGE (i)-[:HAS_VULNERABILITY]->(v)
                         """,
                         ip=ip, vuln_id=vuln_id,
@@ -2114,7 +2117,9 @@ class OsintMixin:
                                     cvss = vuln.get("cvssv3_score") or vuln.get("cvssv2_score")
                                     session.run(
                                         """
-                                        MERGE (v:Vulnerability {id: $vuln_id})
+                                        MERGE (v:Vulnerability {id: $vuln_id,
+                                                                user_id: $user_id,
+                                                                project_id: $project_id})
                                         ON CREATE SET v.source = 'criminalip', v.name = $cve_id,
                                                       v.cves = [$cve_id], v.cvss = $cvss,
                                                       v.user_id = $user_id, v.project_id = $project_id,
@@ -2149,16 +2154,19 @@ class OsintMixin:
 
                                     session.run(
                                         """
-                                        MATCH (v:Vulnerability {id: $vuln_id})
+                                        MATCH (v:Vulnerability {id: $vuln_id,
+                                                                user_id: $user_id,
+                                                                project_id: $project_id})
                                         MATCH (c:CVE {id: $cve_id})
                                         MERGE (v)-[:INCLUDES_CVE]->(c)
                                         """,
                                         vuln_id=vuln_id, cve_id=cve_id,
+                                        user_id=user_id, project_id=project_id,
                                     )
                                     session.run(
                                         """
                                         MATCH (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
-                                        MATCH (v:Vulnerability {id: $vuln_id})
+                                        MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                         MERGE (i)-[:HAS_VULNERABILITY]->(v)
                                         """,
                                         ip=ip, vuln_id=vuln_id,
@@ -2447,7 +2455,8 @@ class OsintMixin:
 
                     session.run(
                         """
-                        MERGE (v:Vulnerability {id: $id})
+                        MERGE (v:Vulnerability {id: $id, user_id: $props.user_id,
+                                                project_id: $props.project_id})
                         ON CREATE SET v.source = 'origin_discovery',
                                       v.first_seen = $now, v.created_at = $now
                         SET v += $props, v.updated_at = datetime()
@@ -2460,7 +2469,7 @@ class OsintMixin:
                     session.run(
                         """
                         MATCH (i:IP {address: $address, user_id: $user_id, project_id: $project_id})
-                        MATCH (v:Vulnerability {id: $id})
+                        MATCH (v:Vulnerability {id: $id, user_id: $user_id, project_id: $project_id})
                         MERGE (i)-[:HAS_VULNERABILITY]->(v)
                         """,
                         address=ip, id=vuln_id, user_id=user_id, project_id=project_id,

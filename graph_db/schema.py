@@ -42,6 +42,43 @@ DROP_LEGACY_CONSTRAINTS = [
     # so the renamed constraint (certificate_key_unique) can back the new
     # cert_key without a same-name silent no-op. See backfill_cert_key.
     "DROP CONSTRAINT certificate_unique IF EXISTS",
+
+    # ── G2: per-project findings were globally unique by id ──────────────────
+    # These labels are per-PROJECT, but their uniqueness was on `id` alone, so
+    # one id could exist once in the whole database. Two projects scanning the
+    # same target therefore collided, and the collision went one of two ways,
+    # both silent:
+    #
+    #   * an id-only MERGE took the other project's node over, re-pointing it,
+    #     so one project's scan mutated another project's graph;
+    #   * a tenant-keyed MERGE hit the global constraint, and the writers catch
+    #     and swallow that, so the second project's finding was LOST.
+    #
+    # Recreated below as (id, user_id, project_id), which is strictly weaker:
+    # anything valid under the old constraint is valid under the new one, so no
+    # data migration is needed for the swap itself. The names must change,
+    # because CREATE CONSTRAINT <same name> IF NOT EXISTS is a silent no-op
+    # against a database that still has the old one.
+    "DROP CONSTRAINT vulnerability_unique IF EXISTS",
+    "DROP CONSTRAINT exploitgvm_unique IF EXISTS",
+    "DROP CONSTRAINT githubhunt_unique IF EXISTS",
+    "DROP CONSTRAINT githubrepo_unique IF EXISTS",
+    "DROP CONSTRAINT githubpath_unique IF EXISTS",
+    "DROP CONSTRAINT githubsecret_unique IF EXISTS",
+    "DROP CONSTRAINT githubsensitivefile_unique IF EXISTS",
+    "DROP CONSTRAINT sbomdoc_unique IF EXISTS",
+    "DROP CONSTRAINT jsreconfinding_unique IF EXISTS",
+    "DROP CONSTRAINT secret_unique IF EXISTS",
+    "DROP CONSTRAINT userinput_unique IF EXISTS",
+    # K25: the `Exploit` label is constrained but nothing has ever written one.
+    "DROP CONSTRAINT exploit_unique IF EXISTS",
+    # K25: tenant indexes on the SHARED reference nodes. They have no tenant
+    # keys (strip_reference_node_tenant removes any it finds), so these indexed
+    # nothing but empty values and cost a write on every CVE upsert.
+    "DROP INDEX idx_cve_tenant IF EXISTS",
+    "DROP INDEX idx_mitredata_tenant IF EXISTS",
+    "DROP INDEX idx_capec_tenant IF EXISTS",
+    "DROP INDEX idx_exploit_type IF EXISTS",
 ]
 
 # Uniqueness constraints (tenant-scoped for per-project nodes, global for shared reference nodes)
@@ -65,20 +102,24 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT cve_unique IF NOT EXISTS FOR (c:CVE) REQUIRE c.id IS UNIQUE",
     "CREATE CONSTRAINT mitredata_unique IF NOT EXISTS FOR (m:MitreData) REQUIRE m.id IS UNIQUE",
     "CREATE CONSTRAINT capec_unique IF NOT EXISTS FOR (cap:Capec) REQUIRE cap.capec_id IS UNIQUE",
-    "CREATE CONSTRAINT vulnerability_unique IF NOT EXISTS FOR (v:Vulnerability) REQUIRE v.id IS UNIQUE",
-    "CREATE CONSTRAINT exploit_unique IF NOT EXISTS FOR (e:Exploit) REQUIRE e.id IS UNIQUE",
-    "CREATE CONSTRAINT exploitgvm_unique IF NOT EXISTS FOR (e:ExploitGvm) REQUIRE e.id IS UNIQUE",
+    # ── Per-project findings: keyed on (id, tenant), never on id alone ───────
+    # See DROP_LEGACY_CONSTRAINTS above for what an id-only key did to two
+    # projects scanning the same target. The `_tenant_unique` suffix is a NEW
+    # name on purpose: a same-name CREATE IF NOT EXISTS would silently keep the
+    # old, global constraint.
+    "CREATE CONSTRAINT vulnerability_tenant_unique IF NOT EXISTS FOR (v:Vulnerability) REQUIRE (v.id, v.user_id, v.project_id) IS UNIQUE",
+    "CREATE CONSTRAINT exploitgvm_tenant_unique IF NOT EXISTS FOR (e:ExploitGvm) REQUIRE (e.id, e.user_id, e.project_id) IS UNIQUE",
     # GitHub Secret Hunt constraints
-    "CREATE CONSTRAINT githubhunt_unique IF NOT EXISTS FOR (gh:GithubHunt) REQUIRE gh.id IS UNIQUE",
-    "CREATE CONSTRAINT githubrepo_unique IF NOT EXISTS FOR (gr:GithubRepository) REQUIRE gr.id IS UNIQUE",
-    "CREATE CONSTRAINT githubpath_unique IF NOT EXISTS FOR (gp:GithubPath) REQUIRE gp.id IS UNIQUE",
+    "CREATE CONSTRAINT githubhunt_tenant_unique IF NOT EXISTS FOR (gh:GithubHunt) REQUIRE (gh.id, gh.user_id, gh.project_id) IS UNIQUE",
+    "CREATE CONSTRAINT githubrepo_tenant_unique IF NOT EXISTS FOR (gr:GithubRepository) REQUIRE (gr.id, gr.user_id, gr.project_id) IS UNIQUE",
+    "CREATE CONSTRAINT githubpath_tenant_unique IF NOT EXISTS FOR (gp:GithubPath) REQUIRE (gp.id, gp.user_id, gp.project_id) IS UNIQUE",
     # Supply-chain feature (plan Phase 2/4): Package + MalPackageFinding, shared by L1 + L2.
     "CREATE CONSTRAINT package_unique IF NOT EXISTS FOR (p:Package) REQUIRE (p.purl, p.user_id, p.project_id) IS UNIQUE",
     # Anchor for packages read out of an operator-uploaded SBOM/lockfile.
-    "CREATE CONSTRAINT sbomdoc_unique IF NOT EXISTS FOR (d:SbomDocument) REQUIRE d.id IS UNIQUE",
+    "CREATE CONSTRAINT sbomdoc_tenant_unique IF NOT EXISTS FOR (d:SbomDocument) REQUIRE (d.id, d.user_id, d.project_id) IS UNIQUE",
     "CREATE CONSTRAINT malpackagefinding_unique IF NOT EXISTS FOR (mf:MalPackageFinding) REQUIRE (mf.finding_id, mf.user_id, mf.project_id) IS UNIQUE",
-    "CREATE CONSTRAINT githubsecret_unique IF NOT EXISTS FOR (gs:GithubSecret) REQUIRE gs.id IS UNIQUE",
-    "CREATE CONSTRAINT githubsensitivefile_unique IF NOT EXISTS FOR (gsf:GithubSensitiveFile) REQUIRE gsf.id IS UNIQUE",
+    "CREATE CONSTRAINT githubsecret_tenant_unique IF NOT EXISTS FOR (gs:GithubSecret) REQUIRE (gs.id, gs.user_id, gs.project_id) IS UNIQUE",
+    "CREATE CONSTRAINT githubsensitivefile_tenant_unique IF NOT EXISTS FOR (gsf:GithubSensitiveFile) REQUIRE (gsf.id, gsf.user_id, gsf.project_id) IS UNIQUE",
     # TruffleHog Secret Scanner constraints. Tenant-scoped (id, user_id,
     # project_id), matching the MERGE key: an id-only constraint plus a project
     # import that re-owns the tenant props WITHOUT rewriting the embedded id left
@@ -94,9 +135,9 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT multiscannerbucket_unique IF NOT EXISTS FOR (tb:MultiscannerBucket) REQUIRE (tb.id, tb.user_id, tb.project_id) IS UNIQUE",
     "CREATE CONSTRAINT multiscannerendpoint_unique IF NOT EXISTS FOR (te:MultiscannerEndpoint) REQUIRE (te.id, te.user_id, te.project_id) IS UNIQUE",
     # JS Recon Scanner constraints
-    "CREATE CONSTRAINT jsreconfinding_unique IF NOT EXISTS FOR (jf:JsReconFinding) REQUIRE jf.id IS UNIQUE",
+    "CREATE CONSTRAINT jsreconfinding_tenant_unique IF NOT EXISTS FOR (jf:JsReconFinding) REQUIRE (jf.id, jf.user_id, jf.project_id) IS UNIQUE",
     # Secret constraints
-    "CREATE CONSTRAINT secret_unique IF NOT EXISTS FOR (s:Secret) REQUIRE (s.id) IS UNIQUE",
+    "CREATE CONSTRAINT secret_tenant_unique IF NOT EXISTS FOR (s:Secret) REQUIRE (s.id, s.user_id, s.project_id) IS UNIQUE",
     # External Domain constraints
     "CREATE CONSTRAINT externaldomain_unique IF NOT EXISTS FOR (ed:ExternalDomain) REQUIRE (ed.domain, ed.user_id, ed.project_id) IS UNIQUE",
     # OTX Threat Intelligence constraints
@@ -111,7 +152,7 @@ CONSTRAINTS = [
     # Knowledge Base — base constraint (not tenant-scoped, content is universal)
     "CREATE CONSTRAINT kb_chunk_id IF NOT EXISTS FOR (c:KBChunk) REQUIRE c.chunk_id IS UNIQUE",
     # Partial Recon — user-provided inputs for per-tool partial recon runs
-    "CREATE CONSTRAINT userinput_unique IF NOT EXISTS FOR (ui:UserInput) REQUIRE (ui.id) IS UNIQUE",
+    "CREATE CONSTRAINT userinput_tenant_unique IF NOT EXISTS FOR (ui:UserInput) REQUIRE (ui.id, ui.user_id, ui.project_id) IS UNIQUE",
 ]
 
 # Tenant composite indexes (one per node type for efficient per-project queries)
@@ -161,6 +202,14 @@ TENANT_INDEXES = [
     "CREATE INDEX idx_chainfailure_tenant IF NOT EXISTS FOR (fl:ChainFailure) ON (fl.user_id, fl.project_id)",
     # Partial Recon — UserInput tenant index
     "CREATE INDEX idx_userinput_tenant IF NOT EXISTS FOR (ui:UserInput) ON (ui.user_id, ui.project_id)",
+    # These labels used to be backed by an id-only uniqueness constraint, which
+    # is also what served "everything in this project" reads. The constraint is
+    # now (id, tenant), so the tenant half needs its own index or a per-project
+    # scan walks every row in the database.
+    "CREATE INDEX idx_traceroute_tenant IF NOT EXISTS FOR (tr:Traceroute) ON (tr.user_id, tr.project_id)",
+    "CREATE INDEX idx_package_tenant IF NOT EXISTS FOR (p:Package) ON (p.user_id, p.project_id)",
+    "CREATE INDEX idx_malpackagefinding_tenant IF NOT EXISTS FOR (mf:MalPackageFinding) ON (mf.user_id, mf.project_id)",
+    "CREATE INDEX idx_sbomdoc_tenant IF NOT EXISTS FOR (d:SbomDocument) ON (d.user_id, d.project_id)",
     # Certificate had no tenant index of its own: the old (subject_cn,...)
     # constraint backed reads. Re-keying to cert_key moves that backing, and
     # readers filtering by project_id alone (sharedInfra, graph-overview) need
@@ -185,14 +234,11 @@ ADDITIONAL_INDEXES = [
     # CVE indexes
     "CREATE INDEX cve_severity IF NOT EXISTS FOR (c:CVE) ON (c.severity)",
     "CREATE INDEX cve_cvss IF NOT EXISTS FOR (c:CVE) ON (c.cvss)",
-    "CREATE INDEX idx_cve_tenant IF NOT EXISTS FOR (c:CVE) ON (c.user_id, c.project_id)",
-    # MitreData indexes
-    "CREATE INDEX idx_mitredata_tenant IF NOT EXISTS FOR (m:MitreData) ON (m.user_id, m.project_id)",
+    # K25: CVE, MitreData and Capec are SHARED reference nodes and carry no
+    # tenant keys (strip_reference_node_tenant removes any it finds), so a
+    # tenant index on them indexed nothing but empty values. Dropped below.
     # Capec indexes
     "CREATE INDEX capec_id IF NOT EXISTS FOR (c:Capec) ON (c.capec_id)",
-    "CREATE INDEX idx_capec_tenant IF NOT EXISTS FOR (c:Capec) ON (c.user_id, c.project_id)",
-    # Exploit indexes
-    "CREATE INDEX idx_exploit_type IF NOT EXISTS FOR (e:Exploit) ON (e.attack_type)",
     # GitHub Secret Hunt indexes
     "CREATE INDEX idx_githubrepo_name IF NOT EXISTS FOR (gr:GithubRepository) ON (gr.name)",
     "CREATE INDEX idx_sbomdoc_name IF NOT EXISTS FOR (d:SbomDocument) ON (d.name)",

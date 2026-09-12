@@ -489,10 +489,12 @@ class GvmMixin:
 
                             session.run(
                                 """
-                                MERGE (e:ExploitGvm {id: $id})
+                                MERGE (e:ExploitGvm {id: $id, user_id: $uid,
+                                                     project_id: $pid})
                                 SET e += $props, e.updated_at = datetime()
                                 """,
-                                id=exploit_id, props=exploit_props
+                                id=exploit_id, props=exploit_props,
+                                uid=user_id, pid=project_id
                             )
                             stats["exploits_gvm_created"] += 1
                             if cisa_kev:
@@ -504,7 +506,9 @@ class GvmMixin:
                                 severity_label = "CRITICAL" if cvss_score >= 9.0 else "HIGH" if cvss_score >= 7.0 else "MEDIUM" if cvss_score >= 4.0 else "LOW"
                                 session.run(
                                     """
-                                    MATCH (e:ExploitGvm {id: $exploit_id})
+                                    MATCH (e:ExploitGvm {id: $exploit_id,
+                                                         user_id: $uid,
+                                                         project_id: $pid})
                                     MERGE (c:CVE {id: $cve_id})
                                     // GLOBAL reference node (UNIQUE on id, one per
                                     // CVE for the whole database). A tenant stamp made
@@ -557,7 +561,8 @@ class GvmMixin:
 
                         session.run(
                             """
-                            MERGE (v:Vulnerability {id: $id})
+                            MERGE (v:Vulnerability {id: $id, user_id: $uid,
+                                                    project_id: $pid})
                             SET v += $props,
                                 v.updated_at = datetime()
                             // K21: `remediated` was set when a scan stopped
@@ -567,7 +572,8 @@ class GvmMixin:
                             // Resolved section for ever.
                             REMOVE v.remediated, v.remediated_at
                             """,
-                            id=vuln_id, props=vuln_props
+                            id=vuln_id, props=vuln_props,
+                            uid=user_id, pid=project_id
                         )
                         stats["vulnerabilities_created"] += 1
                         if cisa_kev:
@@ -583,7 +589,7 @@ class GvmMixin:
                                 """
                                 MATCH (p:Port {number: $port, protocol: $protocol, ip_address: $ip, user_id: $user_id, project_id: $project_id})
                                       -[:USES_TECHNOLOGY]->(t:Technology)
-                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                 MERGE (t)-[:HAS_VULNERABILITY]->(v)
                                 RETURN count(t) as matched
                                 """,
@@ -604,7 +610,7 @@ class GvmMixin:
                                 MATCH (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
                                       -[:USES_TECHNOLOGY]->(t:Technology)
                                 WHERE 'Operating systems' IN t.categories
-                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                 MERGE (t)-[:HAS_VULNERABILITY]->(v)
                                 RETURN count(t) as matched
                                 """,
@@ -623,7 +629,7 @@ class GvmMixin:
                             result = session.run(
                                 """
                                 MATCH (p:Port {number: $port, protocol: $protocol, ip_address: $ip, user_id: $user_id, project_id: $project_id})
-                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                 MERGE (p)-[:HAS_VULNERABILITY]->(v)
                                 RETURN p
                                 """,
@@ -640,7 +646,7 @@ class GvmMixin:
                             result = session.run(
                                 """
                                 MATCH (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
-                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                 MERGE (i)-[:HAS_VULNERABILITY]->(v)
                                 RETURN i
                                 """,
@@ -656,7 +662,7 @@ class GvmMixin:
                             result = session.run(
                                 """
                                 MATCH (s:Subdomain {name: $hostname, user_id: $user_id, project_id: $project_id})
-                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MATCH (v:Vulnerability {id: $vuln_id, user_id: $user_id, project_id: $project_id})
                                 MERGE (s)-[:HAS_VULNERABILITY]->(v)
                                 RETURN s
                                 """,

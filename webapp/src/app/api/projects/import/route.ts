@@ -11,7 +11,6 @@ import path from 'path'
 import { safeBasename } from '@/lib/safePath'
 import { orchestratorFetch } from '@/lib/orchestrator'
 import { envelopeForKind } from '@/lib/jobQueue'
-import { describeLiveGraphWriters } from '@/lib/graphWriters'
 
 export const maxDuration = 300
 
@@ -476,30 +475,17 @@ export async function POST(request: NextRequest) {
           // Clear any existing data for the new project ID (safety)
           await clearProjectGraph(session, newProject.id)
 
-          // Also clear the original project's Neo4j data to prevent duplicates.
-          // With global unique constraints, nodes from the old project would conflict
-          // or create stale relationships pointing to orphaned unconstrained nodes.
+          // X3: the source project's graph is NOT touched.
           //
-          // This deletes a project the operator did not ask to touch, so it must
-          // not happen underneath something that is reading it. A triage run
-          // holds the whole graph in memory and writes its ranking back at the
-          // end; clearing the source here would make it publish a ranking of
-          // findings that no longer exist (X1).
-          if (_oldProjectId && _oldProjectId !== newProject.id) {
-            const busy = await describeLiveGraphWriters(_oldProjectId)
-            if (busy) {
-              return NextResponse.json(
-                {
-                  error: `This export came from a project that is still in use: ` +
-                    `${busy}. Importing it would clear that project's graph. ` +
-                    `Wait for it to finish and try again.`,
-                  graphBusy: true,
-                },
-                { status: 409 }
-              )
-            }
-            await clearProjectGraph(session, _oldProjectId)
-          }
+          // This used to delete it, because the finding labels were unique on
+          // `id` alone: importing an export of a project that still existed
+          // would have collided with it, so the source was wiped to make room.
+          // That is an operator importing a backup and silently losing the
+          // project they took it from.
+          //
+          // Those constraints are now (id, user_id, project_id), so the same id
+          // can exist in both projects and there is nothing to make room for.
+          // `_oldProjectId` is kept only for the `_exportId` remapping below.
 
           // Shared with Scan Timeline version activation (lib/graphRestore.ts):
           // same MERGE-vs-CREATE-by-constraint, batching and _exportId wiring.

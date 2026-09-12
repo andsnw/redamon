@@ -452,7 +452,8 @@ class SupplyChainMixin:
         with self.driver.session() as session:
             session.run(
                 """
-                MERGE (gr:GithubRepository {id: $id})
+                MERGE (gr:GithubRepository {id: $id, user_id: $uid,
+                                            project_id: $pid})
                 ON CREATE SET gr.first_seen = datetime()
                 SET gr.name = $name, gr.user_id = $uid, gr.project_id = $pid,
                     gr.updated_at = datetime()
@@ -481,7 +482,8 @@ class SupplyChainMixin:
         with self.driver.session() as session:
             session.run(
                 """
-                MERGE (d:SbomDocument {id: $id})
+                MERGE (d:SbomDocument {id: $id, user_id: $uid,
+                                       project_id: $pid})
                 ON CREATE SET d.first_seen = datetime()
                 SET d.name = $name, d.user_id = $uid, d.project_id = $pid,
                     d.updated_at = datetime()

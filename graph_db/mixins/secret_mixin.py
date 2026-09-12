@@ -228,7 +228,8 @@ class SecretMixin:
             try:
                 session.run(
                     """
-                    MERGE (gh:GithubHunt {id: $id})
+                    MERGE (gh:GithubHunt {id: $id, user_id: $props.user_id,
+                                         project_id: $props.project_id})
                     SET gh += $props, gh.updated_at = datetime()
                     """,
                     id=hunt_id, props=hunt_props
@@ -244,7 +245,7 @@ class SecretMixin:
                 result = session.run(
                     """
                     MATCH (d:Domain {user_id: $uid, project_id: $pid})
-                    MATCH (gh:GithubHunt {id: $hunt_id})
+                    MATCH (gh:GithubHunt {id: $hunt_id, user_id: $uid, project_id: $pid})
                     MERGE (d)-[:HAS_GITHUB_HUNT]->(gh)
                     RETURN count(*) as linked
                     """,
@@ -305,7 +306,7 @@ class SecretMixin:
                     }
                     try:
                         session.run(
-                            "MERGE (gr:GithubRepository {id: $id}) SET gr += $props, gr.updated_at = datetime()",
+                            "MERGE (gr:GithubRepository {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET gr += $props, gr.updated_at = datetime()",
                             id=repo_id, props=repo_props
                         )
                         stats["repositories_created"] += 1
@@ -314,11 +315,14 @@ class SecretMixin:
                         # Link GithubHunt → GithubRepository
                         session.run(
                             """
-                            MATCH (gh:GithubHunt {id: $hunt_id})
-                            MATCH (gr:GithubRepository {id: $repo_id})
+                            MATCH (gh:GithubHunt {id: $hunt_id, user_id: $uid,
+                                                  project_id: $pid})
+                            MATCH (gr:GithubRepository {id: $repo_id, user_id: $uid,
+                                                        project_id: $pid})
                             MERGE (gh)-[:HAS_REPOSITORY]->(gr)
                             """,
-                            hunt_id=hunt_id, repo_id=repo_id
+                            hunt_id=hunt_id, repo_id=repo_id,
+                            uid=user_id, pid=project_id
                         )
                         stats["relationships_created"] += 1
                     except Exception as e:
@@ -337,7 +341,7 @@ class SecretMixin:
                     }
                     try:
                         session.run(
-                            "MERGE (gp:GithubPath {id: $id}) SET gp += $props, gp.updated_at = datetime()",
+                            "MERGE (gp:GithubPath {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET gp += $props, gp.updated_at = datetime()",
                             id=path_id, props=path_props
                         )
                         stats["paths_created"] += 1
@@ -346,11 +350,14 @@ class SecretMixin:
                         # Link GithubRepository → GithubPath
                         session.run(
                             """
-                            MATCH (gr:GithubRepository {id: $repo_id})
-                            MATCH (gp:GithubPath {id: $path_id})
+                            MATCH (gr:GithubRepository {id: $repo_id, user_id: $uid,
+                                                        project_id: $pid})
+                            MATCH (gp:GithubPath {id: $path_id, user_id: $uid,
+                                                  project_id: $pid})
                             MERGE (gr)-[:HAS_PATH]->(gp)
                             """,
-                            repo_id=repo_id, path_id=path_id
+                            repo_id=repo_id, path_id=path_id,
+                            uid=user_id, pid=project_id
                         )
                         stats["relationships_created"] += 1
                     except Exception as e:
@@ -379,7 +386,7 @@ class SecretMixin:
 
                     try:
                         session.run(
-                            "MERGE (gs:GithubSecret {id: $id}) SET gs += $props, gs.updated_at = datetime()",
+                            "MERGE (gs:GithubSecret {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET gs += $props, gs.updated_at = datetime()",
                             id=node_id, props=node_props
                         )
                         stats["secrets_created"] += 1
@@ -387,11 +394,14 @@ class SecretMixin:
                         # Link GithubPath → GithubSecret
                         session.run(
                             """
-                            MATCH (gp:GithubPath {id: $path_id})
-                            MATCH (gs:GithubSecret {id: $node_id})
+                            MATCH (gp:GithubPath {id: $path_id, user_id: $uid,
+                                                  project_id: $pid})
+                            MATCH (gs:GithubSecret {id: $node_id, user_id: $uid,
+                                                    project_id: $pid})
                             MERGE (gp)-[:CONTAINS_SECRET]->(gs)
                             """,
-                            path_id=path_id, node_id=node_id
+                            path_id=path_id, node_id=node_id,
+                            uid=user_id, pid=project_id
                         )
                         stats["relationships_created"] += 1
                     except Exception as e:
@@ -411,7 +421,7 @@ class SecretMixin:
 
                     try:
                         session.run(
-                            "MERGE (gsf:GithubSensitiveFile {id: $id}) SET gsf += $props, gsf.updated_at = datetime()",
+                            "MERGE (gsf:GithubSensitiveFile {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET gsf += $props, gsf.updated_at = datetime()",
                             id=node_id, props=node_props
                         )
                         stats["sensitive_files_created"] += 1
@@ -419,11 +429,14 @@ class SecretMixin:
                         # Link GithubPath → GithubSensitiveFile
                         session.run(
                             """
-                            MATCH (gp:GithubPath {id: $path_id})
-                            MATCH (gsf:GithubSensitiveFile {id: $node_id})
+                            MATCH (gp:GithubPath {id: $path_id, user_id: $uid,
+                                                  project_id: $pid})
+                            MATCH (gsf:GithubSensitiveFile {id: $node_id, user_id: $uid,
+                                                            project_id: $pid})
                             MERGE (gp)-[:CONTAINS_SENSITIVE_FILE]->(gsf)
                             """,
-                            path_id=path_id, node_id=node_id
+                            path_id=path_id, node_id=node_id,
+                            uid=user_id, pid=project_id
                         )
                         stats["relationships_created"] += 1
                     except Exception as e:

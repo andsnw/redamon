@@ -27,9 +27,14 @@ def _load(name, relpath):
 # Load in dependency order (same pattern as test_graph_db_refactor.py)
 _cpe = _load("graph_db.cpe_resolver", "graph_db/cpe_resolver.py")
 _schema = _load("graph_db.schema", "graph_db/schema.py")
+# `graph_db` is stubbed with a MagicMock, which is not a package, so anything
+# the loaded modules import from it has to be pre-loaded here by hand. Missing
+# one shows up as "No module named graph_db.X; graph_db is not a package".
+_cert_key = _load("graph_db.cert_key", "graph_db/cert_key.py")
 sys.modules.setdefault("graph_db", MagicMock())
 sys.modules["graph_db.schema"] = _schema
 sys.modules["graph_db.cpe_resolver"] = _cpe
+sys.modules["graph_db.cert_key"] = _cert_key
 _base = _load("graph_db.mixins.base_mixin", "graph_db/mixins/base_mixin.py")
 _osint = _load("graph_db.mixins.osint_mixin", "graph_db/mixins/osint_mixin.py")
 

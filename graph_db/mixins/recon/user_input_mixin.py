@@ -29,7 +29,8 @@ class UserInputMixin:
             # Create UserInput node
             session.run(
                 """
-                MERGE (ui:UserInput {id: $id})
+                MERGE (ui:UserInput {id: $id, user_id: $user_id,
+                                     project_id: $project_id})
                 SET ui.input_type = $input_type,
                     ui.values = $values,
                     ui.tool_id = $tool_id,
@@ -54,7 +55,7 @@ class UserInputMixin:
                 MERGE (d:Domain {name: $domain, user_id: $user_id, project_id: $project_id})
                 ON CREATE SET d.updated_at = datetime()
                 WITH d
-                MATCH (ui:UserInput {id: $ui_id})
+                MATCH (ui:UserInput {id: $ui_id, user_id: $user_id, project_id: $project_id})
                 MERGE (d)-[:HAS_USER_INPUT]->(ui)
                 """,
                 domain=domain, user_id=user_id, project_id=project_id, ui_id=node_id,
@@ -75,7 +76,8 @@ class UserInputMixin:
 
             session.run(
                 """
-                MATCH (ui:UserInput {id: $id})
+                MATCH (ui:UserInput {id: $id, user_id: $props.user_id,
+                                     project_id: $props.project_id})
                 SET ui += $props
                 """,
                 id=user_input_id, props=props,
@@ -193,7 +195,7 @@ class UserInputMixin:
                     if user_input_id:
                         session.run(
                             """
-                            MATCH (ui:UserInput {id: $ui_id})
+                            MATCH (ui:UserInput {id: $ui_id, user_id: $uid, project_id: $pid})
                             MATCH (s:Subdomain {name: $name, user_id: $uid, project_id: $pid})
                             MERGE (ui)-[:PRODUCED]->(s)
                             """,
@@ -248,7 +250,7 @@ class UserInputMixin:
                                 if user_input_id:
                                     session.run(
                                         """
-                                        MATCH (ui:UserInput {id: $ui_id})
+                                        MATCH (ui:UserInput {id: $ui_id, user_id: $uid, project_id: $pid})
                                         MATCH (i:IP {address: $addr, user_id: $uid, project_id: $pid})
                                         MERGE (ui)-[:PRODUCED]->(i)
                                         """,

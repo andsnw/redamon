@@ -159,6 +159,7 @@ who cannot see WHY a finding ranked where it did has no way to disagree with it.
 | --- | --- | --- |
 | `triage_priority_score` | Float | 0-100, the sort key. Bigger is more urgent |
 | `triage_math_score` | Float | The score before any AI correction |
+| `triage_risk` | Float | C x L x I x R, 0-1, before the tier is folded into the score. The project-level risk roll-up combines these |
 | `triage_tier` | String | `T1` Act now \| `T2` Act soon \| `T3` Plan \| `T4` Track |
 | `triage_tier_rule` | String | Which rule placed it in that tier |
 | `triage_factors` | String (JSON) | `C`, `L`, `I`, `R`, each with the evidence it came from |

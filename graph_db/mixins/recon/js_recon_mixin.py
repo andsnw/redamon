@@ -115,7 +115,7 @@ class JsReconMixin:
                     }
 
                     session.run(
-                        "MERGE (jf:JsReconFinding {id: $id}) SET jf += $props, jf.updated_at = datetime()",
+                        "MERGE (jf:JsReconFinding {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET jf += $props, jf.updated_at = datetime()",
                         id=file_node_id, props=props
                     )
                     file_node_ids[source_url] = file_node_id
@@ -126,7 +126,7 @@ class JsReconMixin:
                         session.run(
                             """
                             MATCH (bu:BaseURL {url: $base_url, user_id: $uid, project_id: $pid})
-                            MATCH (jf:JsReconFinding {id: $fid})
+                            MATCH (jf:JsReconFinding {id: $fid, user_id: $uid, project_id: $pid})
                             MERGE (bu)-[:HAS_JS_FILE]->(jf)
                             """,
                             base_url=base_url, uid=user_id, pid=project_id, fid=file_node_id
@@ -137,7 +137,7 @@ class JsReconMixin:
                             session.run(
                                 """
                                 MATCH (d:Domain {name: $dname, user_id: $uid, project_id: $pid})
-                                MATCH (jf:JsReconFinding {id: $fid})
+                                MATCH (jf:JsReconFinding {id: $fid, user_id: $uid, project_id: $pid})
                                 MERGE (d)-[:HAS_JS_FILE]->(jf)
                                 """,
                                 dname=domain_name, uid=user_id, pid=project_id, fid=file_node_id
@@ -147,7 +147,7 @@ class JsReconMixin:
                                 """
                                 MATCH (d:Domain {user_id: $uid, project_id: $pid})
                                 WITH d LIMIT 1
-                                MATCH (jf:JsReconFinding {id: $fid})
+                                MATCH (jf:JsReconFinding {id: $fid, user_id: $uid, project_id: $pid})
                                 MERGE (d)-[:HAS_JS_FILE]->(jf)
                                 """,
                                 uid=user_id, pid=project_id, fid=file_node_id
@@ -244,7 +244,7 @@ class JsReconMixin:
                         }
 
                         session.run(
-                            "MERGE (jf:JsReconFinding {id: $id}) SET jf += $props, jf.updated_at = datetime()",
+                            "MERGE (jf:JsReconFinding {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET jf += $props, jf.updated_at = datetime()",
                             id=node_id, props=props
                         )
                         stats["findings_created"] += 1
@@ -286,7 +286,7 @@ class JsReconMixin:
                         "discovered_at": scan_ts,
                     }
                     session.run(
-                        "MERGE (jf:JsReconFinding {id: $id}) SET jf += $props, jf.updated_at = datetime()",
+                        "MERGE (jf:JsReconFinding {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET jf += $props, jf.updated_at = datetime()",
                         id=node_id, props=props
                     )
                     stats["findings_created"] += 1
@@ -328,7 +328,7 @@ class JsReconMixin:
                         "discovered_at": scan_ts,
                     }
                     session.run(
-                        "MERGE (jf:JsReconFinding {id: $id}) SET jf += $props, jf.updated_at = datetime()",
+                        "MERGE (jf:JsReconFinding {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET jf += $props, jf.updated_at = datetime()",
                         id=node_id, props=props
                     )
                     stats["findings_created"] += 1
@@ -370,7 +370,7 @@ class JsReconMixin:
                         "discovered_at": scan_ts,
                     }
                     session.run(
-                        "MERGE (jf:JsReconFinding {id: $id}) SET jf += $props, jf.updated_at = datetime()",
+                        "MERGE (jf:JsReconFinding {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET jf += $props, jf.updated_at = datetime()",
                         id=node_id, props=props
                     )
                     stats["findings_created"] += 1
@@ -413,7 +413,7 @@ class JsReconMixin:
                         "discovered_at": scan_ts,
                     }
                     session.run(
-                        "MERGE (jf:JsReconFinding {id: $id}) SET jf += $props, jf.updated_at = datetime()",
+                        "MERGE (jf:JsReconFinding {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET jf += $props, jf.updated_at = datetime()",
                         id=node_id, props=props
                     )
                     stats["findings_created"] += 1
@@ -459,7 +459,7 @@ class JsReconMixin:
                         "discovered_at": scan_ts,
                     }
                     session.run(
-                        "MERGE (jf:JsReconFinding {id: $id}) SET jf += $props, jf.updated_at = datetime()",
+                        "MERGE (jf:JsReconFinding {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET jf += $props, jf.updated_at = datetime()",
                         id=node_id, props=props
                     )
                     stats["findings_created"] += 1
@@ -503,7 +503,7 @@ class JsReconMixin:
                         "discovered_at": scan_ts,
                     }
                     session.run(
-                        "MERGE (jf:JsReconFinding {id: $id}) SET jf += $props, jf.updated_at = datetime()",
+                        "MERGE (jf:JsReconFinding {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET jf += $props, jf.updated_at = datetime()",
                         id=node_id, props=props
                     )
                     stats["findings_created"] += 1
@@ -513,7 +513,7 @@ class JsReconMixin:
                         session.run(
                             """
                             MATCH (d:Domain {name: $dname, user_id: $uid, project_id: $pid})
-                            MATCH (jf:JsReconFinding {id: $fid})
+                            MATCH (jf:JsReconFinding {id: $fid, user_id: $uid, project_id: $pid})
                             MERGE (d)-[:HAS_JS_FINDING]->(jf)
                             """,
                             dname=domain_name, uid=user_id, pid=project_id, fid=node_id
@@ -540,7 +540,8 @@ class JsReconMixin:
 
                     session.run(
                         """
-                        MERGE (s:Secret {id: $id})
+                        MERGE (s:Secret {id: $id, user_id: $user_id,
+                                         project_id: $project_id})
                         SET s.user_id = $user_id,
                             s.project_id = $project_id,
                             s.secret_type = $secret_type,
@@ -715,7 +716,7 @@ class JsReconMixin:
                         "discovered_at": scan_ts,
                     }
                     session.run(
-                        "MERGE (jf:JsReconFinding {id: $id}) SET jf += $props, jf.updated_at = datetime()",
+                        "MERGE (jf:JsReconFinding {id: $id, user_id: $props.user_id, project_id: $props.project_id}) SET jf += $props, jf.updated_at = datetime()",
                         id=node_id, props=props
                     )
                     stats["ai_sdk_findings_created"] += 1

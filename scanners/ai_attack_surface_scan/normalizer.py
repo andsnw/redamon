@@ -118,7 +118,8 @@ def write_finding(session, finding: Finding, user_id: str, project_id: str,
 
     session.run(
         """
-        MERGE (v:Vulnerability {id: $id})
+        MERGE (v:Vulnerability {id: $id, user_id: $props.user_id,
+                                project_id: $props.project_id})
         ON CREATE SET v.first_seen = datetime()
         SET v += $props, v.updated_at = datetime()
         """,
@@ -131,7 +132,7 @@ def write_finding(session, finding: Finding, user_id: str, project_id: str,
     # Tier 1: link to an Endpoint that recon already discovered for this target.
     linked = session.run(
         """
-        MATCH (v:Vulnerability {id: $id})
+        MATCH (v:Vulnerability {id: $id, user_id: $uid, project_id: $pid})
         OPTIONAL MATCH (e:Endpoint {baseurl: $baseurl, user_id: $uid, project_id: $pid})
           WHERE e.path = $path
         // Prefer the AI-typed endpoint over a bare sibling on the same path.
@@ -205,7 +206,7 @@ def _ensure_target_node(session, finding: Finding, vid: str,
             e.updated_at = datetime()
         MERGE (b)-[:HAS_ENDPOINT]->(e)
         WITH e
-        MATCH (v:Vulnerability {id: $id})
+        MATCH (v:Vulnerability {id: $id, user_id: $uid, project_id: $pid})
         MERGE (e)-[:HAS_VULNERABILITY]->(v)
         """,
         baseurl=base_url, path=path, method=method, uid=user_id, pid=project_id,
@@ -220,7 +221,7 @@ def _ensure_target_node(session, finding: Finding, vid: str,
         # Vulnerability (vhost_sni precedent) so the component stays connected.
         session.run(
             """
-            MATCH (v:Vulnerability {id: $id})
+            MATCH (v:Vulnerability {id: $id, user_id: $uid, project_id: $pid})
             MERGE (ip:IP {address: $host, user_id: $uid, project_id: $pid})
               ON CREATE SET ip.source = 'ai_attack_target', ip.ai_attack_synthetic = true,
                             ip.created_at = datetime()

@@ -384,7 +384,8 @@ class ResourceMixin:
 
                     session.run(
                         """
-                        MERGE (s:Secret {id: $id})
+                        MERGE (s:Secret {id: $id, user_id: $user_id,
+                                         project_id: $project_id})
                         SET s.user_id = $user_id,
                             s.project_id = $project_id,
                             s.secret_type = $secret_type,
