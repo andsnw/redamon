@@ -606,11 +606,13 @@ export function TriageTable({ projectId }: TriageTableProps) {
       ) : (
         sections.map(section => (
           <div key={section.key} className={styles.section}>
-            <h3 className={styles.sectionHeading}>
-              {SECTION_TITLES[section.key]}
-              <span className={styles.sectionCount}>{section.rows.length}</span>
-            </h3>
-            <p className={styles.sectionBlurb}>{SECTION_BLURBS[section.key]}</p>
+            <div className={styles.sectionHead}>
+              <h3 className={styles.sectionHeading}>
+                {SECTION_TITLES[section.key]}
+                <span className={styles.sectionCount}>{section.rows.length}</span>
+              </h3>
+              <p className={styles.sectionBlurb}>{SECTION_BLURBS[section.key]}</p>
+            </div>
             <div className={styles.tableScroll}>
               <table className={styles.table}>
                 <thead>
