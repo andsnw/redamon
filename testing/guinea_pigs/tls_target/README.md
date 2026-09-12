@@ -34,7 +34,7 @@ the run exercises the real production path. Nothing leaves the host. A distinct
 
 | Port | Certificate | Pipeline step it proves |
 |---|---|---|
-| 993 | self-signed, valid, SAN: `mail.tlslab.test`, `imap.tlslab.test`, **`outsider.example-evil.test`** | cert grab on a non-HTTP port; `Service.tls_service_hint = imaps`; `COVERS_HOST` for in-scope SANs only (domain mode; IP mode fails closed, see Expected result); the out-of-scope SAN must never be injected as a scan target; `tls_self_signed` + `tls_hostname_mismatch` findings |
+| 993 | self-signed, valid, SAN: `mail.tlslab.test`, `imap.tlslab.test`, **`outsider.example-evil.test`** | cert grab on a non-HTTP port; `Service.tls_service_hint = imaps`; `COVERS_HOST` for in-scope SANs only (domain mode; IP mode fails closed, see Expected result); the out-of-scope SAN must never be injected as a scan target; `tls_self_signed` finding |
 | 636 | **expired** (notAfter 2024-02-01) | `tls_expired` at `high`. Before the fix an already-expired certificate produced **zero** findings — the most severe case was the one dropped; `Service.tls_service_hint = ldaps` |
 | 995 | valid, single SAN, served over **TLS 1.0 only** | `tls_weak_version` on the NEGOTIATED version, plus `tls_weak_version_supported` from `version_enum` when `-ve` is on; `Service.tls_service_hint = pop3s` |
 | 465 | **wildcard** `*.wild.tlslab.test` naming **23 SANs** | `tls_wildcard_overbroad` (threshold is 20). Needs both the wildcard flag and the count, so the CN must stay a `*.` name; `Service.tls_service_hint = smtps` |
@@ -73,24 +73,32 @@ Certificates      mail.tlslab.test, ldap.tlslab.test (expired),
 IP HAS_CERTIFICATE  4
 Subdomain nodes   1, the reverse-DNS placeholder        <- no SAN name was promoted
 
-Findings (12)     tls_expired                x1  high     <- 636
+Findings (7)      tls_expired                x1  high     <- 636
                   tls_self_signed            x4  medium
-                  tls_hostname_mismatch      x4  medium
                   tls_weak_version           x1  medium   <- 995, negotiated tls10
-                  tls_weak_version_supported x1  medium   <- 995, needs -ve
                   tls_wildcard_overbroad     x1  low      <- 465, 23 SANs
+                  tls_hostname_mismatch      x0           <- see below, H5
+                + tls_weak_version_supported x1  medium   <- only with -ve on
 ```
 
 Plus the `Service` rows, one per port:
 
 ```
-Service 993       tls=true  tls_version=tls13  tls_service_hint=imaps   name UNCHANGED
-Service 636       tls=true  tls_version=tls13  tls_service_hint=ldaps   name UNCHANGED
-Service 995       tls=true  tls_version=tls10  tls_service_hint=pop3s   name UNCHANGED
-Service 465       tls=true  tls_version=tls13  tls_service_hint=smtps   name UNCHANGED
+Service 993   name=imaps  tls=true  tls_version=tls13  tls_service_hint=imaps
+Service 636   name=ldaps  tls=true  tls_version=tls13  tls_service_hint=ldaps
+Service 995   name=pop3s  tls=true  tls_version=tls10  tls_service_hint=pop3s
+Service 465   name=urd    tls=true  tls_version=tls13  tls_service_hint=smtps
 ```
 
-One result looks like a failure and is not.
+Two results look like failures and are not.
+
+**`tls_hostname_mismatch` is 0 for an IP target.** tlsx compares the certificate
+against whatever it dialled, so on a bare IP it reports `mismatched: true` for
+every correctly configured host -- a certificate names hostnames, never the IP.
+Trusting that flag made an IP-mode scan raise a bogus mismatch on every TLS port
+it found (H5). Dial a hostname the certificate does not name and the finding
+appears as it should; pinned by
+`recon/tests/test_tls_mismatch_ip_target.py`.
 
 **`COVERS_HOST` is 0 in IP mode.** SAN promotion is scope-contained behind an
 apex allow-list, and IP mode has no apex, so it fails closed: `discovered_hostnames`
@@ -104,9 +112,16 @@ of `Port` and `Service` nodes, and so an IP-mode scan of a PTR-less target used
 to produce neither -- leaving tlsx's `tls_service_hint` with nothing to attach
 to. Fixed in `port_scan.py`, pinned by `recon/tests/test_port_scan_bare_ip.py`.
 
-`Service.name` staying `unknown` is an assertion, not an accident: `name` is part
-of the Service MERGE key, so a tlsx run that "corrected" it would orphan the node
-the port scan created and silently duplicate the service.
+`name` is set from the IANA registry by the port scan, and tlsx never touches
+it: `name` is part of the Service MERGE key, so a tlsx run that "corrected" it
+would orphan the node the port scan created and silently duplicate the service.
+
+**Port 465 is the reason the hint exists.** IANA officially registers 465 as
+`urd` (URL Rendezvous Directory), so the port scan labels the service `urd`
+while the thing actually listening is SMTPS. `tls_service_hint=smtps` records
+what the handshake says without renaming the node -- precisely the "found open,
+labelled from a static table, never inspected again" gap this harness exists to
+reproduce.
 
 **Findings need the master switch.** The six TLS toggles sit behind the Security
 Checks master toggle (`securityCheckEnabled`). With it off there are certificates

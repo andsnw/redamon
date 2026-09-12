@@ -243,11 +243,18 @@ def _parse_tlsx_output(stdout: str, meta: dict) -> dict:
             bool(subject_dn) and subject_dn == issuer_dn)
         # host mismatch: only meaningful when we submitted a hostname.
         submitted_is_host = bool(submitted) and submitted != scanned_ip
-        derived_mismatch = False
         if submitted_is_host:
             names = ([subject_cn] if subject_cn else []) + raw_san
-            derived_mismatch = not _host_matches_cert(submitted, names)
-        mismatched = bool(row.get("mismatched")) or (derived_mismatch if probe_status else False)
+            derived = not _host_matches_cert(submitted, names) if probe_status else False
+            mismatched = bool(row.get("mismatched")) or derived
+        else:
+            # H5: tlsx compares the cert against whatever it dialled, so on a
+            # bare IP it reports mismatched=true for EVERY correctly configured
+            # host -- a cert names hostnames, never the IP. Trusting that flag
+            # made an IP-mode scan raise a mismatch on every TLS port it found.
+            # Not determinable is not a finding, matching how the httpx-sourced
+            # verdicts leave what they cannot derive unset.
+            mismatched = False
 
         fp = ((row.get("fingerprint_hash") or {}) if isinstance(row.get("fingerprint_hash"), dict) else {})
         entry = {

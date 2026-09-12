@@ -1120,7 +1120,10 @@ def run_tls_data_checks(recon_data: Dict[str, Any], enabled_checks: Dict[str, bo
             _add("tls_self_signed", "medium", "Self-Signed TLS Certificate",
                  f"{target_desc}:{port} presents a self-signed certificate (subject == issuer).",
                  f"subject_dn={c['subject_dn']}")
-        if enabled_checks.get("tls_hostname_mismatch", True) and c["mismatched"]:
+        # `not is_ip` belongs here too, not just in the tlsx parser: the
+        # httpx-sourced verdict is derived from the URL's host, so an
+        # IP-addressed URL mismatches every certificate that names a hostname.
+        if enabled_checks.get("tls_hostname_mismatch", True) and c["mismatched"] and not is_ip:
             _add("tls_hostname_mismatch", "medium", "TLS Certificate Hostname Mismatch",
                  f"The certificate on {target_desc}:{port} does not name the host it was served for.",
                  f"subject_cn={c['subject_cn']} san={c['san']}")
