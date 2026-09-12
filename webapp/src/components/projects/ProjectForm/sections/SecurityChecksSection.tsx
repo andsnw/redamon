@@ -165,9 +165,14 @@ export function SecurityChecksSection({ data, updateField, onRun }: SecurityChec
                     />
                   </div>
                 )}
-                {/* Certificate-data hygiene checks (tlsx/httpx, zero extra network cost).
-                    NOTE: if you also enable the nuclei `ssl` tag, expect some
-                    overlap -- both can report the same weakness on different nodes. */}
+                {/* Certificate-data hygiene checks (tlsx/httpx, zero extra network cost). */}
+                <div className={styles.toggleDescription} style={{ marginBottom: '6px' }}>
+                  Derived from certificates already captured, so they cost no extra
+                  requests. If you also enable the Nuclei <code>ssl</code> tag, expect
+                  some duplication: a Nuclei SSL finding and a security-check finding
+                  for the same weakness are stored as separate findings and are not
+                  merged.
+                </div>
                 <div className={styles.toggleRow}>
                   <span className={styles.toggleLabel}>Expired Certificate</span>
                   <Toggle checked={data.securityCheckTlsExpired}

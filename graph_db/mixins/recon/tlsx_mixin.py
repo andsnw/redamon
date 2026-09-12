@@ -139,7 +139,12 @@ class TlsxMixin:
                         "ja3": entry.get("ja3"),
                         "ja3s": entry.get("ja3s"),
                     }
-                    cert_props = {k: v for k, v in cert_props.items() if v is not None}
+                    # Empty is "not observed", not "absent on the cert": dropping
+                    # "" / [] keeps a SAN-less observation from erasing SANs another
+                    # source stored on the same cert_key. `False` survives the
+                    # filter, so the hygiene booleans above are still written.
+                    cert_props = {k: v for k, v in cert_props.items()
+                                  if v is not None and v != "" and v != []}
 
                     session.run(
                         """

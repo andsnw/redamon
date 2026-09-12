@@ -97,6 +97,30 @@ CONSTRAINTS = [
     # Keyed on cert_key (fingerprint-derived, surrogate fallback), NOT subject_cn.
     # NEW NAME is mandatory: a same-name CREATE IF NOT EXISTS against a DB that
     # still has the old constraint is a silent no-op (see backfill_cert_key).
+    #
+    # ROLLBACK, written down before anyone needs it at 2am:
+    #
+    #   DROP CONSTRAINT certificate_key_unique IF EXISTS;
+    #   CREATE CONSTRAINT certificate_unique IF NOT EXISTS
+    #     FOR (c:Certificate) REQUIRE (c.subject_cn, c.user_id, c.project_id) IS UNIQUE;
+    #
+    # That recreate FAILS if the re-keyed data already holds two certificates
+    # sharing a subject_cn -- which is the entire reason this key exists, so on a
+    # real install it is the expected outcome, not the exception. A true rollback
+    # therefore also requires deleting the surplus, keeping the most recent
+    # updated_at per subject_cn:
+    #
+    #   MATCH (c:Certificate)
+    #   WITH c.subject_cn AS cn, c.user_id AS u, c.project_id AS p, c
+    #   ORDER BY c.updated_at DESC          // ORDER BY *before* collect, or the
+    #   WITH cn, u, p, collect(c) AS certs  // list order is arbitrary and the
+    #   WHERE size(certs) > 1               // survivor is a coin flip
+    #   UNWIND certs[1..] AS dup
+    #   DETACH DELETE dup
+    #
+    # The DECISION if that is unacceptable: leave the constraint dropped. An
+    # unconstrained Certificate label duplicates on re-scan but loses nothing,
+    # whereas deleting certificates to satisfy a rolled-back key is irreversible.
     "CREATE CONSTRAINT certificate_key_unique IF NOT EXISTS FOR (c:Certificate) REQUIRE (c.cert_key, c.user_id, c.project_id) IS UNIQUE",
     "CREATE CONSTRAINT traceroute_unique IF NOT EXISTS FOR (tr:Traceroute) REQUIRE (tr.target_ip, tr.user_id, tr.project_id) IS UNIQUE",
     "CREATE CONSTRAINT cve_unique IF NOT EXISTS FOR (c:CVE) REQUIRE c.id IS UNIQUE",

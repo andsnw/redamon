@@ -155,6 +155,19 @@ class TlsxGraphWriteLive(unittest.TestCase):
         self.assertEqual(c["serial"], "01AB")
         self.assertFalse(c["expired"])
 
+    def test_a_false_hygiene_flag_is_written_not_dropped(self):
+        """The props filter drops "" / [] so a SAN-less observation cannot erase
+        stored SANs. `False` must survive it: a missing `expired` reads back as
+        None, which is indistinguishable from "not expired" for every consumer
+        that does a truthiness check, so absence would silently downgrade posture."""
+        self._write()
+        with self.client.driver.session() as s:
+            c = s.run("MATCH (c:Certificate {user_id: $uid, project_id: $pid}) RETURN c",
+                      uid=self.uid, pid=self.pid).single()["c"]
+        for flag in ("expired", "self_signed", "mismatched", "wildcard"):
+            self.assertIn(flag, c.keys(), f"{flag}=False was filtered out of cert_props")
+            self.assertIs(c[flag], False)
+
     # -- COVERS_HOST --------------------------------------------------------
     def test_covers_host_edges_exist_for_in_scope_san_names(self):
         self._write()

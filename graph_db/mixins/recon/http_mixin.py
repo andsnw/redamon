@@ -333,7 +333,12 @@ class HttpMixin:
                         }
                         if fingerprint:
                             cert_props["fingerprint_sha256"] = fingerprint
-                        cert_props = {k: v for k, v in cert_props.items() if v is not None}
+                        # Empty is "this scanner saw nothing", not "the cert has
+                        # nothing". Since re-keying on cert_key makes sources
+                        # converge on ONE node, a `SET c += {san: []}` here would
+                        # erase a SAN list another source already stored.
+                        cert_props = {k: v for k, v in cert_props.items()
+                                      if v is not None and v != "" and v != []}
 
                         # source is first-writer provenance (ON CREATE); observed_by
                         # accumulates so a cross-source clear can tell sole vs shared.
