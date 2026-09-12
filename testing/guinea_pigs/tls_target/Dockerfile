@@ -5,5 +5,5 @@
 FROM alpine/openssl:latest
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
-EXPOSE 993 636
+EXPOSE 993 636 995 465
 ENTRYPOINT ["/start.sh"]

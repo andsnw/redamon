@@ -5,7 +5,7 @@ certificate, against real TLS handshakes rather than fixtures.
 
 ```bash
 cd testing/guinea_pigs/tls_target && docker compose up -d --build
-# target: 192.88.98.10   (IMAPS 993, LDAPS 636)
+# target: 192.88.98.10   (IMAPS 993, LDAPS 636, POP3S 995, SMTPS 465)
 docker compose down
 ```
 
@@ -36,6 +36,24 @@ the run exercises the real production path. Nothing leaves the host. A distinct
 |---|---|---|
 | 993 | self-signed, valid, SAN: `mail.tlslab.test`, `imap.tlslab.test`, **`outsider.example-evil.test`** | cert grab on a non-HTTP port; `Service.tls_service_hint = imaps`; `COVERS_HOST` for in-scope SANs only (domain mode; IP mode fails closed, see Expected result); the out-of-scope SAN must never be injected as a scan target; `tls_self_signed` + `tls_hostname_mismatch` findings |
 | 636 | **expired** (notAfter 2024-02-01) | `tls_expired` at `high`. Before the fix an already-expired certificate produced **zero** findings — the most severe case was the one dropped; `Service.tls_service_hint = ldaps` |
+| 995 | valid, single SAN, served over **TLS 1.0 only** | `tls_weak_version` on the NEGOTIATED version, plus `tls_weak_version_supported` from `version_enum` when `-ve` is on; `Service.tls_service_hint = pop3s` |
+| 465 | **wildcard** `*.wild.tlslab.test` naming **23 SANs** | `tls_wildcard_overbroad` (threshold is 20). Needs both the wildcard flag and the count, so the CN must stay a `*.` name; `Service.tls_service_hint = smtps` |
+
+### Why no port serves a weak cipher
+
+`tls_weak_cipher` cannot be reached through tlsx, and no lab port pretends
+otherwise. tlsx is a Go binary and Go's TLS client has dropped RC4 and 3DES, so:
+
+* against a server offering **only** 3DES, tlsx fails the handshake entirely and
+  reports `probe_status: false` — no certificate, no finding;
+* against a server offering 3DES **alongside** AES, tlsx negotiates AES, so the
+  negotiated cipher is strong;
+* `-ce -ct weak` returns an envelope per version with an **empty** cipher map,
+  because it can only enumerate what it is able to negotiate.
+
+Both verified live. The check is kept because a future cert source may report
+ciphers from its own scanner, and its logic is pinned by
+`recon/tests/test_tls_enum_checks.py` using tlsx's real output shape.
 
 The out-of-scope SAN is the point of the harness, not decoration: a SAN list is
 chosen by the scanned host, so it is attacker-controlled input. This lab proves
@@ -47,36 +65,44 @@ name.
 Verified against a real IP-mode pipeline run (target `192.88.98.10`):
 
 ```
-[+][Tlsx] grabbed 2 cert(s) from 2 target(s)
-summary: targets=2 responded=2 with_cert=2 expired=1 self_signed=2 mismatched=2
+[+][Tlsx] grabbed 4 cert(s) from 4 target(s)
 
-Certificates      mail.tlslab.test (sha256:7a7247…), ldap.tlslab.test (sha256:abe91b…, expired)
+Certificates      mail.tlslab.test, ldap.tlslab.test (expired),
+                  legacy.tlslab.test (tls10), *.wild.tlslab.test (23 SANs)
                   source=tlsx  observed_by=['tlsx']     <- nothing here serves HTTP
-IP HAS_CERTIFICATE  2
+IP HAS_CERTIFICATE  4
 Subdomain nodes   1, the reverse-DNS placeholder        <- no SAN name was promoted
-Findings          tls_expired(high) + tls_self_signed x2 + tls_hostname_mismatch x2
+
+Findings (12)     tls_expired                x1  high     <- 636
+                  tls_self_signed            x4  medium
+                  tls_hostname_mismatch      x4  medium
+                  tls_weak_version           x1  medium   <- 995, negotiated tls10
+                  tls_weak_version_supported x1  medium   <- 995, needs -ve
+                  tls_wildcard_overbroad     x1  low      <- 465, 23 SANs
 ```
 
-Two results look like failures and are not.
+Plus the `Service` rows, one per port:
+
+```
+Service 993       tls=true  tls_version=tls13  tls_service_hint=imaps   name UNCHANGED
+Service 636       tls=true  tls_version=tls13  tls_service_hint=ldaps   name UNCHANGED
+Service 995       tls=true  tls_version=tls10  tls_service_hint=pop3s   name UNCHANGED
+Service 465       tls=true  tls_version=tls13  tls_service_hint=smtps   name UNCHANGED
+```
+
+One result looks like a failure and is not.
 
 **`COVERS_HOST` is 0 in IP mode.** SAN promotion is scope-contained behind an
 apex allow-list, and IP mode has no apex, so it fails closed: `discovered_hostnames`
 lists all four SAN names and none becomes a `Subdomain`. The edges only appear
 when a root domain is in scope (domain mode), which needs `*.tlslab.test` to
-resolve on the host. The graph write itself is covered by
-`tests/test_tlsx_graph_live.py`.
+resolve. The graph write itself is covered by `tests/test_tlsx_graph_live.py`.
 
-**`Service` enrichment needs a PTR record.** naabu emits no `host` field when it
-scans a bare IP with no reverse DNS, so `port_scan.by_host` is empty and
-`port_mixin` -- which creates `Port`/`Service` only from `by_host` -- creates
-neither. tlsx computes the hint correctly either way (`tls_service_hint=imaps`
-on 993, `ldaps` on 636, both in the recon JSON); with no `Service` node there is
-nothing to MATCH and enrich. Expected once a Service exists:
-
-```
-Service 993       tls=true  tls_version=tls13  tls_service_hint=imaps   name UNCHANGED
-Service 636       tls=true  tls_version=tls13  tls_service_hint=ldaps   name UNCHANGED
-```
+This harness is also what exposed the reverse-DNS gap in the port scan: naabu
+omits the `host` field for a bare IP with no PTR, `by_host` is the only source
+of `Port` and `Service` nodes, and so an IP-mode scan of a PTR-less target used
+to produce neither -- leaving tlsx's `tls_service_hint` with nothing to attach
+to. Fixed in `port_scan.py`, pinned by `recon/tests/test_port_scan_bare_ip.py`.
 
 `Service.name` staying `unknown` is an assertion, not an accident: `name` is part
 of the Service MERGE key, so a tlsx run that "corrected" it would orphan the node

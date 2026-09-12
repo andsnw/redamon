@@ -85,7 +85,15 @@ def test_wildcard_overbroad_needs_threshold():
 
 def test_enum_supported_checks_are_flag_gated_data():
     assert "tls_weak_version_supported" in _types({"version_enum": ["tls10", "tls13"]})
-    assert "tls_weak_cipher_supported" in _types({"cipher_enum": [{"x": 1}]})
+    # H3: the shape below is tlsx's real `-ce -ct weak` output. This assertion
+    # used to pass `[{"x": 1}]` -- a shape tlsx never emits -- and so enshrined
+    # the bug that any enumerable server was reported as supporting weak
+    # ciphers. See recon/tests/test_tls_enum_checks.py for the captured output.
+    assert "tls_weak_cipher_supported" in _types(
+        {"cipher_enum": [{"version": "tls10",
+                          "ciphers": {"insecure": ["TLS_RSA_WITH_RC4_128_SHA"]}}]})
+    assert "tls_weak_cipher_supported" not in _types(
+        {"cipher_enum": [{"version": "tls12", "ciphers": {}}]})
     # no enum data -> no supported findings
     assert "tls_weak_version_supported" not in _types({"tls_version": "tls13"})
 
