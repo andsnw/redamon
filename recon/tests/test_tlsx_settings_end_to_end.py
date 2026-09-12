@@ -195,6 +195,41 @@ class TargetSelectionSettings(unittest.TestCase):
         self.assertEqual(self._targets({"tlsxMaxTargets": 0}), [])
 
 
+class MockHostnameTargets(unittest.TestCase):
+    """H8: the reverse-DNS placeholder must never be sent as an SNI target."""
+
+    IP = "192.88.98.10"
+    MOCK = "192-88-98-10"
+
+    def _build(self, hostnames):
+        from recon.main_recon_modules.tls_scan import _build_tlsx_targets
+        recon = {"port_scan": {"by_ip": {self.IP: {
+            "ip": self.IP, "hostnames": hostnames, "ports": [993],
+        }}}}
+        lines, meta = _build_tlsx_targets(recon, settings_for({}))
+        return lines
+
+    def test_the_dashed_ip_placeholder_is_replaced_by_the_ip(self):
+        """A partial run reads targets from the graph, where IP mode left a
+        Subdomain named after the dashed IP. tlsx cannot resolve it: every
+        handshake failed with `no address found for host`."""
+        lines = self._build([self.MOCK])
+        self.assertEqual(lines, [f"{self.IP}:993"])
+
+    def test_a_real_hostname_is_still_preferred_for_sni(self):
+        lines = self._build(["mail.tlslab.test"])
+        self.assertEqual(lines, ["mail.tlslab.test:993"])
+
+    def test_a_real_hostname_survives_alongside_a_placeholder(self):
+        lines = self._build([self.MOCK, "mail.tlslab.test"])
+        self.assertEqual(lines, ["mail.tlslab.test:993"])
+
+    def test_an_ipv6_placeholder_is_recognised_too(self):
+        from recon.main_recon_modules.tls_scan import _is_mock_hostname
+        self.assertTrue(_is_mock_hostname("2001-db8--1", "2001:db8::1"))
+        self.assertFalse(_is_mock_hostname("mail.tlslab.test", "192.88.98.10"))
+
+
 class PrismaToPythonParity(unittest.TestCase):
     def test_every_tlsx_column_is_read_by_the_settings_loader(self):
         schema = (_REPO / "webapp" / "prisma" / "schema.prisma").read_text()

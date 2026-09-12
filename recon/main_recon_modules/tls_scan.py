@@ -55,6 +55,22 @@ def _as_list(value) -> list:
     return [value]
 
 
+def _is_mock_hostname(hostname: str, ip: str) -> bool:
+    """A placeholder run_ip_recon mints for an IP with no PTR record.
+
+    H8: IP mode creates a Subdomain named after the dashed IP ("192-88-98-10"),
+    and a partial run reads its targets back out of the graph, so tlsx was handed
+    that name as an SNI target. It does not resolve, every handshake failed with
+    `no address found for host`, and the run then stamped tls_probe_failed over
+    the enrichment a full scan had just written correctly.
+
+    The full pipeline never hit it because `by_ip[...]["hostnames"]` is empty
+    there. Mirrors `_is_mock_hostname` in masscan_scan.py, which has guarded the
+    same placeholder all along.
+    """
+    return bool(hostname) and hostname == ip.replace('.', '-').replace(':', '-')
+
+
 def _strip_wildcard(name: str) -> str:
     return name.strip().lower().lstrip("*.")
 
@@ -179,6 +195,7 @@ def _build_tlsx_targets(combined_result: dict, settings: dict):
             continue
         # Deterministic hostname pick: the list order is not stable across runs.
         hostnames = sorted({h.strip().lower() for h in (info.get("hostnames") or []) if h})
+        hostnames = [h for h in hostnames if not _is_mock_hostname(h, ip)]
         hostnames = [h for h in hostnames if not (roe_list and _is_roe_excluded(h, roe_list))]
         submit_names = hostnames[:max_hostnames] if hostnames else [ip]
         for port in sorted(set(ports)):
