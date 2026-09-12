@@ -62,6 +62,7 @@ from .cve_helpers import (
 # Security checks
 from .security_checks import (
     run_security_checks,
+    run_cert_hygiene_checks_only,
 )
 
 # Subdomain takeover helpers
@@ -118,6 +119,7 @@ __all__ = [
     "VULNERS_API_URL",
     # Security checks
     "run_security_checks",
+    "run_cert_hygiene_checks_only",
     # Takeover
     "build_subjack_command",
     "build_baddns_command",

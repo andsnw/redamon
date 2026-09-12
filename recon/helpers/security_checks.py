@@ -1002,6 +1002,52 @@ def _iter_cert_targets(recon_data: Dict[str, Any]):
         }
 
 
+def _assemble_security_result(all_findings: List[Dict], enabled_checks: Dict[str, bool],
+                              hostname_count: int, ip_count: int) -> Dict[str, Any]:
+    """The `security_checks` envelope the graph writer and the report both read.
+
+    One definition, because a partial run (certificate hygiene only) has to be
+    indistinguishable in shape from a full one downstream.
+    """
+    by_type: Dict[str, List[Dict]] = {}
+    severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+
+    for finding in all_findings:
+        by_type.setdefault(finding.get("type", "unknown"), []).append(finding)
+        severity = finding.get("severity", "info")
+        if severity in severity_counts:
+            severity_counts[severity] += 1
+
+    return {
+        "security_checks": {
+            "scan_timestamp": datetime.now().isoformat(),
+            "checks_enabled": enabled_checks,
+            "targets_checked": {"hostnames": hostname_count, "ips": ip_count},
+            "findings": all_findings,
+            "by_type": by_type,
+            "summary": {"total_findings": len(all_findings), **severity_counts},
+        }
+    }
+
+
+def run_cert_hygiene_checks_only(recon_data: Dict[str, Any],
+                                 enabled_checks: Dict[str, bool]) -> Dict[str, Any]:
+    """Certificate-hygiene findings alone, with no network traffic whatsoever.
+
+    H2: the full `run_security_checks` lives inside the vuln_scan module, and
+    the pipeline skips that whole module when httpx found no live URL
+    (`should_skip_active_scans`). A host serving TLS only on a non-HTTP port is
+    exactly that case -- and exactly the case tlsx exists for -- so its
+    certificates were stored and then never evaluated, silently.
+
+    This is the subset that is safe to run there: it reads certificates already
+    in memory and sends no packets, so it does not resurrect any of the active
+    probing the skip is there to prevent.
+    """
+    findings = run_tls_data_checks(recon_data, enabled_checks)
+    return _assemble_security_result(findings, enabled_checks, 0, 0)
+
+
 def run_tls_data_checks(recon_data: Dict[str, Any], enabled_checks: Dict[str, bool]) -> List[Dict]:
     """Derive TLS-hygiene findings from certificate data already in memory.
 
@@ -2712,37 +2758,11 @@ def run_security_checks(
         print(f"[+][SecurityCheck] Found {len(rate_findings)} issues")
 
     # Organize findings by type and severity
-    by_type = {}
-    severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
-
-    for finding in all_findings:
-        finding_type = finding.get("type", "unknown")
-        severity = finding.get("severity", "info")
-
-        if finding_type not in by_type:
-            by_type[finding_type] = []
-        by_type[finding_type].append(finding)
-
-        if severity in severity_counts:
-            severity_counts[severity] += 1
-
-    # Build result structure (compatible with neo4j_client)
-    result = {
-        "security_checks": {
-            "scan_timestamp": datetime.now().isoformat(),
-            "checks_enabled": enabled_checks,
-            "targets_checked": {
-                "hostnames": len(hostnames),
-                "ips": len(ips),
-            },
-            "findings": all_findings,
-            "by_type": by_type,
-            "summary": {
-                "total_findings": len(all_findings),
-                **severity_counts,
-            }
-        }
-    }
+    result = _assemble_security_result(
+        all_findings, enabled_checks, len(hostnames), len(ips))
+    by_type = result["security_checks"]["by_type"]
+    severity_counts = {k: v for k, v in result["security_checks"]["summary"].items()
+                       if k != "total_findings"}
 
     # Print summary
     print(f"\n{'=' * 70}")

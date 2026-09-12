@@ -373,6 +373,59 @@ def save_recon_file(data: dict, output_file: Path):
             json.dump(data, f, indent=2)
 
 
+_TLS_HYGIENE_CHECK_SETTINGS = {
+    "tls_expired": "SECURITY_CHECK_TLS_EXPIRED",
+    "tls_self_signed": "SECURITY_CHECK_TLS_SELF_SIGNED",
+    "tls_hostname_mismatch": "SECURITY_CHECK_TLS_HOSTNAME_MISMATCH",
+    "tls_weak_version": "SECURITY_CHECK_TLS_WEAK_VERSION",
+    "tls_weak_cipher": "SECURITY_CHECK_TLS_WEAK_CIPHER",
+    "tls_wildcard_overbroad": "SECURITY_CHECK_TLS_WILDCARD_OVERBROAD",
+}
+
+
+def _maybe_run_cert_hygiene(result: dict, settings: dict, output_file: Path) -> dict:
+    """Certificate hygiene when the active scans were skipped (H2).
+
+    `should_skip_active_scans` suppresses the whole vuln_scan module when httpx
+    found no live URL, and run_security_checks -- which owns the TLS-hygiene
+    checks -- lives inside it. A host serving TLS only on 993/636 therefore had
+    its certificates grabbed and stored and then produced zero findings. That is
+    the precise target class tlsx was added for, so the most relevant case was
+    the one silently dropped.
+
+    Only the certificate-data subset runs here. It reads what is already in
+    memory and sends no packets, so none of the active probing the skip exists
+    to prevent comes back. Mirrors js_recon, which runs in the same branch
+    because uploaded files likewise need no live target.
+    """
+    if "vuln_scan" not in SCAN_MODULES:
+        return result
+    if not settings.get('SECURITY_CHECK_ENABLED', True):
+        return result
+    if not (result.get("tlsx") or result.get("http_probe")):
+        return result
+
+    enabled = {name: bool(settings.get(key, True))
+               for name, key in _TLS_HYGIENE_CHECK_SETTINGS.items()}
+    if not any(enabled.values()):
+        return result
+
+    try:
+        from recon.helpers import run_cert_hygiene_checks_only
+        print("\n[*][Pipeline] Certificate hygiene from stored cert data "
+              "(active scans skipped, no network cost)")
+        checks = run_cert_hygiene_checks_only(result, enabled)["security_checks"]
+        if not checks.get("findings"):
+            return result
+        result.setdefault("vuln_scan", {})["security_checks"] = checks
+        save_recon_file(result, output_file)
+        _graph_update_bg("update_graph_from_vuln_scan", result, USER_ID, PROJECT_ID)
+    except Exception as e:
+        print(f"[!][Pipeline] certificate hygiene checks failed: {e}")
+        result.setdefault("metadata", {}).setdefault("phase_errors", {})["cert_hygiene"] = str(e)
+    return result
+
+
 def _maybe_run_ai_surface(result: dict, settings: dict, output_file: Path) -> dict:
     """GROUP 4.5 — AI Surface Recon. Runs after resource_enum at every call site.
 
@@ -919,6 +972,7 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
         combined_result["metadata"]["active_scans_skipped"] = True
         combined_result["metadata"]["active_scans_skip_reason"] = skip_reason
         save_recon_file(combined_result, output_file)
+        combined_result = _maybe_run_cert_hygiene(combined_result, settings, output_file)
     else:
         if "resource_enum" in SCAN_MODULES:
             try:
@@ -1542,6 +1596,7 @@ def run_domain_recon(target: str, bruteforce: bool = False,
         combined_result["metadata"]["active_scans_skipped"] = True
         combined_result["metadata"]["active_scans_skip_reason"] = skip_reason
         save_recon_file(combined_result, output_file)
+        combined_result = _maybe_run_cert_hygiene(combined_result, _settings, output_file)
     else:
         # GROUP 5 — Resource Enum (already parallel internally: Katana || GAU || Kiterunner)
         if "resource_enum" in SCAN_MODULES:
@@ -2152,6 +2207,7 @@ def run_domain_group(target_domain: str, subdomain_list: list, start_time=None) 
                 domain_result["metadata"]["active_scans_skip_reason"] = skip_reason
             with open(output_file, 'w') as f:
                 json.dump(domain_result, f, indent=2)
+            domain_result = _maybe_run_cert_hygiene(domain_result, _settings, output_file)
         else:
             # Run resource_enum if in SCAN_MODULES (when domain_discovery is skipped)
             if "resource_enum" in SCAN_MODULES:
