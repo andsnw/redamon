@@ -337,7 +337,7 @@ export async function assertMcpProjectAccess(
 // SAFE DEFAULTS, so an unset value falls back to the documented limit and never
 // to "no limit".
 
-export type McpBucketName = 'read' | 'query' | 'write' | 'start' | 'exec'
+export type McpBucketName = 'read' | 'query' | 'write' | 'start' | 'exec' | 'compare'
 
 interface BucketSpec {
   /** Max calls in the window. */
@@ -376,6 +376,20 @@ export function bucketSpec(bucket: McpBucketName): BucketSpec {
     // is the allowlist and the scope check; this is a runaway-loop ceiling.
     case 'exec':
       return { limit: envInt('MCP_RATE_EXEC_PER_MIN', 20), windowMs: 60_000 }
+    // Orders of magnitude heavier than any other read: a version comparison
+    // gunzips and parses a whole stored graph, and a `current` side captures
+    // the live one under the snapshot semaphore.
+    //
+    // It needs its OWN bucket name rather than a per-project `query` key,
+    // because the key is `bucket|token|scopeKey` while `bucketSpec` switches on
+    // the bucket NAME alone: a per-project `query` counter would be separate
+    // but still allow 20 a minute, and twenty full-graph captures a minute per
+    // project is not a limit.
+    case 'compare':
+      return {
+        limit: envInt('MCP_RATE_COMPARE_PER_WINDOW', 2),
+        windowMs: envInt('MCP_RATE_COMPARE_WINDOW_MS', 300_000),
+      }
   }
 }
 

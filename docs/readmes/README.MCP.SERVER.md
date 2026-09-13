@@ -181,6 +181,8 @@ and a value set only in `.env` would be silently inert.
 | `MCP_RATE_WRITE_PER_MIN` | `10` | Settings/stop calls per token per minute. |
 | `MCP_RATE_START_PER_WINDOW` | `1` | Scan starts per project per window. |
 | `MCP_RATE_START_WINDOW_MS` | `300000` | That window (5 minutes). |
+| `MCP_RATE_COMPARE_PER_WINDOW` | `2` | `compare_scan_versions` calls per project per window. Its own bucket, not `query`: one call can gunzip and parse a whole stored graph. |
+| `MCP_RATE_COMPARE_WINDOW_MS` | `300000` | That window (5 minutes). |
 | `MCP_LLM_DAILY_BUDGET` | `200` | NL queries per token per day (they spend the owner's LLM key). |
 
 Agent-side bounds (the agent **does** have an `env_file`, so `.env` reaches it):
