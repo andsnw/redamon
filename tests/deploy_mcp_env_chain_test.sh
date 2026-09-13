@@ -267,6 +267,30 @@ while read -r k; do
   fi
 done <<< "$_derefs"
 
+# ------------------------------------------------ the post-deploy verdict --
+# `deploy.sh verify` is the only thing that tells an operator WHICH of the four
+# silent failure modes they are in, and it can only do that because the route
+# answers with distinguishable codes. The codes are asserted on the app side in
+# webapp/src/app/api/mcp-server/route.test.ts; what is pinned here is that
+# verify still discriminates on them.
+#
+# The 200 case matters most and is the easiest to lose: it is the alarm for an
+# endpoint answering with NO credential at all. Trimmed to a default branch, a
+# wide-open MCP surface would be reported as merely "unexpected".
+echo
+echo "== deploy.sh verify can still name the failure mode =="
+VERIFY_MCP="$(awk '/Inbound MCP surface/,/MCP GET/' "$DEPLOY")"
+for code in 401 403 404 200; do
+  grep -qE "^\s+${code}\)" <<<"$VERIFY_MCP" \
+    && ok "verify discriminates $code" \
+    || bad "verify discriminates $code" "no case arm" "a $code) arm"
+done
+# Match the SEVERITY CALL, not the message: the wording mentions
+# "unauthenticated" either way, so a looser pattern passes on a downgraded arm.
+grep -qE '^\s*200\)\s*err ' <<<"$VERIFY_MCP" \
+  && ok "the 200 arm calls err(), not warn()" \
+  || bad "the 200 arm calls err()" "downgraded to a warning" "err on an uncredentialed 200"
+
 echo
 printf 'passed %d, failed %d\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]
