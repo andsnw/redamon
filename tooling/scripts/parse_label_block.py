@@ -194,3 +194,75 @@ def parse_label_block(body: str, label: str) -> dict:
 
 def property_names(parsed: dict) -> set[str]:
     return {p["name"] for g in parsed["groups"] for p in g["properties"]}
+
+
+# ---------------------------------------------------------------------------
+# Relationship sections
+# ---------------------------------------------------------------------------
+
+#: `- `(d:Domain)-[:HAS_SUBDOMAIN {since: x}]->(s:Subdomain)` - description`
+#: Node patterns may carry their own property map -
+#: `(jf:JsReconFinding {finding_type: 'js_file'})` - which is how the JS-recon
+#: subgraph distinguishes a file node from a finding node on the SAME label.
+#: Endpoints may be UNLABELLED - `(a)`, `(v)` - where the prose deliberately
+#: leaves the type open ("a is one of MultiscannerRepository / Image / ..."), so
+#: the label group is optional. Requiring it would drop those lines into notes
+#: and lose exactly the relationships that span several node types.
+RE_REL_LINE = re.compile(
+    r"^(?P<lead>\s*[-*]\s+)(?P<prefix>[^`]*)`"
+    r"\((?P<svar>\w+)(?::(?P<src>\w+))?(?P<sprops>\s*\{[^}]*\})?\)"
+    r"-\[:(?P<type>\w+)(?P<relprops>[^\]]*)\]->"
+    r"\((?P<tvar>\w+)(?::(?P<tgt>\w+))?(?P<tprops>\s*\{[^}]*\})?\)`"
+    r"(?P<tail>.*)$"
+)
+
+
+def parse_relationship_block(body: str) -> dict:
+    """Split a `### ... Relationships` section into typed edges plus notes.
+
+    Same total contract as parse_label_block: every non-blank line is claimed,
+    and anything the grammar does not recognise stays in `notes` verbatim.
+    """
+    out = {"relationships": [], "notes": []}
+    for raw in body.split("\n"):
+        if not raw.strip():
+            out["notes"].append(raw)
+            continue
+        m = RE_REL_LINE.match(raw)
+        if m:
+            out["relationships"].append(
+                {
+                    "type": m.group("type"),
+                    "source": m.group("src") or "",
+                    "target": m.group("tgt") or "",
+                    "source_var": m.group("svar"),
+                    "target_var": m.group("tvar"),
+                    "rel_props": m.group("relprops"),
+                    "source_props": m.group("sprops") or "",
+                    "target_props": m.group("tprops") or "",
+                    "lead": m.group("lead"),
+                    "prefix": m.group("prefix"),
+                    "tail": m.group("tail"),
+                }
+            )
+        else:
+            out["notes"].append(raw)
+    return out
+
+
+def render_relationship_block(parsed: dict) -> str:
+    """Re-emit a relationship section from its fields, literally."""
+    lines = []
+    rel_iter = iter(parsed["relationships"])
+    # Notes carry their original positions implicitly: relationships were pulled
+    # out in order, so they are re-emitted in order after the leading notes that
+    # preceded them. The seeder asserts the word-level round trip.
+    for r in parsed["relationships"]:
+        lines.append(
+            f"{r['lead']}{r['prefix']}`({r['source_var']}"
+            f"{':' + r['source'] if r['source'] else ''}{r.get('source_props','')})"
+            f"-[:{r['type']}{r['rel_props']}]->"
+            f"({r['target_var']}{':' + r['target'] if r['target'] else ''}"
+            f"{r.get('target_props','')})`{r['tail']}"
+        )
+    return "\n".join(lines)

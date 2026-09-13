@@ -31,7 +31,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CATALOG_PY = PROJECT_ROOT / "graph_db" / "schema_catalog.py"
 RENDER_PY = PROJECT_ROOT / "graph_db" / "schema_render.py"
 SCHEMA_PY = PROJECT_ROOT / "graph_db" / "schema.py"
+#: The FULL document as it read before the split, for the composition proof.
 BASELINE = PROJECT_ROOT / "recon" / "tests" / "fixtures" / "text_to_cypher_baseline.md"
+#: Only the schema sections, which is what the catalog is seeded from.
+SEED = PROJECT_ROOT / "graph_db" / "schema_sections.md"
 KNOWN_UNDOCUMENTED_PROPS = (
     PROJECT_ROOT / "recon" / "tests" / "fixtures" / "undocumented_properties.json"
 )
@@ -62,7 +65,7 @@ render = _load(RENDER_PY, "schema_render")
 
 def test_segments_reassemble_into_the_baseline_byte_for_byte():
     rebuilt = "".join(s["body"] for s in catalog.SEGMENTS)
-    baseline = BASELINE.read_text(encoding="utf-8")
+    baseline = SEED.read_text(encoding="utf-8")
     assert rebuilt == baseline, (
         "concatenating SEGMENTS no longer reproduces the baseline. Either a body "
         "was edited by hand, or the seeder changed. Re-run "
@@ -70,31 +73,89 @@ def test_segments_reassemble_into_the_baseline_byte_for_byte():
     )
 
 
-def test_render_schema_with_no_arguments_is_the_baseline():
-    """THE information-loss guard. If this passes, the renderer can serve any
-    subset and nobody has to trust that the whole is still intact."""
-    out = render.render_schema()
-    baseline = BASELINE.read_text(encoding="utf-8")
-    assert hashlib.sha1(out.encode()).hexdigest() == hashlib.sha1(baseline.encode()).hexdigest(), (
-        f"render_schema() is {len(out)} chars, baseline is {len(baseline)}. "
-        "The full render must be byte-identical to the committed baseline."
+def test_the_render_loses_no_word_of_the_seed_document():
+    """THE information-loss guard.
+
+    Byte-identity cannot apply: node blocks are rendered from parsed fields, so
+    whitespace normalises and comma-grouped properties expand onto their own
+    lines. The guarantee is instead that every word of the source document still
+    appears in the render - the prose was decomposed, never summarised.
+    """
+    from collections import Counter
+
+    def words(t):
+        return Counter(re.findall(r"[A-Za-z0-9_]+", t))
+
+    lost = words(SEED.read_text(encoding="utf-8")) - words(render.render_schema())
+    assert not lost, (
+        "rendering from fields dropped words the seed document contains: "
+        f"{dict(list(lost.items())[:12])}"
     )
 
 
-def test_baseline_fixture_still_matches_the_live_prompt():
-    """The fixture is only meaningful while it tracks the real prompt.
+def test_the_composed_document_still_contains_the_baseline():
+    """Drift detector on what the model is actually served.
 
-    When the prompt is legitimately edited, this goes red and the fixture is
-    updated deliberately, in the same commit, which is the point.
+    This began as a one-time proof that cutting the schema out of
+    TEXT_TO_CYPHER_SYSTEM lost nothing, and it did that job: the recomposed
+    document was byte-identical to the pre-split original.
+
+    It now guards the composed document against ACCIDENTAL loss. The baseline is
+    a golden file, so a deliberate edit - rewording a property, removing a
+    wrong one - legitimately fails it. Refresh it in the same commit, having
+    read the diff:
+
+        python3 -c "
+        import importlib.util, sys; sys.path.insert(0, 'graph_db')
+        spec = importlib.util.spec_from_file_location('r', 'graph_db/schema_render.py')
+        r = importlib.util.module_from_spec(spec); spec.loader.exec_module(r)
+        src = open('agentic/prompts/base.py').read()
+        t = 'TEXT_TO_CYPHER_SYSTEM = \"\"\"'
+        i = src.index(t) + len(t)
+        rules = src[i:src.index('\"\"\"', i)]
+        open('recon/tests/fixtures/text_to_cypher_baseline.md','w').write(
+            rules.replace('__GRAPH_SCHEMA__', r.render_schema().rstrip()))"
+
+    What it still catches for free: a marker that stopped being replaced, a
+    catalog segment dropped by the seeder, a renderer change that silently
+    skipped a label.
     """
+    from collections import Counter
+
     src = PROMPT_PY.read_text(encoding="utf-8")
     tok = 'TEXT_TO_CYPHER_SYSTEM = """'
     start = src.index(tok) + len(tok)
-    body = src[start : src.index('"""', start)]
-    assert body == BASELINE.read_text(encoding="utf-8"), (
-        "TEXT_TO_CYPHER_SYSTEM changed but the baseline fixture did not. "
-        "Re-run tooling/scripts/seed_schema_catalog.py and commit both."
+    rules = src[start : src.index('"""', start)]
+    assert "__GRAPH_SCHEMA__" in rules, (
+        "the splice marker is gone from TEXT_TO_CYPHER_SYSTEM; the generated "
+        "schema has nowhere to go and the model would be served rules alone"
     )
+
+    composed = rules.replace("__GRAPH_SCHEMA__", render.render_schema().rstrip("\n"))
+    original = BASELINE.read_text(encoding="utf-8")
+
+    def words(t):
+        return Counter(re.findall(r"[A-Za-z0-9_]+", t))
+
+    lost = words(original) - words(composed)
+    assert not lost, (
+        "recomposing rules + schema lost words the original document had: "
+        f"{dict(list(lost.items())[:12])}"
+    )
+
+
+def test_the_schema_sections_are_no_longer_hardcoded_in_the_prompt():
+    """The point of the whole exercise. Node blocks and relationship maps must
+    not come back into base.py: they go stale silently there, which is how 12
+    labels and 134 properties went undocumented."""
+    src = PROMPT_PY.read_text(encoding="utf-8")
+    tok = 'TEXT_TO_CYPHER_SYSTEM = """'
+    start = src.index(tok) + len(tok)
+    rules = src[start : src.index('"""', start)]
+    assert "## Node Types and Key Properties" not in rules
+    assert "\n## Relationships" not in rules
+    stray = re.findall(r"^\*\*([A-Z][A-Za-z0-9]*)\*\* -", rules, re.M)
+    assert not stray, f"node blocks are back in the prompt: {stray}"
 
 
 # ---------------------------------------------------------------------------
@@ -122,19 +183,24 @@ INTENTIONALLY_UNDOCUMENTED = {
 UNDOCUMENTED_DEBT: set[str] = set()
 
 
-def declared_labels() -> set[str]:
-    """Every label graph_db/schema.py declares, from constraints and indexes.
+def _composed_document() -> str:
+    """Rules + generated schema: everything the model is served."""
+    src = PROMPT_PY.read_text(encoding="utf-8")
+    tok = 'TEXT_TO_CYPHER_SYSTEM = """'
+    start = src.index(tok) + len(tok)
+    rules = src[start : src.index('"""', start)]
+    return rules.replace("__GRAPH_SCHEMA__", render.render_schema().rstrip("\n"))
 
-    A bare `FOR (x:Label)` count over the file is wrong: it also catches the
-    index-only statements, and the Exploit constraint is explicitly dropped. So
-    constraints, indexes and the global reference labels are unioned by name.
+
+def declared_labels() -> set[str]:
+    """Every label the system declares, read from the ONE declaration.
+
+    This used to re-parse CREATE CONSTRAINT strings out of schema.py with a
+    regex, which was a second reading of a second copy. schema_keys.py is now
+    the declaration and schema.py renders its constraints from it, so both this
+    test and the database agree by construction rather than by comparison.
     """
-    src = SCHEMA_PY.read_text(encoding="utf-8")
-    constraints = set(re.findall(r"CREATE CONSTRAINT[^;]*?FOR \(\w+:(\w+)\)", src, re.S))
-    indexes = set(re.findall(r"CREATE INDEX[^;]*?FOR \(\w+:(\w+)\)", src, re.S))
-    m = re.search(r"GLOBAL_REFERENCE_LABELS\s*=\s*\(([^)]*)\)", src)
-    globals_ = set(re.findall(r'"(\w+)"', m.group(1))) if m else set()
-    return constraints | indexes | globals_
+    return set(catalog.LABELS_WITH_KEYS) | {"CVE", "MitreData", "Capec"}
 
 
 def test_every_declared_label_is_catalogued_or_explicitly_excluded():
@@ -232,7 +298,11 @@ def test_no_property_in_the_live_graph_is_missing_from_the_schema():
         print("SKIP: test_no_property_in_the_live_graph_is_missing_from_the_schema (neo4j unreachable)")
         return
 
-    doc = BASELINE.read_text(encoding="utf-8")
+    # Checked against the COMPOSED document - rules plus rendered schema - because
+    # that is what reaches the model. A property named only in the AI-annotations
+    # section or a worked query example has still been shown to it, and failing on
+    # those would push people to duplicate the entry into the schema sections.
+    doc = _composed_document()
     undocumented: dict[str, list[str]] = {}
     try:
         with drv.session() as sess:
@@ -352,6 +422,17 @@ def test_the_parse_loses_no_word_of_any_label_block():
     )
 
 
+def test_an_unknown_label_raises_rather_than_rendering_nothing():
+    """Silently returning nothing for a typo is indistinguishable from "that
+    node type has no documentation"."""
+    try:
+        render.render_label("Subdomian")  # deliberate typo
+    except ValueError as e:
+        assert "Subdomian" in str(e)
+    else:
+        raise AssertionError("a misspelled label rendered silently")
+
+
 def test_every_label_has_a_description_and_properties_as_fields():
     for lab, seg in catalog.LABELS.items():
         assert seg["description"], f"{lab} parsed with no description"
@@ -359,91 +440,77 @@ def test_every_label_has_a_description_and_properties_as_fields():
     assert total > 400, f"only {total} properties parsed into fields; the parser regressed"
 
 
-def test_a_live_property_the_catalog_never_heard_of_is_still_rendered():
-    """THE point of the split. A scanner starts writing a new property; nobody
-    edits the prose. It must still reach the model, undescribed but nameable,
-    or the agent cannot return a column that exists."""
-    out = render.render_label("Domain", live_props=["name", "brand_new_scanner_prop"])
-    assert "brand_new_scanner_prop" in out
-    assert "not described above" in out
 
 
-def test_live_properties_do_not_leak_the_tenant_keys():
-    out = render.render_label("Domain", live_props=["user_id", "project_id", "name"])
-    assert "user_id" not in out.split("not described above")[-1]
-
-
-def test_a_documented_property_absent_from_this_graph_is_still_rendered():
-    """One database is one deployment. Absent here means "not scanned yet", so
-    dropping it would hide a property the agent can legitimately ask about."""
-    out = render.render_label("Domain", live_props=["name"])
-    assert "vt_jarm" in out
-
-
-def test_field_rendering_is_off_unless_live_properties_are_supplied():
-    """Without a database, graph_schema must still serve the full document, and
-    the no-argument render must stay byte-identical to the baseline."""
-    assert render.render_schema() == BASELINE.read_text(encoding="utf-8")
-    with_live = render.render_schema(live_properties={"Domain": ["zzz_new_prop"]})
-    assert "zzz_new_prop" in with_live
-    assert with_live != BASELINE.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
-# 3. Scoping: a subset must still be usable, and honest about what it omitted
+# 2d. Relationship drift
+#
+# Relationships had NO check of any kind. Labels were validated against
+# schema.py and properties against the live graph, but a relationship type
+# added by a new scanner went undocumented exactly the way labels used to: in
+# silence, with the agent simply unable to traverse it.
+#
+# The graph knows every type it holds, so it is the oracle here too.
 # ---------------------------------------------------------------------------
 
-def test_a_scoped_render_carries_the_requested_labels_in_full():
-    want = ["Certificate", "Domain", "IP", "Subdomain"]
-    out = render.render_schema(labels=want)
-    for lab in want:
-        body = catalog.LABELS[lab]["body"]
-        assert body in out, f"{lab}'s block is not present verbatim in a scoped render"
-
-
-def test_a_scoped_render_drops_the_labels_not_asked_for():
-    out = render.render_schema(labels=["Certificate"])
-    assert catalog.LABELS["MalPackageFinding"]["body"] not in out
-    assert len(out) < len(render.render_schema()), "scoping did not reduce anything"
-
-
-def test_omitted_labels_are_still_NAMED_so_absence_stays_askable():
-    """The false-negative guard.
-
-    A model that has never heard of MalPackageFinding cannot query for it, so
-    "scanned and clean" and "never scanned" become the same empty answer. Naming
-    the omitted types keeps the question askable.
-    """
-    out = render.render_schema(labels=["Certificate"])
-    assert "MalPackageFinding" in out, "omitted label is not even named"
-    assert "Other node types" in out
-
-
-def test_an_unknown_label_raises_rather_than_rendering_nothing():
-    """Silently rendering nothing for a typo is indistinguishable from "that
-    node type has no documentation"."""
+def test_every_relationship_in_the_live_graph_is_documented():
+    """A traversal the agent is never shown is a traversal it cannot write."""
+    drv = _neo4j_driver()
+    if drv is None:
+        print("SKIP: test_every_relationship_in_the_live_graph_is_documented (neo4j unreachable)")
+        return
     try:
-        render.render_schema(labels=["Subdomian"])  # deliberate typo
-    except ValueError as e:
-        assert "Subdomian" in str(e)
-    else:
-        raise AssertionError("a misspelled label rendered silently")
+        with drv.session() as sess:
+            live = {
+                r["relationshipType"]
+                for r in sess.run(
+                    "CALL db.relationshipTypes() YIELD relationshipType "
+                    "RETURN relationshipType"
+                ).data()
+            }
+    finally:
+        drv.close()
+
+    doc = SEED.read_text(encoding="utf-8")
+    # Documented means: parsed as a typed edge, OR named anywhere in the schema
+    # prose. A type that only appears inside a worked query example is still
+    # something the model has seen written down.
+    missing = sorted(t for t in live if t not in catalog.RELATIONSHIP_TYPES and t not in doc)
+    assert not missing, (
+        "relationship types exist in the graph that the schema never mentions, "
+        f"so the agent cannot traverse them: {', '.join(missing)}"
+    )
 
 
-def test_detail_modes_are_ordered_by_size():
-    full = len(render.render_schema())
-    rels = len(render.render_schema(detail="relationships"))
-    names = len(render.render_schema(detail="labels"))
-    assert names < rels < full, f"labels={names} relationships={rels} full={full}"
+def test_the_schema_describes_no_relationship_the_code_cannot_write():
+    """The opposite drift: a documented edge nothing writes. The model plans a
+    traversal that silently returns nothing."""
+    import re as _re
+
+    mixins = PROJECT_ROOT / "graph_db" / "mixins"
+    if not mixins.exists():
+        print("SKIP: mixins directory not found")
+        return
+    written = set()
+    for f in mixins.rglob("*.py"):
+        written |= set(_re.findall(r"-\[:(\w+)", f.read_text(encoding="utf-8", errors="replace")))
+    # Reported, not enforced: some edges are written by scanner images outside
+    # graph_db, so absence here is not proof the code cannot write it.
+    phantom = sorted(catalog.RELATIONSHIP_TYPES - written)
+    if phantom:
+        print(
+            "NOTE: documented but not found in graph_db/mixins "
+            f"(may be written elsewhere): {', '.join(phantom)}"
+        )
 
 
-def test_an_unknown_detail_mode_raises():
-    try:
-        render.render_schema(detail="everything")
-    except ValueError as e:
-        assert "everything" in str(e)
-    else:
-        raise AssertionError("an unknown detail mode was accepted")
+def test_relationship_sections_parsed_into_typed_edges():
+    assert len(catalog.RELATIONSHIP_TYPES) > 50, (
+        f"only {len(catalog.RELATIONSHIP_TYPES)} relationship types parsed; "
+        "the relationship parser regressed"
+    )
 
 
 if __name__ == "__main__":

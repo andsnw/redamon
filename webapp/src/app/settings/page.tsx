@@ -1073,7 +1073,7 @@ export default function SettingsPage() {
           <Server size={14} /> MCP Tool Plugins
         </button>
         <button className={`${styles.tab} ${activeTab === 'mcp-tokens' ? styles.tabActive : ''}`} onClick={() => switchTab('mcp-tokens')}>
-          <KeyRound size={14} /> MCP Access Tokens
+          <KeyRound size={14} /> MCP Server
         </button>
         <button className={`${styles.tab} ${activeTab === 'system' ? styles.tabActive : ''}`} onClick={() => switchTab('system')}>
           <Info size={14} /> System

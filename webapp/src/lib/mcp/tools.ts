@@ -34,6 +34,7 @@ import { assertTenantScoped, TenantViolation } from '@/lib/mcp/graphGuard'
 import { agentBaseUrl } from '@/lib/agentFetch'
 import { internalKeyHeaders } from '@/lib/agentAuth'
 import { execCypher, graphSchemaDoc, nlQuery, type GraphRecords } from '@/lib/mcp/graphClient'
+import { kaliToolboxDoc } from '@/lib/mcp/kaliClient'
 
 const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'
 
@@ -267,6 +268,22 @@ export async function graphSchema(ctx: McpContext) {
   // No projectId, no database, no tenant data: it is derived from code, so it
   // still answers when Neo4j and Postgres are down.
   return { schema: await graphSchemaDoc() }
+}
+
+/**
+ * What the Kali sandbox carries, so a caller can plan around what exists.
+ *
+ * Reading the catalogue is NOT permission to run any of it: nothing on this
+ * surface executes a command. That is stated in the tool description too,
+ * because an agent that reads a list of exploitation tools will otherwise spend
+ * calls looking for the tool that runs them.
+ */
+export async function kaliToolbox(ctx: McpContext) {
+  requireScope(ctx.token, 'recon:read')
+  enforceRate(ctx, 'read')
+  // Like graph_schema: no projectId, no database, no tenant data, no call into
+  // the container. It is a constant in the agent image.
+  return { toolbox: await kaliToolboxDoc() }
 }
 
 export async function queryGraph(

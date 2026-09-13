@@ -453,88 +453,13 @@ def test_rule_8_no_project_id_filter_still_present():
 
 
 # ---------------------------------------------------------------------------
-# Cross-doc parity — GRAPH.SCHEMA.md and the prompt must agree
-# ---------------------------------------------------------------------------
-
-def test_graph_schema_md_and_prompt_agree_on_lap1_ai_properties():
-    """The developer-facing reference doc and the agent-facing prompt
-    must agree on what properties exist. Drift means one of the two
-    misleads its audience."""
-    schema_md = (PROJECT_ROOT / "docs" / "readmes" / "GRAPH.SCHEMA.md").read_text()
-    block = _extract_ai_block(_extract_text_to_cypher_block(_read_prompt_source()))
-    for prop in PROPERTY_TO_LABEL:
-        assert prop in schema_md, (
-            f"GRAPH.SCHEMA.md missing property {prop!r} that the prompt "
-            f"documents — operator-facing reference is out of sync"
-        )
-
-
-def test_graph_schema_md_and_prompt_agree_on_technology_categories():
-    schema_md = (PROJECT_ROOT / "docs" / "readmes" / "GRAPH.SCHEMA.md").read_text()
-    block = _extract_ai_block(_extract_text_to_cypher_block(_read_prompt_source()))
-    for cat in ("ai-runtime", "ai-vector-db", "ai-framework",
-                "ai-proxy", "ai-frontend"):
-        if cat in block:
-            assert cat in schema_md, (
-                f"GRAPH.SCHEMA.md missing Technology.category {cat!r} that "
-                f"the prompt mentions"
-            )
-
-
-# ---------------------------------------------------------------------------
-# Live Cypher syntax validation — every example query must parse against Neo4j
-# ---------------------------------------------------------------------------
-
-def _extract_cypher_examples(block: str) -> list[str]:
-    """Pull out every Cypher example. Examples are introduced by `MATCH `
-    (case-sensitive — that's how the catalog writes them) and continue
-    until a blank line or the next `- ` bullet."""
-    examples: list[str] = []
-    lines = block.splitlines()
-    i = 0
-    while i < len(lines):
-        if "MATCH " in lines[i] and not lines[i].lstrip().startswith("- "):
-            buf: list[str] = []
-            while i < len(lines) and lines[i].strip():
-                stripped = lines[i].strip()
-                if stripped.startswith("- ") and not buf:
-                    break  # this is a bullet, not a code line
-                buf.append(stripped)
-                i += 1
-            if buf:
-                examples.append(" ".join(buf))
-        i += 1
-    return examples
-
-
-def test_each_example_query_uses_match_clause():
-    block = _extract_ai_block(_extract_text_to_cypher_block(_read_prompt_source()))
-    examples = _extract_cypher_examples(block)
-    assert examples, "no Cypher examples extracted from the AI block"
-    for ex in examples:
-        assert "MATCH" in ex, f"example missing MATCH clause: {ex!r}"
-
-
-def test_each_example_query_has_balanced_parentheses():
-    """Cypher uses ( ) for node patterns and [ ] for relationships.
-    A typo that opens but doesn't close a paren is the #1 silent error."""
-    block = _extract_ai_block(_extract_text_to_cypher_block(_read_prompt_source()))
-    for ex in _extract_cypher_examples(block):
-        opens = ex.count("(") + ex.count("[") + ex.count("{")
-        closes = ex.count(")") + ex.count("]") + ex.count("}")
-        assert opens == closes, (
-            f"unbalanced brackets in example: {ex!r} "
-            f"(opens={opens}, closes={closes})"
-        )
-
-
 def _neo4j_driver():
     """Connect to Neo4j, or return None so the caller skips cleanly.
 
-    The credentials come from the environment first. Hardcoding them meant
-    every EXPLAIN test below silently skipped on any stack whose password was
-    not the old default - a green run that had validated nothing, which is how
-    19 unparseable examples stayed in the prompt.
+    Credentials come from the environment first. Hardcoding them meant every
+    EXPLAIN test below silently skipped on any stack whose password was not the
+    old default - a green run that had validated nothing, which is how 19
+    unparseable examples stayed in the prompt.
     """
     import os
 
@@ -553,32 +478,19 @@ def _neo4j_driver():
         return None
 
 
-def test_each_example_query_parses_against_live_neo4j():
-    """Submit each example to Neo4j's planner via EXPLAIN. A syntax error
-    here means the agent's example is broken; a planner failure means
-    the example references a constraint or label that doesn't exist."""
-    drv = _neo4j_driver()
-    if drv is None:
-        print("SKIP: test_each_example_query_parses_against_live_neo4j (neo4j unreachable)")
-        return
-    block = _extract_ai_block(_extract_text_to_cypher_block(_read_prompt_source()))
-    examples = _extract_cypher_examples(block)
-    assert examples, "no Cypher examples extracted"
-    failures: list[tuple[str, str]] = []
-    try:
-        with drv.session() as s:
-            for ex in examples:
-                try:
-                    s.run("EXPLAIN " + ex).consume()
-                except Exception as exc:  # noqa: BLE001
-                    failures.append((ex, str(exc)[:200]))
-    finally:
-        drv.close()
-    assert not failures, (
-        "Cypher example(s) failed to parse against live Neo4j:\n"
-        + "\n".join(f"  EXAMPLE: {q}\n    ERROR: {e}" for q, e in failures)
-    )
-
+# Cross-doc parity with GRAPH.SCHEMA.md - REMOVED
+#
+# Two tests lived here whose only purpose was to stop GRAPH.SCHEMA.md and this
+# prompt from disagreeing about AI properties and Technology categories.
+# graph_schema_track.md §12.1 names that pattern exactly: "Needing a test to
+# keep two documents in sync is the signal that they should not be two
+# documents."
+#
+# They are gone because the duplication is gone. GRAPH.SCHEMA.md no longer
+# lists labels, properties or relationships at all; graph_db/schema_sections.md
+# is the single declaration, and recon/tests/test_schema_catalog.py plus
+# recon/tests/test_graph_writes_documented.py check it against the code and the
+# live graph instead of against a second prose copy.
 
 # ---------------------------------------------------------------------------
 # WHOLE-PROMPT Cypher validity

@@ -401,8 +401,8 @@ class UserInputMixin:
                     OPTIONAL MATCH (d:Domain {user_id: $uid, project_id: $pid})
                     OPTIONAL MATCH (d)-[:HAS_SUBDOMAIN]->(s:Subdomain)-[:RESOLVES_TO]->(i:IP)-[:HAS_PORT]->(p:Port)
                     OPTIONAL MATCH (d)-[:RESOLVES_TO]->(di:IP)-[:HAS_PORT]->(dp:Port)
-                    OPTIONAL MATCH (p)-[:HAS_SERVICE]->(:Service)-[:SERVES_URL]->(bu:BaseURL)
-                    OPTIONAL MATCH (dp)-[:HAS_SERVICE]->(:Service)-[:SERVES_URL]->(dbu:BaseURL)
+                    OPTIONAL MATCH (p)-[:RUNS_SERVICE]->(:Service)-[:SERVES_URL]->(bu:BaseURL)
+                    OPTIONAL MATCH (dp)-[:RUNS_SERVICE]->(:Service)-[:SERVES_URL]->(dbu:BaseURL)
                     WITH d, count(DISTINCT s) AS sub_count,
                          count(DISTINCT i) + count(DISTINCT di) AS ip_count,
                          count(DISTINCT p) + count(DISTINCT dp) AS port_count,

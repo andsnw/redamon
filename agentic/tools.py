@@ -549,55 +549,6 @@ class Neo4jToolManager:
         """
         return _shared_scope_query(cypher, user_id, project_id)
 
-    def _project_property_census(self) -> dict:
-        """Per-label property names for the CALLER'S project only.
-
-        Answers the same question the old global introspection did - "which
-        properties can I actually reference?" - without answering it about other
-        tenants. Scoped on user_id + project_id, which every entity node carries.
-
-        Failure returns an empty census, never a global one. The semantic schema
-        from the catalog still describes the graph, so the model degrades to
-        "documented properties only" rather than silently widening its view to
-        the whole database. Failing open here would reintroduce the exact leak
-        this method exists to close.
-
-        :Muted nodes are excluded. The schema tells the model suppressed findings
-        are invisible and that mentioning the label is rejected; leaking their
-        property shape here would contradict that.
-        """
-        user_id = current_user_id.get()
-        project_id = current_project_id.get()
-        if not user_id or not project_id or self.graph is None:
-            return {}
-
-        # One bounded pass. LIMIT guards a large project: a census is a hint for
-        # query writing, not an inventory, so a partial one is fine and a slow
-        # one is not.
-        cypher = """
-        MATCH (n)
-        WHERE n.user_id = $uid AND n.project_id = $pid AND NOT n:Muted
-        WITH labels(n)[0] AS lab, keys(n) AS ks
-        LIMIT 50000
-        UNWIND ks AS k
-        WITH lab, collect(DISTINCT k) AS props
-        WHERE lab IS NOT NULL
-        RETURN lab, props ORDER BY lab
-        """
-        try:
-            rows = self.graph.query(cypher, params={"uid": user_id, "pid": project_id})
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"project property census failed, continuing without it: {e}")
-            return {}
-
-        return {
-            r["lab"]: sorted(
-                p for p in (r.get("props") or []) if p not in ("user_id", "project_id")
-            )
-            for r in rows
-            if r.get("lab")
-        }
-
     async def _generate_cypher(
         self,
         question: str,
@@ -627,14 +578,14 @@ class Neo4jToolManager:
         # The SEMANTIC schema, rendered from graph_db/schema_catalog.py. Same
         # content the graph_schema tool serves on both surfaces, and today
         # byte-identical to the TEXT_TO_CYPHER_SYSTEM constant it replaces.
-        from graph_db.schema_render import render_schema
+        from graph_schema_prompt import build_schema_document
 
-        # The census drives the attribute lists inside the rendered schema: the
-        # property NAMES come from the caller's own graph, the meanings from the
-        # catalog. A property a scanner started writing last week is therefore
-        # nameable immediately, undescribed but returnable, instead of being
-        # invisible until someone edits 1300 lines of prose.
-        semantic_schema = render_schema(live_properties=self._project_property_census())
+        # Rendered from the catalog and nothing else. The catalog declares every
+        # label, property and relationship, so there is no second source to
+        # consult and no database round trip on the path of every question.
+        # recon/tests/test_schema_catalog.py checks the catalog against the live
+        # graph, so falling behind is a failing test rather than a silent gap.
+        semantic_schema = build_schema_document()
 
         # What THIS project actually holds, scoped to the tenant.
         #
@@ -896,8 +847,8 @@ Cypher Query:"""
             # Same content source as the MCP surface's graph_schema and as the
             # Cypher generator, now via the catalog. Byte-identical to the old
             # constant; see recon/tests/test_schema_catalog.py.
-            from graph_db.schema_render import render_schema
-            return render_schema()
+            from graph_schema_prompt import build_schema_document
+            return build_schema_document()
 
         return graph_schema
 

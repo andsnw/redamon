@@ -62,10 +62,17 @@ class RoutesRegisteredTests(unittest.TestCase):
 
 class SchemaDocTests(unittest.IsolatedAsyncioTestCase):
     async def test_it_serves_the_generator_prompt_content(self):
-        from prompts import TEXT_TO_CYPHER_SYSTEM
+        """The schema served is the composed document: the invariant rules from
+        TEXT_TO_CYPHER_SYSTEM with the generated schema spliced in at the marker.
+
+        Asserting equality with TEXT_TO_CYPHER_SYSTEM alone was right while that
+        constant held the node blocks; it no longer does, and comparing against
+        it would now pass only if the schema had gone missing.
+        """
+        from graph_schema_prompt import build_schema_document
 
         resp = await api.graph_schema_doc()
-        self.assertEqual(_body(resp)["schema"], TEXT_TO_CYPHER_SYSTEM)
+        self.assertEqual(_body(resp)["schema"], build_schema_document())
 
     async def test_it_carries_semantics_not_just_label_names(self):
         schema = _body(await api.graph_schema_doc())["schema"]

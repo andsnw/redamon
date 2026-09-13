@@ -40,6 +40,7 @@ export type DenyReason =
   | 'agent'
   | 'attack'
   | 'egress'
+  | 'escalation'
   | 'headers'
   | 'identity'
   | 'image'
@@ -59,6 +60,7 @@ export const DENY_REASON_DOC: Readonly<Record<DenyReason, string>> = Object.free
   'agent': 'agent / fireteam behaviour, out of scope for a recon credential',
   'attack': 'exploitation technique, out of scope for a recon credential',
   'egress': 'reaches a collector or fetches from outside the engagement',
+  'escalation': 'would let a token grant itself a capability it was not issued',
   'headers': 'arbitrary headers sent to the target, including Host and credentials',
   'identity': 'row identity / audit columns',
   'image': 'decides what container gets spawned',
@@ -513,6 +515,7 @@ export const RECON_SETTINGS_DENYLIST: Readonly<Record<string, DenyReason>> = Obj
   masscanRate: 'unbounded',
   masscanTopPorts: 'not-tuning',
   masscanWait: 'not-tuning',
+  mcpKaliExecEnabled: 'escalation',
   mitreAutoUpdateDb: 'not-tuning',
   mitreCacheTtlHours: 'not-tuning',
   mitreEnrichGvm: 'not-tuning',

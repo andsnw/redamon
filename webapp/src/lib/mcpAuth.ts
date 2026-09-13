@@ -36,6 +36,7 @@ export const MCP_SCOPES = [
   'recon:overwrite',
   'recon:settings',
   'graph:cypher',
+  'kali:exec',
 ] as const
 
 export type McpScope = (typeof MCP_SCOPES)[number]
@@ -121,6 +122,55 @@ export function resolveExpiry(days: unknown): { expiresAt: Date | null } | { err
     return { error: 'Expiry must be 30, 60, 90 or 365 days, or "never".' }
   }
   return { expiresAt: new Date(Date.now() + n * 24 * 60 * 60 * 1000) }
+}
+
+/** A calendar date as far out as anyone plausibly means; past it, pick "never". */
+export const MCP_EXPIRY_DATE_MAX_DAYS = 3650
+
+/**
+ * An expiry CHANGE on an existing token: everything the mint accepts, plus
+ * `'now'` (end it immediately, and unlike a revoke it can be extended again)
+ * and a `YYYY-MM-DD` date, which lasts to the END of that day in UTC.
+ */
+export function resolveExpiryChange(
+  raw: unknown,
+  now = Date.now()
+): { expiresAt: Date | null } | { error: string } {
+  if (raw === 'now') return { expiresAt: new Date(now) }
+  if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const date = new Date(`${raw}T23:59:59.999Z`)
+    // Round-trip, because `2026-02-31` parses to a real date in some engines.
+    if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== raw) {
+      return { error: `'${raw}' is not a valid date.` }
+    }
+    if (date.getTime() <= now) {
+      return { error: 'The expiry date must be in the future. Use "Expire now" to end the token today.' }
+    }
+    if (date.getTime() > now + MCP_EXPIRY_DATE_MAX_DAYS * 24 * 60 * 60 * 1000) {
+      return { error: 'The expiry date is too far out. Choose "never" instead.' }
+    }
+    return { expiresAt: date }
+  }
+  return resolveExpiry(raw)
+}
+
+/**
+ * Does moving a token from `before` to `after` give it MORE power?
+ *
+ * Adding a scope, removing an expiry, or pushing it later all do, and a token
+ * that has already expired is revived by any later date. Those changes get the
+ * same step-up as minting: a stolen session cookie must not be able to upgrade
+ * an existing token any more than it can mint a new one. Everything else
+ * (dropping a scope, an earlier expiry) only narrows, and needs no step-up.
+ */
+export function isTokenWidening(
+  before: { scopes: readonly string[]; expiresAt: Date | null },
+  after: { scopes: readonly string[]; expiresAt: Date | null }
+): boolean {
+  if (after.scopes.some(s => !before.scopes.includes(s))) return true
+  if (after.expiresAt === null) return before.expiresAt !== null
+  if (before.expiresAt === null) return false
+  return after.expiresAt.getTime() > before.expiresAt.getTime()
 }
 
 // --- resolution ----------------------------------------------------------------
@@ -287,7 +337,7 @@ export async function assertMcpProjectAccess(
 // SAFE DEFAULTS, so an unset value falls back to the documented limit and never
 // to "no limit".
 
-export type McpBucketName = 'read' | 'query' | 'write' | 'start'
+export type McpBucketName = 'read' | 'query' | 'write' | 'start' | 'exec'
 
 interface BucketSpec {
   /** Max calls in the window. */
@@ -314,6 +364,18 @@ export function bucketSpec(bucket: McpBucketName): BucketSpec {
     // retention slot, so a looping agent must not be able to churn the timeline.
     case 'start':
       return { limit: envInt('MCP_RATE_START_PER_WINDOW', 1), windowMs: envInt('MCP_RATE_START_WINDOW_MS', 300_000) }
+    // Each call reaches a live third-party target from RedAmon's own address,
+    // so this is tighter than the read bucket. Polling a running command uses
+    // the cheap `read` bucket instead, so a slow tool does not have to spend
+    // this one to be watched.
+    //
+    // Not tighter still: one command is ONE tool invocation, and a recon pass
+    // is naturally a few dozen of them. At 6/min a routine sequence spent most
+    // of its time sleeping, which pushes callers toward heavier single
+    // commands - the opposite of what this bucket is for. The containment here
+    // is the allowlist and the scope check; this is a runaway-loop ceiling.
+    case 'exec':
+      return { limit: envInt('MCP_RATE_EXEC_PER_MIN', 20), windowMs: 60_000 }
   }
 }
 

@@ -1,5 +1,5 @@
 /**
- * The MCP Access Tokens tab.
+ * The MCP Server tab.
  *
  * The states pinned here are the ones that, when missed, cause a real support
  * problem rather than a cosmetic one:
@@ -11,6 +11,9 @@
  *  - permission-denied renders the form DISABLED WITH A REASON, rather than a
  *    button that 403s on click
  *  - the one-time reveal says plainly that it will not be shown again
+ *  - every row shows its Edit/Revoke actions as labelled buttons, and an edit
+ *    that gives a token MORE power asks for the password while one that takes
+ *    power away does not
  *
  * @vitest-environment jsdom
  */
@@ -21,6 +24,7 @@ const h = vi.hoisted(() => ({ dangerConfirm: vi.fn(), alertError: vi.fn() }))
 
 vi.mock('@/components/ui', () => ({
   useAlertModal: () => ({ dangerConfirm: h.dangerConfirm, alertError: h.alertError }),
+  WikiInfoButton: () => null,
 }))
 vi.mock('@/hooks/useUnsavedChangesGuard', () => ({
   useUnsavedChangesGuard: () => ({ guardedNavigate: vi.fn() }),
@@ -48,6 +52,8 @@ function mockFetch(handlers: {
   create?: unknown
   createStatus?: number
   onCreate?: () => void
+  update?: unknown
+  updateStatus?: number
 }) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     if (String(url).includes('/api/auth/me')) {
@@ -55,6 +61,13 @@ function mockFetch(handlers: {
         ok: (handlers.meStatus ?? 200) < 400,
         status: handlers.meStatus ?? 200,
         json: async () => handlers.me ?? { id: 'owner', role: 'standard' },
+      }
+    }
+    if (init?.method === 'PATCH') {
+      return {
+        ok: (handlers.updateStatus ?? 200) < 400,
+        status: handlers.updateStatus ?? 200,
+        json: async () => handlers.update ?? { token: TOKEN },
       }
     }
     if (init?.method === 'POST') {
@@ -308,5 +321,154 @@ describe('the two MCP tabs are distinguishable', () => {
 
     await waitFor(() => expect(screen.getByText(/Inbound:/)).toBeTruthy())
     expect(screen.getByText(/MCP Tool Plugins/)).toBeTruthy()
+  })
+})
+
+describe('editing a token', () => {
+  const ACTIVE = { ...TOKEN, scopes: ['recon:read', 'recon:scan'], expiresAt: '2099-01-01T00:00:00.000Z' }
+
+  const patchBody = (fetchMock: ReturnType<typeof mockFetch>) => {
+    const call = fetchMock.mock.calls.find(c => c[1]?.method === 'PATCH')
+    return call ? JSON.parse(String(call[1]!.body)) : undefined
+  }
+
+  const openEdit = async (fetchMock: ReturnType<typeof mockFetch>, userId = 'owner') => {
+    vi.stubGlobal('fetch', fetchMock)
+    render(<McpTokensTab userId={userId} />)
+    await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
+    // The admin tests depend on the session having resolved before the panel opens.
+    await waitFor(() => expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/api/auth/me'))).toBe(true))
+    fireEvent.click(screen.getByTitle('Edit'))
+    await waitFor(() => expect(screen.getByText('Edit token')).toBeTruthy())
+  }
+
+  const checkbox = (scope: string) =>
+    screen.getByText(scope, { selector: 'code' }).closest('label')!.querySelector('input') as HTMLInputElement
+
+  test('every active row has labelled Edit and Revoke buttons; a revoked row only Edit', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      tokens: { tokens: [ACTIVE, { ...TOKEN, id: 't2', name: 'old', revokedAt: '2026-09-02T00:00:00.000Z' }] },
+    }))
+    render(<McpTokensTab userId="owner" />)
+
+    await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
+    expect(screen.getAllByTitle('Edit')).toHaveLength(2)
+    expect(screen.getAllByTitle('Revoke')).toHaveLength(1)
+    expect(screen.getAllByTitle('Edit')[0].textContent).toContain('Edit')
+  })
+
+  test('the panel opens with the current name and permissions', async () => {
+    await openEdit(mockFetch({ tokens: { tokens: [ACTIVE] } }))
+
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('ci agent')
+    expect(checkbox('recon:read')).toBeChecked()
+    expect(checkbox('recon:scan')).toBeChecked()
+    expect(checkbox('recon:overwrite')).not.toBeChecked()
+    expect((screen.getByLabelText('Expires') as HTMLSelectElement).value).toBe('keep')
+  })
+
+  test('Save stays disabled until something changes', async () => {
+    await openEdit(mockFetch({ tokens: { tokens: [ACTIVE] } }))
+    expect(screen.getByText('Save changes').closest('button')).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'renamed' } })
+    expect(screen.getByText('Save changes').closest('button')).not.toBeDisabled()
+  })
+
+  test('removing a permission saves without asking for the password', async () => {
+    const fetchMock = mockFetch({ tokens: { tokens: [ACTIVE] } })
+    await openEdit(fetchMock)
+
+    fireEvent.click(checkbox('recon:scan'))
+    expect(screen.queryByLabelText('Confirm your password')).toBeNull()
+    fireEvent.click(screen.getByText('Save changes'))
+
+    await waitFor(() => expect(patchBody(fetchMock)).toBeTruthy())
+    expect(patchBody(fetchMock)).toEqual({ name: 'ci agent', scopes: ['recon:read'] })
+  })
+
+  test('adding a permission asks for the password and sends it', async () => {
+    const fetchMock = mockFetch({ tokens: { tokens: [ACTIVE] } })
+    await openEdit(fetchMock)
+
+    fireEvent.click(checkbox('graph:cypher'))
+    const pw = screen.getByLabelText('Confirm your password') as HTMLInputElement
+    expect(pw.type).toBe('password')
+    fireEvent.change(pw, { target: { value: 'secret' } })
+    fireEvent.click(screen.getByText('Save changes'))
+
+    await waitFor(() => expect(patchBody(fetchMock)).toBeTruthy())
+    expect(patchBody(fetchMock).password).toBe('secret')
+    expect(patchBody(fetchMock).scopes).toContain('graph:cypher')
+  })
+
+  test('"Expire now" saves without a password', async () => {
+    const fetchMock = mockFetch({ tokens: { tokens: [ACTIVE] } })
+    await openEdit(fetchMock)
+
+    fireEvent.change(screen.getByLabelText('Expires'), { target: { value: 'now' } })
+    expect(screen.queryByLabelText('Confirm your password')).toBeNull()
+    fireEvent.click(screen.getByText('Save changes'))
+
+    await waitFor(() => expect(patchBody(fetchMock)).toBeTruthy())
+    expect(patchBody(fetchMock).expiry).toBe('now')
+  })
+
+  test('removing the expiry asks for the password', async () => {
+    await openEdit(mockFetch({ tokens: { tokens: [ACTIVE] } }))
+    fireEvent.change(screen.getByLabelText('Expires'), { target: { value: 'never' } })
+    expect(screen.getByLabelText('Confirm your password')).toBeTruthy()
+  })
+
+  test('picking a date shows a date field and sends that date', async () => {
+    const fetchMock = mockFetch({ tokens: { tokens: [ACTIVE] } })
+    await openEdit(fetchMock)
+
+    fireEvent.change(screen.getByLabelText('Expires'), { target: { value: 'date' } })
+    expect(screen.getByText('Save changes').closest('button')).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Expiry date'), { target: { value: '2027-01-15' } })
+    fireEvent.click(screen.getByText('Save changes'))
+
+    await waitFor(() => expect(patchBody(fetchMock)).toBeTruthy())
+    expect(patchBody(fetchMock).expiry).toBe('2027-01-15')
+  })
+
+  test('a server step-up request reveals the password field and keeps the panel open', async () => {
+    await openEdit(mockFetch({
+      tokens: { tokens: [ACTIVE] },
+      updateStatus: 401,
+      update: { error: 'Adding a permission or extending the expiry needs your password.', passwordRequired: true },
+    }))
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'renamed' } })
+    fireEvent.click(screen.getByText('Save changes'))
+
+    await waitFor(() => expect(screen.getByText(/needs your password/)).toBeTruthy())
+    expect(screen.getByLabelText('Confirm your password')).toBeTruthy()
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('renamed')
+  })
+
+  test('an admin viewing another user cannot save a widening edit, and is told why', async () => {
+    await openEdit(mockFetch({ me: { id: 'admin1', role: 'admin' }, tokens: { tokens: [ACTIVE] } }), 'victim')
+
+    fireEvent.click(checkbox('recon:overwrite'))
+    await waitFor(() => expect(screen.getByText(/Only the token's own user can add a permission/)).toBeTruthy())
+    expect(screen.getByText('Save changes').closest('button')).toBeDisabled()
+  })
+
+  test('an admin can still remove a permission from another user token', async () => {
+    await openEdit(mockFetch({ me: { id: 'admin1', role: 'admin' }, tokens: { tokens: [ACTIVE] } }), 'victim')
+
+    fireEvent.click(checkbox('recon:scan'))
+    expect(screen.getByText('Save changes').closest('button')).not.toBeDisabled()
+  })
+
+  test('a revoked token can be renamed but its permissions and expiry are locked', async () => {
+    await openEdit(mockFetch({
+      tokens: { tokens: [{ ...ACTIVE, revokedAt: '2026-09-02T00:00:00.000Z' }] },
+    }))
+
+    expect(screen.getByText(/only its name can change/)).toBeTruthy()
+    expect(screen.getByText('recon:read', { selector: 'code' }).closest('fieldset')).toBeDisabled()
+    expect(screen.getByLabelText('Expires')).toBeDisabled()
   })
 })

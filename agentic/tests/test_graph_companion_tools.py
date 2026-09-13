@@ -71,10 +71,17 @@ async def _call(tool):
 
 class GraphSchemaToolTests(unittest.IsolatedAsyncioTestCase):
     async def test_it_serves_the_generator_prompt_content(self):
-        from prompts import TEXT_TO_CYPHER_SYSTEM
+        """The schema served is the composed document: the invariant rules from
+        TEXT_TO_CYPHER_SYSTEM with the generated schema spliced in at the marker.
+
+        Asserting equality with TEXT_TO_CYPHER_SYSTEM alone was right while that
+        constant held the node blocks; it no longer does, and comparing against
+        it would now pass only if the schema had gone missing.
+        """
+        from graph_schema_prompt import build_schema_document
 
         out = await _call(_manager(None).get_schema_tool())
-        self.assertEqual(out, TEXT_TO_CYPHER_SYSTEM)
+        self.assertEqual(out, build_schema_document())
 
     async def test_it_needs_no_database(self):
         # The one graph tool that still answers when Neo4j is down.

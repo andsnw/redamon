@@ -39,11 +39,13 @@ vi.mock('@/lib/graphWriters', () => ({ describeScanWriters: (...a: unknown[]) =>
 import { McpScopeError, McpAccessDenied, __resetRateLimiter, __resetLlmBudget } from '@/lib/mcpAuth'
 import { McpToolError } from './errors'
 import { __resetSchemaCache } from './graphClient'
+import { __resetToolboxCache } from './kaliClient'
 import {
   getReconSettings,
   getReconStatus,
   graphSchema,
   graphSummary,
+  kaliToolbox,
   listProjects,
   queryGraph,
   resolveLiveGraphState,
@@ -67,6 +69,7 @@ beforeEach(() => {
   __resetRateLimiter()
   __resetLlmBudget()
   __resetSchemaCache()
+  __resetToolboxCache()
   vi.stubGlobal('fetch', h.fetch)
   h.findProject.mockResolvedValue({ id: 'p1', userId: 'owner' })
   h.findManyProjects.mockResolvedValue([{ id: 'p1', name: 'Target', targetDomain: 'x.tld' }])
@@ -283,6 +286,57 @@ describe('graph_schema', () => {
     h.fetch.mockResolvedValue({ ok: true, json: async () => ({ schema: 'x' }) })
     await graphSchema(ctx())
     expect(h.findProject).not.toHaveBeenCalled()
+  })
+})
+
+// --- kali_toolbox -------------------------------------------------------------------
+
+describe('kali_toolbox', () => {
+  const catalogue = '**Exploitation:** msfvenom, sqlmap ...'
+
+  test('returns the catalogue', async () => {
+    h.fetch.mockResolvedValue({ ok: true, json: async () => ({ toolbox: catalogue }) })
+    expect(await kaliToolbox(ctx())).toEqual({ toolbox: catalogue })
+  })
+
+  test('needs recon:read', async () => {
+    await expect(kaliToolbox(ctx([]))).rejects.toBeInstanceOf(McpScopeError)
+  })
+
+  test('it is cached, so it cannot fail on a dependency after the first read', async () => {
+    h.fetch.mockResolvedValue({ ok: true, json: async () => ({ toolbox: catalogue }) })
+    await kaliToolbox(ctx())
+    h.fetch.mockRejectedValue(new Error('agent down'))
+    expect(await kaliToolbox(ctx())).toEqual({ toolbox: catalogue })
+    expect(h.fetch).toHaveBeenCalledOnce()
+  })
+
+  test('it takes no projectId, so it exposes no tenant data', async () => {
+    h.fetch.mockResolvedValue({ ok: true, json: async () => ({ toolbox: catalogue }) })
+    await kaliToolbox(ctx())
+    expect(h.findProject).not.toHaveBeenCalled()
+  })
+
+  test('it reads the catalogue, never the kali-sandbox', async () => {
+    // The webapp holds no MCP_AUTH_TOKEN and must not learn to reach the
+    // target-facing tier: the only call this makes is to the agent.
+    h.fetch.mockResolvedValue({ ok: true, json: async () => ({ toolbox: catalogue }) })
+    await kaliToolbox(ctx())
+    const url = String(h.fetch.mock.calls[0][0])
+    expect(url).toContain('/kali/toolbox')
+    expect(url).not.toContain('kali-sandbox')
+  })
+
+  test('an unreachable agent is an error, never an empty catalogue', async () => {
+    // An empty list reads as "this image ships no tools", which would have an
+    // agent report a capability gap that does not exist.
+    h.fetch.mockRejectedValue(new Error('agent down'))
+    await expect(kaliToolbox(ctx())).rejects.toBeInstanceOf(McpToolError)
+  })
+
+  test('an empty catalogue from the agent is an error too', async () => {
+    h.fetch.mockResolvedValue({ ok: true, json: async () => ({ toolbox: '' }) })
+    await expect(kaliToolbox(ctx())).rejects.toBeInstanceOf(McpToolError)
   })
 })
 

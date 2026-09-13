@@ -2922,9 +2922,9 @@ async def graph_schema_doc():
     # constant (asserted in recon/tests/test_schema_catalog.py), so this swap
     # changes no output today; what it buys is that the catalog is completeness-
     # checked against schema.py, and can later serve a per-label subset.
-    from graph_db.schema_render import render_schema
+    from graph_schema_prompt import build_schema_document
 
-    return JSONResponse(content={"schema": render_schema()})
+    return JSONResponse(content={"schema": build_schema_document()})
 
 # =============================================================================
 # GRAPH EXEC — run a read-only, tenant-scoped graph query on behalf of the
@@ -3783,6 +3783,268 @@ async def traffic_browser(body: TrafficBrowserRequest):
         })
 
     return JSONResponse(content={"ok": True})
+
+
+# =============================================================================
+# KALI TOOLBOX — what this Kali image actually carries, for the inbound MCP
+# server (webapp /api/mcp-server -> this endpoint -> kali_toolbox).
+# =============================================================================
+
+
+@app.get(
+    "/kali/toolbox",
+    tags=["Kali"],
+    dependencies=[Depends(require_internal_auth_only)],
+)
+async def kali_toolbox():
+    """The Kali sandbox's installed-tooling catalogue, by category.
+
+    Served from the `kali_shell` TOOL_REGISTRY description, the same bytes this
+    agent's own model is prompted with. One source, no second copy: a
+    transcription would drift from the image the moment a tool is added, and a
+    catalogue that lies about what is installed is worse than none.
+
+    Reads from code only: no container call, no project id, no tenant data. It
+    therefore still answers when the kali-sandbox is down, which is the point -
+    an agent planning work needs to know what exists before anything can run.
+    """
+    from prompts.tool_registry import TOOL_REGISTRY
+
+    catalogue = str((TOOL_REGISTRY.get("kali_shell") or {}).get("description") or "").strip()
+    if not catalogue:
+        # Never an empty string: the caller cannot tell that apart from "this
+        # image ships no tools", which is the false negative the MCP surface
+        # forbids everywhere else.
+        logger.error("Kali toolbox catalogue is empty - TOOL_REGISTRY['kali_shell'] lost its description")
+        return JSONResponse(status_code=500, content={"error": "toolbox catalogue unavailable"})
+    return JSONResponse(content={"toolbox": catalogue})
+
+
+# =============================================================================
+# KALI EXEC — admitted, scope-checked single commands for the inbound MCP
+# server. The admission rules live in kali_exec_guard.py; this is transport,
+# job lifecycle and output paging only.
+# =============================================================================
+
+# An inline wait long enough for the quick checks (curl, dig, whatweb) to answer
+# in one call, short enough that no MCP client's own request timeout is the
+# thing that decides. Anything slower becomes a job the caller polls.
+KALI_EXEC_DEFAULT_WAIT = 15.0
+KALI_EXEC_MAX_WAIT = 60.0
+# Per CALL, not per job: the rest is fetched with the returned cursor, so a big
+# output is paged rather than truncated. Same rule as the graph tools - nothing
+# is ever cut silently.
+KALI_EXEC_MAX_OUTPUT_BYTES = 100_000
+
+
+class KaliExecRequest(BaseModel):
+    """webapp MCP -> agent. The tenant is the caller's, already resolved from
+    the access token and ownership-checked before this is sent."""
+    project_id: str
+    command: str
+    wait_seconds: float = KALI_EXEC_DEFAULT_WAIT
+
+
+def _kali_scope(project_id: str):
+    """The project's authorised reach, from the same source both agent
+    guardrails use, so an ad-hoc command cannot outreach a scan."""
+    from kali_exec_guard import KaliScope
+    from project_settings import get_setting, load_project_settings, target_scope_domains
+
+    load_project_settings(project_id)
+    return KaliScope(
+        domains=tuple(target_scope_domains()),
+        ips=tuple(get_setting("TARGET_IPS", []) or []),
+        ip_mode=bool(get_setting("IP_MODE", False)),
+        roe_enabled=bool(get_setting("ROE_ENABLED", False)),
+        roe_excluded=tuple(get_setting("ROE_EXCLUDED_HOSTS", []) or []),
+        # Confines writable paths to this project's own workspace subtree: the
+        # /workspace volume is shared by every project.
+        project_id=project_id,
+    )
+
+
+# A job id is a uuid4 hex. Validated because it reaches a filesystem path.
+_KALI_JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _kali_log_path(project_id: str, job_id: str) -> str:
+    """Derive the log path from the tenant and job id, SERVER-SIDE.
+
+    Never from the job's own metadata. `JobRegistry.status()` falls back to
+    reading `<workspace>/<project>/jobs/<job_id>.meta.json` off disk and returns
+    its parsed contents, and kali_exec can write into that same workspace - so
+    trusting the `output_path` it carries turned two allowed calls into an
+    arbitrary file read on THIS container (INTERNAL_API_KEY, NEO4J_PASSWORD via
+    /proc/self/environ). Composing the path here means a poisoned meta file
+    cannot redirect the read.
+    """
+    root = os.environ.get("WORKSPACE_ROOT", "/workspace")
+    return os.path.join(root, project_id, "jobs", f"{job_id}.log")
+
+
+def _kali_read_log(path: str, cursor: int) -> dict:
+    """Read forward from a byte offset, reporting where to resume.
+
+    Byte offsets, not lines: the caller resumes exactly where it stopped, and a
+    partial read can never be mistaken for the whole output.
+    """
+    if not path:
+        return {"output": "", "next_cursor": cursor, "truncated": False}
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(max(0, int(cursor)))
+            chunk = fh.read(KALI_EXEC_MAX_OUTPUT_BYTES + 1)
+    except FileNotFoundError:
+        return {"output": "", "next_cursor": cursor, "truncated": False}
+    except OSError as exc:
+        logger.error("kali_exec log read failed: %s", exc)
+        return {"output": "", "next_cursor": cursor, "truncated": False}
+
+    truncated = len(chunk) > KALI_EXEC_MAX_OUTPUT_BYTES
+    chunk = chunk[:KALI_EXEC_MAX_OUTPUT_BYTES]
+    return {
+        # errors="replace": tool output is bytes from a third-party target and
+        # is not guaranteed to be UTF-8. A decode error must not lose the run.
+        "output": chunk.decode("utf-8", "replace"),
+        "next_cursor": max(0, int(cursor)) + len(chunk),
+        "truncated": truncated,
+    }
+
+
+def _kali_job_view(state: dict, cursor: int, project_id: str, job_id: str) -> dict:
+    """The wire shape shared by exec, poll and cancel, so a caller parses one.
+
+    The log path is composed from (project_id, job_id), NOT read from `state`:
+    see _kali_log_path.
+    """
+    view = {
+        "job_id": state.get("job_id") or job_id,
+        "status": state.get("status"),
+        "exit_code": state.get("exit_code"),
+        "started_at": state.get("started_at"),
+        "ended_at": state.get("ended_at"),
+    }
+    view.update(_kali_read_log(_kali_log_path(project_id, job_id), cursor))
+    if view["status"] == "cancelled":
+        # Honest wording. reg.cancel() cancels the asyncio task awaiting the MCP
+        # call; kali_shell is a blocking subprocess.run in the SANDBOX process,
+        # and nothing propagates the cancellation to it, so the command itself
+        # can keep running against the target for up to its own 300s timeout.
+        view["note"] = (
+            "Cancelled on RedAmon's side. The sandbox command may still be running at "
+            "the target until its own timeout; output after this point is not collected."
+        )
+    return view
+
+
+# Master key only. require_internal_auth_only also accepts SCANNER_API_KEY, which
+# the kali-sandbox and every spawned scan container hold - the least-trusted
+# tier. A leaked scanner token must not be able to run commands, the same
+# reasoning that gave /graph/triage the stricter dependency.
+@app.post("/kali/exec", tags=["Kali"], dependencies=[Depends(require_master_internal_auth)])
+async def kali_exec(body: KaliExecRequest):
+    """Admit one command, run it in the sandbox, and answer with what it produced.
+
+    The admission check is the whole security story (see kali_exec_guard): inside
+    the product a human approves `kali_shell`, and an MCP caller has no human.
+    """
+    from kali_exec_guard import CommandRefused, admit, to_shell_command
+
+    if not body.project_id:
+        return JSONResponse(status_code=400, content={"error": "project_id is required"})
+    if not orchestrator or not getattr(orchestrator, "tool_executor", None):
+        return JSONResponse(status_code=503, content={"error": "the sandbox is not available"})
+
+    try:
+        scope = _kali_scope(body.project_id)
+    except Exception as exc:  # noqa: BLE001
+        # FAIL CLOSED. Without a scope there is nothing to check the command
+        # against, and "could not load the scope" must never become "no scope".
+        logger.error("kali_exec could not resolve scope for %s: %s", body.project_id, exc)
+        return JSONResponse(
+            status_code=503,
+            content={"error": "this project's scope could not be read, so no command can be checked"},
+        )
+
+    try:
+        argv = admit(body.command, scope)
+    except CommandRefused as refusal:
+        return JSONResponse(status_code=400, content={"error": str(refusal), "code": "refused"})
+
+    safe_command = to_shell_command(argv)
+
+    async def runner(name, args, append_log):
+        result = await orchestrator.tool_executor.execute(
+            name, dict(args, output_mode="inline"), "informational", skip_phase_check=True
+        )
+        output = result.get("output")
+        if output:
+            await append_log(str(output))
+        # The executor reports success for ANY MCP call that came back with a
+        # string, so a tool that exited non-zero - or timed out - arrived here as
+        # success and was published with exitCode 0. kali_shell encodes that in
+        # its output instead (`_format_subprocess_result`), so it is read back
+        # out: a caller told "exit 0" for a failed scan has a false negative.
+        text = str(output or "")
+        failed = text.startswith("[ERROR]")
+        # Output already tee'd: returning it again would have the registry
+        # append a second copy under its own "--- final ---" header.
+        return {
+            "success": bool(result.get("success")) and not failed,
+            "output": None,
+            "error": result.get("error") or (text[:300] if failed else None),
+        }
+
+    reg = job_runner.get_registry()
+    spawned = await reg.spawn(
+        body.project_id, "kali_shell", {"command": safe_command}, runner, label=argv[0]
+    )
+    if isinstance(spawned, dict) and spawned.get("error"):
+        return JSONResponse(status_code=429, content={"error": spawned["error"]})
+
+    job_id = spawned["job_id"]
+    wait = max(0.0, min(float(body.wait_seconds or 0), KALI_EXEC_MAX_WAIT))
+    state = await reg.wait(body.project_id, job_id, timeout_sec=wait)
+
+    view = _kali_job_view(state, 0, body.project_id, job_id)
+    # Echoed back because admission re-quotes every argument: the caller should
+    # see exactly what ran, not what it typed.
+    view["command"] = safe_command
+    return JSONResponse(content=view)
+
+
+@app.get("/kali/exec/{job_id}", tags=["Kali"], dependencies=[Depends(require_master_internal_auth)])
+async def kali_exec_status(
+    job_id: str,
+    project_id: str = Query(...),
+    cursor: int = Query(0, ge=0),
+):
+    """Poll a running command and read its output forward from `cursor`."""
+    if not _KALI_JOB_ID_RE.match(job_id or ""):
+        return JSONResponse(status_code=404, content={"error": "no such command"})
+    reg = job_runner.get_registry()
+    # status() keys on (project_id, job_id) and reads a per-project directory,
+    # so another project's job id resolves to nothing rather than to its output.
+    state = reg.status(project_id, job_id)
+    if state.get("error"):
+        return JSONResponse(status_code=404, content={"error": "no such command"})
+    return JSONResponse(content=_kali_job_view(state, cursor, project_id, job_id))
+
+
+@app.post("/kali/exec/{job_id}/cancel", tags=["Kali"], dependencies=[Depends(require_master_internal_auth)])
+async def kali_exec_cancel(job_id: str, project_id: str = Query(...)):
+    """Stop a running command. An agent that can start one must be able to."""
+    if not _KALI_JOB_ID_RE.match(job_id or ""):
+        return JSONResponse(status_code=404, content={"error": "no such command"})
+    reg = job_runner.get_registry()
+    state = reg.status(project_id, job_id)
+    if state.get("error"):
+        return JSONResponse(status_code=404, content={"error": "no such command"})
+    result = await reg.cancel(project_id, job_id)
+    if isinstance(result, dict) and result.get("error"):
+        return JSONResponse(status_code=409, content={"error": str(result["error"])})
+    return JSONResponse(content=_kali_job_view(reg.status(project_id, job_id), 0, project_id, job_id))
 
 
 # =============================================================================

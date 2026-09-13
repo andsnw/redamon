@@ -921,5 +921,5 @@ webapp/src/app/api/supply-chain/                 # proxy routes + SBOM upload
 webapp/src/components/projects/ProjectForm/sections/SupplyChainSection.tsx
 webapp/src/app/api/analytics/redzone/supplyChainSca/route.ts    # SCA table API (3 sheets)
 webapp/src/app/graph/components/RedZoneTables/SupplyChainScaTable.tsx  # the table
-docs/readmes/GRAPH.SCHEMA.md                           # node documentation
+graph_db/schema_sections.md                            # node documentation (THE declaration)
 ```

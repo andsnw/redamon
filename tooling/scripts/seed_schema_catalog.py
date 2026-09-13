@@ -35,21 +35,25 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from parse_label_block import parse_label_block  # noqa: E402
+from parse_label_block import (  # noqa: E402
+    parse_label_block,
+    parse_relationship_block,
+)
 
 REPO = Path(__file__).resolve().parent.parent.parent
-PROMPT = REPO / "agentic" / "prompts" / "base.py"
-FIXTURE = REPO / "recon" / "tests" / "fixtures" / "text_to_cypher_baseline.md"
+#: The schema sections were CUT OUT of TEXT_TO_CYPHER_SYSTEM; this file is
+#: what was cut, kept so the catalog can be re-seeded and so the losslessness
+#: proof has something to compare against. The catalog is now the source of
+#: truth: base.py holds only the invariant rules and a __GRAPH_SCHEMA__ marker.
+SEED = REPO / "graph_db" / "schema_sections.md"
+FIXTURE = SEED
 OUT = REPO / "graph_db" / "schema_catalog.py"
 
 START_TOKEN = 'TEXT_TO_CYPHER_SYSTEM = """'
 
 
 def extract_prompt() -> str:
-    src = PROMPT.read_text(encoding="utf-8")
-    start = src.index(START_TOKEN) + len(START_TOKEN)
-    end = src.index('"""', start)
-    return src[start:end]
+    return SEED.read_text(encoding="utf-8")
 
 
 def segment(doc: str) -> list[dict]:
@@ -157,6 +161,24 @@ def emit(segs: list[dict]) -> str:
         "subset without anyone having to trust that nothing was dropped.",
         '"""',
         "",
+        "# The label-key declaration lives in schema_keys.py and is re-exported here",
+        "# so every reader - the renderer, the tests, schema.py's constraint builder -",
+        "# reaches ONE declaration rather than keeping a second list of labels.",
+        "try:",
+        "    from graph_db.schema_keys import KEY_CONSTRAINTS, LABELS_WITH_KEYS",
+        "except ImportError:  # loaded by path, without the package",
+        "    from schema_keys import KEY_CONSTRAINTS, LABELS_WITH_KEYS  # type: ignore",
+        "",
+        "__all__ = [",
+        '    "SEGMENTS",',
+        '    "LABELS",',
+        '    "DOCUMENTED",',
+        '    "RELATIONSHIP_TYPES",',
+        '    "KEY_CONSTRAINTS",',
+        '    "LABELS_WITH_KEYS",',
+        '    "label_properties",',
+        "]",
+        "",
         "SEGMENTS = [",
     ]
     for s in segs:
@@ -165,6 +187,9 @@ def emit(segs: list[dict]) -> str:
         parts.append(f'        "key": {s["key"]!r},')
         parts.append(f'        "section": {s["section"]!r},')
         parts.append(f'        "documents": {sorted(covered_labels(s["body"]))!r},')
+        if "Relationships" in s["section"] and s["kind"] != "LABEL":
+            rels = parse_relationship_block(s["body"])
+            parts.append(f'        "relationships": {rels["relationships"]!r},')
         if s["kind"] == "LABEL":
             fields = parse_label_block(s["body"], s["key"])
             parts.append(f'        "description": {fields["description"]!r},')
@@ -183,6 +208,12 @@ def emit(segs: list[dict]) -> str:
     parts.append("#: grouped block rather than under their own heading. This is what the")
     parts.append("#: completeness test measures against graph_db/schema.py.")
     parts.append("DOCUMENTED = {lab for s in SEGMENTS for lab in s[\"documents\"]}")
+    parts.append("")
+    parts.append("#: Every relationship TYPE the document describes, from the relationship")
+    parts.append("#: sections and from edges written inside a label block.")
+    parts.append("RELATIONSHIP_TYPES = {")
+    parts.append("    r[\"type\"] for s in SEGMENTS for r in s.get(\"relationships\", [])")
+    parts.append("}")
     parts.append("")
     parts.append("")
     parts.append("def label_properties(label):")
@@ -210,6 +241,21 @@ def main() -> int:
     rebuilt = "".join(s["body"] for s in segs)
     if rebuilt != doc:
         print("FAIL: segmentation is lossy; refusing to write", file=sys.stderr)
+        return 1
+
+    # Bodies are emitted as triple-quoted Python literals, so a backslash becomes
+    # an escape sequence. A markdown table escape (`\|`) copied into the source
+    # silently turned into an invalid-escape SyntaxWarning on every import of the
+    # generated catalog. Refuse rather than emit code that warns.
+    if "\\" in doc:
+        bad = [ln for ln in doc.split("\n") if "\\" in ln][:3]
+        print("FAIL: the source contains a backslash, which does not survive as a",
+              file=sys.stderr)
+        print("      Python string literal. Remove it (markdown escapes are not",
+              file=sys.stderr)
+        print("      needed outside a table):", file=sys.stderr)
+        for ln in bad:
+            print(f"        {ln.strip()[:100]}", file=sys.stderr)
         return 1
 
     sha = hashlib.sha1(doc.encode()).hexdigest()

@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * MCP Access Tokens - the INBOUND direction.
+ * MCP Server - access tokens for the INBOUND direction.
  *
  * The sibling "MCP Tool Plugins" tab is OUTBOUND (RedAmon connecting out to
  * servers the operator registers). This one mints credentials that let other
@@ -11,17 +11,19 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   KeyRound, Plus, Loader2, Copy, Check, Trash2, Pencil,
-  AlertTriangle, RefreshCw, ShieldAlert,
+  AlertTriangle, RefreshCw, ShieldAlert, Braces,
 } from 'lucide-react'
-import { useAlertModal } from '@/components/ui'
+import { useAlertModal, WikiInfoButton } from '@/components/ui'
 import { useDirtyState } from '@/hooks/useDirtyState'
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import {
   MCP_SCOPES,
   MCP_DEFAULT_EXPIRY_DAYS,
   DEFAULT_MCP_SCOPES,
+  isTokenWidening,
   type McpScope,
 } from '@/lib/mcpAuth'
+import { MCP_SCOPE_COPY as SCOPE_COPY } from '@/lib/mcp/scopeCopy'
 import styles from './McpTokensTab.module.css'
 
 interface Props {
@@ -40,31 +42,6 @@ interface TokenRow {
   createdAt: string
 }
 
-/** Each write scope states its consequence, so a tick is an informed one. */
-const SCOPE_COPY: Record<McpScope, { label: string; blurb: string; danger?: boolean }> = {
-  'recon:read': {
-    label: 'Read recon + graph',
-    blurb: 'List projects, read scan status and settings, and query the attack-surface graph in natural language.',
-  },
-  'recon:scan': {
-    label: 'Start and stop scans',
-    blurb: 'Start a full recon pipeline (keeping the current graph as a saved version) and stop one it started.',
-  },
-  'recon:overwrite': {
-    label: 'Discard the current graph on start',
-    blurb: 'Permits starting a scan in overwrite mode, which DISCARDS the current graph instead of saving it as a version. This is the only irreversible action on this surface.',
-    danger: true,
-  },
-  'recon:settings': {
-    label: 'Change recon tuning settings',
-    blurb: 'Change a narrow allowlist of recon tuning values. It can never change the target, scope, Rules of Engagement or any credential.',
-  },
-  'graph:cypher': {
-    label: 'Run raw Cypher',
-    blurb: 'Send read-only Cypher directly instead of a natural-language question. Still tenant-scoped and still read-only.',
-  },
-}
-
 const EXPIRY_OPTIONS: { value: number | 'never'; label: string }[] = [
   { value: 30, label: '30 days' },
   { value: 60, label: '60 days' },
@@ -72,6 +49,45 @@ const EXPIRY_OPTIONS: { value: number | 'never'; label: string }[] = [
   { value: 365, label: '1 year' },
   { value: 'never', label: 'No expiry' },
 ]
+
+/**
+ * Expiry choices when EDITING. Presets count from today, not from when the
+ * token was minted, because "30 days" is read as "30 more days".
+ */
+type EditExpiry = 'keep' | 'now' | '30' | '60' | '90' | '365' | 'never' | 'date'
+
+const EDIT_EXPIRY_PRESETS: { value: EditExpiry; label: string }[] = [
+  { value: 'now', label: 'Expire now' },
+  { value: '30', label: '30 days from today' },
+  { value: '60', label: '60 days from today' },
+  { value: '90', label: '90 days from today' },
+  { value: '365', label: '1 year from today' },
+  { value: 'never', label: 'No expiry' },
+  { value: 'date', label: 'Pick a date…' },
+]
+
+const DAY_MS = 86_400_000
+
+/** What the chosen expiry would be, so the UI can tell widening before the server does. */
+function prospectiveExpiry(choice: EditExpiry, date: string, current: string | null): Date | null {
+  switch (choice) {
+    case 'keep': return current ? new Date(current) : null
+    case 'now': return new Date()
+    case 'never': return null
+    case 'date': return date ? new Date(`${date}T23:59:59.999Z`) : (current ? new Date(current) : null)
+    default: return new Date(Date.now() + Number(choice) * DAY_MS)
+  }
+}
+
+/** The PATCH `expiry` value, or undefined to leave it unchanged. */
+function expiryPayload(choice: EditExpiry, date: string): string | number | undefined {
+  if (choice === 'keep') return undefined
+  if (choice === 'date') return date
+  if (choice === 'now' || choice === 'never') return choice
+  return Number(choice)
+}
+
+const todayIso = () => new Date().toISOString().slice(0, 10)
 
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : null
@@ -114,14 +130,34 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
   const [minted, setMinted] = useState<string | null>(null)
   const [copied, setCopied] = useState<'token' | 'snippet' | null>(null)
 
-  // Renaming happens inline: the design system has no prompt modal, and
-  // window.prompt is not allowed in this UI.
-  const [renamingId, setRenamingId] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
+  const [editing, setEditing] = useState<TokenRow | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editScopes, setEditScopes] = useState<McpScope[]>([])
+  const [editExpiry, setEditExpiry] = useState<EditExpiry>('keep')
+  const [editDate, setEditDate] = useState('')
+  const [editPassword, setEditPassword] = useState('')
+  const [editError, setEditError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  // Set when the server says a step-up is needed that the client did not
+  // predict (a preset computed a moment later lands past the current expiry).
+  const [serverWantsPassword, setServerWantsPassword] = useState(false)
 
   const draft = { name, scopes, expiresInDays, password }
   const { isDirty, setBaseline } = useDirtyState(draft)
-  const dirty = showForm && isDirty
+
+  const editScopesChanged = editing !== null && (
+    editScopes.length !== editing.scopes.length || editScopes.some(s => !editing.scopes.includes(s))
+  )
+  const editDirty = editing !== null && (
+    editName.trim() !== editing.name || editScopesChanged || editExpiry !== 'keep'
+  )
+  const editWidens = editing !== null && isTokenWidening(
+    { scopes: editing.scopes, expiresAt: editing.expiresAt ? new Date(editing.expiresAt) : null },
+    { scopes: editScopes, expiresAt: prospectiveExpiry(editExpiry, editDate, editing.expiresAt) },
+  )
+  const editNeedsPassword = editWidens || serverWantsPassword
+
+  const dirty = (showForm && isDirty) || editDirty
   useUnsavedChangesGuard(dirty, { trackGlobal: false })
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
@@ -177,6 +213,56 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
     setScopes(prev => (prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]))
   }
 
+  const openEdit = (t: TokenRow) => {
+    setShowForm(false)
+    setEditing(t)
+    setEditName(t.name)
+    setEditScopes(t.scopes.filter((s): s is McpScope => (MCP_SCOPES as readonly string[]).includes(s)))
+    setEditExpiry('keep')
+    setEditDate('')
+    setEditPassword('')
+    setEditError(null)
+    setServerWantsPassword(false)
+  }
+
+  const closeEdit = () => {
+    setEditing(null)
+    setEditPassword('')
+    setEditError(null)
+  }
+
+  const saveEdit = async () => {
+    if (!editing || saving) return
+    setSaving(true)
+    setEditError(null)
+    try {
+      const body: Record<string, unknown> = { name: editName }
+      if (editScopesChanged) body.scopes = editScopes
+      const expiry = expiryPayload(editExpiry, editDate)
+      if (expiry !== undefined) body.expiry = expiry
+      if (editNeedsPassword) body.password = editPassword
+
+      const r = await fetch(`/api/users/${userId}/mcp-tokens/${editing.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        if (data.passwordRequired) setServerWantsPassword(true)
+        // Keep the panel populated so nothing is re-chosen.
+        setEditError(data.error || `Could not save the token (${r.status})`)
+        return
+      }
+      closeEdit()
+      await load()
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Could not save the token')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const create = async () => {
     if (creating) return // a double-submit must not mint two tokens
     setCreating(true)
@@ -223,27 +309,6 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
     }
   }
 
-  const commitRename = async (t: TokenRow) => {
-    const next = renameValue.trim()
-    setRenamingId(null)
-    if (!next || next === t.name) return
-    try {
-      const r = await fetch(`/api/users/${userId}/mcp-tokens/${t.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: next }),
-      })
-      if (!r.ok) {
-        const data = await r.json().catch(() => ({}))
-        await alertError(data.error || `Rename failed (${r.status})`, 'Rename MCP Access Token')
-        return
-      }
-      await load()
-    } catch (e) {
-      await alertError(e instanceof Error ? e.message : 'Rename failed', 'Rename MCP Access Token')
-    }
-  }
-
   const copy = async (text: string, which: 'token' | 'snippet') => {
     try {
       await navigator.clipboard.writeText(text)
@@ -259,7 +324,16 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
       <div className={styles.sectionHeader}>
         <div>
           <h3 className={styles.sectionTitle}>
-            <KeyRound size={16} /> MCP Access Tokens
+            <KeyRound size={16} /> MCP Server
+            <WikiInfoButton
+              target="https://github.com/samugit83/redamon/wiki/MCP-Server"
+              title="Open MCP Server wiki page"
+            />
+            <WikiInfoButton
+              target="https://github.com/samugit83/redamon/wiki/MCP-API-Reference"
+              title="Open MCP API Reference wiki page"
+              icon={Braces}
+            />
           </h3>
           <p className={styles.sectionDescription}>
             <strong>Inbound:</strong> let an external AI agent connect to RedAmon and act as you,
@@ -273,7 +347,7 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
           </button>
           <button
             className={styles.primaryBtn}
-            onClick={() => { setShowForm(true); resetForm() }}
+            onClick={() => { closeEdit(); setShowForm(true); resetForm() }}
             disabled={!canMint || showForm}
           >
             <Plus size={14} /> New token
@@ -316,73 +390,198 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
 
       {showForm && (
         <div className={styles.formBlock}>
+          <div className={styles.formHeader}>
+            <h4 className={styles.formTitle}>New access token</h4>
+            <p className={styles.formSubtitle}>
+              Name it after the agent that will use it, so a revoke later is an obvious choice.
+            </p>
+          </div>
+
           {formError && <div className={styles.errorBanner}>{formError}</div>}
 
-          <div className={styles.field}>
-            <label htmlFor="mcpTokenName">Name</label>
-            <input
-              id="mcpTokenName"
-              value={name}
-              maxLength={64}
-              placeholder="e.g. CI agent"
-              onChange={e => setName(e.target.value)}
-            />
-          </div>
+          <div className={styles.formBody}>
+            <div className={`formGroup ${styles.field}`}>
+              <label className="formLabel" htmlFor="mcpTokenName">Name</label>
+              <input
+                id="mcpTokenName"
+                className={`textInput ${styles.control}`}
+                value={name}
+                maxLength={64}
+                placeholder="e.g. CI agent"
+                onChange={e => setName(e.target.value)}
+              />
+            </div>
 
-          <div className={styles.field}>
-            <label htmlFor="mcpTokenExpiry">Expires</label>
-            <select
-              id="mcpTokenExpiry"
-              value={String(expiresInDays)}
-              onChange={e => setExpiresInDays(e.target.value === 'never' ? 'never' : Number(e.target.value))}
-            >
-              {EXPIRY_OPTIONS.map(o => (
-                <option key={String(o.value)} value={String(o.value)}>{o.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <fieldset className={styles.scopes}>
-            <legend>Permissions</legend>
-            {MCP_SCOPES.map(s => (
-              <label
-                key={s}
-                className={`${styles.scopeRow} ${SCOPE_COPY[s].danger ? styles.scopeDanger : ''}`}
+            <div className={`formGroup ${styles.field}`}>
+              <label className="formLabel" htmlFor="mcpTokenExpiry">Expires</label>
+              <select
+                id="mcpTokenExpiry"
+                className={`select ${styles.control}`}
+                value={String(expiresInDays)}
+                onChange={e => setExpiresInDays(e.target.value === 'never' ? 'never' : Number(e.target.value))}
               >
-                <input type="checkbox" checked={scopes.includes(s)} onChange={() => toggleScope(s)} />
-                <span>
-                  <strong>{SCOPE_COPY[s].label}</strong>
-                  <code className={styles.scopeCode}>{s}</code>
-                  <span className={styles.scopeBlurb}>{SCOPE_COPY[s].blurb}</span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
+                {EXPIRY_OPTIONS.map(o => (
+                  <option key={String(o.value)} value={String(o.value)}>{o.label}</option>
+                ))}
+              </select>
+            </div>
 
-          <div className={styles.field}>
-            <label htmlFor="mcpTokenPassword">Confirm your password</label>
-            <input
-              id="mcpTokenPassword"
-              type="password"
-              value={password}
-              autoComplete="current-password"
-              onChange={e => setPassword(e.target.value)}
-            />
-            <span className={styles.muted}>
-              Creating a long-lived credential asks for your password again.
-            </span>
+            <ScopeChecklist selected={scopes} onToggle={toggleScope} />
+
+            <div className={`formGroup ${styles.field}`}>
+              <label className="formLabel" htmlFor="mcpTokenPassword">Confirm your password</label>
+              <input
+                id="mcpTokenPassword"
+                type="password"
+                className={`textInput ${styles.control}`}
+                value={password}
+                autoComplete="current-password"
+                onChange={e => setPassword(e.target.value)}
+              />
+              <span className="formHint">
+                Creating a long-lived credential asks for your password again.
+              </span>
+            </div>
           </div>
 
           <div className={styles.formActions}>
-            <button className={styles.primaryBtn} onClick={() => void create()} disabled={creating}>
-              {creating ? <Loader2 className={styles.spin} size={14} /> : <Plus size={14} />} Create token
-            </button>
             <button
               className={styles.secondaryBtn}
               onClick={() => { setShowForm(false); resetForm() }}
               disabled={creating}
             >
               Cancel
+            </button>
+            <button className={styles.primaryBtn} onClick={() => void create()} disabled={creating}>
+              {creating ? <Loader2 className={styles.spin} size={14} /> : <Plus size={14} />} Create token
+            </button>
+          </div>
+        </div>
+      )}
+
+      {editing && (
+        <div className={styles.formBlock}>
+          <div className={styles.formHeader}>
+            <h4 className={styles.formTitle}>Edit token</h4>
+            <p className={styles.formSubtitle}>
+              <code className={styles.prefix}>{editing.tokenPrefix}…</code> Changes apply to the
+              agent&apos;s very next call.
+            </p>
+          </div>
+
+          {editing.revokedAt && (
+            <div className={styles.noticeBanner}>
+              <ShieldAlert size={14} />
+              <span>This token is revoked, so only its name can change. Create a new token to restore access.</span>
+            </div>
+          )}
+
+          {editError && <div className={styles.errorBanner}>{editError}</div>}
+
+          <div className={styles.formBody}>
+            <div className={`formGroup ${styles.field}`}>
+              <label className="formLabel" htmlFor="mcpEditName">Name</label>
+              <input
+                id="mcpEditName"
+                className={`textInput ${styles.control}`}
+                value={editName}
+                maxLength={64}
+                onChange={e => setEditName(e.target.value)}
+              />
+            </div>
+
+            <div className={`formGroup ${styles.field}`}>
+              <label className="formLabel" htmlFor="mcpEditExpiry">Expires</label>
+              <select
+                id="mcpEditExpiry"
+                className={`select ${styles.control}`}
+                value={editExpiry}
+                disabled={!!editing.revokedAt}
+                onChange={e => { setEditExpiry(e.target.value as EditExpiry); setServerWantsPassword(false) }}
+              >
+                <option value="keep">
+                  {editing.expiresAt
+                    ? `Keep current (${tokenState(editing) === 'expired' ? 'expired ' : ''}${fmtDate(editing.expiresAt)})`
+                    : 'Keep current (no expiry)'}
+                </option>
+                {EDIT_EXPIRY_PRESETS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              {editExpiry === 'now' && (
+                <span className="formHint">
+                  The agent&apos;s next call fails. Unlike revoking, you can extend it again later.
+                </span>
+              )}
+            </div>
+
+            {editExpiry === 'date' && (
+              <div className={`formGroup ${styles.field}`}>
+                <label className="formLabel" htmlFor="mcpEditDate">Expiry date</label>
+                <input
+                  id="mcpEditDate"
+                  type="date"
+                  className={`textInput ${styles.control}`}
+                  value={editDate}
+                  min={todayIso()}
+                  onChange={e => setEditDate(e.target.value)}
+                />
+                <span className="formHint">The token works until the end of that day (UTC).</span>
+              </div>
+            )}
+
+            <ScopeChecklist
+              selected={editScopes}
+              disabled={!!editing.revokedAt}
+              onToggle={s => {
+                setEditScopes(prev => (prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]))
+                setServerWantsPassword(false)
+              }}
+            />
+
+            {editNeedsPassword && !canMint && (
+              <div className={styles.noticeBanner}>
+                <ShieldAlert size={14} />
+                <span>
+                  Only the token&apos;s own user can add a permission or extend the expiry. You can
+                  still remove permissions, shorten the expiry or revoke it.
+                </span>
+              </div>
+            )}
+
+            {editNeedsPassword && canMint && (
+              <div className={`formGroup ${styles.field}`}>
+                <label className="formLabel" htmlFor="mcpEditPassword">Confirm your password</label>
+                <input
+                  id="mcpEditPassword"
+                  type="password"
+                  className={`textInput ${styles.control}`}
+                  value={editPassword}
+                  autoComplete="current-password"
+                  onChange={e => setEditPassword(e.target.value)}
+                />
+                <span className="formHint">
+                  Adding a permission or extending the expiry gives this token more power, so it asks
+                  for your password again.
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className={styles.formActions}>
+            <button className={styles.secondaryBtn} onClick={closeEdit} disabled={saving}>
+              Cancel
+            </button>
+            <button
+              className={styles.primaryBtn}
+              onClick={() => void saveEdit()}
+              disabled={
+                saving || !editDirty || !editName.trim() || editScopes.length === 0 ||
+                (editExpiry === 'date' && !editDate) ||
+                (editNeedsPassword && !canMint)
+              }
+            >
+              {saving ? <Loader2 className={styles.spin} size={14} /> : <Check size={14} />} Save changes
             </button>
           </div>
         </div>
@@ -431,30 +630,14 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
                 const state = tokenState(t)
                 return (
                   <tr key={t.id} className={state === 'active' ? '' : styles.deadRow}>
-                    <td>
-                      {renamingId === t.id ? (
-                        <input
-                          className={styles.renameInput}
-                          value={renameValue}
-                          maxLength={64}
-                          autoFocus
-                          aria-label={`New name for ${t.name}`}
-                          onChange={e => setRenameValue(e.target.value)}
-                          onBlur={() => void commitRename(t)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') void commitRename(t)
-                            if (e.key === 'Escape') setRenamingId(null)
-                          }}
-                        />
-                      ) : (
-                        <span className={styles.cellTitle}>{t.name}</span>
-                      )}
+                    <td className={styles.nameCell}>
+                      <span className={styles.cellTitle}>{t.name}</span>
                       {state !== 'active' && (
                         <span className={styles.deadTag}>{state}</span>
                       )}
                     </td>
                     <td><code className={styles.prefix}>{t.tokenPrefix}…</code></td>
-                    <td>
+                    <td className={styles.permsCell}>
                       {t.scopes.map(s => (
                         <span key={s} className={styles.tag}>{s}</span>
                       ))}
@@ -462,19 +645,26 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
                     <td>{fmtDate(t.createdAt)}</td>
                     <td>{fmtDate(t.expiresAt) ?? <span className={styles.muted}>Never</span>}</td>
                     <td>{fmtDate(t.lastUsedAt) ?? <span className={styles.muted}>Never used</span>}</td>
-                    <td className={styles.rowActions}>
-                      <button
-                        className={styles.iconBtn}
-                        title="Rename"
-                        onClick={() => { setRenamingId(t.id); setRenameValue(t.name) }}
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      {state === 'active' && (
-                        <button className={styles.iconBtn} title="Revoke" onClick={() => void revoke(t)}>
-                          <Trash2 size={14} />
+                    <td className={styles.actionsCell}>
+                      <div className={styles.rowActions}>
+                        <button
+                          className={styles.rowBtn}
+                          title="Edit"
+                          onClick={() => openEdit(t)}
+                          disabled={editing?.id === t.id}
+                        >
+                          <Pencil size={13} /> Edit
                         </button>
-                      )}
+                        {state === 'active' && (
+                          <button
+                            className={`${styles.rowBtn} ${styles.rowBtnDanger}`}
+                            title="Revoke"
+                            onClick={() => void revoke(t)}
+                          >
+                            <Trash2 size={13} /> Revoke
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
@@ -484,5 +674,51 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
         </div>
       )}
     </div>
+  )
+}
+
+/** The permission checkboxes, shared by the create and edit forms. */
+function ScopeChecklist({
+  selected,
+  onToggle,
+  disabled = false,
+}: {
+  selected: McpScope[]
+  onToggle: (scope: McpScope) => void
+  disabled?: boolean
+}) {
+  return (
+    <fieldset className={styles.scopes} disabled={disabled}>
+      <legend className="formLabel">Permissions</legend>
+      <div className={styles.scopeList}>
+        {MCP_SCOPES.map(s => {
+          const checked = selected.includes(s)
+          return (
+            <label
+              key={s}
+              className={[
+                styles.scopeRow,
+                checked ? styles.scopeChecked : '',
+                SCOPE_COPY[s].danger ? styles.scopeDanger : '',
+              ].join(' ')}
+            >
+              <input
+                type="checkbox"
+                className={`checkbox ${styles.scopeCheckbox}`}
+                checked={checked}
+                onChange={() => onToggle(s)}
+              />
+              <span className={styles.scopeText}>
+                <span className={styles.scopeTitleRow}>
+                  <strong className={styles.scopeLabel}>{SCOPE_COPY[s].label}</strong>
+                  <code className={styles.scopeCode}>{s}</code>
+                </span>
+                <span className={styles.scopeBlurb}>{SCOPE_COPY[s].blurb}</span>
+              </span>
+            </label>
+          )
+        })}
+      </div>
+    </fieldset>
   )
 }

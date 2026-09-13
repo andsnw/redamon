@@ -37,5 +37,5 @@ export const SETTINGS_KEYS_HREF = settingsHref(SETTINGS_TABS.keys)
 /** Agent Skills - where user-uploaded .md skill files live. */
 export const SETTINGS_SKILLS_HREF = settingsHref(SETTINGS_TABS.skills)
 
-/** MCP Access Tokens - the INBOUND credentials other agents connect in with. */
+/** MCP Server - the INBOUND credentials other agents connect in with. */
 export const SETTINGS_MCP_TOKENS_HREF = settingsHref(SETTINGS_TABS.mcpTokens)

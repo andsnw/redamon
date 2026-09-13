@@ -258,7 +258,7 @@ Connection fields can be overridden positionally, e.g.
 `MCP_SERVER_ENABLED=true` exposes `/api/mcp-server` so your own AI agent can start recon
 scans, read the attack-surface graph and adjust recon tuning, acting as ONE RedAmon user
 inside that user's own projects. Tokens are minted per user in Global Settings ->
-**MCP Inbound**; the full model is in
+**MCP Server**; the full model is in
 [docs/readmes/README.MCP.SERVER.md](../../../docs/readmes/README.MCP.SERVER.md).
 
 **Three gates sit in front of it, and all three must admit the agent.** This is the part

@@ -1,20 +1,35 @@
 /**
- * MCP personal access tokens: rename and revoke.
+ * MCP personal access tokens: edit and revoke.
  *
- * PATCH changes `name` only. Nothing else about a token is mutable: not the
- * hash, the user, the scopes or the expiry. Rotating means minting a new token
- * and revoking the old one, which keeps a token's capability fixed for its whole
- * life and makes the audit trail mean something.
+ * PATCH changes a token's name, scopes and expiry. The hash and the owner are
+ * never mutable, and a revoked token keeps its capability frozen (it can only
+ * be renamed): restoring access means minting a new token.
  *
- * Both keep the admin bypass (requireUserAccess): an admin must be able to audit
- * and kill tokens during an incident. Revoking is a safe privilege; minting,
- * which lives in the parent route, is not.
+ * The rule an edit is judged by is DIRECTION, not field:
+ *  - a change that NARROWS the token (drop a scope, earlier expiry, "expire
+ *    now", rename) keeps the admin bypass, exactly like revoke. Taking power
+ *    away is a safe privilege during an incident.
+ *  - a change that WIDENS it (add a scope, later or no expiry, reviving an
+ *    expired token) gets the mint's step-up: self-only on the REAL identity,
+ *    password re-confirmed, same limiter. Otherwise a stolen session cookie
+ *    could upgrade an existing token into the credential it cannot mint.
+ *
+ * Scopes and expiry are re-read on every MCP call, so an edit takes effect on
+ * the agent's next call.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { verifyPassword } from '@/lib/auth'
 import { getSession, requireUserAccess } from '@/lib/session'
+import { checkLockout, recordFailure, clearAttempts } from '@/lib/loginThrottle'
 import { writeAudit } from '@/lib/audit'
-import { sanitizeTokenName } from '@/lib/mcpAuth'
+import {
+  isTokenWidening,
+  resolveExpiryChange,
+  sanitizeTokenName,
+  validateScopes,
+  type McpScope,
+} from '@/lib/mcpAuth'
 
 interface RouteParams {
   params: Promise<{ id: string; tokenId: string }>
@@ -41,6 +56,12 @@ async function loadOwned(userId: string, tokenId: string) {
   return token
 }
 
+const sameScopes = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && a.every(s => b.includes(s))
+
+const sameExpiry = (a: Date | null, b: Date | null) =>
+  (a === null && b === null) || (a !== null && b !== null && a.getTime() === b.getTime())
+
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const { id, tokenId } = await params
   const denied = await requireUserAccess(request, id)
@@ -53,32 +74,134 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const name = sanitizeTokenName(body.name)
-  if (!name) return NextResponse.json({ error: 'A token name is required' }, { status: 400 })
-
   const existing = await loadOwned(id, tokenId)
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  const data: { name?: string; scopes?: McpScope[]; expiresAt?: Date | null } = {}
+
+  if ('name' in body) {
+    const name = sanitizeTokenName(body.name)
+    if (!name) return NextResponse.json({ error: 'A token name is required' }, { status: 400 })
+    if (name !== existing.name) data.name = name
+  }
+  if ('scopes' in body) {
+    const scopeResult = validateScopes(body.scopes)
+    if ('error' in scopeResult) {
+      return NextResponse.json({ error: scopeResult.error }, { status: 400 })
+    }
+    if (!sameScopes(scopeResult.scopes, existing.scopes)) data.scopes = scopeResult.scopes
+  }
+  if ('expiry' in body) {
+    const expiryResult = resolveExpiryChange(body.expiry)
+    if ('error' in expiryResult) {
+      return NextResponse.json({ error: expiryResult.error }, { status: 400 })
+    }
+    if (!sameExpiry(expiryResult.expiresAt, existing.expiresAt)) data.expiresAt = expiryResult.expiresAt
+  }
+
+  if (!('name' in body) && !('scopes' in body) && !('expiry' in body)) {
+    return NextResponse.json({ error: 'Nothing to change' }, { status: 400 })
+  }
+  if (Object.keys(data).length === 0) {
+    const token = Object.fromEntries(
+      Object.keys(SELECT).map(k => [k, existing[k as keyof typeof SELECT]])
+    )
+    return NextResponse.json({ token })
+  }
+
+  const changesCapability = 'scopes' in data || 'expiresAt' in data
+  if (changesCapability && existing.revokedAt) {
+    return NextResponse.json(
+      { error: 'A revoked token can only be renamed. Create a new token to restore access.' },
+      { status: 409 }
+    )
+  }
+
+  const after = {
+    scopes: data.scopes ?? existing.scopes,
+    expiresAt: 'expiresAt' in data ? data.expiresAt ?? null : existing.expiresAt,
+  }
+  const widened = changesCapability && isTokenWidening(existing, after)
+  const session = await getSession()
+
+  if (widened) {
+    // Judged on the REAL identity, like minting: requireUserAccess above
+    // carries the admin bypass, which must not extend to adding power.
+    if (!session || session.userId !== id) {
+      return NextResponse.json(
+        {
+          error:
+            'Only the token owner, signed in as themselves, can add a permission or extend the ' +
+            'expiry. You can still remove permissions, shorten the expiry or revoke it.',
+        },
+        { status: 403 }
+      )
+    }
+    const throttleIp = request.headers?.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null
+    // The mint's key, on purpose: both verify the same password, so they share
+    // one attempt budget instead of doubling the guesses a stolen cookie gets.
+    const throttleKey = `mcp-token-mint:${id}`
+    const lock = checkLockout(throttleKey, throttleIp)
+    if (lock.locked) {
+      return NextResponse.json(
+        { error: `Too many incorrect passwords. Try again in ${lock.retryAfterSeconds}s.` },
+        { status: 429 }
+      )
+    }
+    const password = typeof body.password === 'string' ? body.password : ''
+    if (!password) {
+      return NextResponse.json(
+        {
+          error: 'Adding a permission or extending the expiry needs your password.',
+          passwordRequired: true,
+        },
+        { status: 401 }
+      )
+    }
+    const user = await prisma.user.findUnique({ where: { id }, select: { password: true } })
+    if (!user) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!(await verifyPassword(password, user.password))) {
+      recordFailure(throttleKey, throttleIp)
+      return NextResponse.json(
+        { error: 'Password is incorrect', passwordRequired: true },
+        { status: 401 }
+      )
+    }
+    clearAttempts(throttleKey, throttleIp)
+  }
 
   try {
     const updated = await prisma.mcpAccessToken.update({
       where: { id: tokenId },
-      data: { name },
+      data,
       select: SELECT,
     })
-    const session = await getSession()
+
+    const renameOnly = !changesCapability
     await writeAudit({
       actorId: session?.userId ?? null,
-      action: 'mcp-token.rename',
+      action: renameOnly ? 'mcp-token.rename' : 'mcp-token.update',
       targetType: 'mcpAccessToken',
       targetId: tokenId,
-      before: { name: existing.name, tokenPrefix: existing.tokenPrefix },
-      after: { name, tokenPrefix: existing.tokenPrefix },
+      before: renameOnly
+        ? { name: existing.name, tokenPrefix: existing.tokenPrefix }
+        : {
+            name: existing.name, tokenPrefix: existing.tokenPrefix,
+            scopes: existing.scopes, expiresAt: existing.expiresAt,
+          },
+      after: renameOnly
+        ? { name: updated.name, tokenPrefix: existing.tokenPrefix }
+        : {
+            name: updated.name, tokenPrefix: existing.tokenPrefix,
+            scopes: updated.scopes, expiresAt: updated.expiresAt,
+            widened, ownerId: id,
+          },
       source: 'ui',
     })
     return NextResponse.json({ token: updated })
   } catch (error) {
-    console.error('[mcp-tokens] rename failed:', error)
-    return NextResponse.json({ error: 'Could not rename the token' }, { status: 500 })
+    console.error('[mcp-tokens] update failed:', error)
+    return NextResponse.json({ error: 'Could not update the token' }, { status: 500 })
   }
 }
 
