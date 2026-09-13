@@ -2602,40 +2602,50 @@ class TextToCypherRequest(BaseModel):
     for_graph_view: bool = True
 
 
-@app.post("/text-to-cypher", tags=["Graph"])
-async def text_to_cypher(body: TextToCypherRequest):
-    """
-    Generate a Cypher query from a natural language description.
+# --- shared NL -> Cypher plumbing --------------------------------------------
+#
+# Two endpoints need the same three steps (resolve the caller's LLM, build a
+# Neo4jToolManager, generate and validate Cypher): the graph-view generator
+# (/text-to-cypher, which returns the query for the webapp to save) and the MCP
+# entry point (/graph/nl-query, which also runs it and returns rows). They are
+# factored here so the tenant scoping and the retry policy cannot drift apart.
 
-    Reuses the TEXT_TO_CYPHER_SYSTEM prompt and Neo4jToolManager._generate_cypher()
-    so the graph schema is always in sync with the agent's query_graph tool.
 
-    Returns the raw Cypher (without tenant filters) for the webapp to save and execute.
+class _CypherSetupError(Exception):
+    """Carries the (status, safe message) to answer with."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+async def _build_cypher_manager(user_id: str, project_id: str):
+    """Resolve the project's model + the user's provider key into a manager.
+
+    The identity is the CALLER's responsibility: both entry points are guarded
+    by require_internal_auth, and the webapp resolves the real user before
+    calling. Raises _CypherSetupError with a safe message.
     """
-    from tools import Neo4jToolManager, CypherGenerationTimeout
+    from tools import Neo4jToolManager
     from orchestrator_helpers.llm_setup import setup_llm, _resolve_provider_key
     from project_settings import DEFAULT_AGENT_SETTINGS, fetch_agent_settings
     import requests as _requests
 
-    # 1. Resolve LLM for the user
-    llm = None
-
-    # Try to get project-specific model first
     model_name = DEFAULT_AGENT_SETTINGS['OPENAI_MODEL']
     try:
         webapp_url = os.environ.get('WEBAPP_API_URL', 'http://webapp:3000')
-        settings = fetch_agent_settings(body.project_id, webapp_url)
+        settings = fetch_agent_settings(project_id, webapp_url)
         if settings and settings.get('OPENAI_MODEL'):
             model_name = settings['OPENAI_MODEL']
     except Exception as e:
         logger.warning(f"text-to-cypher: failed to fetch project settings: {e}")
 
-    # Fetch user's LLM providers for API keys
     user_providers = []
     try:
         webapp_url = os.environ.get('WEBAPP_API_URL', 'http://webapp:3000')
         resp = _requests.get(
-            f"{webapp_url.rstrip('/')}/api/users/{body.user_id}/llm-providers?internal=true",
+            f"{webapp_url.rstrip('/')}/api/users/{user_id}/llm-providers?internal=true",
             headers={"X-Internal-Key": os.environ.get("INTERNAL_API_KEY", "")},
             timeout=10,
         )
@@ -2644,89 +2654,91 @@ async def text_to_cypher(body: TextToCypherRequest):
     except Exception as e:
         logger.warning(f"text-to-cypher: failed to fetch user LLM providers: {e}")
 
-    openai_p = _resolve_provider_key(user_providers, "openai")
-    anthropic_p = _resolve_provider_key(user_providers, "anthropic")
-    openrouter_p = _resolve_provider_key(user_providers, "openrouter")
-    bedrock_p = _resolve_provider_key(user_providers, "bedrock")
-    deepseek_p = _resolve_provider_key(user_providers, "deepseek")
-    gemini_p = _resolve_provider_key(user_providers, "gemini")
-    glm_p = _resolve_provider_key(user_providers, "glm")
-    kimi_p = _resolve_provider_key(user_providers, "kimi")
-    qwen_p = _resolve_provider_key(user_providers, "qwen")
-    xai_p = _resolve_provider_key(user_providers, "xai")
-    mistral_p = _resolve_provider_key(user_providers, "mistral")
-
+    llm = None
     try:
-        # Check if model uses custom provider config
         if model_name.startswith("custom/"):
             config_id = model_name[len("custom/"):]
             matched = None
-            for p in user_providers:
-                if p.get("id") == config_id:
-                    matched = p
+            for prov in user_providers:
+                if prov.get("id") == config_id:
+                    matched = prov
                     break
             if not matched and user_providers:
                 matched = user_providers[0]
-            if matched:
-                llm = setup_llm(model_name, custom_llm_config=matched)
-            else:
-                return JSONResponse(
-                    content={"error": "Custom LLM provider not found. Configure an AI model in settings."},
-                    status_code=400,
+            if not matched:
+                raise _CypherSetupError(
+                    400, "Custom LLM provider not found. Configure an AI model in settings."
                 )
+            llm = setup_llm(model_name, custom_llm_config=matched)
         else:
+            def key(kind):
+                return (_resolve_provider_key(user_providers, kind) or {})
+
+            bedrock = key("bedrock")
             llm = setup_llm(
                 model_name,
-                openai_api_key=(openai_p or {}).get("apiKey"),
-                anthropic_api_key=(anthropic_p or {}).get("apiKey"),
-                openrouter_api_key=(openrouter_p or {}).get("apiKey"),
-                deepseek_api_key=(deepseek_p or {}).get("apiKey"),
-                gemini_api_key=(gemini_p or {}).get("apiKey"),
-                glm_api_key=(glm_p or {}).get("apiKey"),
-                kimi_api_key=(kimi_p or {}).get("apiKey"),
-                qwen_api_key=(qwen_p or {}).get("apiKey"),
-                xai_api_key=(xai_p or {}).get("apiKey"),
-                mistral_api_key=(mistral_p or {}).get("apiKey"),
-                aws_access_key_id=(bedrock_p or {}).get("awsAccessKeyId"),
-                aws_secret_access_key=(bedrock_p or {}).get("awsSecretKey"),
-                aws_bearer_token=(bedrock_p or {}).get("awsBearerToken"),
-                aws_region=(bedrock_p or {}).get("awsRegion") or "us-east-1",
+                openai_api_key=key("openai").get("apiKey"),
+                anthropic_api_key=key("anthropic").get("apiKey"),
+                openrouter_api_key=key("openrouter").get("apiKey"),
+                deepseek_api_key=key("deepseek").get("apiKey"),
+                gemini_api_key=key("gemini").get("apiKey"),
+                glm_api_key=key("glm").get("apiKey"),
+                kimi_api_key=key("kimi").get("apiKey"),
+                qwen_api_key=key("qwen").get("apiKey"),
+                xai_api_key=key("xai").get("apiKey"),
+                mistral_api_key=key("mistral").get("apiKey"),
+                aws_access_key_id=bedrock.get("awsAccessKeyId"),
+                aws_secret_access_key=bedrock.get("awsSecretKey"),
+                aws_bearer_token=bedrock.get("awsBearerToken"),
+                aws_region=bedrock.get("awsRegion") or "us-east-1",
             )
+    except _CypherSetupError:
+        raise
     except Exception as e:
         logger.error(f"text-to-cypher: failed to create LLM: {e}")
-        return JSONResponse(
-            content={"error": f"Failed to initialize LLM: {str(e)}. Make sure an AI model is configured."},
-            status_code=400,
+        raise _CypherSetupError(
+            400, "Failed to initialize the LLM. Make sure an AI model is configured."
         )
 
     if not llm:
-        return JSONResponse(
-            content={"error": "No LLM configured. Configure an AI model in project settings to use graph views."},
-            status_code=400,
+        raise _CypherSetupError(
+            400,
+            "No LLM configured. Configure an AI model in project settings to use graph views.",
         )
 
-    # 2. Create Neo4jToolManager and generate Cypher
     neo4j_uri = os.environ.get('NEO4J_URI', 'bolt://neo4j:7687')
-    neo4j_user = os.environ.get('NEO4J_USER', 'neo4j')
-    neo4j_password = os.environ.get('NEO4J_PASSWORD', 'password')
-
-    manager = Neo4jToolManager(neo4j_uri, neo4j_user, neo4j_password, llm)
-
+    manager = Neo4jToolManager(
+        neo4j_uri,
+        os.environ.get('NEO4J_USER', 'neo4j'),
+        os.environ.get('NEO4J_PASSWORD', 'password'),
+        llm,
+    )
     try:
         from langchain_community.graphs import Neo4jGraph
         manager.graph = Neo4jGraph(
             url=neo4j_uri,
-            username=neo4j_user,
-            password=neo4j_password,
+            username=os.environ.get('NEO4J_USER', 'neo4j'),
+            password=os.environ.get('NEO4J_PASSWORD', 'password'),
         )
     except Exception as e:
         logger.error(f"text-to-cypher: failed to connect to Neo4j: {e}")
-        return JSONResponse(
-            content={"error": f"Failed to connect to graph database: {str(e)}"},
-            status_code=500,
-        )
+        raise _CypherSetupError(500, "Failed to connect to the graph database.")
 
-    # 3. Generate Cypher with retry logic
+    return manager
+
+
+async def _generate_validated_cypher(
+    manager, question: str, user_id: str, project_id: str, for_graph_view: bool
+) -> str:
+    """Generate Cypher and prove it parses, scopes and runs. Returns the RAW
+    (un-scoped) Cypher, which is what a caller saves or re-scopes itself.
+
+    Raises _CypherSetupError. Retries feed the previous error back to the model;
+    an unscopable pattern raises TenantScopeError, which the loop treats the same
+    way rather than executing anything unfiltered.
+    """
+    from tools import CypherGenerationTimeout
+
     last_error = None
     last_cypher = None
     cypher = None
@@ -2735,55 +2747,184 @@ async def text_to_cypher(body: TextToCypherRequest):
     for attempt in range(max_retries):
         try:
             if attempt == 0:
-                cypher = await manager._generate_cypher(body.question, for_graph_view=body.for_graph_view)
+                cypher = await manager._generate_cypher(question, for_graph_view=for_graph_view)
             else:
                 cypher = await manager._generate_cypher(
-                    body.question,
+                    question,
                     previous_error=last_error,
                     previous_cypher=last_cypher,
-                    for_graph_view=body.for_graph_view,
+                    for_graph_view=for_graph_view,
                 )
 
-            # Reject write operations -- data filters are read-only
             if manager._find_disallowed_write_operation(cypher):
-                return JSONResponse(
-                    content={"error": "Write operations are not allowed in data filters"},
-                    status_code=400,
-                )
+                raise _CypherSetupError(400, "Write operations are not allowed in data filters")
 
-            # Validate by executing (with tenant filter) to catch syntax errors.
-            # An unscopable pattern raises TenantScopeError, which the retry loop
-            # below feeds back to the model rather than executing unfiltered.
-            filtered = manager._scope_query(cypher, body.user_id, body.project_id)
-            manager.graph.query(
+            # Validate by executing (with the tenant filter) to catch syntax
+            # errors. Bounded (P0-4): the rows are discarded, so ask for one
+            # under a transaction timeout rather than materialising a result.
+            filtered = manager._scope_query(cypher, user_id, project_id)
+            await asyncio.to_thread(
+                _graph_exec_run,
                 filtered,
-                params={
-                    "tenant_user_id": body.user_id,
-                    "tenant_project_id": body.project_id,
-                },
+                {"tenant_user_id": user_id, "tenant_project_id": project_id},
+                1,
             )
+            return cypher
 
-            # Return the raw (un-filtered) Cypher for saving
-            return JSONResponse(content={"cypher": cypher})
-
+        except _CypherSetupError:
+            raise
         except CypherGenerationTimeout as e:
             # Terminal: retrying would burn the same budget on the same model.
             logger.error(f"text-to-cypher: {e}")
-            return JSONResponse(content={"error": str(e)}, status_code=504)
-
+            raise _CypherSetupError(504, "Timed out generating a query for that question.")
         except Exception as e:
             last_error = str(e)
             last_cypher = cypher
             logger.warning(f"text-to-cypher attempt {attempt + 1} failed: {last_error}")
 
-            if attempt == max_retries - 1:
-                return JSONResponse(
-                    content={"error": f"Failed to generate valid Cypher after {max_retries} attempts: {last_error}"},
-                    status_code=422,
-                )
+    logger.error(f"text-to-cypher: gave up after {max_retries} attempts: {last_error}")
+    raise _CypherSetupError(
+        422,
+        f"Could not generate a valid query after {max_retries} attempts. "
+        "Try rephrasing the question.",
+    )
 
-    return JSONResponse(content={"error": "Unexpected end of retry loop"}, status_code=500)
 
+@app.post(
+    "/text-to-cypher",
+    tags=["Graph"],
+    dependencies=[Depends(require_internal_auth)],
+)
+async def text_to_cypher(body: TextToCypherRequest):
+    """
+    Generate a Cypher query from a natural language description.
+
+    Reuses the rendered schema catalog and Neo4jToolManager._generate_cypher()
+    so the graph schema is always in sync with the agent's query_graph tool.
+
+    Returns the raw Cypher (without tenant filters) for the webapp to save and execute.
+
+    BILLED: one request can cost up to 9 provider calls (3 attempts, each wrapped
+    in retry_llm_call), spending the key of the user named in the body. It was
+    previously unauthenticated, so anyone who could reach the agent port could
+    spend any user's LLM budget. `require_internal_auth` applies the token bucket
+    and the daily spend cap, and the caller is trusted to have resolved the
+    identity it sends (mcp_plan.md P0-3).
+    """
+    try:
+        manager = await _build_cypher_manager(body.user_id, body.project_id)
+        cypher = await _generate_validated_cypher(
+            manager, body.question, body.user_id, body.project_id, body.for_graph_view
+        )
+    except _CypherSetupError as e:
+        return JSONResponse(content={"error": e.message}, status_code=e.status)
+    return JSONResponse(content={"cypher": cypher})
+
+
+class GraphNlQueryRequest(BaseModel):
+    """Webapp (MCP server) -> agent: ask a question and get the ROWS.
+
+    The tenant comes from the caller, which resolved it from a personal access
+    token before calling and presents the master internal key. The MCP route
+    deliberately does not go through /api/agent/text-to-cypher: that is a
+    session-authenticated proxy for the browser, and it returns the query rather
+    than running it.
+    """
+    question: str
+    user_id: str
+    project_id: str
+
+
+@app.post(
+    "/graph/nl-query",
+    tags=["Graph"],
+    dependencies=[Depends(require_internal_auth)],
+)
+async def graph_nl_query(body: GraphNlQueryRequest):
+    """Natural language -> tenant-scoped rows, in one call.
+
+    Generation and execution report SEPARATELY (`stage`), so a caller that
+    failed can retry the right half: rephrasing helps a generation failure and
+    does nothing for an execution one. Never answers an empty result for a
+    dependency failure - conflating the two is the false negative this whole
+    surface is built to avoid.
+    """
+    if not body.user_id or not body.project_id:
+        return JSONResponse(status_code=400, content={"error": "missing tenant identity"})
+
+    try:
+        manager = await _build_cypher_manager(body.user_id, body.project_id)
+        # for_graph_view=False: an external agent wants the values it asked
+        # about, not whole nodes to render.
+        cypher = await _generate_validated_cypher(
+            manager, body.question, body.user_id, body.project_id, False
+        )
+    except _CypherSetupError as e:
+        return JSONResponse(
+            status_code=e.status, content={"error": e.message, "stage": "generate"}
+        )
+
+    from graph_db.tenant_filter import scope_query, TenantScopeError
+
+    try:
+        final = scope_query(cypher, body.user_id, body.project_id)
+    except TenantScopeError:
+        # The generator already proved this scopes, so reaching here means the
+        # query changed under us. Refuse rather than run anything unscoped.
+        logger.error("graph/nl-query: generated Cypher failed to scope on re-check")
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Could not scope that query to your project.", "stage": "generate"},
+        )
+
+    params = {"tenant_user_id": body.user_id, "tenant_project_id": body.project_id}
+    async with _graph_exec_mcp_semaphore():
+        resp = await asyncio.to_thread(_graph_exec_respond, final, params)
+
+    if resp.status_code != 200:
+        import json as _json
+        detail = _json.loads(bytes(resp.body).decode() or "{}")
+        return JSONResponse(
+            status_code=resp.status_code,
+            content={**detail, "stage": "execute", "cypher": cypher},
+        )
+
+    import json as _json
+    payload = _json.loads(bytes(resp.body).decode())
+    # The generated Cypher travels back for transparency: the caller should be
+    # able to see what its question became.
+    payload["cypher"] = cypher
+    return JSONResponse(content=payload)
+
+
+@app.get(
+    "/graph/schema-doc",
+    tags=["Graph"],
+    dependencies=[Depends(require_internal_auth_only)],
+)
+async def graph_schema_doc():
+    """The graph schema INCLUDING its semantics: what each node type means, what
+    its properties mean, which relationships connect what, and the distinctions
+    that are easy to get wrong.
+
+    Served from graph_db/schema_catalog.py, the same content the Cypher generator is
+    prompted with on every call. One source, no second copy, nothing to drift.
+
+    Deliberately NOT `CALL db.schema.visualization()`: that carries no semantics
+    and is database-global, so it would reflect labels created by other tenants.
+    Nor `op: "types"`, which is a bare list of label names.
+
+    Reads from code only: no database, no project id, no tenant data. It is
+    therefore the one graph tool that still answers when Neo4j is down.
+    """
+    # Rendered from graph_db/schema_catalog.py rather than read from the prompt
+    # constant. render_schema() with no arguments is byte-identical to that
+    # constant (asserted in recon/tests/test_schema_catalog.py), so this swap
+    # changes no output today; what it buys is that the catalog is completeness-
+    # checked against schema.py, and can later serve a per-label subset.
+    from graph_schema_prompt import build_schema_document
+
+    return JSONResponse(content={"schema": build_schema_document()})
 
 # =============================================================================
 # GRAPH EXEC — run a read-only, tenant-scoped graph query on behalf of the
@@ -2811,6 +2952,34 @@ _GRAPH_TYPES_CYPHER = (
     "RETURN DISTINCT label AS type ORDER BY type"
 )
 
+# Fixed ops for `graph_summary`: what this project ACTUALLY contains.
+#
+# A label census cannot go through op="cypher": that path requires a labelled
+# node pattern (least privilege - no blind whole-graph dump from the sandbox),
+# and a census is by definition unlabelled. As a fixed op it is
+# server-controlled, so the caller cannot alter it, and the tenant filter is
+# written out by hand exactly as it is for op="types".
+#
+# `stale_since IS NULL` matters as much as the mute exclusion: since
+# ingest-then-prune, a finding a scanner has stopped reporting is KEPT and
+# stamped rather than deleted, so counting it would report resolved findings as
+# live - the opposite of what a census is read for.
+_GRAPH_SUMMARY_NODES_CYPHER = (
+    "MATCH (n) "
+    "WHERE n.user_id = $tenant_user_id AND n.project_id = $tenant_project_id "
+    "AND NOT n:Muted AND n.stale_since IS NULL "
+    "UNWIND labels(n) AS label "
+    "RETURN label, count(*) AS count ORDER BY label"
+)
+
+_GRAPH_SUMMARY_RELS_CYPHER = (
+    "MATCH (a)-[r]->(b) "
+    "WHERE a.user_id = $tenant_user_id AND a.project_id = $tenant_project_id "
+    "AND NOT a:Muted AND NOT b:Muted "
+    "AND a.stale_since IS NULL AND b.stale_since IS NULL "
+    "RETURN type(r) AS type, count(*) AS count ORDER BY type"
+)
+
 
 def _graph_exec_get_driver():
     global _graph_exec_driver
@@ -2824,6 +2993,131 @@ def _graph_exec_get_driver():
             ),
         )
     return _graph_exec_driver
+
+
+# --- P0-4: bounds on the graph read path -------------------------------------
+#
+# Every guard on /graph/exec was about WHAT may be read (read-only, labelled
+# pattern, tenant scope); none bounded HOW MUCH. One read-only Cartesian product
+# passes all of them and pins Neo4j, which the graph screen, the agent and every
+# running scan share. The webapp's own driver has injected a transaction timeout
+# for exactly this reason since the graph-bounding work; this brings the agent
+# in line and adds the transfer/memory bounds the webapp gets from its LIMIT.
+#
+# The bounds are deliberately NOT implemented by appending `LIMIT` to the
+# caller's Cypher: string-appending a limit breaks UNION, aggregations and
+# subqueries, and would create a second Cypher parser that has to be trusted.
+# The timeout bounds server work; the record cap bounds transfer; the byte cap
+# bounds memory (the webapp runs under mem_limit: 1g).
+
+_GRAPH_EXEC_DEFAULT_MAX_RECORDS = 1000
+_GRAPH_EXEC_DEFAULT_MAX_BYTES = 2 * 1024 * 1024
+_GRAPH_EXEC_DEFAULT_TIMEOUT_MS = 120_000
+_GRAPH_EXEC_DEFAULT_MCP_CONCURRENCY = 2
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    """Unset / garbage / non-positive all fall back to the documented default,
+    never to "no limit"."""
+    try:
+        n = int(os.environ.get(name, ""))
+    except (TypeError, ValueError):
+        return default
+    return n if n > 0 else default
+
+
+def _graph_exec_max_records() -> int:
+    return _env_positive_int("GRAPH_EXEC_MAX_RECORDS", _GRAPH_EXEC_DEFAULT_MAX_RECORDS)
+
+
+def _graph_exec_max_bytes() -> int:
+    return _env_positive_int("GRAPH_EXEC_MAX_BYTES", _GRAPH_EXEC_DEFAULT_MAX_BYTES)
+
+
+def _graph_query_timeout_seconds() -> float:
+    """Same env var and same 120s default as webapp/src/app/api/graph/neo4j.ts,
+    so both readers of this database are bounded the same way."""
+    ms = _env_positive_int("NEO4J_QUERY_TIMEOUT_MS", _GRAPH_EXEC_DEFAULT_TIMEOUT_MS)
+    return ms / 1000.0
+
+
+_graph_exec_mcp_sem = None
+
+
+def _graph_exec_mcp_semaphore():
+    """Concurrency ceiling for MCP-originated reads only.
+
+    The kali sandbox is semi-trusted and loopback-only; an external agent behind
+    a PAT is neither, and a looping one must not monopolise the Neo4j pool that
+    the UI and running scans also draw from.
+    """
+    global _graph_exec_mcp_sem
+    if _graph_exec_mcp_sem is None:
+        _graph_exec_mcp_sem = asyncio.Semaphore(
+            _env_positive_int("GRAPH_EXEC_MCP_CONCURRENCY", _GRAPH_EXEC_DEFAULT_MCP_CONCURRENCY)
+        )
+    return _graph_exec_mcp_sem
+
+
+class GraphResultTooLarge(Exception):
+    """The coerced result exceeded the serialised-byte cap."""
+
+    def __init__(self, size: int, limit: int):
+        super().__init__(f"result too large ({size} bytes > {limit})")
+        self.size = size
+        self.limit = limit
+
+
+def _graph_exec_run(final: str, params: dict, max_records: int | None = None):
+    """Run one bounded read. Returns ``(records, truncated)``.
+
+    Streams the cursor and stops at the cap instead of materialising every
+    record into a list, so a runaway query costs the cap rather than the result.
+    """
+    from neo4j import READ_ACCESS, Query
+
+    cap = _graph_exec_max_records() if max_records is None else max_records
+    driver = _graph_exec_get_driver()
+    query = Query(final, timeout=_graph_query_timeout_seconds())
+
+    records: list = []
+    truncated = False
+    # READ_ACCESS, not the driver default of WRITE. The read-only guard is a
+    # regex over the query text, and a regex cannot be the only thing standing
+    # between an LLM-generated query and a write: `\u0043REATE` inside a string
+    # literal reads as CREATE to Neo4j and as nothing to the regex. Asking the
+    # database for a read-only session moves that guarantee out of our parser
+    # and into the engine, which cannot be fooled by how the text is spelled.
+    with driver.session(default_access_mode=READ_ACCESS) as session:
+        result = session.run(query, params)
+        for rec in result:
+            if len(records) >= cap:
+                # Leaving the loop lets the session close and DISCARD the rest;
+                # consuming it here would make the server produce every
+                # remaining row, which is the cost this cap exists to avoid.
+                truncated = True
+                break
+            records.append({k: _graph_exec_coerce(rec[k]) for k in rec.keys()})
+    return records, truncated
+
+
+def _graph_exec_payload(records: list, truncated: bool) -> dict:
+    """Build the response body, refusing one that is too large to return.
+
+    Fails loudly rather than truncating silently: a caller that received half a
+    result and was not told would report a false negative, which is the failure
+    mode this whole surface is built to avoid.
+    """
+    import json as _json
+
+    payload: dict = {"records": records}
+    if truncated:
+        payload["truncated"] = True
+    size = len(_json.dumps(payload, default=str).encode("utf-8"))
+    limit = _graph_exec_max_bytes()
+    if size > limit:
+        raise GraphResultTooLarge(size, limit)
+    return payload
 
 
 def _graph_exec_coerce(v):
@@ -2985,10 +3279,14 @@ async def graph_triage(body: GraphTriageRequest):
 class GraphExecRequest(BaseModel):
     """Worker (redagraph) -> agent graph query. `op` selects a fixed operation
     so arbitrary unscoped queries are impossible."""
-    op: str  # "cypher" | "types" | "schema"
+    op: str  # "cypher" | "types" | "schema" | "summary"
     user_id: str
     project_id: str
     cypher: Optional[str] = None  # only for op="cypher"
+    # "mcp" opts the read into the concurrency ceiling (P0-4). It is a throttling
+    # hint only: it grants nothing, so a caller that lies about it can only
+    # throttle itself.
+    source: str = ""
 
 
 @app.post("/graph/exec", tags=["Graph"], dependencies=[Depends(require_internal_auth_only)])
@@ -3024,6 +3322,15 @@ async def graph_exec(body: GraphExecRequest):
     elif op == "types":
         final = _GRAPH_TYPES_CYPHER
         params = {"tenant_user_id": body.user_id, "tenant_project_id": body.project_id}
+    elif op == "summary":
+        # Two fixed queries, so this op answers alone rather than making the
+        # caller issue two and stitch them. It returns early, so it takes the
+        # MCP concurrency ceiling here rather than at the shared exit below.
+        params = {"tenant_user_id": body.user_id, "tenant_project_id": body.project_id}
+        if body.source == "mcp":
+            async with _graph_exec_mcp_semaphore():
+                return await asyncio.to_thread(_graph_exec_summary, params)
+        return await asyncio.to_thread(_graph_exec_summary, params)
     elif op == "cypher":
         cypher = (body.cypher or "").strip()
         if not cypher:
@@ -3046,16 +3353,42 @@ async def graph_exec(body: GraphExecRequest):
     else:
         return JSONResponse(status_code=400, content={"error": f"unknown op {op!r}"})
 
+    # An MCP-originated read is throttled; the kali sandbox's is not (P0-4).
+    if body.source == "mcp":
+        async with _graph_exec_mcp_semaphore():
+            return await asyncio.to_thread(_graph_exec_respond, final, params)
+    return await asyncio.to_thread(_graph_exec_respond, final, params)
+
+
+def _graph_exec_summary(params: dict) -> JSONResponse:
+    """The fixed label + relationship census behind `op: "summary"`.
+
+    COUNTS ONLY, never sample values: sample values are live target data
+    (hostnames, secrets, endpoints) and would leak recon output into an external
+    agent's context ahead of any deliberate query.
+    """
     try:
-        driver = _graph_exec_get_driver()
-        with driver.session() as session:
-            result = session.run(final, params)
-            records = [{k: _graph_exec_coerce(rec[k]) for k in rec.keys()} for rec in result]
+        nodes, _ = _graph_exec_run(_GRAPH_SUMMARY_NODES_CYPHER, params)
+        rels, _ = _graph_exec_run(_GRAPH_SUMMARY_RELS_CYPHER, params)
+    except Exception as e:
+        logger.error(f"graph/exec summary failed: {e}")
+        return JSONResponse(status_code=500, content={"error": "graph query failed"})
+    return JSONResponse(content={"nodes": nodes, "relationships": rels})
+
+
+def _graph_exec_respond(final: str, params: dict) -> JSONResponse:
+    try:
+        records, truncated = _graph_exec_run(final, params)
+        return JSONResponse(content=_graph_exec_payload(records, truncated))
+    except GraphResultTooLarge as e:
+        logger.warning(f"graph/exec refused an oversized result: {e}")
+        return JSONResponse(
+            status_code=413,
+            content={"error": "result too large, narrow your query"},
+        )
     except Exception as e:
         logger.error(f"graph/exec failed: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-    return JSONResponse(content={"records": records})
+        return JSONResponse(status_code=500, content={"error": "graph query failed"})
 
 
 # =============================================================================
@@ -3450,6 +3783,268 @@ async def traffic_browser(body: TrafficBrowserRequest):
         })
 
     return JSONResponse(content={"ok": True})
+
+
+# =============================================================================
+# KALI TOOLBOX — what this Kali image actually carries, for the inbound MCP
+# server (webapp /api/mcp-server -> this endpoint -> kali_toolbox).
+# =============================================================================
+
+
+@app.get(
+    "/kali/toolbox",
+    tags=["Kali"],
+    dependencies=[Depends(require_internal_auth_only)],
+)
+async def kali_toolbox():
+    """The Kali sandbox's installed-tooling catalogue, by category.
+
+    Served from the `kali_shell` TOOL_REGISTRY description, the same bytes this
+    agent's own model is prompted with. One source, no second copy: a
+    transcription would drift from the image the moment a tool is added, and a
+    catalogue that lies about what is installed is worse than none.
+
+    Reads from code only: no container call, no project id, no tenant data. It
+    therefore still answers when the kali-sandbox is down, which is the point -
+    an agent planning work needs to know what exists before anything can run.
+    """
+    from prompts.tool_registry import TOOL_REGISTRY
+
+    catalogue = str((TOOL_REGISTRY.get("kali_shell") or {}).get("description") or "").strip()
+    if not catalogue:
+        # Never an empty string: the caller cannot tell that apart from "this
+        # image ships no tools", which is the false negative the MCP surface
+        # forbids everywhere else.
+        logger.error("Kali toolbox catalogue is empty - TOOL_REGISTRY['kali_shell'] lost its description")
+        return JSONResponse(status_code=500, content={"error": "toolbox catalogue unavailable"})
+    return JSONResponse(content={"toolbox": catalogue})
+
+
+# =============================================================================
+# KALI EXEC — admitted, scope-checked single commands for the inbound MCP
+# server. The admission rules live in kali_exec_guard.py; this is transport,
+# job lifecycle and output paging only.
+# =============================================================================
+
+# An inline wait long enough for the quick checks (curl, dig, whatweb) to answer
+# in one call, short enough that no MCP client's own request timeout is the
+# thing that decides. Anything slower becomes a job the caller polls.
+KALI_EXEC_DEFAULT_WAIT = 15.0
+KALI_EXEC_MAX_WAIT = 60.0
+# Per CALL, not per job: the rest is fetched with the returned cursor, so a big
+# output is paged rather than truncated. Same rule as the graph tools - nothing
+# is ever cut silently.
+KALI_EXEC_MAX_OUTPUT_BYTES = 100_000
+
+
+class KaliExecRequest(BaseModel):
+    """webapp MCP -> agent. The tenant is the caller's, already resolved from
+    the access token and ownership-checked before this is sent."""
+    project_id: str
+    command: str
+    wait_seconds: float = KALI_EXEC_DEFAULT_WAIT
+
+
+def _kali_scope(project_id: str):
+    """The project's authorised reach, from the same source both agent
+    guardrails use, so an ad-hoc command cannot outreach a scan."""
+    from kali_exec_guard import KaliScope
+    from project_settings import get_setting, load_project_settings, target_scope_domains
+
+    load_project_settings(project_id)
+    return KaliScope(
+        domains=tuple(target_scope_domains()),
+        ips=tuple(get_setting("TARGET_IPS", []) or []),
+        ip_mode=bool(get_setting("IP_MODE", False)),
+        roe_enabled=bool(get_setting("ROE_ENABLED", False)),
+        roe_excluded=tuple(get_setting("ROE_EXCLUDED_HOSTS", []) or []),
+        # Confines writable paths to this project's own workspace subtree: the
+        # /workspace volume is shared by every project.
+        project_id=project_id,
+    )
+
+
+# A job id is a uuid4 hex. Validated because it reaches a filesystem path.
+_KALI_JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _kali_log_path(project_id: str, job_id: str) -> str:
+    """Derive the log path from the tenant and job id, SERVER-SIDE.
+
+    Never from the job's own metadata. `JobRegistry.status()` falls back to
+    reading `<workspace>/<project>/jobs/<job_id>.meta.json` off disk and returns
+    its parsed contents, and kali_exec can write into that same workspace - so
+    trusting the `output_path` it carries turned two allowed calls into an
+    arbitrary file read on THIS container (INTERNAL_API_KEY, NEO4J_PASSWORD via
+    /proc/self/environ). Composing the path here means a poisoned meta file
+    cannot redirect the read.
+    """
+    root = os.environ.get("WORKSPACE_ROOT", "/workspace")
+    return os.path.join(root, project_id, "jobs", f"{job_id}.log")
+
+
+def _kali_read_log(path: str, cursor: int) -> dict:
+    """Read forward from a byte offset, reporting where to resume.
+
+    Byte offsets, not lines: the caller resumes exactly where it stopped, and a
+    partial read can never be mistaken for the whole output.
+    """
+    if not path:
+        return {"output": "", "next_cursor": cursor, "truncated": False}
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(max(0, int(cursor)))
+            chunk = fh.read(KALI_EXEC_MAX_OUTPUT_BYTES + 1)
+    except FileNotFoundError:
+        return {"output": "", "next_cursor": cursor, "truncated": False}
+    except OSError as exc:
+        logger.error("kali_exec log read failed: %s", exc)
+        return {"output": "", "next_cursor": cursor, "truncated": False}
+
+    truncated = len(chunk) > KALI_EXEC_MAX_OUTPUT_BYTES
+    chunk = chunk[:KALI_EXEC_MAX_OUTPUT_BYTES]
+    return {
+        # errors="replace": tool output is bytes from a third-party target and
+        # is not guaranteed to be UTF-8. A decode error must not lose the run.
+        "output": chunk.decode("utf-8", "replace"),
+        "next_cursor": max(0, int(cursor)) + len(chunk),
+        "truncated": truncated,
+    }
+
+
+def _kali_job_view(state: dict, cursor: int, project_id: str, job_id: str) -> dict:
+    """The wire shape shared by exec, poll and cancel, so a caller parses one.
+
+    The log path is composed from (project_id, job_id), NOT read from `state`:
+    see _kali_log_path.
+    """
+    view = {
+        "job_id": state.get("job_id") or job_id,
+        "status": state.get("status"),
+        "exit_code": state.get("exit_code"),
+        "started_at": state.get("started_at"),
+        "ended_at": state.get("ended_at"),
+    }
+    view.update(_kali_read_log(_kali_log_path(project_id, job_id), cursor))
+    if view["status"] == "cancelled":
+        # Honest wording. reg.cancel() cancels the asyncio task awaiting the MCP
+        # call; kali_shell is a blocking subprocess.run in the SANDBOX process,
+        # and nothing propagates the cancellation to it, so the command itself
+        # can keep running against the target for up to its own 300s timeout.
+        view["note"] = (
+            "Cancelled on RedAmon's side. The sandbox command may still be running at "
+            "the target until its own timeout; output after this point is not collected."
+        )
+    return view
+
+
+# Master key only. require_internal_auth_only also accepts SCANNER_API_KEY, which
+# the kali-sandbox and every spawned scan container hold - the least-trusted
+# tier. A leaked scanner token must not be able to run commands, the same
+# reasoning that gave /graph/triage the stricter dependency.
+@app.post("/kali/exec", tags=["Kali"], dependencies=[Depends(require_master_internal_auth)])
+async def kali_exec(body: KaliExecRequest):
+    """Admit one command, run it in the sandbox, and answer with what it produced.
+
+    The admission check is the whole security story (see kali_exec_guard): inside
+    the product a human approves `kali_shell`, and an MCP caller has no human.
+    """
+    from kali_exec_guard import CommandRefused, admit, to_shell_command
+
+    if not body.project_id:
+        return JSONResponse(status_code=400, content={"error": "project_id is required"})
+    if not orchestrator or not getattr(orchestrator, "tool_executor", None):
+        return JSONResponse(status_code=503, content={"error": "the sandbox is not available"})
+
+    try:
+        scope = _kali_scope(body.project_id)
+    except Exception as exc:  # noqa: BLE001
+        # FAIL CLOSED. Without a scope there is nothing to check the command
+        # against, and "could not load the scope" must never become "no scope".
+        logger.error("kali_exec could not resolve scope for %s: %s", body.project_id, exc)
+        return JSONResponse(
+            status_code=503,
+            content={"error": "this project's scope could not be read, so no command can be checked"},
+        )
+
+    try:
+        argv = admit(body.command, scope)
+    except CommandRefused as refusal:
+        return JSONResponse(status_code=400, content={"error": str(refusal), "code": "refused"})
+
+    safe_command = to_shell_command(argv)
+
+    async def runner(name, args, append_log):
+        result = await orchestrator.tool_executor.execute(
+            name, dict(args, output_mode="inline"), "informational", skip_phase_check=True
+        )
+        output = result.get("output")
+        if output:
+            await append_log(str(output))
+        # The executor reports success for ANY MCP call that came back with a
+        # string, so a tool that exited non-zero - or timed out - arrived here as
+        # success and was published with exitCode 0. kali_shell encodes that in
+        # its output instead (`_format_subprocess_result`), so it is read back
+        # out: a caller told "exit 0" for a failed scan has a false negative.
+        text = str(output or "")
+        failed = text.startswith("[ERROR]")
+        # Output already tee'd: returning it again would have the registry
+        # append a second copy under its own "--- final ---" header.
+        return {
+            "success": bool(result.get("success")) and not failed,
+            "output": None,
+            "error": result.get("error") or (text[:300] if failed else None),
+        }
+
+    reg = job_runner.get_registry()
+    spawned = await reg.spawn(
+        body.project_id, "kali_shell", {"command": safe_command}, runner, label=argv[0]
+    )
+    if isinstance(spawned, dict) and spawned.get("error"):
+        return JSONResponse(status_code=429, content={"error": spawned["error"]})
+
+    job_id = spawned["job_id"]
+    wait = max(0.0, min(float(body.wait_seconds or 0), KALI_EXEC_MAX_WAIT))
+    state = await reg.wait(body.project_id, job_id, timeout_sec=wait)
+
+    view = _kali_job_view(state, 0, body.project_id, job_id)
+    # Echoed back because admission re-quotes every argument: the caller should
+    # see exactly what ran, not what it typed.
+    view["command"] = safe_command
+    return JSONResponse(content=view)
+
+
+@app.get("/kali/exec/{job_id}", tags=["Kali"], dependencies=[Depends(require_master_internal_auth)])
+async def kali_exec_status(
+    job_id: str,
+    project_id: str = Query(...),
+    cursor: int = Query(0, ge=0),
+):
+    """Poll a running command and read its output forward from `cursor`."""
+    if not _KALI_JOB_ID_RE.match(job_id or ""):
+        return JSONResponse(status_code=404, content={"error": "no such command"})
+    reg = job_runner.get_registry()
+    # status() keys on (project_id, job_id) and reads a per-project directory,
+    # so another project's job id resolves to nothing rather than to its output.
+    state = reg.status(project_id, job_id)
+    if state.get("error"):
+        return JSONResponse(status_code=404, content={"error": "no such command"})
+    return JSONResponse(content=_kali_job_view(state, cursor, project_id, job_id))
+
+
+@app.post("/kali/exec/{job_id}/cancel", tags=["Kali"], dependencies=[Depends(require_master_internal_auth)])
+async def kali_exec_cancel(job_id: str, project_id: str = Query(...)):
+    """Stop a running command. An agent that can start one must be able to."""
+    if not _KALI_JOB_ID_RE.match(job_id or ""):
+        return JSONResponse(status_code=404, content={"error": "no such command"})
+    reg = job_runner.get_registry()
+    state = reg.status(project_id, job_id)
+    if state.get("error"):
+        return JSONResponse(status_code=404, content={"error": "no such command"})
+    result = await reg.cancel(project_id, job_id)
+    if isinstance(result, dict) and result.get("error"):
+        return JSONResponse(status_code=409, content={"error": str(result["error"])})
+    return JSONResponse(content=_kali_job_view(reg.status(project_id, job_id), 0, project_id, job_id))
 
 
 # =============================================================================

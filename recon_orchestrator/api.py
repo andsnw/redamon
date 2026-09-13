@@ -185,6 +185,106 @@ def _trusted_webapp_base() -> str:
     return os.environ.get("WEBAPP_API_URL", "http://webapp:3000").rstrip("/")
 
 
+def _fetch_project_for_preflight(project_id: str) -> dict:
+    """Fetch the project settings the guardrail / RoE pre-flight needs.
+
+    Fails CLOSED. Any fetch failure or non-200 raises 503 naming the
+    unreachable dependency, rather than logging "proceeding" and running the
+    scan with neither the hard guardrail nor the RoE window applied. Scan
+    starts became unattended and remote with the MCP surface, so "could not
+    verify scope, started anyway" is no longer an acceptable degradation
+    (mcp_plan.md P0-1). The guardrail is still applied at project creation and
+    RoE excluded hosts inside the recon container, so this remains defence in
+    depth rather than the only gate.
+    """
+    import urllib.request
+    import json as json_mod
+
+    url = f"{_trusted_webapp_base()}/api/projects/{project_id}"
+    req = urllib.request.Request(url)
+    req.add_header("X-Internal-Key", os.environ.get("INTERNAL_API_KEY", ""))
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status != 200:
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        f"Cannot verify scan scope: the webapp project fetch "
+                        f"returned HTTP {resp.status}. Refusing to start."
+                    ),
+                )
+            return json_mod.loads(resp.read().decode())
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Cannot verify scan scope: the webapp is unreachable "
+                f"({type(e).__name__}). Refusing to start."
+            ),
+        )
+
+
+def _check_roe_time_window(project: dict) -> None:
+    """Enforce the RoE time-window. Raises 403 outside the window.
+
+    A malformed timezone is a bad *setting*, not an unknown scope, so it raises
+    400 naming the offending setting instead of silently passing (mcp_plan.md
+    P0-1). Only that narrow carve-out is tolerated; every other failure
+    propagates.
+    """
+    if not (project.get('roeEnabled') and project.get('roeTimeWindowEnabled')):
+        return
+
+    from datetime import datetime
+    try:
+        import zoneinfo
+    except ImportError:
+        from backports import zoneinfo
+
+    tz_name = project.get('roeTimeWindowTimezone', 'UTC')
+    try:
+        tz = zoneinfo.ZoneInfo(tz_name)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"RoE time window: invalid timezone '{tz_name}'. "
+                f"Fix the project's RoE time-window timezone setting."
+            ),
+        )
+
+    now_local = datetime.now(tz)
+    day_name = now_local.strftime('%A').lower()
+    allowed_days = project.get('roeTimeWindowDays', [])
+    start_time = project.get('roeTimeWindowStartTime', '09:00')
+    end_time = project.get('roeTimeWindowEndTime', '18:00')
+    current_time = now_local.strftime('%H:%M')
+
+    if day_name not in allowed_days:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"RoE time window: testing not allowed on {day_name.capitalize()}. "
+                f"Allowed days: {', '.join(d.capitalize() for d in allowed_days)}"
+            ),
+        )
+    # Handle overnight windows (e.g. 22:00 - 06:00)
+    if start_time <= end_time:
+        outside = current_time < start_time or current_time > end_time
+    else:
+        outside = current_time < start_time and current_time > end_time
+    if outside:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"RoE time window: current time {current_time} {tz_name} is "
+                f"outside allowed window ({start_time}-{end_time})"
+            ),
+        )
+
+
 def _recon_output_files(output_dir, project_id: str) -> list:
     """Every recon JSON this project owns: the canonical file plus each
     Domain-batch group file (`recon_<id>__<domain>.json`).
@@ -253,6 +353,12 @@ AI_ATTACK_REAP_INTERVAL_S = int(os.environ.get("AI_ATTACK_REAP_INTERVAL", "30"))
 TRAFFIC_MAINTENANCE_INTERVAL_S = int(os.environ.get("TRAFFIC_MAINTENANCE_INTERVAL", "3600"))
 _last_traffic_maintenance = 0.0
 
+# The webapp has no scheduler of its own (no instrumentation.ts, no setInterval),
+# so its periodic jobs are driven from this loop. Daily is ample for pruning
+# tokens that have been dead for 90 days.
+MCP_TOKEN_PRUNE_INTERVAL_S = int(os.environ.get("MCP_TOKEN_PRUNE_INTERVAL", "86400"))
+_last_mcp_token_prune = 0.0
+
 
 async def _post_job_queue_reconcile(cm) -> None:
     """Post the set of projects with a live scan so the webapp can close finished
@@ -285,6 +391,23 @@ async def _maybe_run_traffic_maintenance() -> None:
     await asyncio.to_thread(
         _webapp_request, f"{_webapp_base()}/api/traffic/maintenance", key,
         "POST", {}, 30.0, "trafficMaintenance",
+    )
+
+
+async def _maybe_prune_mcp_tokens() -> None:
+    """POST /api/internal/mcp-tokens/prune at most once per TTL. Best-effort."""
+    global _last_mcp_token_prune
+    import time
+    now = time.monotonic()
+    if now - _last_mcp_token_prune < MCP_TOKEN_PRUNE_INTERVAL_S:
+        return
+    _last_mcp_token_prune = now
+    key = _webapp_internal_key()
+    if not key:
+        return
+    await asyncio.to_thread(
+        _webapp_request, f"{_webapp_base()}/api/internal/mcp-tokens/prune", key,
+        "POST", {}, 30.0, "mcpTokenPrune",
     )
 
 
@@ -327,6 +450,10 @@ async def _ai_attack_reaper():
                     await _maybe_run_traffic_maintenance()
                 except Exception as e:
                     logger.warning(f"traffic maintenance failed: {e}")
+                try:
+                    await _maybe_prune_mcp_tokens()
+                except Exception as e:
+                    logger.warning(f"mcp token prune failed: {e}")
     except asyncio.CancelledError:
         pass
 
@@ -892,86 +1019,41 @@ async def start_recon(project_id: str, request: ReconStartRequest):
     if not container_manager:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
-    # RoE time window check: fetch project settings and verify
+    # Guardrail / RoE pre-flight: fetch project settings and verify. Fails
+    # CLOSED — a fetch failure refuses the start (503) rather than proceeding
+    # unverified (mcp_plan.md P0-1).
     if request.webapp_api_url:
-        try:
-            import urllib.request
-            import json as json_mod
-            from datetime import datetime
-            try:
-                import zoneinfo
-            except ImportError:
-                from backports import zoneinfo
+        project = _fetch_project_for_preflight(project_id)
 
-            url = f"{_trusted_webapp_base()}/api/projects/{project_id}"
-            req = urllib.request.Request(url)
-            req.add_header("X-Internal-Key", os.environ.get("INTERNAL_API_KEY", ""))
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                if resp.status == 200:
-                    project = json_mod.loads(resp.read().decode())
+        # Hard guardrail: deterministic, non-disableable — always blocks
+        # government/public domains.
+        if not project.get('ipMode', False):
+            from hard_guardrail import is_hard_blocked
+            from batch_scope import guardrail_targets
+            # Domain batch has NO targetDomain: its targets are the derived
+            # group roots. Checking targetDomain alone would hand every batch
+            # a free pass through the one control that cannot be switched off,
+            # so check whatever this project actually scans.
+            targets = guardrail_targets(project)
+            if project.get('domainBatchMode', False) and not targets:
+                # Fail CLOSED: batch mode with nothing to check means the
+                # groups are missing or malformed, not that there is
+                # nothing to guard.
+                raise HTTPException(
+                    status_code=400,
+                    detail="Domain batch project has no valid domain groups. "
+                           "Re-save the project's hostname list before scanning.",
+                )
 
-                    # Hard guardrail: deterministic, non-disableable — always blocks government/public domains
-                    if not project.get('ipMode', False):
-                        from hard_guardrail import is_hard_blocked
-                        from batch_scope import guardrail_targets
-                        # Domain batch has NO targetDomain: its targets are the derived
-                        # group roots. Checking targetDomain alone would hand every batch
-                        # a free pass through the one control that cannot be switched off,
-                        # so check whatever this project actually scans.
-                        targets = guardrail_targets(project)
-                        if project.get('domainBatchMode', False) and not targets:
-                            # Fail CLOSED: batch mode with nothing to check means the
-                            # groups are missing or malformed, not that there is
-                            # nothing to guard.
-                            raise HTTPException(
-                                status_code=400,
-                                detail="Domain batch project has no valid domain groups. "
-                                       "Re-save the project's hostname list before scanning.",
-                            )
+            for target in targets:
+                blocked, reason = is_hard_blocked(target)
+                if blocked:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Hard guardrail: {reason}"
+                    )
 
-                        for target in targets:
-                            blocked, reason = is_hard_blocked(target)
-                            if blocked:
-                                raise HTTPException(
-                                    status_code=403,
-                                    detail=f"Hard guardrail: {reason}"
-                                )
-
-                    if project.get('roeEnabled') and project.get('roeTimeWindowEnabled'):
-                        tz_name = project.get('roeTimeWindowTimezone', 'UTC')
-                        try:
-                            tz = zoneinfo.ZoneInfo(tz_name)
-                            now_local = datetime.now(tz)
-                            day_name = now_local.strftime('%A').lower()
-                            allowed_days = project.get('roeTimeWindowDays', [])
-                            start_time = project.get('roeTimeWindowStartTime', '09:00')
-                            end_time = project.get('roeTimeWindowEndTime', '18:00')
-                            current_time = now_local.strftime('%H:%M')
-
-                            if day_name not in allowed_days:
-                                raise HTTPException(
-                                    status_code=403,
-                                    detail=f"RoE time window: testing not allowed on {day_name.capitalize()}. Allowed days: {', '.join(d.capitalize() for d in allowed_days)}"
-                                )
-                            # Handle overnight windows (e.g. 22:00 - 06:00)
-                            if start_time <= end_time:
-                                outside = current_time < start_time or current_time > end_time
-                            else:
-                                # Overnight: allowed if AFTER start OR BEFORE end
-                                outside = current_time < start_time and current_time > end_time
-                            if outside:
-                                raise HTTPException(
-                                    status_code=403,
-                                    detail=f"RoE time window: current time {current_time} {tz_name} is outside allowed window ({start_time}-{end_time})"
-                                )
-                        except HTTPException:
-                            raise
-                        except Exception as e:
-                            logger.warning(f"RoE time window check failed (proceeding): {e}")
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.warning(f"Could not check RoE time window (proceeding): {e}")
+        _check_roe_time_window(project)
 
     try:
         state = await container_manager.start_recon(
@@ -1109,66 +1191,18 @@ async def start_partial_recon(project_id: str, request: PartialReconStartRequest
     if not container_manager:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
-    # RoE time window + hard guardrail checks (same as full recon)
+    # RoE time window + hard guardrail checks (same as full recon), fail-closed.
     if request.webapp_api_url:
-        try:
-            import urllib.request
-            import json as json_mod
-            from datetime import datetime
-            try:
-                import zoneinfo
-            except ImportError:
-                from backports import zoneinfo
+        project = _fetch_project_for_preflight(project_id)
 
-            url = f"{_trusted_webapp_base()}/api/projects/{project_id}"
-            req = urllib.request.Request(url)
-            req.add_header("X-Internal-Key", os.environ.get("INTERNAL_API_KEY", ""))
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                if resp.status == 200:
-                    project = json_mod.loads(resp.read().decode())
+        domain = request.graph_inputs.get("domain", "")
+        if domain:
+            from hard_guardrail import is_hard_blocked
+            blocked, reason = is_hard_blocked(domain)
+            if blocked:
+                raise HTTPException(status_code=403, detail=f"Hard guardrail: {reason}")
 
-                    # Hard guardrail check
-                    domain = request.graph_inputs.get("domain", "")
-                    if domain:
-                        from hard_guardrail import is_hard_blocked
-                        blocked, reason = is_hard_blocked(domain)
-                        if blocked:
-                            raise HTTPException(status_code=403, detail=f"Hard guardrail: {reason}")
-
-                    # RoE time window check
-                    if project.get('roeEnabled') and project.get('roeTimeWindowEnabled'):
-                        tz_name = project.get('roeTimeWindowTimezone', 'UTC')
-                        try:
-                            tz = zoneinfo.ZoneInfo(tz_name)
-                            now_local = datetime.now(tz)
-                            day_name = now_local.strftime('%A').lower()
-                            allowed_days = project.get('roeTimeWindowDays', [])
-                            start_time = project.get('roeTimeWindowStartTime', '09:00')
-                            end_time = project.get('roeTimeWindowEndTime', '18:00')
-                            current_time = now_local.strftime('%H:%M')
-
-                            if day_name not in allowed_days:
-                                raise HTTPException(
-                                    status_code=403,
-                                    detail=f"RoE time window: testing not allowed on {day_name.capitalize()}"
-                                )
-                            if start_time <= end_time:
-                                outside = current_time < start_time or current_time > end_time
-                            else:
-                                outside = current_time < start_time and current_time > end_time
-                            if outside:
-                                raise HTTPException(
-                                    status_code=403,
-                                    detail=f"RoE time window: current time {current_time} {tz_name} outside allowed ({start_time}-{end_time})"
-                                )
-                        except HTTPException:
-                            raise
-                        except Exception as e:
-                            logger.warning(f"RoE check failed (proceeding): {e}")
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.warning(f"Could not check RoE (proceeding): {e}")
+        _check_roe_time_window(project)
 
     # Note: settings are fetched by the recon container itself via get_settings()
     # (uses PROJECT_ID + WEBAPP_API_URL env vars, same as main.py)

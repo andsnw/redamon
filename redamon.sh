@@ -1942,6 +1942,39 @@ ensure_auth_secrets() {
         echo "TRAFFIC_INGEST_DATABASE_URL=postgresql://traffic_ingest:$(openssl rand -hex 32)@postgres:5432/${_ti_db}" >> "$env_file"
         info "Generated TRAFFIC_INGEST_DATABASE_URL (capture ingest role)"
     fi
+    # Inbound MCP server. Written EXPLICITLY as false rather than left unset, so
+    # the operator can see the switch exists and where to flip it. The webapp has
+    # NO env_file, so this is also listed in its compose `environment` block - a
+    # value set only here would otherwise be silently inert.
+    if ! grep -q '^MCP_SERVER_ENABLED=' "$env_file" 2>/dev/null; then
+        echo "MCP_SERVER_ENABLED=false" >> "$env_file"
+        info "Initialized MCP_SERVER_ENABLED=false (inbound MCP server off by default)"
+    fi
+}
+
+# Refuse to run the inbound MCP server while the agent's auth is fail-open.
+#
+# `_key_ok` in agentic/llm_guard.py accepts ANY key when neither INTERNAL_API_KEY
+# nor SCANNER_API_KEY is set, and the base compose publishes the agent on
+# 0.0.0.0:8090. Enabling an internet-reachable inbound surface on top of that
+# would mean the whole graph-isolation story rests on a check that is not
+# running. Called from install/update/up, after ensure_auth_secrets.
+mcp_server_preflight() {
+    local env_file="$SCRIPT_DIR/.env"
+    local enabled internal
+    enabled="$(_env_get MCP_SERVER_ENABLED "$env_file")"
+    [[ "$enabled" == "true" || "$enabled" == "1" ]] || return 0
+
+    internal="$(_env_get INTERNAL_API_KEY "$env_file")"
+    if [[ -z "$internal" || "$internal" == "changeme" ]]; then
+        error "MCP_SERVER_ENABLED=true but INTERNAL_API_KEY is unset or 'changeme'."
+        error "The agent's auth fails OPEN in that state, and its port is published"
+        error "on 0.0.0.0 in docker-compose.yml. Refusing to enable the inbound MCP"
+        error "server. Run './redamon.sh install' to generate the secrets, or set"
+        error "MCP_SERVER_ENABLED=false in .env."
+        return 1
+    fi
+    return 0
 }
 
 # Compose project name (used to resolve the data-volume names). Must match
@@ -3025,6 +3058,7 @@ cmd_install() {
 
     # Generate auth secrets if not present
     ensure_auth_secrets
+    mcp_server_preflight || exit 1
     ensure_volume_ownership
     ensure_db_secrets
     # Pin a strong GVM admin password BEFORE `up`, so the orchestrator starts with
@@ -3393,6 +3427,7 @@ cmd_update() {
     # next recreate. Generating first guarantees a single `update` fully enforces.
     # Both are idempotent (append-if-absent), so this is a no-op once present.
     ensure_auth_secrets
+    mcp_server_preflight || exit 1
     ensure_volume_ownership
     ensure_db_secrets
     # Same generate-before-recreate ordering as the DB/auth secrets: pin
@@ -3779,6 +3814,7 @@ cmd_up_dev() {
 
     ensure_tool_images
     ensure_auth_secrets
+    mcp_server_preflight || exit 1
     ensure_volume_ownership
     ensure_osv_db
     ensure_sca_intel
@@ -3880,6 +3916,7 @@ cmd_up() {
 
     ensure_tool_images
     ensure_auth_secrets
+    mcp_server_preflight || exit 1
     ensure_volume_ownership
     ensure_osv_db
     ensure_sca_intel

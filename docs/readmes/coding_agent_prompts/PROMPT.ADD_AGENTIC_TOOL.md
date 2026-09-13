@@ -290,6 +290,8 @@ The exact set of files depends on the integration type chosen in Phase 1.
 
 - [ ] **`agentic/prompts/tool_registry.py`** — Add entry to `TOOL_REGISTRY` dict with `purpose`, `when_to_use`, `args_format`, and `description`. Position matters: dict insertion order = tool priority. Read existing entries as reference.
 
+- [ ] **`webapp/src/lib/mcp/schema.ts`** — Add the tool name to `BUILTIN_RESERVED_TOOL_NAMES`. That set stops a user's **outbound MCP Tool Plugin** registering a tool with the same name and shadowing yours at dispatch. **Nothing catches this for you**: the set lives in TypeScript, `TOOL_REGISTRY` lives in Python, and no test compares them across the two languages — the existing test only spot-checks three names. A missed entry is silent until a user's plugin collides.
+
 - [ ] **`agentic/project_settings.py`** — Up to 3 changes:
   1. Add tool to `TOOL_PHASE_MAP` in `DEFAULT_AGENT_SETTINGS` (~line 81-95)
   2. If dangerous: add to `DANGEROUS_TOOLS` frozenset (~line 19-23)
@@ -402,6 +404,8 @@ If the tool has configurable parameters (like Hydra's threads, SQLMap's level/ri
 - [ ] **Frontend section component** — Create `[Tool]Section.tsx` in `webapp/src/components/projects/ProjectForm/sections/` (read `BruteForceSection.tsx` or `SqliSection.tsx` as reference). Export from `sections/index.ts`.
 - [ ] **`webapp/src/components/projects/ProjectForm/ProjectForm.tsx`** — Import and render section in appropriate tab
 - [ ] Run `docker compose exec webapp npx prisma db push`
+- [ ] **`webapp/src/lib/reconSettingsAllowlist.generated.ts`** — Classify every new `Project` column in the ALLOW or DENY table. The inbound MCP server writes settings through a positive allowlist and a coverage test fails until each column is classified. An **agent** setting is almost always `DENY` with reason `agent` (agent/fireteam behaviour is out of scope for a recon credential); `llm` for a model or prompt field, `intrusive` for anything that raises aggression at a live target.
+  - The test reads `Prisma.ProjectScalarFieldEnum` from the **generated client**, not `schema.prisma`, so it stays green until the client is regenerated (`docker compose build webapp`, or `prisma generate`). A green local run right after editing the schema does **not** mean you are done.
 
 #### Optional: Attack Skill Integration
 

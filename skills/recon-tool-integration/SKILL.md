@@ -56,6 +56,15 @@ For the graph write, use `graph-db-writes`. For the settings, use
   the correct execution group in [recon/main.py](../../recon/main.py); never
   parallelize across a dependency boundary (a tool needing live URLs cannot run
   before GROUP 4).
+- **A new tool setting is NOT reachable over MCP until it is classified.** The
+  inbound MCP server writes settings through a positive, frozen allowlist
+  ([webapp/src/lib/reconSettingsAllowlist.generated.ts](../../webapp/src/lib/reconSettingsAllowlist.generated.ts)),
+  and a coverage test fails until every `Project` column appears in its ALLOW or
+  DENY table. Denying is the safe default; allowlist a field only if it is
+  genuine recon *tuning* AND has a ProjectForm min/max to mirror. Anything that
+  steers WHERE or HOW HARD a scan hits (targets, wordlists, headers, egress,
+  intrusiveness, docker images) stays denied - see
+  [README.MCP.SERVER.md](../../docs/readmes/README.MCP.SERVER.md).
 
 ---
 

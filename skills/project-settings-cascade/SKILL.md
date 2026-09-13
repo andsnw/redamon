@@ -53,6 +53,14 @@ here rather than restating it. For the surrounding tool wiring, see
   A mismatch means `fetch_*_settings` reads `None` and silently falls back to the default.
 - **ALWAYS give the frontend `onChange` a fallback** equal to the Python/Prisma
   default, so a project saved before the field existed does not write `undefined`.
+- **A new recon field is NOT reachable over MCP until it is classified.** The
+  inbound MCP server writes settings through a positive, frozen allowlist
+  ([webapp/src/lib/reconSettingsAllowlist.generated.ts](../../webapp/src/lib/reconSettingsAllowlist.generated.ts)),
+  and a coverage test fails until every `Project` column appears in its ALLOW or
+  DENY table. Denying is the safe default; allowlist a field only if it is
+  genuine recon *tuning* AND has a ProjectForm min/max to mirror. That staleness
+  is the correct fail-closed cost, not a bug - see
+  [README.MCP.SERVER.md](../../docs/readmes/README.MCP.SERVER.md).
 
 ---
 
