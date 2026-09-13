@@ -45,6 +45,7 @@ class _RecordingSemaphore:
 class _FakeTriageClient:
     def __init__(self):
         self.calls = []
+        self.verdict_updates = True
 
     def list_triage_findings(self, user_id, project_id, **kwargs):
         self.calls.append(("list_triage_findings", user_id, project_id, kwargs))
@@ -58,9 +59,11 @@ class _FakeTriageClient:
         self.calls.append(("list_muted", user_id, project_id))
         return [{"id": "m1"}]
 
-    def set_human_verdict(self, user_id, project_id, node_id, status, reason):
-        self.calls.append(("set_human_verdict", node_id, status, reason))
-        return {"updated": True, "label": "Vulnerability"}
+    def set_human_verdict(self, user_id, project_id, node_id, status, reason,
+                          channel="", verdict_by=""):
+        self.calls.append(
+            ("set_human_verdict", node_id, status, reason, channel, verdict_by))
+        return {"updated": self.verdict_updates, "label": "Vulnerability"}
 
 
 class TriageGateTests(unittest.IsolatedAsyncioTestCase):
@@ -194,3 +197,75 @@ class TriageOpValidationTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VerdictProvenanceTests(unittest.IsolatedAsyncioTestCase):
+    """A verdict records HOW it arrived and WHO it is by, and is audited.
+
+    Before this, a verdict was audited nowhere: the webapp route wrote no audit
+    row and this endpoint logged `log_event` only for mute and unmute. A
+    decision that is durable and suppresses future AI review of that finding was
+    invisible to any later reconstruction.
+    """
+
+    def setUp(self):
+        self.client = _FakeTriageClient()
+        self.events = []
+        self._patches = [
+            mock.patch.object(api, "_triage_graph_client", lambda: self.client),
+            mock.patch.object(api, "master_key_is_weak", lambda: False),
+        ]
+        for p in self._patches:
+            p.start()
+        self.addCleanup(lambda: [p.stop() for p in self._patches])
+
+        import session_log
+        self._log = mock.patch.object(
+            session_log, "log_event",
+            lambda name, **kw: self.events.append((name, kw)))
+        self._log.start()
+        self.addCleanup(self._log.stop)
+
+    def _req(self, **kw):
+        base = dict(op="human_verdict", user_id="u1", project_id="p1",
+                    node_id="v1", status="confirmed")
+        base.update(kw)
+        return api.GraphTriageRequest(**base)
+
+    def _verdict_call(self):
+        for c in self.client.calls:
+            if c[0] == "set_human_verdict":
+                return c
+        self.fail("set_human_verdict was never called")
+
+    async def test_the_source_becomes_the_recorded_channel(self):
+        await api.graph_triage(self._req(source="mcp"))
+        self.assertEqual(self._verdict_call()[4], "mcp")
+
+    async def test_a_browser_verdict_records_the_app_channel(self):
+        await api.graph_triage(self._req())
+        self.assertEqual(self._verdict_call()[4], "app")
+
+    async def test_the_actor_defaults_to_the_tenant(self):
+        await api.graph_triage(self._req())
+        self.assertEqual(self._verdict_call()[5], "u1")
+
+    async def test_an_explicit_actor_is_carried(self):
+        await api.graph_triage(self._req(verdict_by="alice"))
+        self.assertEqual(self._verdict_call()[5], "alice")
+
+    async def test_a_verdict_is_logged(self):
+        await api.graph_triage(self._req(source="mcp", reason="dup"))
+        names = [n for n, _ in self.events]
+        self.assertIn("finding_verdict_set", names)
+        kw = dict(self.events[0][1])
+        self.assertEqual(kw["node_id"], "v1")
+        self.assertEqual(kw["status"], "confirmed")
+        self.assertEqual(kw["channel"], "mcp")
+
+    async def test_a_verdict_that_matched_NOTHING_is_not_logged_as_one(self):
+        # `updated: false` means no node was touched. Logging it would record a
+        # decision that was never made.
+        self.client.verdict_updates = False
+        await api.graph_triage(self._req())
+        self.assertEqual(self.events, [])

@@ -17,7 +17,7 @@ set of recon tuning settings, and query the attack-surface graph.
 
 ## 1. What is and is not exposed
 
-**Exposed (twenty-eight tools).**
+**Exposed (thirty tools).**
 
 | Tool | What it does | Permission |
 | --- | --- | --- |
@@ -49,6 +49,8 @@ set of recon tuning settings, and query the attack-surface graph.
 | `run_graph_view` | Run a saved view through the same guards as raw Cypher. | `recon:read` + `graph:cypher` |
 | `queue_recon` | Queue a full recon for when the host has room. | `recon:queue` |
 | `cancel_queued_scan` | Cancel a queued job, reading the update count so a lost race is not reported as success. | `recon:queue` |
+| `get_scan_status` | The other six scanners' state, masked exactly as `get_recon_status` is. | `recon:read` |
+| `set_finding_verdict` | Record a durable triage verdict. Refused while a triage run could re-file it. | `triage:write` |
 
 **Deliberately not exposed:** the agent chat, a shell, partial recon, project
 create/delete/import, secrets and LLM keys, target and scope fields, Rules of
@@ -228,6 +230,13 @@ Agent-side bounds (the agent **does** have an `env_file`, so `.env` reaches it):
 - **Permissions default to read-only.** Every write permission is opt-in, and
   each says what it allows. `recon:overwrite` says plainly that it permits
   discarding the current graph.
+- **`triage:write` is the only write to a finding**, and the only one that
+  cannot be undone from this surface except by another verdict. It writes
+  `triage_source = 'human'` deliberately: a third provenance value would make
+  the finding prune-eligible on the next scan, let a later AI run overwrite the
+  verdict, stop `likely_noise` producing a false-positive state, and render as
+  "Not reviewed". The channel is recorded on `triage_verdict_channel` instead,
+  and the actor on `triage_verdict_by`. It can never mute or unmute.
 - **`recon:queue` is separate from `recon:scan`**, because a queued job
   dispatches LATER. `JobQueue` carries no token id and revoking a token writes
   only `revokedAt`, so work queued by a credential OUTLIVES that credential;

@@ -69,7 +69,7 @@ describe('tools/list satisfies the MCP contract', () => {
     }
   })
 
-  test('all twenty-eight tools are advertised', () => {
+  test('all thirty tools are advertised', () => {
     expect(tools.map(t => t.name).sort()).toEqual([
       'cancel_queued_scan',
       'compare_scan_versions',
@@ -79,6 +79,7 @@ describe('tools/list satisfies the MCP contract', () => {
       'get_project_activity',
       'get_recon_settings',
       'get_recon_status',
+      'get_scan_status',
       'graph_schema',
       'graph_summary',
       'kali_cancel',
@@ -96,6 +97,7 @@ describe('tools/list satisfies the MCP contract', () => {
       'query_graph',
       'queue_recon',
       'run_graph_view',
+      'set_finding_verdict',
       'start_recon',
       'stop_recon',
       'update_recon_settings',
@@ -123,6 +125,7 @@ describe('the advertised input schemas are usable', () => {
       'get_project_activity', 'list_scan_versions', 'compare_scan_versions',
       'get_attack_surface_overview', 'list_exploit_paths', 'get_blast_radius',
       'list_graph_views', 'run_graph_view', 'queue_recon', 'cancel_queued_scan',
+      'get_scan_status', 'set_finding_verdict',
     ]) {
       const schema = byName(name).inputSchema as { required?: string[] }
       expect(schema.required ?? [], `${name}`).toContain('projectId')

@@ -1527,7 +1527,9 @@ not so you can query for one.
 - triage_status (string): `confirmed` | `likely_noise` | `unreviewed` (absent = unreviewed)
 - triage_confidence (float): 0.0 - 1.0
 - triage_reason (string): One line, why
-- triage_source (string): `ai` | `human`. A human verdict is never overwritten
+- triage_source (string): `ai` | `human`. A human verdict is never overwritten. Deliberately only two values: a third would make the finding prune-eligible, let a later AI run overwrite the verdict, and stop `likely_noise` meaning false-positive. A verdict delegated through a token is still `human` - see `triage_verdict_channel` for how it arrived
+- triage_verdict_channel (string): How a `human` verdict arrived: absent (or `app`) = a person in the UI, `mcp` = an external agent holding that person's access token. Never changes what the verdict MEANS, only who typed it. Absent on findings judged before this existed
+- triage_verdict_by (string): `user_id` of whoever the verdict is attributed to, mirroring `muted_by`. Without it a verdict recorded only who it was NOT (the AI), never who it was
 
 """,
     },

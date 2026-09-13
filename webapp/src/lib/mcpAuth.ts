@@ -45,6 +45,9 @@ export const MCP_SCOPES = [
   // JobQueue carries no token id, and revoking a token writes only revokedAt.
   // That is a materially different grant from starting a scan now.
   'recon:queue',
+  // The only WRITE to a finding on this surface. It is durable, it suppresses
+  // future AI review of that finding, and it is not reversible from here.
+  'triage:write',
   'graph:cypher',
   'kali:exec',
 ] as const

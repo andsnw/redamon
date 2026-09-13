@@ -361,6 +361,51 @@ class TestAHumanVerdictIsNeverOverwritten(unittest.TestCase):
         self.assertFalse(result["updated"])
         self.assertEqual(client.queries, [])
 
+    def test_a_delegated_verdict_is_STILL_human(self):
+        # The tempting design - a third triage_source value so an agent's
+        # verdict is not laundered as a human's - breaks four behaviours that
+        # branch on this being a closed two-value set. Worst: the
+        # ingest-then-prune keep predicate is
+        # `(n:Muted OR coalesce(n.triage_source,'') = 'human')`, so a third
+        # value falls on the DELETE side and the next scan removes the finding
+        # instead of stamping stale_since.
+        client = FakeClient(records=[{"label": "Vulnerability"}])
+        client.set_human_verdict(UID, PID, "v1", "confirmed", channel="mcp")
+        self.assertIn("n.triage_source = 'human'", client.last)
+        self.assertNotIn("'mcp'", client.last)
+
+    def test_the_channel_is_recorded_on_its_own_property(self):
+        client = FakeClient(records=[{"label": "Vulnerability"}])
+        client.set_human_verdict(UID, PID, "v1", "confirmed", channel="mcp")
+        self.assertIn("n.triage_verdict_channel = $channel", client.last)
+        self.assertEqual(client.params[-1]["channel"], "mcp")
+
+    def test_a_verdict_with_no_channel_reads_as_the_app(self):
+        client = FakeClient(records=[{"label": "Vulnerability"}])
+        client.set_human_verdict(UID, PID, "v1", "confirmed")
+        self.assertEqual(client.params[-1]["channel"], "app")
+
+    def test_a_verdict_records_who_it_was_by(self):
+        # Mirrors muted_by. Without it the node recorded only who the verdict
+        # was NOT (the AI), never who it was.
+        client = FakeClient(records=[{"label": "Vulnerability"}])
+        client.set_human_verdict(UID, PID, "v1", "confirmed", verdict_by="alice")
+        self.assertIn("n.triage_verdict_by = $verdict_by", client.last)
+        self.assertEqual(client.params[-1]["verdict_by"], "alice")
+
+    def test_the_actor_defaults_to_the_tenant(self):
+        # A verdict clicked in the UI is by the project owner.
+        client = FakeClient(records=[{"label": "Vulnerability"}])
+        client.set_human_verdict(UID, PID, "v1", "confirmed")
+        self.assertEqual(client.params[-1]["verdict_by"], UID)
+
+    def test_the_channel_and_actor_are_bounded(self):
+        client = FakeClient(records=[{"label": "Vulnerability"}])
+        client.set_human_verdict(UID, PID, "v1", "confirmed",
+                                 channel="x" * 200, verdict_by="y" * 500)
+        self.assertEqual(len(client.params[-1]["channel"]), 32)
+        self.assertEqual(len(client.params[-1]["verdict_by"]), 128)
+
 
 class TestApplyTriageScores(unittest.TestCase):
     """The publish write path.

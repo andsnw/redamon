@@ -35,6 +35,11 @@ export const MCP_SCOPE_COPY: Record<McpScope, { label: string; blurb: string; da
     blurb: 'Queue a full recon to start when the machine has room, instead of being refused while the project is busy, and cancel a job it queued. A queued job DISPATCHES LATER and is not cancelled when you revoke this token - use the Activity view or the agent\'s own cancel to stop it. It also appears in your queue attributed to you, with nothing marking it as an agent\'s.',
     danger: true,
   },
+  'triage:write': {
+    label: 'Record a verdict on a finding',
+    blurb: 'Let an agent mark a finding confirmed, likely noise, or back to unreviewed, as if you had clicked it yourself. The verdict is DURABLE: it survives re-scans and stops later AI triage runs from overruling it, and the node records that it arrived over MCP. It cannot mute or unmute anything, and nothing on this surface can undo a verdict except another verdict.',
+    danger: true,
+  },
   'graph:cypher': {
     label: 'Run raw Cypher',
     blurb: 'Send read-only Cypher directly instead of a natural-language question. Still tenant-scoped and still read-only.',

@@ -3198,6 +3198,12 @@ class GraphTriageRequest(BaseModel):
     #: narrow what that caller gets; the browser paths leave it unset and keep
     #: their current behaviour.
     source: Optional[str] = None
+    #: How a human verdict ARRIVED. Never what it means: the verdict value stays
+    #: `human` whatever the channel, because four other behaviours branch on
+    #: that being a closed two-value set.
+    channel: Optional[str] = None
+    #: Who the verdict is attributed to, mirroring `muted_by`.
+    verdict_by: Optional[str] = None
     #: Cap on rows for `list_findings`. The mixin's own default is 2000 and the
     #: webapp pages far below that, so without this every page transferred the
     #: whole table internally. `total` still comes from the uncapped count, so a
@@ -3271,7 +3277,9 @@ async def graph_triage(body: GraphTriageRequest):
         if body.op == "human_verdict":
             return client.set_human_verdict(
                 body.user_id, body.project_id, body.node_id,
-                body.status or "", body.reason or "")
+                body.status or "", body.reason or "",
+                channel=body.source or "app",
+                verdict_by=body.verdict_by or body.user_id)
         if body.op == "preflight":
             return client.triage_preflight(body.user_id, body.project_id)
         # stop_run. Project delete calls this before deleting (X12). A run that
@@ -3303,16 +3311,22 @@ async def graph_triage(body: GraphTriageRequest):
     # Who suppressed what, and when. The node itself carries muted_by/muted_at;
     # this is the time-ordered half. log_event never raises, so auditability
     # cannot turn a successful mute into a 500.
-    if body.op in ("mute", "unmute"):
+    if body.op in ("mute", "unmute", "human_verdict"):
         from session_log import log_event
-        if result.get(f"{body.op}d"):
+        # The three ops write durable operator decisions. mute/unmute report
+        # `muted`/`unmuted`; a verdict reports `updated`.
+        applied = result.get("updated") if body.op == "human_verdict" \
+            else result.get(f"{body.op}d")
+        if applied:
             log_event(
-                f"finding_{body.op}d",
+                "finding_verdict_set" if body.op == "human_verdict" else f"finding_{body.op}d",
                 user_id=body.user_id,
                 project_id=body.project_id,
                 node_id=body.node_id,
                 label=result.get("label"),
                 reason=body.reason or "",
+                **({"status": body.status or "",
+                    "channel": body.source or "app"} if body.op == "human_verdict" else {}),
             )
         else:
             # Matched nothing: a stale node id (version-activate recreates
