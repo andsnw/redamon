@@ -41,7 +41,11 @@ class _FakeSession:
         return False
 
     def run(self, query, params=None):
-        self.capture["q"] = query
+        # Since P0-4 the reads are wrapped in a neo4j.Query so they carry a
+        # transaction timeout. The assertions below are about the Cypher text,
+        # so unwrap it; `timeout` is asserted in test_graph_exec_bounds.py.
+        self.capture["q"] = getattr(query, "text", query)
+        self.capture["timeout"] = getattr(query, "timeout", None)
         self.capture["p"] = params or {}
         return []  # empty result set
 

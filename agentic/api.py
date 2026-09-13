@@ -2765,13 +2765,19 @@ async def text_to_cypher(body: TextToCypherRequest):
             # Validate by executing (with tenant filter) to catch syntax errors.
             # An unscopable pattern raises TenantScopeError, which the retry loop
             # below feeds back to the model rather than executing unfiltered.
+            #
+            # Bounded (P0-4): the rows are discarded either way, so this asks for
+            # one record under a transaction timeout rather than materialising a
+            # whole result just to learn that the query parses.
             filtered = manager._scope_query(cypher, body.user_id, body.project_id)
-            manager.graph.query(
+            await asyncio.to_thread(
+                _graph_exec_run,
                 filtered,
-                params={
+                {
                     "tenant_user_id": body.user_id,
                     "tenant_project_id": body.project_id,
                 },
+                1,
             )
 
             # Return the raw (un-filtered) Cypher for saving
@@ -2846,6 +2852,125 @@ def _graph_exec_get_driver():
             ),
         )
     return _graph_exec_driver
+
+
+# --- P0-4: bounds on the graph read path -------------------------------------
+#
+# Every guard on /graph/exec was about WHAT may be read (read-only, labelled
+# pattern, tenant scope); none bounded HOW MUCH. One read-only Cartesian product
+# passes all of them and pins Neo4j, which the graph screen, the agent and every
+# running scan share. The webapp's own driver has injected a transaction timeout
+# for exactly this reason since the graph-bounding work; this brings the agent
+# in line and adds the transfer/memory bounds the webapp gets from its LIMIT.
+#
+# The bounds are deliberately NOT implemented by appending `LIMIT` to the
+# caller's Cypher: string-appending a limit breaks UNION, aggregations and
+# subqueries, and would create a second Cypher parser that has to be trusted.
+# The timeout bounds server work; the record cap bounds transfer; the byte cap
+# bounds memory (the webapp runs under mem_limit: 1g).
+
+_GRAPH_EXEC_DEFAULT_MAX_RECORDS = 1000
+_GRAPH_EXEC_DEFAULT_MAX_BYTES = 2 * 1024 * 1024
+_GRAPH_EXEC_DEFAULT_TIMEOUT_MS = 120_000
+_GRAPH_EXEC_DEFAULT_MCP_CONCURRENCY = 2
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    """Unset / garbage / non-positive all fall back to the documented default,
+    never to "no limit"."""
+    try:
+        n = int(os.environ.get(name, ""))
+    except (TypeError, ValueError):
+        return default
+    return n if n > 0 else default
+
+
+def _graph_exec_max_records() -> int:
+    return _env_positive_int("GRAPH_EXEC_MAX_RECORDS", _GRAPH_EXEC_DEFAULT_MAX_RECORDS)
+
+
+def _graph_exec_max_bytes() -> int:
+    return _env_positive_int("GRAPH_EXEC_MAX_BYTES", _GRAPH_EXEC_DEFAULT_MAX_BYTES)
+
+
+def _graph_query_timeout_seconds() -> float:
+    """Same env var and same 120s default as webapp/src/app/api/graph/neo4j.ts,
+    so both readers of this database are bounded the same way."""
+    ms = _env_positive_int("NEO4J_QUERY_TIMEOUT_MS", _GRAPH_EXEC_DEFAULT_TIMEOUT_MS)
+    return ms / 1000.0
+
+
+_graph_exec_mcp_sem = None
+
+
+def _graph_exec_mcp_semaphore():
+    """Concurrency ceiling for MCP-originated reads only.
+
+    The kali sandbox is semi-trusted and loopback-only; an external agent behind
+    a PAT is neither, and a looping one must not monopolise the Neo4j pool that
+    the UI and running scans also draw from.
+    """
+    global _graph_exec_mcp_sem
+    if _graph_exec_mcp_sem is None:
+        _graph_exec_mcp_sem = asyncio.Semaphore(
+            _env_positive_int("GRAPH_EXEC_MCP_CONCURRENCY", _GRAPH_EXEC_DEFAULT_MCP_CONCURRENCY)
+        )
+    return _graph_exec_mcp_sem
+
+
+class GraphResultTooLarge(Exception):
+    """The coerced result exceeded the serialised-byte cap."""
+
+    def __init__(self, size: int, limit: int):
+        super().__init__(f"result too large ({size} bytes > {limit})")
+        self.size = size
+        self.limit = limit
+
+
+def _graph_exec_run(final: str, params: dict, max_records: int | None = None):
+    """Run one bounded read. Returns ``(records, truncated)``.
+
+    Streams the cursor and stops at the cap instead of materialising every
+    record into a list, so a runaway query costs the cap rather than the result.
+    """
+    from neo4j import Query
+
+    cap = _graph_exec_max_records() if max_records is None else max_records
+    driver = _graph_exec_get_driver()
+    query = Query(final, timeout=_graph_query_timeout_seconds())
+
+    records: list = []
+    truncated = False
+    with driver.session() as session:
+        result = session.run(query, params)
+        for rec in result:
+            if len(records) >= cap:
+                # Leaving the loop lets the session close and DISCARD the rest;
+                # consuming it here would make the server produce every
+                # remaining row, which is the cost this cap exists to avoid.
+                truncated = True
+                break
+            records.append({k: _graph_exec_coerce(rec[k]) for k in rec.keys()})
+    return records, truncated
+
+
+def _graph_exec_payload(records: list, truncated: bool) -> dict:
+    """Build the response body, refusing one that is too large to return.
+
+    Fails loudly rather than truncating silently: a caller that received half a
+    result and was not told would report a false negative, which is the failure
+    mode this whole surface is built to avoid.
+    """
+    import json as _json
+
+    payload: dict = {"records": records}
+    if truncated:
+        payload["truncated"] = True
+    size = len(_json.dumps(payload, default=str).encode("utf-8"))
+    limit = _graph_exec_max_bytes()
+    if size > limit:
+        raise GraphResultTooLarge(size, limit)
+    return payload
 
 
 def _graph_exec_coerce(v):
@@ -3011,6 +3136,10 @@ class GraphExecRequest(BaseModel):
     user_id: str
     project_id: str
     cypher: Optional[str] = None  # only for op="cypher"
+    # "mcp" opts the read into the concurrency ceiling (P0-4). It is a throttling
+    # hint only: it grants nothing, so a caller that lies about it can only
+    # throttle itself.
+    source: str = ""
 
 
 @app.post("/graph/exec", tags=["Graph"], dependencies=[Depends(require_internal_auth_only)])
@@ -3068,16 +3197,26 @@ async def graph_exec(body: GraphExecRequest):
     else:
         return JSONResponse(status_code=400, content={"error": f"unknown op {op!r}"})
 
+    # An MCP-originated read is throttled; the kali sandbox's is not (P0-4).
+    if body.source == "mcp":
+        async with _graph_exec_mcp_semaphore():
+            return await asyncio.to_thread(_graph_exec_respond, final, params)
+    return await asyncio.to_thread(_graph_exec_respond, final, params)
+
+
+def _graph_exec_respond(final: str, params: dict) -> JSONResponse:
     try:
-        driver = _graph_exec_get_driver()
-        with driver.session() as session:
-            result = session.run(final, params)
-            records = [{k: _graph_exec_coerce(rec[k]) for k in rec.keys()} for rec in result]
+        records, truncated = _graph_exec_run(final, params)
+        return JSONResponse(content=_graph_exec_payload(records, truncated))
+    except GraphResultTooLarge as e:
+        logger.warning(f"graph/exec refused an oversized result: {e}")
+        return JSONResponse(
+            status_code=413,
+            content={"error": "result too large, narrow your query"},
+        )
     except Exception as e:
         logger.error(f"graph/exec failed: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-    return JSONResponse(content={"records": records})
+        return JSONResponse(status_code=500, content={"error": "graph query failed"})
 
 
 # =============================================================================
