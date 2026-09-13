@@ -41,13 +41,22 @@ export interface McpContext {
   token: ResolvedMcpToken
 }
 
-/** Enforce a bucket, reporting when to retry rather than failing generically. */
+/**
+ * Enforce a bucket, reporting when to retry rather than failing generically.
+ *
+ * `perProject` drops the token from the key. Buckets that exist to protect the
+ * CALLER (read/query/write budgets) are per token; the one that exists to
+ * protect a RESOURCE - the start bucket, which guards the version retention
+ * window - has to be per project, or a user holding N tokens gets N times the
+ * documented rate against the same project.
+ */
 export function enforceRate(
   ctx: McpContext,
   bucket: Parameters<typeof checkRateLimit>[0],
-  scopeKey = ''
+  scopeKey = '',
+  opts: { perProject?: boolean } = {}
 ): void {
-  const d = checkRateLimit(bucket, ctx.token.tokenId, scopeKey)
+  const d = checkRateLimit(bucket, opts.perProject ? '*' : ctx.token.tokenId, scopeKey)
   if (!d.allowed) {
     throw new McpToolError(
       `Rate limit reached for this token. Try again in ${d.retryAfterSeconds}s.`,
@@ -123,7 +132,30 @@ export async function getReconStatus(ctx: McpContext, projectId: string) {
     console.error(`[mcp] orchestrator status returned ${resp.status}`)
     throw new McpToolError('Scan status is unknown.', 'status_unknown')
   }
-  return await resp.json()
+  return projectReconState(await resp.json())
+}
+
+/**
+ * Project the orchestrator's ReconState onto the fields an external caller
+ * needs, dropping the rest.
+ *
+ * The raw state carries `container_id` and an `error` populated with raw
+ * exception text - a Docker SDK failure embeds the deployment's absolute host
+ * paths and image names. Returning it verbatim would hand an untrusted agent
+ * reconnaissance about the host and then place it in a model's context, which
+ * is exactly what errors.ts forbids everywhere else.
+ */
+function projectReconState(raw: unknown): Record<string, unknown> {
+  const s = (raw ?? {}) as Record<string, unknown>
+  return {
+    status: s.status ?? 'unknown',
+    currentPhase: s.current_phase ?? s.currentPhase ?? null,
+    phaseNumber: s.phase_number ?? s.phaseNumber ?? null,
+    startedAt: s.started_at ?? s.startedAt ?? null,
+    completedAt: s.completed_at ?? s.completedAt ?? null,
+    // A boolean, never the text: "it failed" is actionable, the exception is not.
+    failed: s.status === 'error' || Boolean(s.error),
+  }
 }
 
 export async function getReconSettings(ctx: McpContext, projectId: string) {
@@ -135,10 +167,17 @@ export async function getReconSettings(ctx: McpContext, projectId: string) {
   // let alone returned.
   const row = await prisma.project.findUnique({
     where: { id: projectId },
-    select: reconSettingsSelect(),
+    select: { ...reconSettingsSelect(), updatedAt: true },
   })
   if (!row) throw new McpToolError('Project not found', 'not_found')
-  return { projectId, settings: projectReconSettings(row as Record<string, unknown>) }
+  return {
+    projectId,
+    // Returned as METADATA, not as a setting: update_recon_settings tells the
+    // caller to pass it back as `expectedUpdatedAt`, and without it here that
+    // anti-clobber control was unreachable through its own documented flow.
+    updatedAt: (row as { updatedAt?: Date }).updatedAt?.toISOString() ?? null,
+    settings: projectReconSettings(row as Record<string, unknown>),
+  }
 }
 
 /**
@@ -153,15 +192,18 @@ export async function graphSummary(ctx: McpContext, projectId: string) {
   enforceRate(ctx, 'read')
   await assertMcpProjectAccess(ctx.token.userId, projectId)
 
-  const [liveGraphState, version] = await Promise.all([
-    resolveLiveGraphState(projectId),
-    prisma.scanVersion.findFirst({
-      where: { projectId, isCurrent: true },
-      select: { id: true, seq: true, label: true, createdAt: true },
-    }),
-  ])
+  const version = await prisma.scanVersion.findFirst({
+    where: { projectId, isCurrent: true },
+    select: { id: true, seq: true, label: true, createdAt: true },
+  })
 
+  // Counts FIRST, then the state. Sampling the state first meant a scan that
+  // started in between was reported as `stable` alongside mid-wipe near-zero
+  // counts - the exact false negative this field exists to prevent. This way
+  // the same race over-warns instead: the counts predate the wipe and the
+  // state still says the graph is moving.
   const summary = await summaryCounts(ctx, projectId)
+  const liveGraphState = await resolveLiveGraphState(projectId)
 
   return {
     projectId,

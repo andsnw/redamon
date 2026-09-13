@@ -47,12 +47,13 @@ export async function startRecon(
   if (mode === 'overwrite') requireScope(ctx.token, 'recon:overwrite')
 
   await assertMcpProjectAccess(ctx.token.userId, projectId)
-  // Strict, and keyed per project: a 'new' start consumes a retention slot, so
-  // a looping agent must not be able to churn the timeline.
-  enforceRate(ctx, 'start', projectId)
 
   // Stricter than the button (see the file header). describeLiveGraphWriters
   // also covers Conversation.agentRunning and live TriageRuns.
+  //
+  // Checked BEFORE the rate limit: a start refused because the graph is busy
+  // launched nothing and consumed no retention slot, so burning the 5-minute
+  // window on it would punish an agent that did nothing wrong.
   const live = await describeLiveGraphWriters(projectId)
   if (live) {
     throw new McpToolError(
@@ -61,6 +62,12 @@ export async function startRecon(
       'busy'
     )
   }
+
+  // Strict, and keyed on the PROJECT alone (not the token): the limit exists
+  // because a 'new' start consumes a retention slot and permanently deletes the
+  // oldest unpinned version. A user holding N tokens would otherwise churn the
+  // timeline N times faster than the documented one-per-5-minutes.
+  enforceRate(ctx, 'start', projectId, { perProject: true })
 
   const result = await startFullScan({
     projectId,

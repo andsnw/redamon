@@ -54,7 +54,10 @@ class _FakeDriver:
     def __init__(self, capture):
         self.capture = capture
 
-    def session(self):
+    def session(self, **kwargs):
+        # The real driver takes default_access_mode (READ_ACCESS since the
+        # write-bypass fix); record it rather than rejecting it.
+        self.capture["session_kwargs"] = kwargs
         return _FakeSession(self.capture)
 
 

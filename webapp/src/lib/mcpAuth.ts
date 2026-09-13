@@ -405,9 +405,26 @@ export interface BudgetDecision {
   resetsAt: string
 }
 
+const MAX_BUDGET_ENTRIES = 10_000
+
 export function checkLlmBudget(tokenId: string): BudgetDecision {
   const limit = envInt('MCP_LLM_DAILY_BUDGET', 200)
   const now = Date.now()
+
+  // Bounded like `limiter` and `lastUsedAt`. Without this the map grew one
+  // entry per token ever used on the question path and NEVER shrank - not even
+  // for a window that had already rolled over - which is the memory-exhaustion
+  // shape the other two carry explicit comments about avoiding.
+  if (llmBudget.size >= MAX_BUDGET_ENTRIES) {
+    for (const [k, h] of llmBudget) {
+      if (now - h.firstAt >= DAY_MS) llmBudget.delete(k)
+    }
+    if (llmBudget.size >= MAX_BUDGET_ENTRIES) {
+      const oldest = [...llmBudget.entries()].sort((a, b) => a[1].firstAt - b[1].firstAt)
+      for (const [k] of oldest.slice(0, Math.floor(oldest.length / 2))) llmBudget.delete(k)
+    }
+  }
+
   const hit = llmBudget.get(tokenId)
 
   if (!hit || now - hit.firstAt >= DAY_MS) {

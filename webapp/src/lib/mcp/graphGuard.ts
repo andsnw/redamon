@@ -54,6 +54,26 @@ function isGlobalReference(labels: string[]): boolean {
   return labels.length > 0 && labels.every(l => GLOBAL_REFERENCE_LABELS.has(l))
 }
 
+/**
+ * Does this map carry tenant-key-shaped fields? If so it is tenant data
+ * whatever it claims to be, and it is checked.
+ *
+ * `RETURN properties(n)` yields a plain map with `user_id` / `project_id` and
+ * NO `_kind`, so keying the check on `_kind` alone missed it entirely.
+ */
+function carriesTenantKeys(obj: Record<string, unknown>): boolean {
+  return 'user_id' in obj || 'project_id' in obj
+}
+
+function tenantMismatch(
+  sawUserId: unknown,
+  sawProjectId: unknown,
+  userId: string,
+  projectId: string
+): boolean {
+  return sawUserId !== userId || sawProjectId !== projectId
+}
+
 function checkEntity(value: CoercedNode, userId: string, projectId: string): void {
   const kind = value._kind === 'relationship' ? 'relationship' : 'node'
   const labels = Array.isArray(value.labels) ? value.labels.map(String) : []
@@ -69,11 +89,24 @@ function checkEntity(value: CoercedNode, userId: string, projectId: string): voi
   // one means the filter did not apply.
   if (kind === 'relationship' && sawUserId === undefined && sawProjectId === undefined) return
 
-  if (sawUserId !== userId || sawProjectId !== projectId) {
+  if (tenantMismatch(sawUserId, sawProjectId, userId, projectId)) {
     throw new TenantViolation({ kind, labels, sawUserId, sawProjectId })
   }
 }
 
+/**
+ * Walk EVERY value. Nothing here short-circuits on `_kind`.
+ *
+ * `_kind` and `labels` are produced by the agent's coercion, but a caller can
+ * author a map with those exact keys - `RETURN {_kind:"node", labels:["CVE"],
+ * loot: n}` is legal Cypher - and the coercion passes any map through verbatim.
+ * Treating `_kind` as a trusted discriminator therefore let the attacker this
+ * guard exists to stop declare their own payload exempt and, worse, stop the
+ * walk before the smuggled node underneath was ever looked at.
+ *
+ * So: a map that looks like an entity is CHECKED, a map that carries tenant
+ * keys is CHECKED, and either way the walk continues into its values.
+ */
 function walk(value: unknown, userId: string, projectId: string): void {
   if (value === null || typeof value !== 'object') return
   if (Array.isArray(value)) {
@@ -81,11 +114,24 @@ function walk(value: unknown, userId: string, projectId: string): void {
     return
   }
   const obj = value as CoercedNode & Record<string, unknown>
+
   if (obj._kind === 'node' || obj._kind === 'relationship') {
     checkEntity(obj, userId, projectId)
-    // Properties are scalars once coerced; nothing nested to descend into.
-    return
+  } else if (carriesTenantKeys(obj)) {
+    // A bare property map (properties(n), or a hand-built map). It claims no
+    // kind, so no global-reference exemption applies to it.
+    if (tenantMismatch(obj.user_id, obj.project_id, userId, projectId)) {
+      throw new TenantViolation({
+        kind: 'node',
+        labels: [],
+        sawUserId: obj.user_id,
+        sawProjectId: obj.project_id,
+      })
+    }
   }
+
+  // ALWAYS descend, including into a map that just passed as an entity: a
+  // smuggled node can be nested under any key of a caller-authored map.
   for (const v of Object.values(obj)) walk(v, userId, projectId)
 }
 

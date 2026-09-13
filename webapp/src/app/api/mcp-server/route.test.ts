@@ -41,7 +41,7 @@ vi.mock('@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js', () => (
   },
 }))
 
-import { POST, GET, DELETE, mcpServerEnabled } from './route'
+import { POST, GET, DELETE, mcpServerEnabled, __resetAuthAuditThrottle } from './route'
 
 const TOKEN = {
   tokenId: 't1', userId: 'owner', tokenPrefix: 'rdmn_mcp_aaaaaaaa',
@@ -80,6 +80,7 @@ beforeEach(() => {
     })
   )
   h.audit.mockResolvedValue(undefined)
+  __resetAuthAuditThrottle()
 })
 
 // --- the feature flag ------------------------------------------------------------
@@ -273,5 +274,67 @@ describe('caching', () => {
     expect((await POST(req())).headers.get('Cache-Control')).toBe('no-store')
     vi.stubEnv('MCP_SERVER_ENABLED', 'false')
     expect((await POST(req())).headers.get('Cache-Control')).toBe('no-store')
+  })
+})
+
+// =============================================================================
+// REGRESSION: pre-auth resource exhaustion (audit finding F4)
+// =============================================================================
+//
+// This route is in PUBLIC_PATHS, so both of these ran for an ANONYMOUS caller:
+// the whole body was buffered before the Authorization header was looked at,
+// and every failed auth inserted an audit row into the Postgres the whole
+// platform shares. Neither had a bound.
+
+describe('REGRESSION: the body is bounded BEFORE auth', () => {
+  test('an oversized declared length is refused without reading the body', async () => {
+    const res = await POST(req({ headers: { 'content-length': String(50 * 1024 * 1024) } }))
+    expect(res.status).toBe(413)
+    // Refused before the token lookup: an anonymous flood costs no DB work.
+    expect(h.resolve).not.toHaveBeenCalled()
+  })
+
+  test('the cap counts BYTES, not UTF-16 code units', async () => {
+    // 30k three-byte characters is ~90 KB but String.length is only 30k, so a
+    // length-based check passed a body documented as capped at 64 KiB.
+    const body = JSON.stringify({ jsonrpc: '2.0', method: 'x', id: 1, pad: '\u4e2d'.repeat(30_000) })
+    expect(body.length).toBeLessThan(64 * 1024)
+    expect(new TextEncoder().encode(body).byteLength).toBeGreaterThan(64 * 1024)
+
+    const res = await POST(req({ raw: body }))
+    expect(res.status).toBe(413)
+  })
+
+  test('a normal-sized body still passes', async () => {
+    expect((await POST(req())).status).toBe(200)
+  })
+})
+
+describe('REGRESSION: the failed-auth audit is throttled', () => {
+  beforeEach(() => {
+    h.resolve.mockResolvedValue({ ok: false, failure: 'invalid', prefix: 'rdmn_mcp_aaaaaaaa' })
+  })
+
+  test('the first failure for a prefix IS audited', async () => {
+    await POST(req())
+    expect(h.audit).toHaveBeenCalledOnce()
+  })
+
+  test('a flood from one prefix writes ONE row, not one per request', async () => {
+    for (let i = 0; i < 50; i++) await POST(req())
+    expect(h.audit).toHaveBeenCalledOnce()
+  })
+
+  test('a DISTINCT prefix is still audited (the signal survives)', async () => {
+    await POST(req())
+    h.resolve.mockResolvedValue({ ok: false, failure: 'invalid', prefix: 'rdmn_mcp_bbbbbbbb' })
+    await POST(req())
+    expect(h.audit).toHaveBeenCalledTimes(2)
+  })
+
+  test('every request is still REJECTED, whether or not it was audited', async () => {
+    for (let i = 0; i < 5; i++) {
+      expect((await POST(req())).status).toBe(401)
+    }
   })
 })

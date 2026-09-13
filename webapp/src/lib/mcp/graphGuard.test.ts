@@ -130,3 +130,82 @@ describe('relationships', () => {
     expect(() => assertTenantScoped([{ r: rel('RESOLVES_TO', OWN) }], 'u1', 'p1')).not.toThrow()
   })
 })
+
+// =============================================================================
+// REGRESSION: the _kind spoof (audit finding F3)
+// =============================================================================
+//
+// `_kind` and `labels` come from the AGENT'S COERCION, but the coercion passes
+// any Cypher map through verbatim, and `RETURN {_kind:"node", labels:["CVE"],
+// loot: n}` is legal Cypher. So the caller can author those keys.
+//
+// The guard used to trust `_kind` as a discriminator AND return immediately
+// after checking an entity. That meant a caller could declare their own map a
+// global-reference node and smuggle a foreign node underneath it, and the walk
+// would stop before ever looking. All three variants below were CONFIRMED
+// working against the live stack before the fix.
+
+describe('REGRESSION: a caller-authored map cannot declare itself exempt', () => {
+  const foreignNode = node(['Domain'], {
+    user_id: 'victim', project_id: 'pVictim', name: 'secret.internal',
+  })
+
+  test('spoofed _kind:node + labels:[CVE] does not exempt a nested foreign node', () => {
+    // The global-reference exemption is for REAL CVE nodes, which carry no
+    // tenant keys. A map that merely claims the label must not inherit it.
+    const records = [{ disguised: { _kind: 'node', labels: ['CVE'], loot: foreignNode } }]
+    expect(() => assertTenantScoped(records, 'me', 'pMine')).toThrow(TenantViolation)
+  })
+
+  test('spoofed _kind:relationship with no properties does not stop the walk', () => {
+    // A relationship legitimately carries no tenant keys, so it is skipped.
+    // Skipping it must not also skip everything nested inside it.
+    const records = [{ disguised: { _kind: 'relationship', loot: foreignNode } }]
+    expect(() => assertTenantScoped(records, 'me', 'pMine')).toThrow(TenantViolation)
+  })
+
+  test('a foreign node nested arbitrarily deep under a spoofed map is caught', () => {
+    const records = [{
+      a: { _kind: 'node', labels: ['CVE'], b: { c: [{ d: { e: foreignNode } }] } },
+    }]
+    expect(() => assertTenantScoped(records, 'me', 'pMine')).toThrow(TenantViolation)
+  })
+
+  test('a REAL global reference node is still exempt (no over-correction)', () => {
+    const records = [{ c: node(['CVE'], { id: 'CVE-2021-44228', cvss: 10 }) }]
+    expect(() => assertTenantScoped(records, 'me', 'pMine')).not.toThrow()
+  })
+
+  test('own-tenant data nested under a map still passes', () => {
+    const records = [{ wrapper: { _kind: 'node', labels: ['CVE'], own: node(['IP'], OWN) } }]
+    expect(() => assertTenantScoped(records, 'u1', 'p1')).not.toThrow()
+  })
+})
+
+// =============================================================================
+// REGRESSION: properties(n) returns a bare map (audit finding F3, variant C)
+// =============================================================================
+
+describe('REGRESSION: a bare property map is tenant data too', () => {
+  test('RETURN properties(n) of a foreign node is caught', () => {
+    // No _kind at all, so the old guard never even considered it.
+    const records = [{ p: { user_id: 'victim', project_id: 'pVictim', name: 'secret' } }]
+    expect(() => assertTenantScoped(records, 'me', 'pMine')).toThrow(TenantViolation)
+  })
+
+  test('RETURN properties(n) of an OWN node passes', () => {
+    const records = [{ p: { user_id: 'u1', project_id: 'p1', name: 'mine' } }]
+    expect(() => assertTenantScoped(records, 'u1', 'p1')).not.toThrow()
+  })
+
+  test('a map carrying only user_id (project omitted) is caught', () => {
+    // Half a tenant key is not a tenant key.
+    const records = [{ p: { user_id: 'u1', name: 'mine' } }]
+    expect(() => assertTenantScoped(records, 'u1', 'p1')).toThrow(TenantViolation)
+  })
+
+  test('an ordinary map with no tenant keys is not spuriously rejected', () => {
+    const records = [{ agg: { total: 12, label: 'IP' } }]
+    expect(() => assertTenantScoped(records, 'u1', 'p1')).not.toThrow()
+  })
+})

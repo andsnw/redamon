@@ -108,8 +108,38 @@ describe('list_projects', () => {
 
 describe('get_recon_status', () => {
   test('returns the orchestrator status', async () => {
-    h.orchestratorFetch.mockResolvedValue({ ok: true, json: async () => ({ status: 'running' }) })
-    expect(await getReconStatus(ctx(), 'p1')).toEqual({ status: 'running' })
+    h.orchestratorFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'running', current_phase: 'port_scan' }),
+    })
+    const r = await getReconStatus(ctx(), 'p1')
+    expect(r).toMatchObject({ status: 'running', currentPhase: 'port_scan', failed: false })
+  })
+
+  // REGRESSION (audit finding F5): the raw ReconState carries `container_id`
+  // and an `error` populated with raw exception text. A Docker SDK failure
+  // embeds the deployment's absolute HOST PATHS and image names, and returning
+  // it verbatim handed an untrusted agent reconnaissance about the host, then
+  // put it in a model's context. errors.ts forbids exactly that everywhere else.
+  test('REGRESSION: the raw orchestrator body is NOT passed through', async () => {
+    h.orchestratorFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'error',
+        container_id: 'a1b2c3d4e5f6',
+        error: 'invalid mount config for type "bind": bind source path does not '
+             + 'exist: /home/operator/deploy/redamon/recon',
+      }),
+    })
+    const r = await getReconStatus(ctx(), 'p1')
+    const serialised = JSON.stringify(r)
+
+    expect(serialised).not.toContain('/home/operator')
+    expect(serialised).not.toContain('a1b2c3d4e5f6')
+    expect(serialised).not.toMatch(/bind source path/)
+    // The FACT of failure still reaches the caller; only the detail does not.
+    expect(r.failed).toBe(true)
+    expect(r.status).toBe('error')
   })
 
   test('an unreachable orchestrator is "unknown", NEVER "not running"', async () => {
@@ -387,5 +417,59 @@ describe('rate limiting applies per tool class', () => {
     vi.stubEnv('MCP_RATE_READ_PER_MIN', '1')
     await listProjects(ctx())
     await expect(listProjects(ctx())).rejects.toThrow(/try again in \d+s/i)
+  })
+})
+
+// =============================================================================
+// REGRESSION: expectedUpdatedAt was unobtainable (audit finding F7)
+// =============================================================================
+
+describe('REGRESSION: get_recon_settings returns the concurrency token', () => {
+  test('updatedAt is returned so expectedUpdatedAt can be passed back', async () => {
+    // update_recon_settings' own description says "Read get_recon_settings
+    // first ... pass expectedUpdatedAt from a prior read". updatedAt is
+    // classified 'identity' in the allowlist, so it was excluded from the
+    // select and the anti-clobber control was dead in its documented flow.
+    const when = new Date('2026-09-13T10:00:00.000Z')
+    h.findProject
+      .mockResolvedValueOnce({ id: 'p1', userId: 'owner' })
+      .mockResolvedValueOnce({ naabuThreads: 25, updatedAt: when })
+
+    const r = await getReconSettings(ctx(), 'p1')
+    expect(r.updatedAt).toBe('2026-09-13T10:00:00.000Z')
+  })
+
+  test('updatedAt is METADATA, not smuggled into the settings object', async () => {
+    // It must not look settable: it is not in the allowlist and a write to it
+    // would be refused.
+    h.findProject
+      .mockResolvedValueOnce({ id: 'p1', userId: 'owner' })
+      .mockResolvedValueOnce({ naabuThreads: 25, updatedAt: new Date() })
+
+    const r = await getReconSettings(ctx(), 'p1')
+    expect(r.settings).not.toHaveProperty('updatedAt')
+  })
+})
+
+// =============================================================================
+// REGRESSION: graph_summary sampled liveGraphState BEFORE the counts (F8)
+// =============================================================================
+
+describe('REGRESSION: the live-graph state is sampled AFTER the counts', () => {
+  test('a scan starting mid-call reports scan_running, not stable', async () => {
+    // Sampling first meant a scan that began between the state read and the
+    // count read was reported `stable` alongside mid-wipe near-zero counts -
+    // the exact false negative the field exists to prevent. Reading it after
+    // makes the same race over-warn instead.
+    h.busy.mockResolvedValue(null)
+    h.fetch.mockImplementation(async () => {
+      // The scan starts while the counts are being read.
+      h.busy.mockResolvedValue('a full recon scan is running')
+      return { ok: true, json: async () => ({ nodes: [], relationships: [] }) }
+    })
+
+    const r = await graphSummary(ctx(), 'p1')
+    expect(r.liveGraphState).toBe('scan_running')
+    expect(r.warning).toBeTruthy()
   })
 })

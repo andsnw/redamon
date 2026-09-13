@@ -423,3 +423,42 @@ describe('update_recon_settings reports what it silently affected', () => {
     expect(r.queuedJobsNeedingReview).toBe(0)
   })
 })
+
+// =============================================================================
+// REGRESSION: the start bucket was per-TOKEN (audit finding F10)
+// =============================================================================
+
+describe('REGRESSION: the start bucket is per PROJECT, not per token', () => {
+  const otherToken = (): McpContext => ({
+    token: {
+      tokenId: 'DIFFERENT-TOKEN', userId: 'owner',
+      tokenPrefix: 'rdmn_mcp_bbbbbbbb', name: 'second', scopes: ALL_SCOPES as never,
+    },
+  })
+
+  test('a SECOND token cannot start the same project again in the window', async () => {
+    // The limit exists because a 'new' start consumes a retention slot and
+    // permanently deletes the oldest unpinned version. Keying it on the token
+    // let a user holding N tokens churn the timeline N times faster than the
+    // documented one-per-5-minutes.
+    await startRecon(ctx(), 'p1')
+    await expect(startRecon(otherToken(), 'p1')).rejects.toThrow(/rate limit/i)
+  })
+
+  test('a second token CAN start a different project', async () => {
+    await startRecon(ctx(), 'p1')
+    await expect(startRecon(otherToken(), 'p2')).resolves.toBeTruthy()
+  })
+})
+
+describe('REGRESSION: a busy refusal does not burn the start window (F10)', () => {
+  test('a start refused for a live agent session leaves the bucket intact', async () => {
+    // It launched nothing and consumed no retention slot, so charging it the
+    // 5-minute window punishes an agent that did nothing wrong.
+    h.liveWriters.mockResolvedValue('an agent session is running')
+    await expect(startRecon(ctx(), 'p1')).rejects.toThrow(/agent session/)
+
+    h.liveWriters.mockResolvedValue(null)
+    await expect(startRecon(ctx(), 'p1')).resolves.toBeTruthy()
+  })
+})

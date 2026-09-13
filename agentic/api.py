@@ -3069,7 +3069,7 @@ def _graph_exec_run(final: str, params: dict, max_records: int | None = None):
     Streams the cursor and stops at the cap instead of materialising every
     record into a list, so a runaway query costs the cap rather than the result.
     """
-    from neo4j import Query
+    from neo4j import READ_ACCESS, Query
 
     cap = _graph_exec_max_records() if max_records is None else max_records
     driver = _graph_exec_get_driver()
@@ -3077,7 +3077,13 @@ def _graph_exec_run(final: str, params: dict, max_records: int | None = None):
 
     records: list = []
     truncated = False
-    with driver.session() as session:
+    # READ_ACCESS, not the driver default of WRITE. The read-only guard is a
+    # regex over the query text, and a regex cannot be the only thing standing
+    # between an LLM-generated query and a write: `\u0043REATE` inside a string
+    # literal reads as CREATE to Neo4j and as nothing to the regex. Asking the
+    # database for a read-only session moves that guarantee out of our parser
+    # and into the engine, which cannot be fooled by how the text is spelled.
+    with driver.session(default_access_mode=READ_ACCESS) as session:
         result = session.run(query, params)
         for rec in result:
             if len(records) >= cap:

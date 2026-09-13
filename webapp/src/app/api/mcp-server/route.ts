@@ -38,6 +38,67 @@ export const dynamic = 'force-dynamic'
 /** 64 KiB. A tool call is a small JSON-RPC envelope; anything larger is abuse. */
 const MAX_BODY_BYTES = 64 * 1024
 
+/**
+ * Read the body, aborting once it exceeds `limit` BYTES.
+ *
+ * Bytes, not `String.length`: the latter counts UTF-16 code units, so 64k
+ * three-byte characters is 192 KB and passed a check documented as 64 KiB.
+ * Streaming means a huge body costs the limit, not its own size.
+ */
+async function readBounded(request: NextRequest, limit: number): Promise<string> {
+  const body = request.body
+  if (!body) return ''
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > limit) throw new Error('body too large')
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const joined = new Uint8Array(total)
+  let offset = 0
+  for (const c of chunks) { joined.set(c, offset); offset += c.byteLength }
+  return new TextDecoder().decode(joined)
+}
+
+// One audit row per prefix per minute. Bounded and lazily swept, the same shape
+// as loginThrottle: a flood of DISTINCT prefixes must not turn an anti-abuse
+// record into the memory-exhaustion vector it exists to detect.
+const AUTH_AUDIT_WINDOW_MS = 60_000
+const AUTH_AUDIT_MAX_KEYS = 5_000
+const globalForAuthAudit = globalThis as unknown as { __mcpAuthAudit?: Map<string, number> }
+const authAuditSeen: Map<string, number> = globalForAuthAudit.__mcpAuthAudit ?? new Map()
+globalForAuthAudit.__mcpAuthAudit = authAuditSeen
+
+export function shouldAuditAuthFailure(key: string, now = Date.now()): boolean {
+  const prev = authAuditSeen.get(key) ?? 0
+  if (now - prev < AUTH_AUDIT_WINDOW_MS) return false
+  if (authAuditSeen.size >= AUTH_AUDIT_MAX_KEYS) {
+    for (const [k, t] of authAuditSeen) {
+      if (now - t >= AUTH_AUDIT_WINDOW_MS) authAuditSeen.delete(k)
+    }
+    // Still full of live entries: drop the oldest half rather than grow.
+    if (authAuditSeen.size >= AUTH_AUDIT_MAX_KEYS) {
+      const oldest = [...authAuditSeen.entries()].sort((a, b) => a[1] - b[1])
+      for (const [k] of oldest.slice(0, Math.floor(oldest.length / 2))) authAuditSeen.delete(k)
+    }
+  }
+  authAuditSeen.set(key, now)
+  return true
+}
+
+/** Test seam: the map is process-global by design. */
+export function __resetAuthAuditThrottle(): void {
+  authAuditSeen.clear()
+}
+
 export function mcpServerEnabled(): boolean {
   // Default OFF. A new authenticated inbound surface must be switched on
   // deliberately, not inherited by upgrading.
@@ -92,8 +153,20 @@ export async function POST(request: NextRequest) {
     return jsonRpcError(-32001, 'Forbidden', 403)
   }
 
-  const raw = await request.text()
-  if (raw.length > MAX_BODY_BYTES) {
+  // Size is checked from the DECLARED length before the body is read, because
+  // this route is in PUBLIC_PATHS and App Router imposes no body limit of its
+  // own: buffering first would let an unauthenticated caller OOM the control
+  // plane with a multi-GB POST. A chunked request declares no length, so the
+  // read below is also bounded as it streams.
+  const declared = Number(request.headers.get('content-length') ?? '')
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    return jsonRpcError(-32700, 'Request body too large', 413)
+  }
+
+  let raw: string
+  try {
+    raw = await readBounded(request, MAX_BODY_BYTES)
+  } catch {
     return jsonRpcError(-32700, 'Request body too large', 413)
   }
 
@@ -111,14 +184,20 @@ export async function POST(request: NextRequest) {
 
   const auth = await resolveMcpUser(request)
   if (!auth.ok || !auth.token) {
-    void writeAudit({
-      actorId: null,
-      action: 'mcp.auth.denied',
-      targetType: 'mcpAccessToken',
-      targetId: auth.prefix ?? null,
-      after: { failure: auth.failure, tokenPrefix: auth.prefix ?? null },
-      source: 'mcp',
-    })
+    // Audited, but THROTTLED per prefix. This path is pre-auth and public, so
+    // an unthrottled insert lets an anonymous flood of `Bearer rdmn_mcp_xxxx`
+    // write unbounded rows into the Postgres the whole platform shares. The
+    // signal a repeated failure carries survives sampling; the disk does not.
+    if (shouldAuditAuthFailure(auth.prefix ?? auth.failure ?? 'unknown')) {
+      void writeAudit({
+        actorId: null,
+        action: 'mcp.auth.denied',
+        targetType: 'mcpAccessToken',
+        targetId: auth.prefix ?? null,
+        after: { failure: auth.failure, tokenPrefix: auth.prefix ?? null },
+        source: 'mcp',
+      })
+    }
     return unauthorized(auth.failure ?? 'invalid', auth.prefix)
   }
 

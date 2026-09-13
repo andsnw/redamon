@@ -14,6 +14,21 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 
+/**
+ * A project id, constrained at the SCHEMA so it cannot carry newlines.
+ *
+ * `handler` passes it to writeAudit as `targetId` on both the success and the
+ * failure branch - i.e. before the ownership check can reject it - and
+ * writeAudit console.info()s a one-line `[audit] ...` record. An unconstrained
+ * string let a caller embed a newline plus a forged `[audit]` line, which
+ * anyone reconstructing an incident from logs would read as real. cuid and
+ * uuid are alphanumeric, so this rejects nothing legitimate.
+ */
+const projectIdSchema = z.string().min(1).max(64).regex(
+  /^[A-Za-z0-9_-]+$/,
+  'projectId must be alphanumeric (with - or _)'
+)
+
 import { writeAudit } from '@/lib/audit'
 import { McpAccessDenied, McpScopeError, touchTokenUsage } from '@/lib/mcpAuth'
 import { McpToolError, safeMessage, toolError, toolJson } from '@/lib/mcp/errors'
@@ -116,7 +131,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
         'Report whether a full recon scan is running for this project, and its current phase. ' +
         'If the orchestrator cannot be reached this reports "status unknown" and fails - it ' +
         'never reports "not running", because those are different facts.',
-      inputSchema: { projectId: z.string().describe('From list_projects.') },
+      inputSchema: { projectId: projectIdSchema.describe('From list_projects.') },
     },
     handler(ctx, 'get_recon_status', a => getReconStatus(ctx, a.projectId), a => a.projectId)
   )
@@ -129,7 +144,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
         'Read the recon tuning settings this token is allowed to change, so you can diff before ' +
         'writing. This is a narrow subset on purpose: the engagement target and scope, the Rules ' +
         'of Engagement, credentials and agent settings are not readable or writable here.',
-      inputSchema: { projectId: z.string() },
+      inputSchema: { projectId: projectIdSchema },
     },
     handler(ctx, 'get_recon_settings', a => getReconSettings(ctx, a.projectId), a => a.projectId)
   )
@@ -145,7 +160,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
         'entirely, that surface was never scanned - which is a very different answer from "it ' +
         'was scanned and is clean". Counts only, never sample values.\n\n' +
         `${GRAPH_TOOL_USAGE}`,
-      inputSchema: { projectId: z.string() },
+      inputSchema: { projectId: projectIdSchema },
     },
     handler(ctx, 'graph_summary', a => graphSummary(ctx, a.projectId), a => a.projectId)
   )
@@ -178,7 +193,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
         'a separate permission on the token.\n\n' +
         `${GRAPH_TOOL_USAGE}\n\n${UNTRUSTED_DATA_NOTE}`,
       inputSchema: {
-        projectId: z.string(),
+        projectId: projectIdSchema,
         question: z.string().optional().describe('A natural-language question. Prefer this.'),
         cypher: z.string().optional().describe('Read-only Cypher. Needs the graph:cypher permission.'),
       },
@@ -205,7 +220,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
         'Refused while anything else is rewriting the graph, INCLUDING a human running the ' +
         'in-app agent or a triage run: a full scan would wipe the graph underneath them.',
       inputSchema: {
-        projectId: z.string(),
+        projectId: projectIdSchema,
         mode: z.enum(['new', 'overwrite']).optional()
           .describe('Default "new", the non-destructive choice.'),
       },
@@ -220,7 +235,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
       description:
         'Stop the full recon scan running for this project. If the orchestrator cannot be ' +
         'reached this reports that the outcome is unknown rather than claiming it stopped.',
-      inputSchema: { projectId: z.string() },
+      inputSchema: { projectId: projectIdSchema },
     },
     handler(ctx, 'stop_recon', a => stopRecon(ctx, a.projectId), a => a.projectId)
   )
@@ -242,7 +257,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
         'Read get_recon_settings first to see the current values and what is settable. Pass ' +
         'expectedUpdatedAt from a prior read to refuse writing over a change you have not seen.',
       inputSchema: {
-        projectId: z.string(),
+        projectId: projectIdSchema,
         settings: z.record(z.string(), z.unknown()).describe('Field -> value. Allowlisted fields only.'),
         expectedUpdatedAt: z.string().optional()
           .describe('Optimistic concurrency: the project updatedAt you last saw.'),

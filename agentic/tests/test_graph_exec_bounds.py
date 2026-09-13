@@ -67,8 +67,12 @@ class _FakeSession:
 class _FakeDriver:
     def __init__(self, session):
         self._session = session
+        self.session_kwargs = None
 
-    def session(self):
+    def session(self, **kwargs):
+        # The real driver takes default_access_mode; recording it lets the
+        # read-only assertion below check what was actually asked for.
+        self.session_kwargs = kwargs
         return self._session
 
 
@@ -304,3 +308,37 @@ class SummaryOpTests(unittest.TestCase):
 
         self.assertEqual(resp.status_code, 500)
         self.assertNotIn("bolt", json.loads(resp.body)["error"].lower())
+
+
+class ReadOnlySessionTests(unittest.TestCase):
+    """REGRESSION: /graph/exec ran in a WRITE session (audit finding F2).
+
+    The read-only guard is a regex over the query text, and a regex cannot be
+    the only thing between LLM-generated Cypher and a write: `\\u0043REATE`
+    inside a string literal reads as CREATE to Neo4j and as nothing to the
+    regex, and `apoc.cypher.runMany` then executes it. Asking the DATABASE for
+    a read-only session moves the guarantee out of our parser and into the
+    engine, which cannot be fooled by how the text is spelled.
+    """
+
+    def test_the_session_is_opened_READ_ONLY(self):
+        from neo4j import READ_ACCESS
+
+        driver, _, _ = _driver_with(1)
+        with mock.patch.object(api, "_graph_exec_get_driver", return_value=driver):
+            api._graph_exec_run("MATCH (n:IP) RETURN n", {})
+
+        self.assertEqual(
+            driver.session_kwargs.get("default_access_mode"),
+            READ_ACCESS,
+            "graph/exec must open a READ session; the driver default is WRITE",
+        )
+
+    def test_the_summary_op_is_read_only_too(self):
+        from neo4j import READ_ACCESS
+
+        driver, _, _ = _driver_with(1)
+        with mock.patch.object(api, "_graph_exec_get_driver", return_value=driver):
+            api._graph_exec_summary({"tenant_user_id": "u1", "tenant_project_id": "p1"})
+
+        self.assertEqual(driver.session_kwargs.get("default_access_mode"), READ_ACCESS)
