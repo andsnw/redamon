@@ -2602,7 +2602,11 @@ class TextToCypherRequest(BaseModel):
     for_graph_view: bool = True
 
 
-@app.post("/text-to-cypher", tags=["Graph"])
+@app.post(
+    "/text-to-cypher",
+    tags=["Graph"],
+    dependencies=[Depends(require_internal_auth)],
+)
 async def text_to_cypher(body: TextToCypherRequest):
     """
     Generate a Cypher query from a natural language description.
@@ -2611,6 +2615,13 @@ async def text_to_cypher(body: TextToCypherRequest):
     so the graph schema is always in sync with the agent's query_graph tool.
 
     Returns the raw Cypher (without tenant filters) for the webapp to save and execute.
+
+    BILLED: one request can cost up to 9 provider calls (3 attempts, each wrapped
+    in retry_llm_call), spending the key of the user named in the body. It was
+    previously unauthenticated, so anyone who could reach the agent port could
+    spend any user's LLM budget. `require_internal_auth` applies the token bucket
+    and the daily spend cap, and the caller is trusted to have resolved the
+    identity it sends (mcp_plan.md P0-3).
     """
     from tools import Neo4jToolManager, CypherGenerationTimeout
     from orchestrator_helpers.llm_setup import setup_llm, _resolve_provider_key
@@ -2695,7 +2706,7 @@ async def text_to_cypher(body: TextToCypherRequest):
     except Exception as e:
         logger.error(f"text-to-cypher: failed to create LLM: {e}")
         return JSONResponse(
-            content={"error": f"Failed to initialize LLM: {str(e)}. Make sure an AI model is configured."},
+            content={"error": "Failed to initialize the LLM. Make sure an AI model is configured."},
             status_code=400,
         )
 
@@ -2722,7 +2733,7 @@ async def text_to_cypher(body: TextToCypherRequest):
     except Exception as e:
         logger.error(f"text-to-cypher: failed to connect to Neo4j: {e}")
         return JSONResponse(
-            content={"error": f"Failed to connect to graph database: {str(e)}"},
+            content={"error": "Failed to connect to the graph database."},
             status_code=500,
         )
 
@@ -2769,7 +2780,10 @@ async def text_to_cypher(body: TextToCypherRequest):
         except CypherGenerationTimeout as e:
             # Terminal: retrying would burn the same budget on the same model.
             logger.error(f"text-to-cypher: {e}")
-            return JSONResponse(content={"error": str(e)}, status_code=504)
+            return JSONResponse(
+                content={"error": "Timed out generating a query for that question."},
+                status_code=504,
+            )
 
         except Exception as e:
             last_error = str(e)
@@ -2777,8 +2791,16 @@ async def text_to_cypher(body: TextToCypherRequest):
             logger.warning(f"text-to-cypher attempt {attempt + 1} failed: {last_error}")
 
             if attempt == max_retries - 1:
+                logger.error(
+                    f"text-to-cypher: gave up after {max_retries} attempts: {last_error}"
+                )
                 return JSONResponse(
-                    content={"error": f"Failed to generate valid Cypher after {max_retries} attempts: {last_error}"},
+                    content={
+                        "error": (
+                            f"Could not generate a valid query after {max_retries} attempts. "
+                            "Try rephrasing the question."
+                        )
+                    },
                     status_code=422,
                 )
 
