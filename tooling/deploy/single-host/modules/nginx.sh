@@ -4,7 +4,7 @@
 #
 # Reads (exported by deploy.sh): ACCESS_MODE, SERVER_NAME, CSP_CONNECT, TLS_MODE,
 #   SSL_CERT_REMOTE, SSL_KEY_REMOTE, GATE_MODE, OPERATOR_ALLOW_CIDRS,
-#   BASIC_AUTH_USER, BASIC_AUTH_PASS.
+#   BASIC_AUTH_USER, BASIC_AUTH_PASS, MCP_EDGE_ALLOW_BEARER.
 # Templates + snippet are SCP'd to /tmp/redamon-deploy/nginx/ by deploy.sh.
 
 NGINX_TMPL_DIR=/tmp/redamon-deploy/nginx
@@ -37,6 +37,35 @@ _gate_block() {
   esac
 }
 
+# The access gate for the INBOUND MCP endpoint specifically.
+#
+# GATE_MODE=basic_auth is mutually exclusive with bearer auth: it emits
+# auth_basic on the whole :443 server and consumes the Authorization header, and
+# a client cannot send Basic and Bearer at once. So under basic_auth this
+# endpoint is 403 by DEFAULT, and an operator who wants remote agents to reach
+# it must say so explicitly with MCP_EDGE_ALLOW_BEARER=true - which turns
+# auth_basic off for this one location, leaving the PAT as its only credential.
+#
+# Under ip_allowlist the location simply inherits the server's allow/deny, which
+# is the intended posture: the operator gate AND the token.
+_mcp_gate_block() {
+  case "${GATE_MODE:-ip_allowlist}" in
+    basic_auth)
+      if is_true "${MCP_EDGE_ALLOW_BEARER:-false}"; then
+        printf '%s\n' '        # MCP_EDGE_ALLOW_BEARER=true: the PAT is the only credential here.
+        auth_basic off;'
+      else
+        printf '%s\n' '        # GATE_MODE=basic_auth consumes the Authorization header this
+        # endpoint needs. Closed by default; set MCP_EDGE_ALLOW_BEARER=true to open.
+        return 403;'
+      fi
+      ;;
+    *)
+      printf '%s\n' '        # Inherits the server-level access gate unchanged.'
+      ;;
+  esac
+}
+
 _acme_block() {
   if [[ "${TLS_MODE:-}" == "letsencrypt" ]]; then
     echo "    location /.well-known/acme-challenge/ { root /var/www/certbot; }"
@@ -63,11 +92,13 @@ _install_htpasswd() {
 # Line-oriented render: single-line tokens via bash substitution; whole-line blocks
 # (__GATE__, __ACME_BLOCK__) replaced with their (possibly multi-line) content.
 _render_template() {
-  local tmpl="$1" gate acme line
+  local tmpl="$1" gate mcp_gate acme line
   gate="$(_gate_block)"
+  mcp_gate="$(_mcp_gate_block)"
   acme="$(_acme_block)"
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
+      *"# __MCP_GATE__"*) printf '%s\n' "${mcp_gate}" ;;
       *"# __GATE__"*)   printf '%s\n' "${gate}" ;;
       "__ACME_BLOCK__") printf '%s\n' "${acme}" ;;
       *Strict-Transport-Security*)
