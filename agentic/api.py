@@ -2602,6 +2602,194 @@ class TextToCypherRequest(BaseModel):
     for_graph_view: bool = True
 
 
+# --- shared NL -> Cypher plumbing --------------------------------------------
+#
+# Two endpoints need the same three steps (resolve the caller's LLM, build a
+# Neo4jToolManager, generate and validate Cypher): the graph-view generator
+# (/text-to-cypher, which returns the query for the webapp to save) and the MCP
+# entry point (/graph/nl-query, which also runs it and returns rows). They are
+# factored here so the tenant scoping and the retry policy cannot drift apart.
+
+
+class _CypherSetupError(Exception):
+    """Carries the (status, safe message) to answer with."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+async def _build_cypher_manager(user_id: str, project_id: str):
+    """Resolve the project's model + the user's provider key into a manager.
+
+    The identity is the CALLER's responsibility: both entry points are guarded
+    by require_internal_auth, and the webapp resolves the real user before
+    calling. Raises _CypherSetupError with a safe message.
+    """
+    from tools import Neo4jToolManager
+    from orchestrator_helpers.llm_setup import setup_llm, _resolve_provider_key
+    from project_settings import DEFAULT_AGENT_SETTINGS, fetch_agent_settings
+    import requests as _requests
+
+    model_name = DEFAULT_AGENT_SETTINGS['OPENAI_MODEL']
+    try:
+        webapp_url = os.environ.get('WEBAPP_API_URL', 'http://webapp:3000')
+        settings = fetch_agent_settings(project_id, webapp_url)
+        if settings and settings.get('OPENAI_MODEL'):
+            model_name = settings['OPENAI_MODEL']
+    except Exception as e:
+        logger.warning(f"text-to-cypher: failed to fetch project settings: {e}")
+
+    user_providers = []
+    try:
+        webapp_url = os.environ.get('WEBAPP_API_URL', 'http://webapp:3000')
+        resp = _requests.get(
+            f"{webapp_url.rstrip('/')}/api/users/{user_id}/llm-providers?internal=true",
+            headers={"X-Internal-Key": os.environ.get("INTERNAL_API_KEY", "")},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        user_providers = resp.json()
+    except Exception as e:
+        logger.warning(f"text-to-cypher: failed to fetch user LLM providers: {e}")
+
+    llm = None
+    try:
+        if model_name.startswith("custom/"):
+            config_id = model_name[len("custom/"):]
+            matched = None
+            for prov in user_providers:
+                if prov.get("id") == config_id:
+                    matched = prov
+                    break
+            if not matched and user_providers:
+                matched = user_providers[0]
+            if not matched:
+                raise _CypherSetupError(
+                    400, "Custom LLM provider not found. Configure an AI model in settings."
+                )
+            llm = setup_llm(model_name, custom_llm_config=matched)
+        else:
+            def key(kind):
+                return (_resolve_provider_key(user_providers, kind) or {})
+
+            bedrock = key("bedrock")
+            llm = setup_llm(
+                model_name,
+                openai_api_key=key("openai").get("apiKey"),
+                anthropic_api_key=key("anthropic").get("apiKey"),
+                openrouter_api_key=key("openrouter").get("apiKey"),
+                deepseek_api_key=key("deepseek").get("apiKey"),
+                gemini_api_key=key("gemini").get("apiKey"),
+                glm_api_key=key("glm").get("apiKey"),
+                kimi_api_key=key("kimi").get("apiKey"),
+                qwen_api_key=key("qwen").get("apiKey"),
+                xai_api_key=key("xai").get("apiKey"),
+                mistral_api_key=key("mistral").get("apiKey"),
+                aws_access_key_id=bedrock.get("awsAccessKeyId"),
+                aws_secret_access_key=bedrock.get("awsSecretKey"),
+                aws_bearer_token=bedrock.get("awsBearerToken"),
+                aws_region=bedrock.get("awsRegion") or "us-east-1",
+            )
+    except _CypherSetupError:
+        raise
+    except Exception as e:
+        logger.error(f"text-to-cypher: failed to create LLM: {e}")
+        raise _CypherSetupError(
+            400, "Failed to initialize the LLM. Make sure an AI model is configured."
+        )
+
+    if not llm:
+        raise _CypherSetupError(
+            400,
+            "No LLM configured. Configure an AI model in project settings to use graph views.",
+        )
+
+    neo4j_uri = os.environ.get('NEO4J_URI', 'bolt://neo4j:7687')
+    manager = Neo4jToolManager(
+        neo4j_uri,
+        os.environ.get('NEO4J_USER', 'neo4j'),
+        os.environ.get('NEO4J_PASSWORD', 'password'),
+        llm,
+    )
+    try:
+        from langchain_community.graphs import Neo4jGraph
+        manager.graph = Neo4jGraph(
+            url=neo4j_uri,
+            username=os.environ.get('NEO4J_USER', 'neo4j'),
+            password=os.environ.get('NEO4J_PASSWORD', 'password'),
+        )
+    except Exception as e:
+        logger.error(f"text-to-cypher: failed to connect to Neo4j: {e}")
+        raise _CypherSetupError(500, "Failed to connect to the graph database.")
+
+    return manager
+
+
+async def _generate_validated_cypher(
+    manager, question: str, user_id: str, project_id: str, for_graph_view: bool
+) -> str:
+    """Generate Cypher and prove it parses, scopes and runs. Returns the RAW
+    (un-scoped) Cypher, which is what a caller saves or re-scopes itself.
+
+    Raises _CypherSetupError. Retries feed the previous error back to the model;
+    an unscopable pattern raises TenantScopeError, which the loop treats the same
+    way rather than executing anything unfiltered.
+    """
+    from tools import CypherGenerationTimeout
+
+    last_error = None
+    last_cypher = None
+    cypher = None
+    max_retries = 3
+
+    for attempt in range(max_retries):
+        try:
+            if attempt == 0:
+                cypher = await manager._generate_cypher(question, for_graph_view=for_graph_view)
+            else:
+                cypher = await manager._generate_cypher(
+                    question,
+                    previous_error=last_error,
+                    previous_cypher=last_cypher,
+                    for_graph_view=for_graph_view,
+                )
+
+            if manager._find_disallowed_write_operation(cypher):
+                raise _CypherSetupError(400, "Write operations are not allowed in data filters")
+
+            # Validate by executing (with the tenant filter) to catch syntax
+            # errors. Bounded (P0-4): the rows are discarded, so ask for one
+            # under a transaction timeout rather than materialising a result.
+            filtered = manager._scope_query(cypher, user_id, project_id)
+            await asyncio.to_thread(
+                _graph_exec_run,
+                filtered,
+                {"tenant_user_id": user_id, "tenant_project_id": project_id},
+                1,
+            )
+            return cypher
+
+        except _CypherSetupError:
+            raise
+        except CypherGenerationTimeout as e:
+            # Terminal: retrying would burn the same budget on the same model.
+            logger.error(f"text-to-cypher: {e}")
+            raise _CypherSetupError(504, "Timed out generating a query for that question.")
+        except Exception as e:
+            last_error = str(e)
+            last_cypher = cypher
+            logger.warning(f"text-to-cypher attempt {attempt + 1} failed: {last_error}")
+
+    logger.error(f"text-to-cypher: gave up after {max_retries} attempts: {last_error}")
+    raise _CypherSetupError(
+        422,
+        f"Could not generate a valid query after {max_retries} attempts. "
+        "Try rephrasing the question.",
+    )
+
+
 @app.post(
     "/text-to-cypher",
     tags=["Graph"],
@@ -2623,195 +2811,115 @@ async def text_to_cypher(body: TextToCypherRequest):
     and the daily spend cap, and the caller is trusted to have resolved the
     identity it sends (mcp_plan.md P0-3).
     """
-    from tools import Neo4jToolManager, CypherGenerationTimeout
-    from orchestrator_helpers.llm_setup import setup_llm, _resolve_provider_key
-    from project_settings import DEFAULT_AGENT_SETTINGS, fetch_agent_settings
-    import requests as _requests
-
-    # 1. Resolve LLM for the user
-    llm = None
-
-    # Try to get project-specific model first
-    model_name = DEFAULT_AGENT_SETTINGS['OPENAI_MODEL']
     try:
-        webapp_url = os.environ.get('WEBAPP_API_URL', 'http://webapp:3000')
-        settings = fetch_agent_settings(body.project_id, webapp_url)
-        if settings and settings.get('OPENAI_MODEL'):
-            model_name = settings['OPENAI_MODEL']
-    except Exception as e:
-        logger.warning(f"text-to-cypher: failed to fetch project settings: {e}")
-
-    # Fetch user's LLM providers for API keys
-    user_providers = []
-    try:
-        webapp_url = os.environ.get('WEBAPP_API_URL', 'http://webapp:3000')
-        resp = _requests.get(
-            f"{webapp_url.rstrip('/')}/api/users/{body.user_id}/llm-providers?internal=true",
-            headers={"X-Internal-Key": os.environ.get("INTERNAL_API_KEY", "")},
-            timeout=10,
+        manager = await _build_cypher_manager(body.user_id, body.project_id)
+        cypher = await _generate_validated_cypher(
+            manager, body.question, body.user_id, body.project_id, body.for_graph_view
         )
-        resp.raise_for_status()
-        user_providers = resp.json()
-    except Exception as e:
-        logger.warning(f"text-to-cypher: failed to fetch user LLM providers: {e}")
+    except _CypherSetupError as e:
+        return JSONResponse(content={"error": e.message}, status_code=e.status)
+    return JSONResponse(content={"cypher": cypher})
 
-    openai_p = _resolve_provider_key(user_providers, "openai")
-    anthropic_p = _resolve_provider_key(user_providers, "anthropic")
-    openrouter_p = _resolve_provider_key(user_providers, "openrouter")
-    bedrock_p = _resolve_provider_key(user_providers, "bedrock")
-    deepseek_p = _resolve_provider_key(user_providers, "deepseek")
-    gemini_p = _resolve_provider_key(user_providers, "gemini")
-    glm_p = _resolve_provider_key(user_providers, "glm")
-    kimi_p = _resolve_provider_key(user_providers, "kimi")
-    qwen_p = _resolve_provider_key(user_providers, "qwen")
-    xai_p = _resolve_provider_key(user_providers, "xai")
-    mistral_p = _resolve_provider_key(user_providers, "mistral")
+
+class GraphNlQueryRequest(BaseModel):
+    """Webapp (MCP server) -> agent: ask a question and get the ROWS.
+
+    The tenant comes from the caller, which resolved it from a personal access
+    token before calling and presents the master internal key. The MCP route
+    deliberately does not go through /api/agent/text-to-cypher: that is a
+    session-authenticated proxy for the browser, and it returns the query rather
+    than running it.
+    """
+    question: str
+    user_id: str
+    project_id: str
+
+
+@app.post(
+    "/graph/nl-query",
+    tags=["Graph"],
+    dependencies=[Depends(require_internal_auth)],
+)
+async def graph_nl_query(body: GraphNlQueryRequest):
+    """Natural language -> tenant-scoped rows, in one call.
+
+    Generation and execution report SEPARATELY (`stage`), so a caller that
+    failed can retry the right half: rephrasing helps a generation failure and
+    does nothing for an execution one. Never answers an empty result for a
+    dependency failure - conflating the two is the false negative this whole
+    surface is built to avoid.
+    """
+    if not body.user_id or not body.project_id:
+        return JSONResponse(status_code=400, content={"error": "missing tenant identity"})
 
     try:
-        # Check if model uses custom provider config
-        if model_name.startswith("custom/"):
-            config_id = model_name[len("custom/"):]
-            matched = None
-            for p in user_providers:
-                if p.get("id") == config_id:
-                    matched = p
-                    break
-            if not matched and user_providers:
-                matched = user_providers[0]
-            if matched:
-                llm = setup_llm(model_name, custom_llm_config=matched)
-            else:
-                return JSONResponse(
-                    content={"error": "Custom LLM provider not found. Configure an AI model in settings."},
-                    status_code=400,
-                )
-        else:
-            llm = setup_llm(
-                model_name,
-                openai_api_key=(openai_p or {}).get("apiKey"),
-                anthropic_api_key=(anthropic_p or {}).get("apiKey"),
-                openrouter_api_key=(openrouter_p or {}).get("apiKey"),
-                deepseek_api_key=(deepseek_p or {}).get("apiKey"),
-                gemini_api_key=(gemini_p or {}).get("apiKey"),
-                glm_api_key=(glm_p or {}).get("apiKey"),
-                kimi_api_key=(kimi_p or {}).get("apiKey"),
-                qwen_api_key=(qwen_p or {}).get("apiKey"),
-                xai_api_key=(xai_p or {}).get("apiKey"),
-                mistral_api_key=(mistral_p or {}).get("apiKey"),
-                aws_access_key_id=(bedrock_p or {}).get("awsAccessKeyId"),
-                aws_secret_access_key=(bedrock_p or {}).get("awsSecretKey"),
-                aws_bearer_token=(bedrock_p or {}).get("awsBearerToken"),
-                aws_region=(bedrock_p or {}).get("awsRegion") or "us-east-1",
-            )
-    except Exception as e:
-        logger.error(f"text-to-cypher: failed to create LLM: {e}")
+        manager = await _build_cypher_manager(body.user_id, body.project_id)
+        # for_graph_view=False: an external agent wants the values it asked
+        # about, not whole nodes to render.
+        cypher = await _generate_validated_cypher(
+            manager, body.question, body.user_id, body.project_id, False
+        )
+    except _CypherSetupError as e:
         return JSONResponse(
-            content={"error": "Failed to initialize the LLM. Make sure an AI model is configured."},
+            status_code=e.status, content={"error": e.message, "stage": "generate"}
+        )
+
+    from graph_db.tenant_filter import scope_query, TenantScopeError
+
+    try:
+        final = scope_query(cypher, body.user_id, body.project_id)
+    except TenantScopeError:
+        # The generator already proved this scopes, so reaching here means the
+        # query changed under us. Refuse rather than run anything unscoped.
+        logger.error("graph/nl-query: generated Cypher failed to scope on re-check")
+        return JSONResponse(
             status_code=400,
+            content={"error": "Could not scope that query to your project.", "stage": "generate"},
         )
 
-    if not llm:
+    params = {"tenant_user_id": body.user_id, "tenant_project_id": body.project_id}
+    async with _graph_exec_mcp_semaphore():
+        resp = await asyncio.to_thread(_graph_exec_respond, final, params)
+
+    if resp.status_code != 200:
+        import json as _json
+        detail = _json.loads(bytes(resp.body).decode() or "{}")
         return JSONResponse(
-            content={"error": "No LLM configured. Configure an AI model in project settings to use graph views."},
-            status_code=400,
+            status_code=resp.status_code,
+            content={**detail, "stage": "execute", "cypher": cypher},
         )
 
-    # 2. Create Neo4jToolManager and generate Cypher
-    neo4j_uri = os.environ.get('NEO4J_URI', 'bolt://neo4j:7687')
-    neo4j_user = os.environ.get('NEO4J_USER', 'neo4j')
-    neo4j_password = os.environ.get('NEO4J_PASSWORD', 'password')
+    import json as _json
+    payload = _json.loads(bytes(resp.body).decode())
+    # The generated Cypher travels back for transparency: the caller should be
+    # able to see what its question became.
+    payload["cypher"] = cypher
+    return JSONResponse(content=payload)
 
-    manager = Neo4jToolManager(neo4j_uri, neo4j_user, neo4j_password, llm)
 
-    try:
-        from langchain_community.graphs import Neo4jGraph
-        manager.graph = Neo4jGraph(
-            url=neo4j_uri,
-            username=neo4j_user,
-            password=neo4j_password,
-        )
-    except Exception as e:
-        logger.error(f"text-to-cypher: failed to connect to Neo4j: {e}")
-        return JSONResponse(
-            content={"error": "Failed to connect to the graph database."},
-            status_code=500,
-        )
+@app.get(
+    "/graph/schema-doc",
+    tags=["Graph"],
+    dependencies=[Depends(require_internal_auth_only)],
+)
+async def graph_schema_doc():
+    """The graph schema INCLUDING its semantics: what each node type means, what
+    its properties mean, which relationships connect what, and the distinctions
+    that are easy to get wrong.
 
-    # 3. Generate Cypher with retry logic
-    last_error = None
-    last_cypher = None
-    cypher = None
-    max_retries = 3
+    Served from TEXT_TO_CYPHER_SYSTEM, the same content the Cypher generator is
+    prompted with on every call. One source, no second copy, nothing to drift.
 
-    for attempt in range(max_retries):
-        try:
-            if attempt == 0:
-                cypher = await manager._generate_cypher(body.question, for_graph_view=body.for_graph_view)
-            else:
-                cypher = await manager._generate_cypher(
-                    body.question,
-                    previous_error=last_error,
-                    previous_cypher=last_cypher,
-                    for_graph_view=body.for_graph_view,
-                )
+    Deliberately NOT `CALL db.schema.visualization()`: that carries no semantics
+    and is database-global, so it would reflect labels created by other tenants.
+    Nor `op: "types"`, which is a bare list of label names.
 
-            # Reject write operations -- data filters are read-only
-            if manager._find_disallowed_write_operation(cypher):
-                return JSONResponse(
-                    content={"error": "Write operations are not allowed in data filters"},
-                    status_code=400,
-                )
+    Reads from code only: no database, no project id, no tenant data. It is
+    therefore the one graph tool that still answers when Neo4j is down.
+    """
+    from prompts import TEXT_TO_CYPHER_SYSTEM
 
-            # Validate by executing (with tenant filter) to catch syntax errors.
-            # An unscopable pattern raises TenantScopeError, which the retry loop
-            # below feeds back to the model rather than executing unfiltered.
-            #
-            # Bounded (P0-4): the rows are discarded either way, so this asks for
-            # one record under a transaction timeout rather than materialising a
-            # whole result just to learn that the query parses.
-            filtered = manager._scope_query(cypher, body.user_id, body.project_id)
-            await asyncio.to_thread(
-                _graph_exec_run,
-                filtered,
-                {
-                    "tenant_user_id": body.user_id,
-                    "tenant_project_id": body.project_id,
-                },
-                1,
-            )
-
-            # Return the raw (un-filtered) Cypher for saving
-            return JSONResponse(content={"cypher": cypher})
-
-        except CypherGenerationTimeout as e:
-            # Terminal: retrying would burn the same budget on the same model.
-            logger.error(f"text-to-cypher: {e}")
-            return JSONResponse(
-                content={"error": "Timed out generating a query for that question."},
-                status_code=504,
-            )
-
-        except Exception as e:
-            last_error = str(e)
-            last_cypher = cypher
-            logger.warning(f"text-to-cypher attempt {attempt + 1} failed: {last_error}")
-
-            if attempt == max_retries - 1:
-                logger.error(
-                    f"text-to-cypher: gave up after {max_retries} attempts: {last_error}"
-                )
-                return JSONResponse(
-                    content={
-                        "error": (
-                            f"Could not generate a valid query after {max_retries} attempts. "
-                            "Try rephrasing the question."
-                        )
-                    },
-                    status_code=422,
-                )
-
-    return JSONResponse(content={"error": "Unexpected end of retry loop"}, status_code=500)
-
+    return JSONResponse(content={"schema": TEXT_TO_CYPHER_SYSTEM})
 
 # =============================================================================
 # GRAPH EXEC — run a read-only, tenant-scoped graph query on behalf of the
@@ -2837,6 +2945,34 @@ _GRAPH_TYPES_CYPHER = (
     "AND NOT n:Muted "
     "UNWIND labels(n) AS label "
     "RETURN DISTINCT label AS type ORDER BY type"
+)
+
+# Fixed ops for `graph_summary`: what this project ACTUALLY contains.
+#
+# A label census cannot go through op="cypher": that path requires a labelled
+# node pattern (least privilege - no blind whole-graph dump from the sandbox),
+# and a census is by definition unlabelled. As a fixed op it is
+# server-controlled, so the caller cannot alter it, and the tenant filter is
+# written out by hand exactly as it is for op="types".
+#
+# `stale_since IS NULL` matters as much as the mute exclusion: since
+# ingest-then-prune, a finding a scanner has stopped reporting is KEPT and
+# stamped rather than deleted, so counting it would report resolved findings as
+# live - the opposite of what a census is read for.
+_GRAPH_SUMMARY_NODES_CYPHER = (
+    "MATCH (n) "
+    "WHERE n.user_id = $tenant_user_id AND n.project_id = $tenant_project_id "
+    "AND NOT n:Muted AND n.stale_since IS NULL "
+    "UNWIND labels(n) AS label "
+    "RETURN label, count(*) AS count ORDER BY label"
+)
+
+_GRAPH_SUMMARY_RELS_CYPHER = (
+    "MATCH (a)-[r]->(b) "
+    "WHERE a.user_id = $tenant_user_id AND a.project_id = $tenant_project_id "
+    "AND NOT a:Muted AND NOT b:Muted "
+    "AND a.stale_since IS NULL AND b.stale_since IS NULL "
+    "RETURN type(r) AS type, count(*) AS count ORDER BY type"
 )
 
 
@@ -3132,7 +3268,7 @@ async def graph_triage(body: GraphTriageRequest):
 class GraphExecRequest(BaseModel):
     """Worker (redagraph) -> agent graph query. `op` selects a fixed operation
     so arbitrary unscoped queries are impossible."""
-    op: str  # "cypher" | "types" | "schema"
+    op: str  # "cypher" | "types" | "schema" | "summary"
     user_id: str
     project_id: str
     cypher: Optional[str] = None  # only for op="cypher"
@@ -3175,6 +3311,20 @@ async def graph_exec(body: GraphExecRequest):
     elif op == "types":
         final = _GRAPH_TYPES_CYPHER
         params = {"tenant_user_id": body.user_id, "tenant_project_id": body.project_id}
+    elif op == "summary":
+        # Two fixed queries, so this op answers alone rather than making the
+        # caller issue two and stitch them.
+        params = {"tenant_user_id": body.user_id, "tenant_project_id": body.project_id}
+        try:
+            nodes, _ = await asyncio.to_thread(_graph_exec_run, _GRAPH_SUMMARY_NODES_CYPHER, params)
+            rels, _ = await asyncio.to_thread(_graph_exec_run, _GRAPH_SUMMARY_RELS_CYPHER, params)
+        except Exception as e:
+            logger.error(f"graph/exec summary failed: {e}")
+            return JSONResponse(status_code=500, content={"error": "graph query failed"})
+        # COUNTS ONLY, never sample values: sample values are live target data
+        # (hostnames, secrets, endpoints) and would leak recon output into an
+        # external agent's context ahead of any deliberate query.
+        return JSONResponse(content={"nodes": nodes, "relationships": rels})
     elif op == "cypher":
         cypher = (body.cypher or "").strip()
         if not cypher:

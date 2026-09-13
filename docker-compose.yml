@@ -1050,6 +1050,22 @@ services:
       ACTIVATION_LOCK_TTL_MS: ${ACTIVATION_LOCK_TTL_MS:-}
       SCAN_SCHEDULE_MIN_INTERVAL_MINUTES: ${SCAN_SCHEDULE_MIN_INTERVAL_MINUTES:-}
       SCAN_SCHEDULE_ASSUMED_RUN_MINUTES: ${SCAN_SCHEDULE_ASSUMED_RUN_MINUTES:-}
+      # Inbound MCP server (/api/mcp-server): an external AI agent connecting IN
+      # and acting as one RedAmon user. DEFAULT OFF - a new authenticated inbound
+      # surface must be switched on deliberately, never inherited by upgrading.
+      # redamon.sh refuses to enable it while INTERNAL_API_KEY is unset or
+      # `changeme`, because the agent's auth (and so the whole graph-isolation
+      # story) fails open in that state and its port is on 0.0.0.0 in this file.
+      # Every knob below passes through EMPTY so unset keeps the safe code
+      # default; they are wired HERE because the webapp has NO env_file.
+      MCP_SERVER_ENABLED: ${MCP_SERVER_ENABLED:-false}
+      MCP_TOKEN_RETENTION_DAYS: ${MCP_TOKEN_RETENTION_DAYS:-}
+      MCP_RATE_READ_PER_MIN: ${MCP_RATE_READ_PER_MIN:-}
+      MCP_RATE_QUERY_PER_MIN: ${MCP_RATE_QUERY_PER_MIN:-}
+      MCP_RATE_WRITE_PER_MIN: ${MCP_RATE_WRITE_PER_MIN:-}
+      MCP_RATE_START_PER_WINDOW: ${MCP_RATE_START_PER_WINDOW:-}
+      MCP_RATE_START_WINDOW_MS: ${MCP_RATE_START_WINDOW_MS:-}
+      MCP_LLM_DAILY_BUDGET: ${MCP_LLM_DAILY_BUDGET:-}
       # Global row cap for every RedZone analytics query (was a per-route LIMIT
       # of 200/500/1000/2000). Passed through EMPTY so unset keeps the 200k code
       # default in webapp/src/app/api/analytics/redzone/rowCap.ts. Lower it on a

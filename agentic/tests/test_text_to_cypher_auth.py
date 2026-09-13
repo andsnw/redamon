@@ -72,54 +72,60 @@ class TextToCypherAuthTests(unittest.TestCase):
 class TextToCypherErrorNormalisationTests(unittest.TestCase):
     """A stable safe string leaves the process; detail goes to the server log.
 
-    Asserted over the AST of the returned responses only, so interpolating the
-    exception into a `logger` call (which is where it belongs) still passes.
+    Every caller-visible message on this path is the second argument of a
+    `_CypherSetupError(...)`, so that is where the assertion lives. A raised
+    error must carry a LITERAL string: a provider message, a Neo4j error or a
+    generated Cypher fragment must never travel out through one.
     """
 
-    # Names that hold an upstream provider message, a Neo4j error or a Cypher
-    # fragment. None of them may reach the caller inside an ERROR body. (The
-    # success body returns `cypher` on purpose — that is the endpoint's output.)
-    BANNED = {"e", "err", "last_error", "last_cypher"}
+    # Names holding an upstream message, a Neo4j error or a Cypher fragment.
+    BANNED = {"e", "err", "last_error", "last_cypher", "cypher", "filtered"}
 
-    def _error_bodies(self):
-        """Every JSONResponse content dict that carries an "error" key."""
+    def _raised_messages(self):
+        """The message argument of every `_CypherSetupError(...)` construction."""
         import ast
         import inspect
         import textwrap
 
-        tree = ast.parse(textwrap.dedent(inspect.getsource(api.text_to_cypher)))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            func = node.func
-            name = getattr(func, "id", None) or getattr(func, "attr", None)
-            if name != "JSONResponse":
-                continue
-            for kw in node.keywords:
-                if kw.arg != "content" or not isinstance(kw.value, ast.Dict):
+        for fn in (
+            api.text_to_cypher,
+            api._build_cypher_manager,
+            api._generate_validated_cypher,
+        ):
+            tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
                     continue
-                keys = [k.value for k in kw.value.keys if isinstance(k, ast.Constant)]
-                if "error" in keys:
-                    yield kw.value
+                name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+                if name != "_CypherSetupError":
+                    continue
+                # _CypherSetupError(status, message)
+                if len(node.args) >= 2:
+                    yield fn.__name__, node.args[1]
 
-    def test_no_error_response_interpolates_an_exception(self):
+    def test_no_raised_error_message_carries_exception_detail(self):
         import ast
 
-        bodies = list(self._error_bodies())
-        self.assertTrue(bodies, "no JSONResponse error bodies found — did the handler move?")
+        raised = list(self._raised_messages())
+        self.assertTrue(raised, "no _CypherSetupError raises found - did the path move?")
 
-        for body in bodies:
-            for sub in ast.walk(body):
+        for fn_name, msg in raised:
+            for sub in ast.walk(msg):
                 if isinstance(sub, ast.Name) and sub.id in self.BANNED:
                     self.fail(
-                        f"text-to-cypher returns '{sub.id}' to the caller; "
-                        "log the detail and return a stable safe string instead"
+                        f"{fn_name} puts '{sub.id}' in a caller-visible message; "
+                        "log the detail and raise a stable safe string instead"
                     )
-                # str(e) survives as a Call even when the Name check is dodged.
-                if isinstance(sub, ast.Call):
-                    fn = getattr(sub.func, "id", None)
-                    if fn == "str":
-                        self.fail("text-to-cypher stringifies a value into a response body")
+                if isinstance(sub, ast.Call) and getattr(sub.func, "id", None) == "str":
+                    self.fail(f"{fn_name} stringifies a value into a caller-visible message")
+
+    def test_the_endpoint_returns_only_the_normalised_message(self):
+        import inspect
+
+        src = inspect.getsource(api.text_to_cypher)
+        self.assertIn('content={"error": e.message}', src)
+        # ...and nothing else builds an error body in the handler.
+        self.assertEqual(src.count('"error"'), 1)
 
 
 if __name__ == "__main__":
