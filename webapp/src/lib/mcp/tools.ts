@@ -20,6 +20,7 @@
 import prisma from '@/lib/prisma'
 import { orchestratorFetch } from '@/lib/orchestrator'
 import { readProjectActivity, type ProjectActivity } from '@/lib/mcp/activity'
+import { describeLiveGraphWriters } from '@/lib/graphWriters'
 import {
   assertMcpProjectAccess,
   checkLlmBudget,
@@ -152,10 +153,145 @@ function projectReconState(raw: unknown): Record<string, unknown> {
     status: s.status ?? 'unknown',
     currentPhase: s.current_phase ?? s.currentPhase ?? null,
     phaseNumber: s.phase_number ?? s.phaseNumber ?? null,
+    // The denominator. Without it a poller has a numerator and no way to turn
+    // it into progress.
+    totalPhases: s.total_phases ?? s.totalPhases ?? null,
+    // Domain-batch progress. Phases RESTART per group, so on a multi-domain
+    // scan the phase number barely moves for an hour and the group is the only
+    // thing that says "still on the first of six".
+    currentGroup: s.current_group ?? s.currentGroup ?? null,
+    groupNumber: s.group_number ?? s.groupNumber ?? null,
+    totalGroups: s.total_groups ?? s.totalGroups ?? null,
     startedAt: s.started_at ?? s.startedAt ?? null,
     completedAt: s.completed_at ?? s.completedAt ?? null,
     // A boolean, never the text: "it failed" is actionable, the exception is not.
     failed: s.status === 'error' || Boolean(s.error),
+  }
+}
+
+/**
+ * What is running on this project, so an agent can ask BEFORE acting.
+ *
+ * Today the only way to learn a GVM scan is running is to attempt `start_recon`
+ * and read the rejection, which costs the per-project start window.
+ *
+ * The two halves come from different sources ON PURPOSE. The scan LIST is the
+ * cheap in-memory read. `canStartFullScan` is the same call `start_recon`
+ * itself makes, because that check is strictly wider - it also covers a live
+ * triage run and an in-app agent session, neither of which appears in the
+ * orchestrator's scan list. Deriving the predicate from the cheap read would
+ * sometimes answer "yes, you can start" and then have `start_recon` refuse,
+ * which for an unattended agent is a retry loop: a worse failure than not
+ * offering the field at all.
+ */
+export async function getProjectActivity(ctx: McpContext, projectId: string) {
+  requireScope(ctx.token, 'recon:read')
+  enforceRate(ctx, 'read')
+  await assertMcpProjectAccess(ctx.token.userId, projectId)
+
+  const activity = await readProjectActivity(projectId)
+  const blocker = await describeLiveGraphWriters(projectId)
+
+  return {
+    projectId,
+    // Already filtered to this project. The endpoint behind it is cross-project
+    // and another tenant's work is never echoed, nor counted.
+    scans: activity.scans,
+    agentSession: activity.agentSession,
+    triageRun: activity.triageRun,
+    activating: activity.activating,
+    liveGraphState: liveGraphStateOf(activity),
+    canStartFullScan: blocker === null,
+    ...(blocker ? { startBlockedBecause: blocker } : {}),
+    ...(activity.unknown
+      ? { unknown: true, unknownReason: activity.unknownReason }
+      : {}),
+  }
+}
+
+// --- remediations -------------------------------------------------------------
+
+const REMEDIATION_SORTS = ['priority', 'severity', 'createdAt', 'updatedAt'] as const
+type RemediationSort = (typeof REMEDIATION_SORTS)[number]
+
+/**
+ * The fix-side corpus, projected.
+ *
+ * Read from Prisma directly, never through `GET /api/remediations`: that route
+ * SKIPS all ownership checks for an internal-key caller, and the codebase's own
+ * server-to-server idiom is an internal-key fetch. Composing those two facts
+ * would leave `assertMcpProjectAccess` as the only thing between a caller and
+ * every tenant's remediations, and it would work correctly in testing right up
+ * until a refactor forwarded the raw argument instead of the validated one.
+ *
+ * Excluded by name and permanently: `agentNotes`, `fileChanges`, `evidence` and
+ * `attackChainPath` (large, internal, and target-derived text sized for a UI),
+ * and `prUrl`, which can be
+ * `https://x-access-token:ghs_...@github.com/...` - a credential.
+ */
+export async function listRemediations(
+  ctx: McpContext,
+  projectId: string,
+  args: {
+    status?: string
+    severity?: string
+    limit?: number
+    offset?: number
+    sort?: string
+    detail?: boolean
+  } = {}
+) {
+  requireScope(ctx.token, 'triage:read')
+  enforceRate(ctx, 'read')
+  await assertMcpProjectAccess(ctx.token.userId, projectId)
+
+  const limit = Math.max(1, Math.min(Math.trunc(args.limit ?? 25), 100))
+  const offset = Math.max(0, Math.trunc(args.offset ?? 0))
+
+  const sort = (args.sort ?? 'priority') as RemediationSort
+  if (!REMEDIATION_SORTS.includes(sort)) {
+    throw new McpToolError(
+      `Unknown sort '${args.sort}'. One of: ${REMEDIATION_SORTS.join(', ')}.`,
+      'bad_args'
+    )
+  }
+
+  const where = {
+    projectId,
+    ...(args.status ? { status: args.status } : {}),
+    ...(args.severity ? { severity: args.severity } : {}),
+  }
+
+  const [rows, total] = await Promise.all([
+    prisma.remediation.findMany({
+      where,
+      select: {
+        id: true, title: true, severity: true, priority: true, priorityScore: true,
+        category: true, status: true, cvssScore: true, cveIds: true, cweIds: true,
+        capecIds: true, exploitAvailable: true, cisaKev: true, fixComplexity: true,
+        estimatedFiles: true, groupKey: true, findingIds: true, stillDetected: true,
+        prStatus: true, createdAt: true, updatedAt: true,
+        // @db.Text, so only on request.
+        ...(args.detail === true ? { solution: true, description: true } : {}),
+      },
+      orderBy: sort === 'severity'
+        ? [{ priorityScore: 'desc' as const }, { priority: 'desc' as const }]
+        : sort === 'priority'
+          ? [{ priority: 'desc' as const }, { priorityScore: 'desc' as const }]
+          : { [sort]: 'desc' as const },
+      take: limit,
+      skip: offset,
+    }),
+    prisma.remediation.count({ where }),
+  ])
+
+  return {
+    projectId,
+    remediations: rows,
+    returned: rows.length,
+    offset,
+    total,
+    ...(offset + rows.length < total ? { truncated: true } : {}),
   }
 }
 

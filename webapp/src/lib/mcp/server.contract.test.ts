@@ -69,8 +69,11 @@ describe('tools/list satisfies the MCP contract', () => {
     }
   })
 
-  test('all thirteen tools are advertised', () => {
+  test('all twenty-one tools are advertised', () => {
     expect(tools.map(t => t.name).sort()).toEqual([
+      'compare_scan_versions',
+      'describe_recon_settings',
+      'get_project_activity',
       'get_recon_settings',
       'get_recon_status',
       'graph_schema',
@@ -79,7 +82,12 @@ describe('tools/list satisfies the MCP contract', () => {
       'kali_exec',
       'kali_output',
       'kali_toolbox',
+      'list_findings',
+      'list_muted_findings',
       'list_projects',
+      'list_recon_presets',
+      'list_remediations',
+      'list_scan_versions',
       'query_graph',
       'start_recon',
       'stop_recon',
@@ -104,6 +112,8 @@ describe('the advertised input schemas are usable', () => {
       'get_recon_status', 'get_recon_settings', 'graph_summary',
       'query_graph', 'start_recon', 'stop_recon', 'update_recon_settings',
       'kali_exec', 'kali_output', 'kali_cancel',
+      'list_findings', 'list_muted_findings', 'list_remediations',
+      'get_project_activity', 'list_scan_versions', 'compare_scan_versions',
     ]) {
       const schema = byName(name).inputSchema as { required?: string[] }
       expect(schema.required ?? [], `${name}`).toContain('projectId')
@@ -111,7 +121,10 @@ describe('the advertised input schemas are usable', () => {
   })
 
   test('the argument-free tools declare no required args', () => {
-    for (const name of ['list_projects', 'graph_schema', 'kali_toolbox']) {
+    for (const name of [
+      'list_projects', 'graph_schema', 'kali_toolbox',
+      'describe_recon_settings', 'list_recon_presets',
+    ]) {
       const schema = byName(name).inputSchema as { required?: string[] }
       expect(schema.required ?? [], `${name}`).toEqual([])
     }

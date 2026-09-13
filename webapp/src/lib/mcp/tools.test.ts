@@ -19,6 +19,9 @@ const h = vi.hoisted(() => ({
   findVersion: vi.fn(),
   findConversation: vi.fn(),
   liveTriageRun: vi.fn(),
+  liveGraphWriters: vi.fn(),
+  findRemediations: vi.fn(),
+  countRemediations: vi.fn(),
   orchestratorFetch: vi.fn(),
   isActivating: vi.fn(),
   /** The raw `/system/active-scans` body, cross-project exactly as it ships. */
@@ -34,11 +37,18 @@ vi.mock('@/lib/prisma', () => ({
     },
     scanVersion: { findFirst: (...a: unknown[]) => h.findVersion(...a) },
     conversation: { findFirst: (...a: unknown[]) => h.findConversation(...a) },
+    remediation: {
+      findMany: (...a: unknown[]) => h.findRemediations(...a),
+      count: (...a: unknown[]) => h.countRemediations(...a),
+    },
   },
 }))
 vi.mock('@/lib/orchestrator', () => ({ orchestratorFetch: (...a: unknown[]) => h.orchestratorFetch(...a) }))
 vi.mock('@/lib/activationLock', () => ({ isActivationInProgress: (...a: unknown[]) => h.isActivating(...a) }))
 vi.mock('@/lib/triageRun', () => ({ findLiveTriageRun: (...a: unknown[]) => h.liveTriageRun(...a) }))
+vi.mock('@/lib/graphWriters', () => ({
+  describeLiveGraphWriters: (...a: unknown[]) => h.liveGraphWriters(...a),
+}))
 
 import { McpScopeError, McpAccessDenied, __resetRateLimiter, __resetLlmBudget } from '@/lib/mcpAuth'
 import { McpToolError } from './errors'
@@ -46,8 +56,10 @@ import { __resetSchemaCache } from './graphClient'
 import { __resetToolboxCache } from './kaliClient'
 import { readProjectActivity } from './activity'
 import {
+  getProjectActivity,
   getReconSettings,
   getReconStatus,
+  listRemediations,
   graphSchema,
   graphSummary,
   kaliToolbox,
@@ -90,6 +102,9 @@ beforeEach(() => {
   h.isActivating.mockResolvedValue(false)
   h.findConversation.mockResolvedValue(null)
   h.liveTriageRun.mockResolvedValue(null)
+  h.liveGraphWriters.mockResolvedValue(null)
+  h.findRemediations.mockResolvedValue([])
+  h.countRemediations.mockResolvedValue(0)
   h.activeScans.mockReturnValue([])
   // Dispatch on the path: get_recon_status and the activity helper both go
   // through orchestratorFetch, and they are different endpoints.
@@ -678,5 +693,182 @@ describe('REGRESSION: the live-graph state is sampled AFTER the counts', () => {
     const r = await graphSummary(ctx(), 'p1')
     expect(r.liveGraphState).toBe('scan_running')
     expect(r.warning).toBeTruthy()
+  })
+})
+
+
+// =============================================================================
+// get_recon_status: the progress fields a poller needs (plan 5.7)
+// =============================================================================
+
+describe('get_recon_status reports progress a poller can use', () => {
+  test('the phase number comes with its denominator', async () => {
+    // Without totalPhases a poller has a numerator and no way to turn it into
+    // progress.
+    h.orchestratorFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'running', phase_number: 3, total_phases: 9 }),
+    })
+    expect(await getReconStatus(ctx(), 'p1')).toMatchObject({ phaseNumber: 3, totalPhases: 9 })
+  })
+
+  test('domain-batch group progress is reported', async () => {
+    // Phases RESTART per group, so on a multi-domain scan the phase number
+    // barely moves for an hour and the group is the only thing that advances.
+    h.orchestratorFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'running', current_group: 'batch-2', group_number: 2, total_groups: 6,
+      }),
+    })
+    expect(await getReconStatus(ctx(), 'p1')).toMatchObject({
+      currentGroup: 'batch-2', groupNumber: 2, totalGroups: 6,
+    })
+  })
+
+  test('the new fields did not reopen the host-detail leak', async () => {
+    h.orchestratorFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'error', total_phases: 9, container_id: 'a1b2c3d4e5f6',
+        error: 'bind source path does not exist: /home/operator/deploy',
+      }),
+    })
+    const s = JSON.stringify(await getReconStatus(ctx(), 'p1'))
+    expect(s).not.toContain('/home/operator')
+    expect(s).not.toContain('a1b2c3d4e5f6')
+  })
+})
+
+// =============================================================================
+// get_project_activity
+// =============================================================================
+
+describe('get_project_activity', () => {
+  test('needs recon:read and ownership', async () => {
+    await expect(getProjectActivity(ctx([]), 'p1')).rejects.toBeInstanceOf(McpScopeError)
+    h.findProject.mockResolvedValue({ id: 'p1', userId: 'someone-else' })
+    await expect(getProjectActivity(ctx(), 'p1')).rejects.toBeInstanceOf(McpAccessDenied)
+  })
+
+  test('it reports this project\'s scans with their progress', async () => {
+    h.activeScans.mockReturnValue([scanRow({ kind: 'gvm', status: 'running' })])
+    const r = await getProjectActivity(ctx(), 'p1')
+    expect(r.scans).toHaveLength(1)
+    expect(r.scans[0]).toMatchObject({ kind: 'gvm', status: 'running', currentPhase: 'port_scan' })
+  })
+
+  test("another project's scan is neither listed nor counted", async () => {
+    h.activeScans.mockReturnValue([scanRow({ project_id: 'other', kind: 'gvm' })])
+    const r = await getProjectActivity(ctx(), 'p1')
+    expect(r.scans).toEqual([])
+    expect(JSON.stringify(r)).not.toContain('other')
+  })
+
+  // A.27: deriving this from the cheap /system/active-scans read would
+  // sometimes answer "yes, you can start" and then have start_recon refuse,
+  // because start_recon ALSO gates on a live triage run and an agent session,
+  // neither of which appears in the orchestrator's scan list. For an unattended
+  // agent that is a retry loop - worse than not offering the field.
+  test('canStartFullScan comes from the same check start_recon makes', async () => {
+    h.activeScans.mockReturnValue([])          // the cheap read says "idle"
+    h.liveGraphWriters.mockResolvedValue('a triage run is in progress')
+
+    const r = await getProjectActivity(ctx(), 'p1')
+    expect(r.scans).toEqual([])
+    expect(r.canStartFullScan).toBe(false)
+    expect(r.startBlockedBecause).toMatch(/triage run/)
+  })
+
+  test('a free project can start, and says nothing is blocking', async () => {
+    const r = await getProjectActivity(ctx(), 'p1')
+    expect(r.canStartFullScan).toBe(true)
+    expect(r).not.toHaveProperty('startBlockedBecause')
+  })
+
+  test('an unreadable source is reported, never as "nothing running"', async () => {
+    h.orchestratorFetch.mockRejectedValue(new Error('ECONNREFUSED'))
+    const r = await getProjectActivity(ctx(), 'p1')
+    expect(r.unknown).toBe(true)
+    expect(r.liveGraphState).toBe('unknown')
+  })
+})
+
+// =============================================================================
+// list_remediations
+// =============================================================================
+
+const remediation = (over: Record<string, unknown> = {}) => ({
+  id: 'r1', title: 'Patch nginx', severity: 'high', priority: 8, priorityScore: 91.2,
+  category: 'vulnerability', status: 'pending', cvssScore: 9.1, cveIds: ['CVE-2026-1'],
+  cweIds: [], capecIds: [], exploitAvailable: true, cisaKev: true,
+  fixComplexity: 'low', estimatedFiles: 2, groupKey: 'g1', findingIds: ['v1'],
+  stillDetected: true, prStatus: 'none',
+  createdAt: new Date(), updatedAt: new Date(),
+  ...over,
+})
+
+describe('list_remediations', () => {
+  test('needs triage:read, not recon:read', async () => {
+    await expect(listRemediations(ctx(['recon:read']), 'p1')).rejects.toBeInstanceOf(McpScopeError)
+  })
+
+  test('ownership is checked before the query', async () => {
+    h.findProject.mockResolvedValue({ id: 'p1', userId: 'someone-else' })
+    await expect(listRemediations(ctx(['triage:read']), 'p1')).rejects.toBeInstanceOf(McpAccessDenied)
+    expect(h.findRemediations).not.toHaveBeenCalled()
+  })
+
+  test('it queries Prisma directly, never its own internal-key HTTP route', async () => {
+    // GET /api/remediations skips ALL ownership checks for an internal-key
+    // caller, and internalKeyHeaders is this codebase's own server-to-server
+    // idiom. Composing those two would leave assertMcpProjectAccess as the only
+    // thing between a caller and every tenant's remediations.
+    h.findRemediations.mockResolvedValue([remediation()])
+    await listRemediations(ctx(['triage:read']), 'p1')
+    expect(h.fetch).not.toHaveBeenCalled()
+    expect(h.findRemediations).toHaveBeenCalledOnce()
+  })
+
+  test('the query is scoped to the project in the WHERE clause', async () => {
+    await listRemediations(ctx(['triage:read']), 'p1')
+    expect(h.findRemediations.mock.calls[0][0].where).toMatchObject({ projectId: 'p1' })
+  })
+
+  test('the large, internal and credential-bearing columns are never selected', async () => {
+    await listRemediations(ctx(['triage:read']), 'p1')
+    const select = h.findRemediations.mock.calls[0][0].select
+    // prUrl can be https://x-access-token:ghs_...@github.com/... - a credential.
+    for (const forbidden of ['agentNotes', 'fileChanges', 'evidence', 'attackChainPath', 'prUrl']) {
+      expect(select[forbidden], forbidden).toBeUndefined()
+    }
+  })
+
+  test('the @db.Text columns come only on request', async () => {
+    await listRemediations(ctx(['triage:read']), 'p1')
+    expect(h.findRemediations.mock.calls[0][0].select.solution).toBeUndefined()
+
+    __resetRateLimiter()
+    await listRemediations(ctx(['triage:read']), 'p1', { detail: true })
+    expect(h.findRemediations.mock.calls[1][0].select.solution).toBe(true)
+  })
+
+  test('an unknown sort is refused by name rather than silently ignored', async () => {
+    await expect(listRemediations(ctx(['triage:read']), 'p1', { sort: 'whatever' }))
+      .rejects.toThrow(/one of/i)
+  })
+
+  test('truncation is visible', async () => {
+    h.findRemediations.mockResolvedValue([remediation()])
+    h.countRemediations.mockResolvedValue(87)
+    const r = await listRemediations(ctx(['triage:read']), 'p1', { limit: 1 })
+    expect(r.total).toBe(87)
+    expect(r.returned).toBe(1)
+    expect(r.truncated).toBe(true)
+  })
+
+  test('the limit is clamped', async () => {
+    await listRemediations(ctx(['triage:read']), 'p1', { limit: 99_999 })
+    expect(h.findRemediations.mock.calls[0][0].take).toBe(100)
   })
 })

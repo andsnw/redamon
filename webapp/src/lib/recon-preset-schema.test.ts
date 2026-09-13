@@ -5,6 +5,7 @@
 /// <reference types="vite/client" />
 import { describe, test, expect } from 'vitest'
 import { reconPresetSchema, extractJson, RECON_PARAMETER_CATALOG } from './recon-preset-schema'
+import { ALLOWED_SETTING_KEYS } from './reconSettingsAllowlist'
 
 // ============================================================
 // extractJson
@@ -523,6 +524,18 @@ describe('RECON_PARAMETER_CATALOG', () => {
       }
     }
 
+    expect(missing).toEqual([])
+  })
+
+  // The existing drift control above is keyed on `reconPresetSchema`, which is
+  // why six MCP-settable fields could sit undocumented without failing it.
+  // `describe_recon_settings` serves this catalog as the reference manual for
+  // `update_recon_settings`, so a field that is settable over MCP and has no
+  // catalog line is a field no unattended caller can use correctly.
+  test('every MCP-settable field is mentioned in the catalog', () => {
+    const missing = ALLOWED_SETTING_KEYS.filter(
+      key => !new RegExp(`^-\\s+${key}:`, 'm').test(RECON_PARAMETER_CATALOG),
+    )
     expect(missing).toEqual([])
   })
 

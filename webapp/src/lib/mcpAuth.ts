@@ -35,6 +35,12 @@ export const MCP_SCOPES = [
   'recon:scan',
   'recon:overwrite',
   'recon:settings',
+  // Split from recon:read rather than folded into it. Suppressed findings and
+  // the remediation corpus are data classes NO token has ever been able to
+  // reach by any route, so adding them to an existing scope would silently
+  // change what every already-minted credential can read, with no operator
+  // action and no change to the chips an incident responder sees on it.
+  'triage:read',
   'graph:cypher',
   'kali:exec',
 ] as const

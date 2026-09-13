@@ -29,20 +29,41 @@ const projectIdSchema = z.string().min(1).max(64).regex(
   'projectId must be alphanumeric (with - or _)'
 )
 
+/**
+ * Any OTHER id a caller names: a versionId, jobId, viewId, remediationId.
+ *
+ * Same reasoning as `projectIdSchema` and the same sink. The moment a tool
+ * audits one of these it lands in `writeAudit` as `targetId`, interpolated into
+ * a single-line `[audit] ...` console record where it is the only
+ * attacker-controlled field on the line - so an unconstrained string lets a
+ * caller embed a newline and a forged audit entry. The version routes already
+ * audit exactly this way (`targetType: 'scanVersion', targetId: versionId`).
+ * cuid and uuid are alphanumeric, so this rejects nothing legitimate.
+ */
+const entityIdSchema = z.string().min(1).max(64).regex(
+  /^[A-Za-z0-9_-]+$/,
+  'id must be alphanumeric (with - or _)'
+)
+
 import { writeAudit } from '@/lib/audit'
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { McpAccessDenied, McpScopeError, touchTokenUsage, type McpScope } from '@/lib/mcpAuth'
 import { McpToolError, safeMessage, toolError, toolJson } from '@/lib/mcp/errors'
 import {
+  getProjectActivity,
   getReconSettings,
   getReconStatus,
   graphSchema,
   graphSummary,
   kaliToolbox,
   listProjects,
+  listRemediations,
   queryGraph,
   type McpContext,
 } from '@/lib/mcp/tools'
+import { describeReconSettings, listReconPresets } from '@/lib/mcp/catalogTools'
+import { FINDING_SECTIONS, listFindings, listMuted } from '@/lib/mcp/findingTools'
+import { compareScanVersions, listScanVersions } from '@/lib/mcp/versionTools'
 import { startRecon, stopRecon, updateReconSettings } from '@/lib/mcp/writeTools'
 import {
   MAX_COMMAND_CHARS,
@@ -253,6 +274,244 @@ export function buildMcpServer(ctx: McpContext): McpServer {
       a => queryGraph(ctx, a.projectId, { question: a.question, cypher: a.cypher }),
       a => a.projectId
     )
+  )
+
+  server.registerTool(
+    'list_findings',
+    {
+      title: 'List findings',
+      description:
+        'What the scans actually FOUND on this project, newest triage ranking first. A "finding" ' +
+        'is eight different node types written by eight different scanners; this returns all of ' +
+        'them in one ordered list so you do not have to know that.\n\n' +
+        'READ `triageState` BEFORE TRUSTING THE ORDER. "never_run" means no triage has ever ' +
+        'completed here, so nothing is scored and the order is scanner severity alone - an ' +
+        'unscored finding is NOT an unimportant one. "current" means the priority score is real.\n\n' +
+        'Muted findings are excluded, so a short list is not proof of a clean project: ' +
+        'list_muted_findings is where suppressed ones live. `section` "resolved" means a scanner ' +
+        'STOPPED REPORTING it, which is not the same as someone having fixed it.\n\n' +
+        'A finding id is only valid until the next scan of that source: a rescan can delete and ' +
+        're-create the node.\n\n' +
+        `${UNTRUSTED_DATA_NOTE}`,
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read'] }),
+      inputSchema: {
+        projectId: projectIdSchema,
+        limit: z.number().int().min(1).max(100).optional().describe('Default 25, max 100.'),
+        offset: z.number().int().min(0).optional().describe('For paging. Compare with `total`.'),
+        severity: z.string().optional().describe('critical | high | medium | low | info.'),
+        section: z.enum(FINDING_SECTIONS as [string, ...string[]]).optional()
+          .describe('Narrow to one board section.'),
+        includeQuotes: z.boolean().optional()
+          .describe('Include the AI verdict\'s quoted target output. Untrusted text; off by default.'),
+      },
+    },
+    handler(
+      ctx,
+      'list_findings',
+      a => listFindings(ctx, a.projectId, {
+        limit: a.limit, offset: a.offset, severity: a.severity,
+        section: a.section, includeQuotes: a.includeQuotes,
+      }),
+      a => a.projectId
+    )
+  )
+
+  server.registerTool(
+    'list_muted_findings',
+    {
+      title: 'List suppressed findings',
+      description:
+        'The findings a PERSON decided to suppress as noise, which every other tool on this ' +
+        'surface hides. They are excluded from graph_summary\'s counts, excluded from ' +
+        'list_findings, and unreachable by Cypher.\n\n' +
+        'That is why this exists: without it "zero open findings" can equally mean "someone ' +
+        'suppressed thirty criticals", and an agent writing a report would call that project ' +
+        'clean. Check here before concluding anything is clean.\n\n' +
+        'These are decisions a human already made. Do NOT re-report them as new findings, and do ' +
+        'not treat a suppression as a mistake to correct: nothing on this surface can unmute.\n\n' +
+        'Returns counts and reasons grouped by type and severity. Pass detail for the individual ' +
+        'rows, which are capped.\n\n' +
+        `${UNTRUSTED_DATA_NOTE}`,
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['triage:read'] }),
+      inputSchema: {
+        projectId: projectIdSchema,
+        detail: z.boolean().optional().describe('Return the individual rows, capped.'),
+      },
+    },
+    handler(ctx, 'list_muted_findings', a => listMuted(ctx, a.projectId, { detail: a.detail }), a => a.projectId)
+  )
+
+  server.registerTool(
+    'list_remediations',
+    {
+      title: 'List remediations',
+      description:
+        'The fix-side corpus: what RedAmon proposes should be DONE about this project\'s ' +
+        'findings, with priority, severity, CVSS, CVE/CWE/CAPEC ids, whether a public exploit ' +
+        'exists, whether CISA lists it as known-exploited, and the estimated fix complexity.\n\n' +
+        'Use it to open tickets or plan work: each row links back to the findings it covers via ' +
+        'findingIds, and `stillDetected` flags a remediation marked resolved that scanners are ' +
+        'still reporting.\n\n' +
+        'Pass detail for the full solution and description text, which are long. Agent notes, ' +
+        'file diffs, raw evidence and pull-request URLs are never returned.\n\n' +
+        `${UNTRUSTED_DATA_NOTE}`,
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['triage:read'] }),
+      inputSchema: {
+        projectId: projectIdSchema,
+        status: z.string().optional().describe('e.g. pending, in_progress, resolved.'),
+        severity: z.string().optional().describe('critical | high | medium | low | info.'),
+        sort: z.enum(['priority', 'severity', 'createdAt', 'updatedAt']).optional()
+          .describe('Default "priority".'),
+        limit: z.number().int().min(1).max(100).optional().describe('Default 25, max 100.'),
+        offset: z.number().int().min(0).optional(),
+        detail: z.boolean().optional().describe('Include the full solution and description text.'),
+      },
+    },
+    handler(
+      ctx,
+      'list_remediations',
+      a => listRemediations(ctx, a.projectId, {
+        status: a.status, severity: a.severity, sort: a.sort,
+        limit: a.limit, offset: a.offset, detail: a.detail,
+      }),
+      a => a.projectId
+    )
+  )
+
+  server.registerTool(
+    'get_project_activity',
+    {
+      title: 'What is running on this project',
+      description:
+        'Every scan in flight on this project right now, across all seven kinds, plus whether an ' +
+        'in-app agent session or a triage run is writing the graph.\n\n' +
+        'Ask this BEFORE acting rather than discovering it from a refusal. `canStartFullScan` is ' +
+        'computed by the same check start_recon makes, so if it is false a start would be ' +
+        'refused and calling it anyway spends the per-project start window for nothing.\n\n' +
+        'This is a "before you act" check, not something to poll in a loop: answering it costs ' +
+        'several requests to the scan orchestrator.\n\n' +
+        'If a source cannot be read it says `unknown` rather than reporting that nothing is ' +
+        'running. Only this project is ever reported.',
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read'] }),
+      inputSchema: { projectId: projectIdSchema },
+    },
+    handler(ctx, 'get_project_activity', a => getProjectActivity(ctx, a.projectId), a => a.projectId)
+  )
+
+  server.registerTool(
+    'list_scan_versions',
+    {
+      title: 'List saved graph versions',
+      description:
+        'The saved versions of this project\'s attack-surface graph - the Scan Timeline. Each ' +
+        'full scan started in "new" mode freezes the previous graph as one of these, which is ' +
+        'what start_recon means by consuming a retention slot.\n\n' +
+        'Two fields decide whether a version will still be there later. `pinned` is the ONLY ' +
+        'thing that keeps one indefinitely: unpinned, non-current versions are trimmed ' +
+        'automatically whenever a scan starts. `hasSnapshot` says whether it can be compared at ' +
+        'all - the current version never has stored bytes, because it IS the live graph.\n\n' +
+        'Use the ids here with compare_scan_versions.',
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read'] }),
+      inputSchema: {
+        projectId: projectIdSchema,
+        limit: z.number().int().min(1).max(100).optional().describe('Default 20, newest first.'),
+      },
+    },
+    handler(ctx, 'list_scan_versions', a => listScanVersions(ctx, a.projectId, { limit: a.limit }), a => a.projectId)
+  )
+
+  server.registerTool(
+    'compare_scan_versions',
+    {
+      title: 'Compare two graph versions',
+      description:
+        'What CHANGED between two states of the attack surface: newly exposed ports, closed ' +
+        'ports, new and resolved vulnerabilities, new CVEs, technology version drift, ' +
+        'certificate changes and new parameters, with a per-type scorecard and a few named ' +
+        'examples per category.\n\n' +
+        'This is the "what is different since last time" answer, and it is the one thing you ' +
+        'cannot reconstruct yourself: two capped graph dumps do not diff usefully.\n\n' +
+        'With no arguments it compares the most recent saved version against the live graph. ' +
+        'Pass version ids from list_scan_versions for either side, or "current" for the live ' +
+        'graph. Comparing two SAVED versions is much cheaper and gives the same answer every ' +
+        'time; "current" captures the live graph and is heavily rate limited.\n\n' +
+        'It refuses while anything is rewriting the graph, and refuses again if that starts ' +
+        'mid-read, rather than returning a comparison against a state that never existed. ' +
+        'Counts and names only: no property values are returned.\n\n' +
+        `${UNTRUSTED_DATA_NOTE}`,
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read'] }),
+      inputSchema: {
+        projectId: projectIdSchema,
+        from: entityIdSchema.or(z.literal('current')).optional()
+          .describe('Version id, or "current". Default: the newest saved version.'),
+        to: entityIdSchema.or(z.literal('current')).optional()
+          .describe('Version id, or "current". Default "current".'),
+      },
+    },
+    handler(
+      ctx,
+      'compare_scan_versions',
+      a => compareScanVersions(ctx, a.projectId, { from: a.from, to: a.to }),
+      a => a.projectId
+    )
+  )
+
+  server.registerTool(
+    'describe_recon_settings',
+    {
+      title: 'Explain the recon settings',
+      description:
+        'The reference manual for update_recon_settings: every field it will accept, what each ' +
+        'one MEANS, its type, its minimum and maximum, and the exact values any list field takes.\n\n' +
+        'Read this before writing settings. The bounds here are the enforced bounds, so you can ' +
+        'compose a valid call in one attempt instead of learning each limit by being refused - ' +
+        'and one bad key refuses the WHOLE call, so a batch of guesses applies nothing at all.\n\n' +
+        'It also explains the two-level model that produces the most common silent failure: ' +
+        'scanModules decides which PHASES run, per-tool flags decide which tools run inside a ' +
+        'phase, and setting one without the other means the scan runs and does nothing.\n\n' +
+        'Takes no arguments and reads no project data, so it works even when a scan does not. ' +
+        'For the CURRENT values use get_recon_settings; this describes the shape, that reports ' +
+        'the state.',
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read'] }),
+      inputSchema: {
+        group: z.string().optional().describe('Narrow to one group, e.g. "nuclei". Omit for all.'),
+      },
+    },
+    handler(ctx, 'describe_recon_settings', a => describeReconSettings(ctx, { group: a.group }))
+  )
+
+  server.registerTool(
+    'list_recon_presets',
+    {
+      title: 'List recon presets',
+      description:
+        'The curated scan presets, named by engagement type: stealth recon, quick and deep bug ' +
+        'bounty, red-team operator, internal network, large network, API security, compliance ' +
+        'audit, supply-chain audit, OSINT, full passive, and more. Each says what it is for, ' +
+        'what target it suits (domain or IP) and what environment (external or internal).\n\n' +
+        'This is how a human configures a scan - by picking one and adjusting a few fields - ' +
+        'rather than by tuning a hundred numbers.\n\n' +
+        'THEY CANNOT BE APPLIED FROM HERE, and `applicability` says why per preset. A preset ' +
+        'sets fields across the whole project form while this surface may only write recon ' +
+        'tuning, so applying one would produce a configuration that is neither the preset nor ' +
+        'the previous state. Where `stealthCritical` is true the denied fields are precisely the ' +
+        'ones that make the scan quieter, so a half-applied stealth preset would be LOUDER than ' +
+        'not applying it. Recommend the preset to the operator to apply in the UI.\n\n' +
+        'Pass a presetId for its full description.',
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read'] }),
+      inputSchema: {
+        presetId: entityIdSchema.optional().describe('e.g. "stealth-recon". Omit to list all.'),
+      },
+    },
+    handler(ctx, 'list_recon_presets', a => listReconPresets(ctx, { presetId: a.presetId }))
   )
 
   server.registerTool(

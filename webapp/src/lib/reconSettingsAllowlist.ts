@@ -45,6 +45,20 @@ export const SEVERITY_VALUES = Object.freeze([
 
 const STATUS_CODE_FIELD = /(StatusCodes|MatchCodes|FilterCodes)$/
 
+/**
+ * The closed vocabulary a list field accepts, or `null` when its members are
+ * free-form HTTP status codes rather than a fixed set.
+ *
+ * Shared by the validator below and by `describe_recon_settings`, so the values
+ * a caller is TOLD it may use and the values it is actually allowed to write
+ * cannot drift apart.
+ */
+export function settingValues(key: string, spec: AllowedSetting): readonly string[] | null {
+  if (spec.kind === 'enum-list') return SCAN_MODULE_VALUES
+  if (spec.kind === 'string-list') return STATUS_CODE_FIELD.test(key) ? null : SEVERITY_VALUES
+  return null
+}
+
 export const ALLOWED_SETTING_KEYS: readonly string[] = Object.freeze(
   Object.keys(RECON_SETTINGS_ALLOWLIST).sort()
 )
@@ -93,16 +107,17 @@ function validateOne(key: string, spec: AllowedSetting, value: unknown): string 
     }
     case 'enum-list': {
       if (!Array.isArray(value)) return `'${key}' must be an array.`
+      const allowed = settingValues(key, spec) ?? SCAN_MODULE_VALUES
       for (const v of value) {
-        if (typeof v !== 'string' || !SCAN_MODULE_VALUES.includes(v)) {
-          return `'${key}' contains an unknown value. Allowed: ${SCAN_MODULE_VALUES.join(', ')}.`
+        if (typeof v !== 'string' || !allowed.includes(v)) {
+          return `'${key}' contains an unknown value. Allowed: ${allowed.join(', ')}.`
         }
       }
       return null
     }
     case 'string-list': {
       if (!Array.isArray(value)) return `'${key}' must be an array.`
-      const vocabulary = STATUS_CODE_FIELD.test(key) ? null : SEVERITY_VALUES
+      const vocabulary = settingValues(key, spec)
       for (const v of value) {
         if (typeof v !== 'string') return `'${key}' must contain only strings.`
         if (vocabulary && !vocabulary.includes(v)) {

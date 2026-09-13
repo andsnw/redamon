@@ -75,6 +75,30 @@ const CONDITIONAL_TRIGGERS: Record<string, Record<string, unknown>> = {
  */
 const REACHED_THE_BACKEND = 'The request could not be completed.'
 
+/**
+ * Tools that have NO backend to fail on.
+ *
+ * `describe_recon_settings` and `list_recon_presets` are projections of frozen
+ * constants - the same property that makes them answer when Neo4j and Postgres
+ * are down. So "it got past every check" shows up here as a SUCCESS rather than
+ * as the generic database failure, and asserting the generic message for them
+ * would be asserting that they are broken.
+ *
+ * Listed explicitly, not detected: a tool that stopped reading tenant data by
+ * accident must fail this file, not quietly join the exemption.
+ */
+const BACKEND_FREE_TOOLS = new Set(['describe_recon_settings', 'list_recon_presets'])
+
+/** Got past scope and argument validation, whichever of the two shapes it takes. */
+function expectAllowed(tool: string, r: { isError: boolean; text: string }) {
+  if (BACKEND_FREE_TOOLS.has(tool)) {
+    expect(r.isError, `${tool} should answer without a backend`).toBe(false)
+    expect(r.text.length, `${tool} returned nothing`).toBeGreaterThan(0)
+    return
+  }
+  expect(r.text, `${tool} with only its declared scopes`).toBe(REACHED_THE_BACKEND)
+}
+
 async function callAs(scopes: McpScope[], name: string, args: Record<string, unknown>) {
   const server = buildMcpServer({
     token: { tokenId: `t-${scopes.join(',')}`, userId: 'owner', tokenPrefix: 'rdmn_mcp_aaaaaaaa', name: 'test', scopes },
@@ -144,7 +168,7 @@ describe('declared scopes match what each tool enforces', () => {
   test('the declared required scopes are enough to reach the backend', async () => {
     for (const tool of tools) {
       const r = await callAs(toolScopes(tool)!.required, tool.name, exampleArgs(tool))
-      expect(r.text, `${tool.name} with only its declared scopes`).toBe(REACHED_THE_BACKEND)
+      expectAllowed(tool.name, r)
     }
   })
 
@@ -159,7 +183,7 @@ describe('declared scopes match what each tool enforces', () => {
         expect(denied.text, `${tool.name} with ${JSON.stringify(trigger)}`).toBe(denial(c.scope))
 
         const allowed = await callAs([...toolScopes(tool)!.required, c.scope], tool.name, args)
-        expect(allowed.text, `${tool.name} with ${c.scope}`).toBe(REACHED_THE_BACKEND)
+        expectAllowed(tool.name, allowed)
       }
     }
   })
@@ -169,7 +193,7 @@ describe('the rendered reference', () => {
   test('every documented example call is accepted by the server', async () => {
     for (const tool of tools) {
       const r = await callAs([...MCP_SCOPES], tool.name, exampleArgs(tool))
-      expect(r.text, `the ${tool.name} example call`).toBe(REACHED_THE_BACKEND)
+      expectAllowed(tool.name, r)
     }
   })
 
