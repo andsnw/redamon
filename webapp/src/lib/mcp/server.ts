@@ -26,6 +26,7 @@ import {
   queryGraph,
   type McpContext,
 } from '@/lib/mcp/tools'
+import { startRecon, stopRecon, updateReconSettings } from '@/lib/mcp/writeTools'
 
 export const MCP_SERVER_NAME = 'redamon'
 
@@ -186,6 +187,71 @@ export function buildMcpServer(ctx: McpContext): McpServer {
       ctx,
       'query_graph',
       a => queryGraph(ctx, a.projectId, { question: a.question, cypher: a.cypher }),
+      a => a.projectId
+    )
+  )
+
+  server.registerTool(
+    'start_recon',
+    {
+      title: 'Start a full recon scan',
+      description:
+        'Start the FULL recon pipeline for this project. Partial recon is deliberately not ' +
+        'available here.\n\n' +
+        'mode "new" (the default) saves the current graph as a version first, then rebuilds. ' +
+        'It consumes a retention slot, so old unpinned versions are eventually trimmed.\n' +
+        'mode "overwrite" DISCARDS the current graph instead of saving it. This cannot be ' +
+        'undone, and it needs a separate permission on the token.\n\n' +
+        'Refused while anything else is rewriting the graph, INCLUDING a human running the ' +
+        'in-app agent or a triage run: a full scan would wipe the graph underneath them.',
+      inputSchema: {
+        projectId: z.string(),
+        mode: z.enum(['new', 'overwrite']).optional()
+          .describe('Default "new", the non-destructive choice.'),
+      },
+    },
+    handler(ctx, 'start_recon', a => startRecon(ctx, a.projectId, a.mode ?? 'new'), a => a.projectId)
+  )
+
+  server.registerTool(
+    'stop_recon',
+    {
+      title: 'Stop a running recon scan',
+      description:
+        'Stop the full recon scan running for this project. If the orchestrator cannot be ' +
+        'reached this reports that the outcome is unknown rather than claiming it stopped.',
+      inputSchema: { projectId: z.string() },
+    },
+    handler(ctx, 'stop_recon', a => stopRecon(ctx, a.projectId), a => a.projectId)
+  )
+
+  server.registerTool(
+    'update_recon_settings',
+    {
+      title: 'Change recon tuning settings',
+      description:
+        'Change recon TUNING for this project: per-tool enable flags, rate limits, thread and ' +
+        'worker counts, timeouts, concurrency, retries, depth and max-* caps, severity and ' +
+        'status-code lists, and which pipeline phases run.\n\n' +
+        'It can NEVER change the engagement target or scope, the Rules of Engagement, which ' +
+        'container images are spawned, another scan\'s targets, wordlists or templates, ' +
+        'request headers, any intrusiveness toggle, any credential, or any agent setting. An ' +
+        'attempt to set one of those is refused by name; nothing is silently ignored.\n\n' +
+        'Settings apply to the NEXT scan. A scan already running read its settings when it ' +
+        'started, so this is refused while one is writing the graph.\n\n' +
+        'Read get_recon_settings first to see the current values and what is settable. Pass ' +
+        'expectedUpdatedAt from a prior read to refuse writing over a change you have not seen.',
+      inputSchema: {
+        projectId: z.string(),
+        settings: z.record(z.string(), z.unknown()).describe('Field -> value. Allowlisted fields only.'),
+        expectedUpdatedAt: z.string().optional()
+          .describe('Optimistic concurrency: the project updatedAt you last saw.'),
+      },
+    },
+    handler(
+      ctx,
+      'update_recon_settings',
+      a => updateReconSettings(ctx, a.projectId, a.settings, a.expectedUpdatedAt),
       a => a.projectId
     )
   )
