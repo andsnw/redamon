@@ -74,7 +74,7 @@ export function enforceRate(
  * partial answer is indistinguishable from a complete one and would be acted
  * on as if it were.
  */
-function guardGraphResult(
+export function guardGraphResult(
   result: GraphRecords,
   ctx: McpContext,
   projectId: string,

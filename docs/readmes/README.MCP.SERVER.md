@@ -17,7 +17,7 @@ set of recon tuning settings, and query the attack-surface graph.
 
 ## 1. What is and is not exposed
 
-**Exposed (twenty-one tools).**
+**Exposed (twenty-eight tools).**
 
 | Tool | What it does | Permission |
 | --- | --- | --- |
@@ -42,6 +42,13 @@ set of recon tuning settings, and query the attack-surface graph.
 | `compare_scan_versions` | What changed between two graph states. Counts and names only. | `recon:read` |
 | `describe_recon_settings` | The reference manual for `update_recon_settings`: meanings, types, bounds. | `recon:read` |
 | `list_recon_presets` | The curated engagement presets, and how much of each is applicable here. | `recon:read` |
+| `get_attack_surface_overview` | Hosts, services, web surface and findings by severity, in one query. | `recon:read` |
+| `list_exploit_paths` | Technology + CVE pairs ranked by observed exploit, then CVSS. | `recon:read` |
+| `get_blast_radius` | Technologies ranked by how much of the surface they touch. | `recon:read` |
+| `list_graph_views` | Saved graph views, by name. Never their query text. | `recon:read` |
+| `run_graph_view` | Run a saved view through the same guards as raw Cypher. | `recon:read` + `graph:cypher` |
+| `queue_recon` | Queue a full recon for when the host has room. | `recon:queue` |
+| `cancel_queued_scan` | Cancel a queued job, reading the update count so a lost race is not reported as success. | `recon:queue` |
 
 **Deliberately not exposed:** the agent chat, a shell, partial recon, project
 create/delete/import, secrets and LLM keys, target and scope fields, Rules of
@@ -221,6 +228,12 @@ Agent-side bounds (the agent **does** have an `env_file`, so `.env` reaches it):
 - **Permissions default to read-only.** Every write permission is opt-in, and
   each says what it allows. `recon:overwrite` says plainly that it permits
   discarding the current graph.
+- **`recon:queue` is separate from `recon:scan`**, because a queued job
+  dispatches LATER. `JobQueue` carries no token id and revoking a token writes
+  only `revokedAt`, so work queued by a credential OUTLIVES that credential;
+  only `cancel_queued_scan` or the Activity view stops it. The same missing
+  column means a queued job appears in the operator's own queue attributed to
+  them, with nothing marking it as an agent's.
 - **`triage:read` is separate from `recon:read` on purpose**, and it is the one
   read permission that is not ticked by default. It unlocks the findings a
   person deliberately suppressed (with who muted them and why) and the

@@ -95,7 +95,7 @@ test('every row keeps its Edit and Revoke buttons inside the panel', async ({ pa
   // and pushed the row actions past its right edge, behind a scrollbar.
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.route(`**/api/users/${USER}/mcp-tokens`, route => route.fulfill({
-    json: { tokens: [{ ...TOKENS[0], name: 'e2e full', scopes: ['recon:read', 'recon:scan', 'recon:overwrite', 'recon:settings', 'triage:read', 'graph:cypher', 'kali:exec'] }, ...TOKENS] },
+    json: { tokens: [{ ...TOKENS[0], name: 'e2e full', scopes: ['recon:read', 'recon:scan', 'recon:overwrite', 'recon:settings', 'triage:read', 'recon:queue', 'graph:cypher', 'kali:exec'] }, ...TOKENS] },
   }))
   await openTab(page)
   const wrap = await page.locator('[class*="__tableWrap"]').boundingBox()

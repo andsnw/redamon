@@ -61,7 +61,14 @@ import {
   queryGraph,
   type McpContext,
 } from '@/lib/mcp/tools'
+import {
+  getAttackSurfaceOverview,
+  getBlastRadius,
+  listExploitPaths,
+} from '@/lib/mcp/analyticsTools'
 import { describeReconSettings, listReconPresets } from '@/lib/mcp/catalogTools'
+import { cancelQueuedScan, queueRecon } from '@/lib/mcp/queueTools'
+import { listGraphViews, runGraphView } from '@/lib/mcp/viewTools'
 import { FINDING_SECTIONS, listFindings, listMuted } from '@/lib/mcp/findingTools'
 import { compareScanVersions, listScanVersions } from '@/lib/mcp/versionTools'
 import { startRecon, stopRecon, updateReconSettings } from '@/lib/mcp/writeTools'
@@ -512,6 +519,168 @@ export function buildMcpServer(ctx: McpContext): McpServer {
       },
     },
     handler(ctx, 'list_recon_presets', a => listReconPresets(ctx, { presetId: a.presetId }))
+  )
+
+  server.registerTool(
+    'get_attack_surface_overview',
+    {
+      title: 'Describe the attack surface',
+      description:
+        'One picture of what this project exposes: subdomains, IPs, open ports, services, web ' +
+        'origins, endpoints, parameters, technologies, certificates and DNS records, plus ' +
+        'findings broken out by severity, exposed secrets, malicious packages and known ' +
+        'exploits.\n\n' +
+        'Use it to orient before asking anything specific - it costs one query where the same ' +
+        'picture assembled from natural-language questions costs many and is easy to get subtly ' +
+        'wrong.\n\n' +
+        'Counts exclude suppressed findings and findings a later scan stopped reporting, so they ' +
+        'agree with graph_summary. A category at zero can mean that surface was never scanned; ' +
+        'graph_summary and get_project_activity are how you tell those apart.\n\n' +
+        `${UNTRUSTED_DATA_NOTE}`,
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read'] }),
+      inputSchema: { projectId: projectIdSchema },
+    },
+    handler(ctx, 'get_attack_surface_overview', a => getAttackSurfaceOverview(ctx, a.projectId), a => a.projectId)
+  )
+
+  server.registerTool(
+    'list_exploit_paths',
+    {
+      title: 'List exploitable technology and CVE pairs',
+      description:
+        'What is actually exploitable here, ranked: each vulnerable technology paired with a CVE ' +
+        'affecting it, ordered by whether a known exploit was observed in this project and then ' +
+        'by CVSS, with the CWE classes and how widely the technology is exposed.\n\n' +
+        'This is the "what should I look at first" answer, computed from the graph rather than ' +
+        'guessed from a severity label.\n\n' +
+        '`cisaKev` means an exploit record for that CVE exists in THIS project\'s graph, not that ' +
+        'the CVE appears on a public exploited list. `reachedBy` counts how many web origins, ' +
+        'services and ports run the technology: it is exposure, not severity.\n\n' +
+        `${UNTRUSTED_DATA_NOTE}`,
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read'] }),
+      inputSchema: { projectId: projectIdSchema },
+    },
+    handler(ctx, 'list_exploit_paths', a => listExploitPaths(ctx, a.projectId), a => a.projectId)
+  )
+
+  server.registerTool(
+    'get_blast_radius',
+    {
+      title: 'Rank technologies by how much they expose',
+      description:
+        'Which single vulnerable technology touches the most of this attack surface: per ' +
+        'technology and version, how many CVEs affect it, the worst CVSS among them, how many ' +
+        'known exploits exist, and how many web origins, services and ports run it.\n\n' +
+        'The top row is usually the highest-leverage single fix, which is a different question ' +
+        'from "what is the worst finding" and often has a different answer.\n\n' +
+        `${UNTRUSTED_DATA_NOTE}`,
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read'] }),
+      inputSchema: { projectId: projectIdSchema },
+    },
+    handler(ctx, 'get_blast_radius', a => getBlastRadius(ctx, a.projectId), a => a.projectId)
+  )
+
+  server.registerTool(
+    'list_graph_views',
+    {
+      title: 'List saved graph views',
+      description:
+        'The graph queries a person on this project already wrote and saved, by name and ' +
+        'description.\n\n' +
+        'A saved view is a question its author already vetted, so running one is usually better ' +
+        'than composing your own: it costs no AI call, spends nothing from the daily question ' +
+        'budget, and returns the same thing every time. Run one with run_graph_view.\n\n' +
+        'The query text itself is deliberately not shown. Note a view saved in the app can still ' +
+        'be refused here: this surface proves a query is tenant-scoped and read-only by stricter ' +
+        'rules than the app applies.',
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read'] }),
+      inputSchema: { projectId: projectIdSchema },
+    },
+    handler(ctx, 'list_graph_views', a => listGraphViews(ctx, a.projectId), a => a.projectId)
+  )
+
+  server.registerTool(
+    'run_graph_view',
+    {
+      title: 'Run a saved graph view',
+      description:
+        'Run one of this project\'s saved graph views by id and return its rows. Deterministic, ' +
+        'no AI call, no question budget spent.\n\n' +
+        'Get ids from list_graph_views. Results are tenant-scoped and read-only exactly as ' +
+        'query_graph is, and capped the same way.\n\n' +
+        'It needs the raw-Cypher permission even though you do not write the query: choosing ' +
+        'which stored query runs is enough, and the stored text is not validated when it is ' +
+        'saved. If a view is refused, the message says why - the view is unchanged and the ' +
+        'refusal is not a fault in this tool.\n\n' +
+        `${UNTRUSTED_DATA_NOTE}`,
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read', 'graph:cypher'] }),
+      inputSchema: {
+        projectId: projectIdSchema,
+        viewId: entityIdSchema.describe('From list_graph_views.'),
+      },
+    },
+    handler(ctx, 'run_graph_view', a => runGraphView(ctx, a.projectId, a.viewId), a => a.projectId)
+  )
+
+  server.registerTool(
+    'queue_recon',
+    {
+      title: 'Queue a full recon for later',
+      description:
+        'Queue a FULL recon to start when the host has room, instead of being refused because ' +
+        'the project is busy right now. Use it when get_project_activity says a scan cannot ' +
+        'start, rather than retrying start_recon in a loop.\n\n' +
+        'When it dispatches it behaves exactly like start_recon in "new" mode: the current graph ' +
+        'is saved as a version first, consuming a retention slot. It never runs in overwrite ' +
+        'mode.\n\n' +
+        'Three things to know. A queued job can wait minutes or hours - poll it with ' +
+        'get_project_activity, never by queueing again. A job that becomes "needs_review" is ' +
+        'PARKED because the project settings changed after it was queued, and only a person can ' +
+        'release it; no tool here can. And a queued job OUTLIVES this token: revoking the token ' +
+        'does not cancel it, only cancel_queued_scan does.\n\n' +
+        'One full recon can be queued per project at a time.',
+      annotations: {
+        readOnlyHint: false,
+        // It will eventually rebuild the graph and trim an old version, and it
+        // reaches a third-party target when it runs.
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+      _meta: scopesMeta({ required: ['recon:queue'] }),
+      inputSchema: { projectId: projectIdSchema },
+    },
+    handler(ctx, 'queue_recon', a => queueRecon(ctx, a.projectId), a => a.projectId)
+  )
+
+  server.registerTool(
+    'cancel_queued_scan',
+    {
+      title: 'Cancel a queued scan',
+      description:
+        'Cancel a job that is waiting in the queue and has not started. An agent that can queue ' +
+        'work must be able to un-queue it rather than leaving a person to undo it.\n\n' +
+        'Only a job that is still waiting can be cancelled. If it has already started this ' +
+        'reports that plainly and tells you to use stop_recon instead - it never reports success ' +
+        'for a scan that is in fact running.',
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      _meta: scopesMeta({ required: ['recon:queue'] }),
+      inputSchema: {
+        projectId: projectIdSchema,
+        jobId: entityIdSchema.describe('From queue_recon or get_project_activity.'),
+      },
+    },
+    handler(
+      ctx,
+      'cancel_queued_scan',
+      a => cancelQueuedScan(ctx, a.projectId, a.jobId),
+      a => a.projectId
+    )
   )
 
   server.registerTool(

@@ -30,6 +30,11 @@ export const MCP_SCOPE_COPY: Record<McpScope, { label: string; blurb: string; da
     label: 'Read suppressed findings and remediations',
     blurb: 'Read the findings a person muted as noise, including who muted them and why, and the remediation write-ups (their solutions, evidence summaries and PR status). Muted findings are hidden from every other permission on this surface, so this is the only way an agent can tell "nothing was found" apart from "someone suppressed it". Separate from Read recon + graph on purpose: these are not reachable any other way.',
   },
+  'recon:queue': {
+    label: 'Queue scans to run later',
+    blurb: 'Queue a full recon to start when the machine has room, instead of being refused while the project is busy, and cancel a job it queued. A queued job DISPATCHES LATER and is not cancelled when you revoke this token - use the Activity view or the agent\'s own cancel to stop it. It also appears in your queue attributed to you, with nothing marking it as an agent\'s.',
+    danger: true,
+  },
   'graph:cypher': {
     label: 'Run raw Cypher',
     blurb: 'Send read-only Cypher directly instead of a natural-language question. Still tenant-scoped and still read-only.',

@@ -41,6 +41,10 @@ export const MCP_SCOPES = [
   // change what every already-minted credential can read, with no operator
   // action and no change to the chips an incident responder sees on it.
   'triage:read',
+  // Queued work DISPATCHES LATER and outlives the credential that created it:
+  // JobQueue carries no token id, and revoking a token writes only revokedAt.
+  // That is a materially different grant from starting a scan now.
+  'recon:queue',
   'graph:cypher',
   'kali:exec',
 ] as const

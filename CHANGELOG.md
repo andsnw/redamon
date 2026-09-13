@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   **`list_recon_presets` is read-only deliberately.** Between a third and 60% of each preset is outside what this surface may write, and for the stealth presets the excluded part *is* the stealth — the rate limits, passive mode and brute-force switches. Applying one here would leave a scan louder than the preset asked for while reporting success, so each preset reports how much of it is applicable instead.
 
+- **Seven more MCP tools: the precomputed views, saved queries, and a queue instead of a dead end.**
+
+  **Three analytics reads** an agent otherwise reconstructs badly and expensively from natural language. `get_attack_surface_overview` is the whole surface in one query; `list_exploit_paths` pairs each vulnerable technology with a CVE affecting it, ranked by whether an exploit was actually observed and then by CVSS; `get_blast_radius` ranks technologies by how much of the surface each one touches, which is a different question from "what is the worst finding" and usually has a different answer.
+
+  Their Cypher was written fresh rather than lifted from the in-app views, and two of those views turn out to be quietly wrong in a way worth naming: a bare re-reference to a CVE node loses its global-reference exemption and gets tenant properties injected into a node type that carries none, so it matches nothing. The Red Zone kill-chain view reports `cisaKev` false for every row, and the blast-radius view sorts by a `kevCount` that is permanently zero. No error, no empty result, the view renders — the ranking is simply gone. The MCP versions name the label on every re-reference, and a test asserts they keep doing so.
+
+  **Saved graph views** become runnable by name. `list_graph_views` names them and deliberately never returns their query text; `run_graph_view` runs one through the same guards as raw Cypher and therefore requires the same permission — choosing *which* stored query runs is enough, especially since the query is not validated when it is saved. A view that works daily in the app can still be refused here, because this surface proves a query is scoped and read-only by stricter rules, and the refusal says so rather than looking like a broken tool.
+
+  **`queue_recon` turns a refusal into a plan.** A busy project was a dead end: `start_recon` said no and the agent had to invent a retry loop against a five-minute window. It is behind its own **`recon:queue`** permission because a queued job dispatches *later* and outlives the token that created it — `JobQueue` records no token, so revoking the credential does not cancel its work. The tool says this plainly, refuses to queue a second copy of a scan already waiting, and reports a job parked in `needs_review` as needing a person rather than leaving an agent to wait forever. `cancel_queued_scan` reads the update count, so a job that started during the race is reported as *not cancelled* instead of a false success.
+
 - **`get_recon_status` reports progress a poller can actually use**: the total phase count beside the phase number, and the domain-batch group progress. Phases restart per group, so on a multi-domain scan the phase number barely moves for an hour and the group was the only thing advancing.
 
 ### Fixed
