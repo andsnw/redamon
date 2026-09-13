@@ -338,3 +338,61 @@ describe('REGRESSION: the failed-auth audit is throttled', () => {
     }
   })
 })
+
+// =============================================================================
+// REGRESSION: the Origin check behind a reverse proxy (deploy finding F8)
+// =============================================================================
+//
+// nginx forwards `Host $host`, and $host DROPS THE PORT. On a deploy with a
+// non-default HTTPS_PORT, a client sending its own correct origin
+// (https://redamon.example:8443) was compared against "redamon.example" and
+// 403'd against itself, with only "[mcp] rejected cross-origin request" as a
+// clue. The deploy now passes the public origin explicitly.
+
+describe('REGRESSION: MCP_ALLOWED_ORIGIN wins over the request-derived host', () => {
+  test('a non-default-port origin is accepted when configured', async () => {
+    vi.stubEnv('MCP_ALLOWED_ORIGIN', 'https://redamon.example:8443')
+    const res = await POST(req({
+      url: 'https://redamon.example/api/mcp-server',   // nginx dropped the port
+      headers: { origin: 'https://redamon.example:8443' },
+    }))
+    expect(res.status).toBe(200)
+  })
+
+  test('a foreign origin is still refused when configured', async () => {
+    vi.stubEnv('MCP_ALLOWED_ORIGIN', 'https://redamon.example:8443')
+    const res = await POST(req({ headers: { origin: 'https://evil.example' } }))
+    expect(res.status).toBe(403)
+  })
+
+  test('the SCHEME must match too, so a plaintext origin cannot pass', async () => {
+    // Comparing host alone would let http://redamon.example:8443 through on an
+    // https deployment.
+    vi.stubEnv('MCP_ALLOWED_ORIGIN', 'https://redamon.example:8443')
+    const res = await POST(req({ headers: { origin: 'http://redamon.example:8443' } }))
+    expect(res.status).toBe(403)
+  })
+
+  test('the right host on the WRONG port is refused', async () => {
+    vi.stubEnv('MCP_ALLOWED_ORIGIN', 'https://redamon.example:8443')
+    const res = await POST(req({ headers: { origin: 'https://redamon.example:9999' } }))
+    expect(res.status).toBe(403)
+  })
+
+  test('an absent Origin still passes (MCP clients are not browsers)', async () => {
+    vi.stubEnv('MCP_ALLOWED_ORIGIN', 'https://redamon.example:8443')
+    expect((await POST(req())).status).toBe(200)
+  })
+
+  test('a MISCONFIGURED value fails closed rather than allowing everything', async () => {
+    vi.stubEnv('MCP_ALLOWED_ORIGIN', 'not-a-url')
+    const res = await POST(req({ headers: { origin: 'https://redamon.example' } }))
+    expect(res.status).toBe(403)
+  })
+
+  test('unset falls back to the request-derived check (correct with no proxy)', async () => {
+    vi.stubEnv('MCP_ALLOWED_ORIGIN', '')
+    expect((await POST(req({ headers: { origin: 'https://redamon.example' } }))).status).toBe(200)
+    expect((await POST(req({ headers: { origin: 'https://evil.example' } }))).status).toBe(403)
+  })
+})

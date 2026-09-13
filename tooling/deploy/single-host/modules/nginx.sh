@@ -39,31 +39,58 @@ _gate_block() {
 
 # The access gate for the INBOUND MCP endpoint specifically.
 #
-# GATE_MODE=basic_auth is mutually exclusive with bearer auth: it emits
-# auth_basic on the whole :443 server and consumes the Authorization header, and
-# a client cannot send Basic and Bearer at once. So under basic_auth this
-# endpoint is 403 by DEFAULT, and an operator who wants remote agents to reach
-# it must say so explicitly with MCP_EDGE_ALLOW_BEARER=true - which turns
-# auth_basic off for this one location, leaving the PAT as its only credential.
+# Two independent problems, both solved inside this one location:
 #
-# Under ip_allowlist the location simply inherits the server's allow/deny, which
-# is the intended posture: the operator gate AND the token.
+# 1. GATE_MODE=basic_auth is MUTUALLY EXCLUSIVE with bearer auth. It emits
+#    auth_basic on the whole :443 server, consuming the Authorization header,
+#    and a client cannot send Basic and Bearer at once. So under basic_auth the
+#    endpoint is 403 by DEFAULT; MCP_EDGE_ALLOW_BEARER=true turns auth_basic off
+#    for this location only, leaving the PAT as its sole credential.
+#
+# 2. An external agent is not the operator. Under ip_allowlist the server-level
+#    allow/deny admits only OPERATOR_ALLOW_CIDRS, which a cloud agent or CI
+#    runner is not in. Re-stating allow/deny HERE (nginx replaces, never merges,
+#    inherited allow/deny in a location) admits MCP_CLIENT_CIDRS to this ONE
+#    path while the UI stays operator-only. The firewall must admit the same
+#    CIDRs to the port, which _allow_mcp_clients does.
 _mcp_gate_block() {
+  local out=""
+  # The CIDR clause is emitted for every gate mode: basic_auth still inherits
+  # the server-level allow/deny when OPERATOR_ALLOW_CIDRS is set alongside it.
+  if is_true "${MCP_SERVER_ENABLED:-false}" && [[ -n "${MCP_CLIENT_CIDRS:-}" ]]; then
+    local cidr
+    out+="        # MCP client CIDRs reach THIS path only; the UI stays operator-gated."$'\n'
+    IFS=',' read -ra _mc <<< "${MCP_CLIENT_CIDRS}"
+    for cidr in "${_mc[@]}"; do
+      cidr="$(echo "$cidr" | xargs)"; [[ -z "$cidr" ]] && continue
+      out+="        allow ${cidr};"$'\n'
+    done
+    if [[ -n "${OPERATOR_ALLOW_CIDRS:-}" ]]; then
+      IFS=',' read -ra _oc <<< "${OPERATOR_ALLOW_CIDRS}"
+      for cidr in "${_oc[@]}"; do
+        cidr="$(echo "$cidr" | xargs)"; [[ -z "$cidr" ]] && continue
+        out+="        allow ${cidr};"$'\n'
+      done
+      out+="        deny all;"$'\n'
+    fi
+  fi
+
   case "${GATE_MODE:-ip_allowlist}" in
     basic_auth)
       if is_true "${MCP_EDGE_ALLOW_BEARER:-false}"; then
-        printf '%s\n' '        # MCP_EDGE_ALLOW_BEARER=true: the PAT is the only credential here.
-        auth_basic off;'
+        out+="        # MCP_EDGE_ALLOW_BEARER=true: the PAT is the only credential here."$'\n'
+        out+="        auth_basic off;"$'\n'
       else
-        printf '%s\n' '        # GATE_MODE=basic_auth consumes the Authorization header this
-        # endpoint needs. Closed by default; set MCP_EDGE_ALLOW_BEARER=true to open.
-        return 403;'
+        out+="        # GATE_MODE=basic_auth consumes the Authorization header this"$'\n'
+        out+="        # endpoint needs. Closed by default; set MCP_EDGE_ALLOW_BEARER=true."$'\n'
+        out+="        return 403;"$'\n'
       fi
       ;;
     *)
-      printf '%s\n' '        # Inherits the server-level access gate unchanged.'
+      [[ -z "$out" ]] && out="        # Inherits the server-level access gate unchanged."$'\n'
       ;;
   esac
+  printf '%s' "${out}"
 }
 
 _acme_block() {
@@ -123,8 +150,15 @@ _render_template() {
 
 _install_snippet() {
   run_sudo mkdir -p /etc/nginx/snippets
-  run_sudo cp "${NGINX_TMPL_DIR}/snippets/security-headers.conf" /etc/nginx/snippets/redamon-security-headers.conf
-  run_sudo cp "${NGINX_TMPL_DIR}/snippets/proxy-common.conf" /etc/nginx/snippets/redamon-proxy-common.conf
+  # Copy EVERY snippet, by glob. Naming them one by one is how a newly added
+  # file gets left behind: security-headers.conf now `include`s
+  # security-headers-only.conf, so a missed copy is not a degraded config but a
+  # hard `nginx -t` failure and a dead edge.
+  local _snip
+  for _snip in "${NGINX_TMPL_DIR}"/snippets/*.conf; do
+    [ -e "${_snip}" ] || continue
+    run_sudo cp "${_snip}" "/etc/nginx/snippets/redamon-$(basename "${_snip}")"
+  done
 }
 
 # Choose template by ACCESS_MODE and install the site (does NOT reload -- caller gates).

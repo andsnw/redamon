@@ -124,13 +124,41 @@ function unauthorized(failure: McpAuthFailure, prefix?: string): NextResponse {
  * A browser always sends Origin on a cross-site fetch, so this blocks
  * browser-driven abuse and DNS rebinding. A non-browser client sends none,
  * which is why an ABSENT origin is allowed: MCP clients are not browsers.
+ *
+ * MCP_ALLOWED_ORIGIN is consulted first because the request-derived origin is
+ * NOT reliable behind a reverse proxy. nginx forwards `Host $host`, and $host
+ * DROPS THE PORT, so on a deploy using a non-default port a client sending its
+ * own correct origin (https://host:8443) would be compared against
+ * "host" and rejected as cross-origin. The deploy sets this explicitly; locally
+ * it is empty and the request-derived check applies, which is right when
+ * nothing sits in front of the app.
  */
 function originAllowed(request: NextRequest): boolean {
   const origin = request.headers.get('origin')
   if (!origin) return true
+
+  let candidate: URL
   try {
-    const self = new URL(request.url)
-    return new URL(origin).host === self.host
+    candidate = new URL(origin)
+  } catch {
+    return false
+  }
+
+  const configured = (process.env.MCP_ALLOWED_ORIGIN || '').trim()
+  if (configured) {
+    try {
+      const allowed = new URL(configured)
+      // Compare the full origin (scheme + host + port), not just the host: a
+      // plaintext http:// origin must not pass on an https deployment.
+      return candidate.origin === allowed.origin
+    } catch {
+      console.error(`[mcp] MCP_ALLOWED_ORIGIN is not a valid URL: ${configured}`)
+      return false
+    }
+  }
+
+  try {
+    return candidate.host === new URL(request.url).host
   } catch {
     return false
   }

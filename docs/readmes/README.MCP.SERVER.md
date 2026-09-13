@@ -11,7 +11,7 @@ set of recon tuning settings, and query the attack-surface graph.
 > | | Direction | Where |
 > | --- | --- | --- |
 > | **MCP Tool Plugins** ([README.MCP.md](README.MCP.md)) | **outbound** — RedAmon is the *client* of servers you register | Global Settings → *MCP Tool Plugins* |
-> | **MCP Access Tokens** (this document) | **inbound** — other agents are the *clients*, RedAmon is the *server* | Global Settings → *MCP Access Tokens* |
+> | **MCP Inbound** (this document) | **inbound** — other agents are the *clients*, RedAmon is the *server* | Global Settings → *MCP Inbound* |
 
 ---
 
@@ -84,7 +84,7 @@ Agent-side bounds (the agent **does** have an `env_file`, so `.env` reaches it):
 
 ## 3. Minting a token
 
-**Global Settings → MCP Access Tokens → New token.**
+**Global Settings → MCP Inbound → New token.**
 
 - **Minting is self-only**, judged on your real login identity. An admin viewing
   another user's settings sees the form disabled with a reason: a token minted
@@ -159,8 +159,44 @@ endpoint returns **403 by default**. To open it:
 MCP_EDGE_ALLOW_BEARER=true   # emits `auth_basic off` for this one location
 ```
 
-Under `GATE_MODE=ip_allowlist` (the default) the location inherits the server's
-`allow`/`deny` unchanged: the operator gate **and** the token.
+### The firewall is a separate gate, and it comes FIRST
+
+This is the step people miss. `MCP_EDGE_ALLOW_BEARER` controls nginx. It does not
+control the firewall, and the firewall runs first.
+
+`ufw` scopes the app port to `OPERATOR_ALLOW_CIDRS` whenever that is set (the
+recommended posture). It filters by PORT and **cannot see the URL path**, so an
+agent connecting from anywhere else is dropped before nginx is consulted at all.
+On such a host, flipping `MCP_EDGE_ALLOW_BEARER` alone changes nothing and the
+client simply times out.
+
+```bash
+MCP_CLIENT_CIDRS=198.51.100.0/24   # where your AGENT connects from
+```
+
+That admits those sources to the port, and the exact-match nginx location then
+narrows them to `/api/mcp-server` only: they do not gain the UI, the login page
+or the agent WebSocket paths.
+
+With no `MCP_CLIENT_CIDRS`, the location inherits the server's `allow`/`deny`
+unchanged: the operator gate **and** the token. That is the right posture when
+the agent runs on the operator's own network, and the wrong one for a remote
+agent.
+
+Three gates, all of which must admit the agent: the cloud Security Group, `ufw`,
+then nginx. `./deploy.sh verify` probes the endpoint and tells the failure modes
+apart (404 disabled, 401 working, 403 edge gate). Repeated 401s are banned by the
+`redamon-mcp-auth` fail2ban jail.
+
+### http-* modes are refused
+
+`deploy.sh` will not enable MCP in an `http-*` ACCESS_MODE, and `ALLOW_INSECURE=1`
+does not override it. The credential is a bearer token in a header: over plaintext
+it crosses the wire on every call and, unlike a session cookie, it outlives the
+session, so one capture is a durable credential.
+
+In `https-ip` with a self-signed certificate most MCP clients reject the
+connection. Use a real certificate (`TLS_MODE=provided`) or a domain.
 
 ---
 
