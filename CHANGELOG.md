@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.16.0] - 2026-09-13
+
+### Added
+
+- **RedAmon as an MCP server: let your own AI agent drive recon.** Until now RedAmon was always the MCP *client*. It can now be the *server*: an external agent connects in with a personal access token, authenticates as one RedAmon user, and works inside that user's own projects. Nine tools — list projects, read scan status and settings, summarise and query the attack-surface graph, explain what the graph means, start and stop a full recon, and change recon tuning. Off by default; mint a token in Global Settings → **MCP Access Tokens** (inbound), which sits beside the existing MCP Tool Plugins tab (outbound). The mint dialog hands you the ready-to-paste client config. See [README.MCP.SERVER.md](docs/readmes/README.MCP.SERVER.md).
+
+  **The token is per user, never per project**, so a project created later is reachable without re-minting. Permissions default to **read-only** and every write permission is opt-in, with `recon:overwrite` — permission to discard the current graph — split from permission to scan, because that is the one irreversible action on the surface. Expiry (default 90 days) and revocation are re-checked on *every call*, so both take effect mid-session. Minting is self-only on your real login identity and asks for your password again: an admin cannot mint a credential on someone else's account, though they can still list and revoke during an incident. Any password change, including an admin reset, revokes every token.
+
+  **What it can change is a positive allowlist, not a promise.** `Project` has over 700 columns and the settings endpoint writes whatever it is given, so the MCP path enumerates ~126 genuine tuning fields — per-tool toggles, rate limits, thread counts, timeouts, depth caps, severity lists — each numeric bounded by the same min/max as its form input. Everything else is denied by class and by name: the engagement target and scope, Rules of Engagement, which container images get spawned, other scans' targets, egress toggles, wordlists and templates, request headers, intrusiveness toggles, credentials, agent settings. A test asserts every column is classified, so a new field is unreachable over MCP until someone classifies it.
+
+- **graph_summary and graph_schema, for RedAmon's own agent too.** Same three graph tools on both surfaces. `graph_summary` answers "what does this project actually contain" as a count per node type, which is how an agent tells *scanned and clean* from *never scanned* — reporting the second as the first is a false negative in a security tool. `graph_schema` explains what the graph means, reading no data, so it still answers when a query does not. Enabling `query_graph` grants all three; there is no second checkbox.
+
+### Changed
+
+- **A scan the orchestrator refuses no longer costs you a saved graph version.** The version freeze ran before the orchestrator was asked, and carried retention with it, so a start refused for the RoE window, the guardrail or memory still minted a version, stored a duplicate snapshot and evicted the oldest unpinned one. Retention now runs only after a start is accepted, a refusal is rolled back in one transaction, and every start path is serialised per project. A start whose call *times out* is reported as "outcome unknown" with a history row, rather than throwing and leaving no trace.
+
+### Security
+
+- **The orchestrator's guardrail and RoE pre-flight failed open.** Any failure fetching the project — a timeout, a non-200, the webapp restarting — was logged as "proceeding" and the scan ran with neither the hard guardrail nor the RoE time window applied. It now refuses with 503 naming the unreachable dependency. A malformed RoE timezone becomes a 400 naming the bad setting instead of a silent pass.
+
+- **The natural-language graph query endpoint was a cross-tenant and billing hole.** It forwarded the user and project from the request body with no ownership check, and the agent endpoint behind it was unauthenticated and spends *the body-named user's* LLM key at up to nine provider calls per request. Any logged-in user could generate queries against any project and bill any other user's key; with the agent port published on `0.0.0.0`, anyone on the LAN could do it without logging in. The identity now comes from the session, ownership is enforced, the agent endpoint requires the internal key and applies the spend cap, and upstream error bodies are no longer passed through.
+
+- **Graph reads are bounded.** Every guard on the graph endpoint was about *what* may be read; none bounded *how much*. One read-only Cartesian product passed them all and pinned Neo4j, which the graph screen, the agent and every running scan share. Reads now carry a transaction timeout (the same knob the webapp's own driver uses), a streamed record cap that reports truncation, and a serialised-byte cap that refuses rather than truncating silently. None of them rewrites the caller's query.
+
 ## [6.15.0] - 2026-09-12
 
 ### Added
