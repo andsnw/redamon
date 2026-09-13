@@ -3165,6 +3165,18 @@ def _triage_graph_client():
     return _triage_client
 
 
+#: Every op this endpoint answers. Validated up front so the dispatch below can
+#: be a plain function with no early-return path back through the handler.
+_TRIAGE_OPS = frozenset({
+    "mute", "unmute", "list_muted", "list_findings",
+    "human_verdict", "preflight", "stop_run",
+})
+
+#: The mixin's own ceiling on `list_triage_findings`. A caller-supplied limit is
+#: clamped to it, never above it.
+_TRIAGE_LIST_MAX = 2000
+
+
 class GraphTriageRequest(BaseModel):
     """Webapp -> agent triage write.
 
@@ -3181,6 +3193,16 @@ class GraphTriageRequest(BaseModel):
     reason: Optional[str] = None
     muted_by: Optional[str] = None
     status: Optional[str] = None
+    #: "mcp" opts the call into the MCP concurrency ceiling, exactly as the same
+    #: field does on /graph/exec. It is set by the CALLER, so it can only ever
+    #: narrow what that caller gets; the browser paths leave it unset and keep
+    #: their current behaviour.
+    source: Optional[str] = None
+    #: Cap on rows for `list_findings`. The mixin's own default is 2000 and the
+    #: webapp pages far below that, so without this every page transferred the
+    #: whole table internally. `total` still comes from the uncapped count, so a
+    #: capped read can never pass for a complete one.
+    limit: Optional[int] = None
 
 
 @app.post("/graph/triage", tags=["Graph"], dependencies=[Depends(require_master_internal_auth)])
@@ -3214,38 +3236,66 @@ async def graph_triage(body: GraphTriageRequest):
     if body.op in needs_node and not body.node_id:
         return JSONResponse(status_code=400, content={"error": f"op {body.op} needs node_id"})
 
-    try:
+    if body.op not in _TRIAGE_OPS:
+        return JSONResponse(status_code=400,
+                            content={"error": f"unknown op {body.op!r}"})
+
+    def run_op():
+        """The blocking body, in one place.
+
+        Extracted so the MCP and browser paths cannot drift in WHAT they do -
+        only in how they are scheduled.
+        """
         client = _triage_graph_client()
         if body.op == "mute":
-            result = client.mute_finding(
+            return client.mute_finding(
                 body.user_id, body.project_id, body.node_id,
                 muted_by=body.muted_by or body.user_id, reason=body.reason or "")
-        elif body.op == "unmute":
-            result = client.unmute_finding(body.user_id, body.project_id, body.node_id)
-        elif body.op == "list_muted":
-            result = {"findings": client.list_muted(body.user_id, body.project_id)}
-        elif body.op == "list_findings":
+        if body.op == "unmute":
+            return client.unmute_finding(body.user_id, body.project_id, body.node_id)
+        if body.op == "list_muted":
+            return {"findings": client.list_muted(body.user_id, body.project_id)}
+        if body.op == "list_findings":
             # `total` is what stops the table lying: the query is capped, so
-            # without it the operator reads a truncated list as complete.
-            result = {
-                "findings": client.list_triage_findings(body.user_id, body.project_id),
+            # without it the operator reads a truncated list as complete. It
+            # comes from the UNCAPPED count, so it stays true whatever `limit`
+            # the caller asked for.
+            kwargs = {}
+            if body.limit is not None:
+                kwargs["limit"] = max(1, min(int(body.limit), _TRIAGE_LIST_MAX))
+            return {
+                "findings": client.list_triage_findings(
+                    body.user_id, body.project_id, **kwargs),
                 "total": client.count_triage_findings(body.user_id, body.project_id),
             }
-        elif body.op == "human_verdict":
-            result = client.set_human_verdict(
+        if body.op == "human_verdict":
+            return client.set_human_verdict(
                 body.user_id, body.project_id, body.node_id,
                 body.status or "", body.reason or "")
-        elif body.op == "preflight":
-            result = client.triage_preflight(body.user_id, body.project_id)
-        elif body.op == "stop_run":
-            # Project delete calls this before deleting (X12). A run that keeps
-            # working against a project being deleted would only notice at its
-            # next heartbeat, minutes later, and could still be mid-publish.
-            from cypherfix_triage.websocket_handler import stop_project_run
-            result = stop_project_run(body.project_id)
+        if body.op == "preflight":
+            return client.triage_preflight(body.user_id, body.project_id)
+        # stop_run. Project delete calls this before deleting (X12). A run that
+        # keeps working against a project being deleted would only notice at its
+        # next heartbeat, minutes later, and could still be mid-publish.
+        from cypherfix_triage.websocket_handler import stop_project_run
+        return stop_project_run(body.project_id)
+
+    try:
+        if body.source == "mcp":
+            # An external agent behind a personal access token is the least
+            # trusted caller this endpoint has, and unlike /graph/exec it took
+            # NO concurrency ceiling at all. The published guarantee is "at most
+            # 2 at a time across all tokens", and the contention lands on the
+            # operator's own Priority Board, which reads this same data through
+            # this same endpoint.
+            #
+            # Off the event loop as well: these are synchronous Neo4j calls, so
+            # running them inline stalls every other request in the agent for
+            # the duration - including the UI's graph reads.
+            async with _graph_exec_mcp_semaphore():
+                result = await asyncio.to_thread(run_op)
         else:
-            return JSONResponse(status_code=400,
-                                content={"error": f"unknown op {body.op!r}"})
+            result = run_op()
     except Exception as e:
         logger.error(f"graph/triage {body.op} failed: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
