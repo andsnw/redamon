@@ -43,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`get_scan_status` reports the other six scanners.** `graph_summary` can say a node type is absent; it could not say the scan that produces it is running right now. Covers GVM, the GitHub Secret Hunt, the supply-chain scan, the Secret Multiscanner, the AI attack-surface scan and partial recon runs, masked exactly as `get_recon_status` is, and reporting "unknown" rather than "idle" when the orchestrator cannot be reached. Starting those scans is still deliberately not available.
 
+- **A single misbehaving MCP tool can be withdrawn without taking the surface down.** The only lever was `MCP_SERVER_ENABLED=false`, which stops every tool for every token — not a proportionate response on a thirty-tool surface, and the alternative was shipping a revert. `MCP_DISABLED_TOOLS` names tools to withdraw; they disappear from the advertised list rather than staying visible and refusing, so a connected agent never plans around a tool it cannot use. A name matching no tool is ignored, because an operator's emergency lever must not be the reason the server fails to start.
+
+- **An MCP audit row now records what a call actually read.** It recorded the action, the project and an outcome, so `list_findings / project:abc / ok` could not distinguish a token that pulled every finding from one that pulled none — after a token compromise there was no way to bound the exposure. Rows now carry the call's filters and its result count. Free-text arguments and anything already recorded better elsewhere stay out.
+
+- **`Project` columns now have a read classification, not only a write one.** The write side has been a positive, fully-classified set since the surface shipped; the read side reused it, quietly conflating "what you may change" with "what you may see". They genuinely differ — the engagement target is readable so an agent knows what it is looking at, and writable by nobody here. A test walks every column, so a **new** column is unreadable over MCP until someone classifies it. The Rules of Engagement fields make this concrete: among them are a client's name, email and phone number.
+
 - **`get_recon_status` reports progress a poller can actually use**: the total phase count beside the phase number, and the domain-batch group progress. Phases restart per group, so on a multi-domain scan the phase number barely moves for an hour and the group was the only thing advancing.
 
 ### Fixed

@@ -208,7 +208,13 @@ and a value set only in `.env` would be silently inert.
 | `MCP_RATE_START_WINDOW_MS` | `300000` | That window (5 minutes). |
 | `MCP_RATE_COMPARE_PER_WINDOW` | `2` | `compare_scan_versions` calls per project per window. Its own bucket, not `query`: one call can gunzip and parse a whole stored graph. |
 | `MCP_RATE_COMPARE_WINDOW_MS` | `300000` | That window (5 minutes). |
+| `MCP_DISABLED_TOOLS` | (empty) | Comma-separated tool names to withdraw. They disappear from `tools/list` rather than refusing, so a client never plans around them. The per-tool alternative to taking the whole surface down; a name matching no tool is ignored. |
 | `MCP_LLM_DAILY_BUDGET` | `200` | NL queries per token per day (they spend the owner's LLM key). |
+
+> **The generated API reference describes a build, not a deployment.** It is
+> rendered from the server's own `tools/list` with no tool withdrawn, so a
+> deployment using `MCP_DISABLED_TOOLS` advertises fewer tools than the page
+> lists. Ask the server itself if you need the authoritative set for one host.
 
 Agent-side bounds (the agent **does** have an `env_file`, so `.env` reaches it):
 `NEO4J_QUERY_TIMEOUT_MS` (120s), `GRAPH_EXEC_MAX_RECORDS` (1000),
@@ -385,6 +391,16 @@ That check deliberately does **not** honour `ACCESS_ENFORCE`. The shared
 browser-facing guard degrades an ownership violation to a logged warning when
 `ACCESS_ENFORCE=0`; on a credentialed, internet-reachable surface that would be a
 cross-tenant data breach toggled by an environment variable.
+
+**`ACCESS_ENFORCE=0` and `MCP_SERVER_ENABLED=true` are not a supported
+combination**, and this is a known, accepted asymmetry rather than a fix
+pending. The hard check above covers the READ side. The browser-side *writers*
+that produce some of the rows those reads return - saved graph views,
+remediations, queued jobs - authorise with the shared guard, which in that mode
+degrades to log-and-allow. The sharpest case is a saved graph view: a different
+user could plant a row in this project and an MCP token would later execute it
+through `run_graph_view`. The guarantee on the read side cannot be stronger than
+the write that created the row.
 
 ### The route is bearer-only
 

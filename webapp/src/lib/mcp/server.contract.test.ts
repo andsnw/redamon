@@ -14,7 +14,7 @@
  *
  * @vitest-environment node
  */
-import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 
 vi.mock('@/lib/prisma', () => ({ default: {} }))
 vi.mock('@/lib/audit', () => ({ writeAudit: vi.fn() }))
@@ -192,5 +192,41 @@ describe('descriptions carry the usage rule the model needs', () => {
     for (const tool of tools) {
       expect((tool.description ?? '').length, `${tool.name}`).toBeGreaterThan(80)
     }
+  })
+})
+
+
+// =============================================================================
+// The per-tool rollback lever, and what a read records about itself.
+// =============================================================================
+
+describe('MCP_DISABLED_TOOLS withdraws a tool from the surface', () => {
+  afterEach(() => { vi.unstubAllEnvs() })
+
+  test('an unset value changes nothing', async () => {
+    expect((await listTools()).tools).toHaveLength(30)
+  })
+
+  test('a named tool is ABSENT from tools/list, not advertised and refusing', async () => {
+    // A client that cannot see a tool will not plan around it. Advertising one
+    // that always refuses teaches an agent to keep retrying.
+    vi.stubEnv('MCP_DISABLED_TOOLS', 'kali_exec,queue_recon')
+    const names = (await listTools()).tools.map(t => t.name)
+    expect(names).not.toContain('kali_exec')
+    expect(names).not.toContain('queue_recon')
+    expect(names).toContain('list_findings')
+    expect(names).toHaveLength(28)
+  })
+
+  test('whitespace and empty entries are tolerated', async () => {
+    vi.stubEnv('MCP_DISABLED_TOOLS', ' graph_summary , , ')
+    expect((await listTools()).tools.map(t => t.name)).not.toContain('graph_summary')
+  })
+
+  test('a name matching no tool is ignored rather than failing the server', async () => {
+    // This is an operator's emergency lever; a typo must not stop the server
+    // starting, which would turn a narrow withdrawal into a total outage.
+    vi.stubEnv('MCP_DISABLED_TOOLS', 'no_such_tool')
+    expect((await listTools()).tools).toHaveLength(30)
   })
 })

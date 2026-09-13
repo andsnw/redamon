@@ -120,6 +120,50 @@ function scopesMeta(scopes: ToolScopes): Record<string, unknown> {
 const READ_ONLY: ToolAnnotations = { readOnlyHint: true, openWorldHint: false }
 
 /**
+ * Arguments never copied into the audit record.
+ *
+ * Two reasons, and they are different. `question`, `cypher` and `command` are
+ * unbounded caller text that belongs in the tool's own logging, not in every
+ * audit row. `settings` and `reason` are already recorded, better, by the tools
+ * that own them - `update_recon_settings` writes a real before/after diff.
+ */
+const UNAUDITED_ARGS = new Set(['projectId', 'question', 'cypher', 'command', 'settings', 'reason'])
+
+/**
+ * What a call actually read, so an exposure can be scoped after the fact.
+ *
+ * The audit row recorded the action, the project and an outcome, and nothing
+ * else - so `mcp.list_findings / project:abc / ok` could not distinguish a
+ * token that pulled every finding from one that pulled none. After a token
+ * compromise there was no way to bound what had been taken.
+ *
+ * Filters and ids only, each bounded; never the result itself.
+ */
+function auditDetail(args: unknown, result: unknown): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+
+  const a = (args ?? {}) as Record<string, unknown>
+  const filters: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(a)) {
+    if (UNAUDITED_ARGS.has(k)) continue
+    if (typeof v === 'string') filters[k] = v.slice(0, 120)
+    else if (typeof v === 'number' || typeof v === 'boolean') filters[k] = v
+  }
+  if (Object.keys(filters).length > 0) out.args = filters
+
+  const r = (result ?? {}) as Record<string, unknown>
+  const count =
+    typeof r.returned === 'number' ? r.returned
+    : Array.isArray(r.records) ? r.records.length
+    : Array.isArray(r.projects) ? r.projects.length
+    : undefined
+  if (count !== undefined) out.resultCount = count
+  if (typeof r.total === 'number') out.total = r.total
+
+  return out
+}
+
+/**
  * Wrap a tool body so every outcome is audited and every error is normalised.
  * Failures are audited too, not just successes: a scope denial or an ownership
  * 404 is the only signal that someone is probing this surface.
@@ -140,7 +184,12 @@ function handler<A>(
         action: `mcp.${tool}`,
         targetType: projectId ? 'project' : 'user',
         targetId: projectId ?? ctx.token.userId,
-        after: { tokenId: ctx.token.tokenId, tokenPrefix: ctx.token.tokenPrefix, outcome: 'ok' },
+        after: {
+          tokenId: ctx.token.tokenId,
+          tokenPrefix: ctx.token.tokenPrefix,
+          outcome: 'ok',
+          ...auditDetail(args, result),
+        },
         source: 'mcp',
       })
       return toolJson(result)
@@ -168,11 +217,50 @@ function handler<A>(
   }
 }
 
+/**
+ * Tools this DEPLOYMENT has withdrawn, by name.
+ *
+ * The only lever was `MCP_SERVER_ENABLED=false`, which takes the whole surface
+ * down for every token. On a thirty-tool surface that is not a proportionate
+ * response to one misbehaving tool, and the alternative was shipping a revert.
+ *
+ * Empty by default, so an unset value changes nothing. A name that matches no
+ * tool is ignored rather than refused: this is an operator's emergency lever,
+ * and it must not be the reason the server fails to start.
+ */
+export function disabledToolNames(): ReadonlySet<string> {
+  return new Set(
+    (process.env.MCP_DISABLED_TOOLS || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+  )
+}
+
 export function buildMcpServer(ctx: McpContext): McpServer {
   const server = new McpServer(
     { name: MCP_SERVER_NAME, version: process.env.NEXT_PUBLIC_REDAMON_VERSION || '0.0.0' },
     { capabilities: { tools: {} } }
   )
+
+  // Withdraw at the point of REGISTRATION, so a disabled tool is absent from
+  // tools/list entirely rather than advertised and then refusing. A client that
+  // cannot see a tool will not plan around it.
+  const disabled = disabledToolNames()
+  if (disabled.size > 0) {
+    // The SDK's signature is generic per tool, so the pass-through is typed
+    // loosely here and cast back once. Every registration below keeps its own
+    // full type-checking, which is what matters.
+    const register = server.registerTool.bind(server) as (...a: unknown[]) => unknown
+    server.registerTool = ((name: string, ...rest: unknown[]) => {
+      if (disabled.has(name)) {
+        console.warn(`[mcp] tool '${name}' is withdrawn by MCP_DISABLED_TOOLS`)
+        // The handle is never used: registrations below ignore the return.
+        return { remove() {}, enable() {}, disable() {}, update() {} }
+      }
+      return register(name, ...rest)
+    }) as typeof server.registerTool
+  }
 
   server.registerTool(
     'list_projects',

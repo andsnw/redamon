@@ -29,6 +29,7 @@ import {
   type ResolvedMcpToken,
 } from '@/lib/mcpAuth'
 import { projectReconSettings, reconSettingsSelect } from '@/lib/reconSettingsAllowlist'
+import { assertReadableSelect } from '@/lib/mcpReadableFields'
 import { McpToolError } from '@/lib/mcp/errors'
 import { assertTenantScoped, TenantViolation } from '@/lib/mcp/graphGuard'
 import { agentBaseUrl } from '@/lib/agentFetch'
@@ -102,14 +103,20 @@ export async function listProjects(ctx: McpContext) {
   requireScope(ctx.token, 'recon:read')
   enforceRate(ctx, 'read')
 
+  // Checked against the READ classification, which is a different set from the
+  // write allowlist: `targetDomain` is readable so a caller knows which
+  // engagement it is looking at, and writable by nobody here.
+  const select = {
+    id: true, name: true, targetDomain: true, targetIps: true,
+    ipMode: true, domainBatchMode: true, updatedAt: true,
+  }
+  assertReadableSelect(select, 'list_projects')
+
   // `where: { userId }` is the enumeration boundary: an external agent can
   // never see another user's project ids, so it can never name one.
   const projects = await prisma.project.findMany({
     where: { userId: ctx.token.userId },
-    select: {
-      id: true, name: true, targetDomain: true, targetIps: true,
-      ipMode: true, domainBatchMode: true, updatedAt: true,
-    },
+    select,
     orderBy: { updatedAt: 'desc' },
   })
   return { projects }
@@ -301,10 +308,13 @@ export async function getReconSettings(ctx: McpContext, projectId: string) {
   await assertMcpProjectAccess(ctx.token.userId, projectId)
 
   // Selected BY the allowlist, so no credential-bearing column is ever loaded,
-  // let alone returned.
+  // let alone returned - and re-checked against the READ classification, so a
+  // future widening of the write allowlist cannot quietly widen this too.
+  const select = { ...reconSettingsSelect(), updatedAt: true }
+  assertReadableSelect(select, 'get_recon_settings')
   const row = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { ...reconSettingsSelect(), updatedAt: true },
+    select,
   })
   if (!row) throw new McpToolError('Project not found', 'not_found')
   return {
