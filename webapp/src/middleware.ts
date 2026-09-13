@@ -34,6 +34,9 @@ const INTERNAL_ALLOWLIST: { method: string; pattern: RegExp }[] = [
   { method: 'POST', pattern: /^\/api\/traffic\/[^/]+\/ingest$/ },
   // Periodic traffic housekeeping (retention/quota/orphan GC), internal cron only.
   { method: 'POST', pattern: /^\/api\/traffic\/maintenance$/ },
+  // Periodic pruning of long-dead MCP access tokens. The webapp has no
+  // scheduler of its own, so the orchestrator's maintenance loop drives it.
+  { method: 'POST', pattern: /^\/api\/internal\/mcp-tokens\/prune$/ },
   // Scan Timeline scheduler: the orchestrator worker polls for due schedules and
   // asks the webapp to run or defer them (the webapp owns the version freeze).
   { method: 'GET', pattern: /^\/api\/internal\/scan-schedules\/due$/ },

@@ -1,0 +1,380 @@
+/* Mirrors McpServersTab.module.css so the two MCP tabs read as siblings. */
+
+.section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.sectionTitle {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+}
+
+.sectionDescription {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-3);
+  line-height: 1.5;
+  max-width: 70ch;
+}
+
+.headerActions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.muted {
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.spin { animation: mcpTokenSpin 1s linear infinite; }
+
+@keyframes mcpTokenSpin { to { transform: rotate(360deg); } }
+
+/* --- buttons --- */
+
+.primaryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--accent-primary);
+  color: var(--accent-on-primary, #fff);
+  border: none;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.primaryBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.secondaryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.secondaryBtn:hover { background: var(--bg-tertiary); }
+.secondaryBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.iconBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+.iconBtn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+
+.linkBtn {
+  background: transparent;
+  border: none;
+  color: var(--accent-primary);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  margin-left: var(--space-2);
+  text-decoration: underline;
+}
+
+/* --- banners --- */
+
+.errorBanner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--danger-bg, rgba(220, 38, 38, 0.1));
+  border: 1px solid var(--danger-border, rgba(220, 38, 38, 0.35));
+  color: var(--danger-text, #dc2626);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-3);
+}
+
+.noticeBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+  line-height: 1.5;
+}
+
+/* --- the one-time reveal --- */
+
+.revealPanel {
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  background: var(--bg-primary);
+}
+
+.revealHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-3);
+}
+
+.revealRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.revealToken {
+  flex: 1 1 320px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-sm);
+}
+
+.snippet {
+  flex: 1 1 320px;
+  min-width: 0;
+  margin: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+  overflow-x: auto;
+}
+
+/* --- the create form --- */
+
+.formBlock {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  max-width: 420px;
+}
+
+.field label {
+  color: var(--text-secondary);
+  font-weight: var(--font-medium);
+  font-size: var(--text-xs);
+}
+
+.field input,
+.field select {
+  padding: var(--space-2);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.scopes {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.scopes legend {
+  color: var(--text-secondary);
+  font-weight: var(--font-medium);
+  font-size: var(--text-xs);
+  padding: 0 var(--space-1);
+}
+
+.scopeRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.scopeRow > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scopeDanger {
+  border-left: 3px solid var(--danger-text, #dc2626);
+  padding-left: var(--space-2);
+}
+
+.scopeCode {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.scopeBlurb {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.formActions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* --- list --- */
+
+.skeleton { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.skeletonRow {
+  height: 38px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  animation: mcpTokenPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes mcpTokenPulse { 50% { opacity: 0.5; } }
+
+.empty {
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: var(--space-5);
+  text-align: center;
+}
+
+.empty p { margin: 0 0 var(--space-2); }
+
+/* The six-field row would overflow a phone; scroll the table, not the page. */
+.tableWrap { overflow-x: auto; }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle, var(--border-default));
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.cellTitle { font-weight: var(--font-medium); color: var(--text-primary); }
+
+.renameInput {
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-primary);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  max-width: 180px;
+}
+
+.prefix {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.tag {
+  display: inline-block;
+  background: var(--bg-tertiary);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  margin-right: var(--space-1);
+  font-family: var(--font-mono, monospace);
+}
+
+/* Dead rows stay visible - "why did my agent stop working" is the common
+   question - but are visibly flagged rather than silently identical. */
+.deadRow { opacity: 0.55; }
+
+.deadTag {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--danger-bg, rgba(220, 38, 38, 0.1));
+  color: var(--danger-text, #dc2626);
+}
+
+.rowActions { display: flex; gap: var(--space-1); }
+
+@media (max-width: 640px) {
+  .section { padding: var(--space-4); }
+  .field { max-width: 100%; }
+  .sectionHeader { flex-direction: column; }
+}

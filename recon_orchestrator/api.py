@@ -353,6 +353,12 @@ AI_ATTACK_REAP_INTERVAL_S = int(os.environ.get("AI_ATTACK_REAP_INTERVAL", "30"))
 TRAFFIC_MAINTENANCE_INTERVAL_S = int(os.environ.get("TRAFFIC_MAINTENANCE_INTERVAL", "3600"))
 _last_traffic_maintenance = 0.0
 
+# The webapp has no scheduler of its own (no instrumentation.ts, no setInterval),
+# so its periodic jobs are driven from this loop. Daily is ample for pruning
+# tokens that have been dead for 90 days.
+MCP_TOKEN_PRUNE_INTERVAL_S = int(os.environ.get("MCP_TOKEN_PRUNE_INTERVAL", "86400"))
+_last_mcp_token_prune = 0.0
+
 
 async def _post_job_queue_reconcile(cm) -> None:
     """Post the set of projects with a live scan so the webapp can close finished
@@ -385,6 +391,23 @@ async def _maybe_run_traffic_maintenance() -> None:
     await asyncio.to_thread(
         _webapp_request, f"{_webapp_base()}/api/traffic/maintenance", key,
         "POST", {}, 30.0, "trafficMaintenance",
+    )
+
+
+async def _maybe_prune_mcp_tokens() -> None:
+    """POST /api/internal/mcp-tokens/prune at most once per TTL. Best-effort."""
+    global _last_mcp_token_prune
+    import time
+    now = time.monotonic()
+    if now - _last_mcp_token_prune < MCP_TOKEN_PRUNE_INTERVAL_S:
+        return
+    _last_mcp_token_prune = now
+    key = _webapp_internal_key()
+    if not key:
+        return
+    await asyncio.to_thread(
+        _webapp_request, f"{_webapp_base()}/api/internal/mcp-tokens/prune", key,
+        "POST", {}, 30.0, "mcpTokenPrune",
     )
 
 
@@ -427,6 +450,10 @@ async def _ai_attack_reaper():
                     await _maybe_run_traffic_maintenance()
                 except Exception as e:
                     logger.warning(f"traffic maintenance failed: {e}")
+                try:
+                    await _maybe_prune_mcp_tokens()
+                except Exception as e:
+                    logger.warning(f"mcp token prune failed: {e}")
     except asyncio.CancelledError:
         pass
 
