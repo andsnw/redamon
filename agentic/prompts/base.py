@@ -2312,7 +2312,7 @@ hostname directly (nuclei vulns aren't linked to Domain/Subdomain via HAS_VULNER
 - `(e:ExploitGvm)-[:EXPLOITED_CVE]->(c:CVE)` - GVM confirmed exploitation of CVE (only connection)
 
 ### Attack Chain Relationships (Intra-chain — sequential flow - Critical: Direction Matters!)
-- `(ac:AttackChain)-[:HAS_STEP {{order: N}}]->(s:ChainStep)` - Chain contains step (only first step)
+- `(ac:AttackChain)-[:HAS_STEP {order: N}]->(s:ChainStep)` - Chain contains step (only first step)
 - `(s1:ChainStep)-[:NEXT_STEP]->(s2:ChainStep)` - Sequential step ordering
 - `(s:ChainStep)-[:PRODUCED]->(f:ChainFinding)` - Step produced a finding
 - `(s:ChainStep)-[:FAILED_WITH]->(fl:ChainFailure)` - Step failed with error
@@ -2359,7 +2359,7 @@ RETURN v.name, v.source, v.cvss_score
 LIMIT 500
 
 // Web vulnerabilities on specific subdomain (via Service chain or direct HAS_BASE_URL)
-MATCH (s:Subdomain {{name: "api.example.com"}})-[:RESOLVES_TO]->(:IP)-[:HAS_PORT]->(:Port)-[:RUNS_SERVICE]->(:Service)-[:SERVES_URL]->(b:BaseURL)
+MATCH (s:Subdomain {name: "api.example.com"})-[:RESOLVES_TO]->(:IP)-[:HAS_PORT]->(:Port)-[:RUNS_SERVICE]->(:Service)-[:SERVES_URL]->(b:BaseURL)
 MATCH (b)-[:HAS_ENDPOINT]->(e:Endpoint)<-[:FOUND_AT]-(v:Vulnerability)
 WHERE v.severity IN ["critical", "high"]
 RETURN e.url, v.name, v.severity
@@ -2392,30 +2392,30 @@ RETURN t.name, t.version, c.id, c.severity, c.cvss
 ### Infrastructure Overview
 ```cypher
 // All subdomains for a domain with HTTP status
-MATCH (s:Subdomain)-[:BELONGS_TO]->(d:Domain {{name: "example.com"}})
+MATCH (s:Subdomain)-[:BELONGS_TO]->(d:Domain {name: "example.com"})
 RETURN s.name, s.status, s.status_codes
 ORDER BY s.status
 
 // Live subdomains (status code 2xx)
-MATCH (s:Subdomain)-[:BELONGS_TO]->(d:Domain {{name: "example.com"}})
+MATCH (s:Subdomain)-[:BELONGS_TO]->(d:Domain {name: "example.com"})
 WHERE s.status STARTS WITH '2'
 RETURN s.name, s.status, s.http_live_url_count
 
 // 404 subdomains (potential subdomain takeover candidates)
-MATCH (s:Subdomain {{status: "404"}})-[:BELONGS_TO]->(d:Domain {{name: "example.com"}})
+MATCH (s:Subdomain {status: "404"})-[:BELONGS_TO]->(d:Domain {name: "example.com"})
 RETURN s.name, s.status_codes
 
 // Forbidden subdomains (403 — may be bypassable)
-MATCH (s:Subdomain {{status: "403"}})-[:BELONGS_TO]->(d:Domain {{name: "example.com"}})
+MATCH (s:Subdomain {status: "403"})-[:BELONGS_TO]->(d:Domain {name: "example.com"})
 RETURN s.name, s.status_codes
 
 // Server error subdomains (5xx — misconfigured backends)
-MATCH (s:Subdomain)-[:BELONGS_TO]->(d:Domain {{name: "example.com"}})
+MATCH (s:Subdomain)-[:BELONGS_TO]->(d:Domain {name: "example.com"})
 WHERE s.status STARTS WITH '5'
 RETURN s.name, s.status, s.status_codes
 
 // Subdomain status distribution
-MATCH (s:Subdomain)-[:BELONGS_TO]->(d:Domain {{name: "example.com"}})
+MATCH (s:Subdomain)-[:BELONGS_TO]->(d:Domain {name: "example.com"})
 RETURN s.status, count(s) AS count ORDER BY count DESC
 
 // Open ports on subdomains
@@ -2434,7 +2434,7 @@ WHERE p.nmap_scanned = true AND p.product IS NOT NULL
 RETURN p.number, p.product, p.version, p.cpe
 
 // Nmap NSE vulnerabilities with CVEs
-MATCH (v:Vulnerability {{source: "nmap_nse"}})-[:HAS_CVE]->(c:CVE)
+MATCH (v:Vulnerability {source: "nmap_nse"})-[:HAS_CVE]->(c:CVE)
 RETURN v.name, v.port_number, c.id, v.state
 
 // Full Nmap attack chain: Service -> Technology -> CVE
@@ -2442,7 +2442,7 @@ MATCH (svc:Service)-[:USES_TECHNOLOGY]->(t:Technology)-[:HAS_KNOWN_CVE]->(c:CVE)
 RETURN svc.name, svc.port_number, t.name, c.id
 
 // NSE vulns with the technology they affect
-MATCH (v:Vulnerability {{source: "nmap_nse"}})-[:FOUND_ON]->(t:Technology)
+MATCH (v:Vulnerability {source: "nmap_nse"})-[:FOUND_ON]->(t:Technology)
 OPTIONAL MATCH (v)-[:HAS_CVE]->(c:CVE)
 RETURN v.name, t.name, c.id, v.severity
 ```
@@ -2565,11 +2565,13 @@ MATCH (e:ExploitGvm)-[:EXPLOITED_CVE]->(c:CVE)
 RETURN e.name, e.target_ip, c.id, e.evidence
 
 // All confirmed compromises (GVM + agent ChainFindings)
+// Every column is aliased: UNION matches branches by column NAME, and
+// `e.target_ip` / `f.target_ip` are two different names.
 MATCH (e:ExploitGvm)
-RETURN 'GVM' as source, e.target_ip, e.cve_ids, e.evidence
+RETURN 'GVM' as source, e.target_ip AS target_ip, e.cve_ids AS cve_ids, e.evidence AS evidence
 UNION ALL
-MATCH (f:ChainFinding {{finding_type: "exploit_success"}})
-RETURN 'Agent' as source, f.target_ip, f.cve_ids, f.evidence
+MATCH (f:ChainFinding {finding_type: "exploit_success"})
+RETURN 'Agent' as source, f.target_ip AS target_ip, f.cve_ids AS cve_ids, f.evidence AS evidence
 ```
 
 ### Attack Chain History
@@ -2581,7 +2583,7 @@ ORDER BY ac.created_at DESC
 LIMIT 500
 
 // Steps in a specific chain (ordered)
-MATCH (ac:AttackChain {{chain_id: "session-123"}})-[:HAS_STEP]->(s:ChainStep)
+MATCH (ac:AttackChain {chain_id: "session-123"})-[:HAS_STEP]->(s:ChainStep)
 RETURN s.iteration, s.phase, s.tool_name, s.success, s.output_summary
 ORDER BY s.iteration
 
@@ -2593,7 +2595,7 @@ ORDER BY f.created_at DESC
 LIMIT 500
 
 // Findings and exploit successes 
-MATCH (f:ChainFinding {{finding_type: "exploit_success"}})
+MATCH (f:ChainFinding {finding_type: "exploit_success"})
 RETURN f.target_ip, f.target_port, f.cve_ids, f.metasploit_module, f.evidence
 LIMIT 500
 
@@ -2604,12 +2606,12 @@ ORDER BY fl.created_at DESC
 LIMIT 500
 
 // Cross-session: what was tried against a specific IP
-MATCH (s:ChainStep)-[:STEP_TARGETED]->(i:IP {{address: "10.0.0.5"}})
+MATCH (s:ChainStep)-[:STEP_TARGETED]->(i:IP {address: "10.0.0.5"})
 RETURN s.chain_id, s.tool_name, s.success, s.output_summary
 ORDER BY s.created_at DESC
 
 // Cross-session: what was tried against a specific hostname
-MATCH (s:ChainStep)-[:STEP_TARGETED]->(sub:Subdomain {{name: "www.example.com"}})
+MATCH (s:ChainStep)-[:STEP_TARGETED]->(sub:Subdomain {name: "www.example.com"})
 RETURN s.chain_id, s.tool_name, s.success, s.output_summary
 ORDER BY s.created_at DESC
 
@@ -2619,14 +2621,14 @@ RETURN s.chain_id, s.tool_name, t.name, t.version
 ORDER BY s.created_at DESC
 
 // Chain with all findings and failures
-MATCH (ac:AttackChain {{chain_id: "session-123"}})
+MATCH (ac:AttackChain {chain_id: "session-123"})
 OPTIONAL MATCH (ac)-[:HAS_STEP]->(s:ChainStep)-[:PRODUCED]->(f:ChainFinding)
 OPTIONAL MATCH (s)-[:FAILED_WITH]->(fl:ChainFailure)
 RETURN s.iteration, s.tool_name, f.title, fl.error_message
 ORDER BY s.iteration
 
 // Decisions made during a chain (with preceding/following steps)
-MATCH (ac:AttackChain {{chain_id: "session-123"}})-[:HAS_STEP]->(:ChainStep)-[:NEXT_STEP*0..]->(s:ChainStep)-[:LED_TO]->(d:ChainDecision)
+MATCH (ac:AttackChain {chain_id: "session-123"})-[:HAS_STEP]->(:ChainStep)-[:NEXT_STEP*0..]->(s:ChainStep)-[:LED_TO]->(d:ChainDecision)
 OPTIONAL MATCH (d)-[:DECISION_PRECEDED]->(next:ChainStep)
 RETURN d.decision_type, d.from_state, d.to_state, d.reason, s.tool_name AS triggered_by, next.tool_name AS followed_by
 ```

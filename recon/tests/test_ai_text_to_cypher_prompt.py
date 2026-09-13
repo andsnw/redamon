@@ -529,12 +529,24 @@ def test_each_example_query_has_balanced_parentheses():
 
 
 def _neo4j_driver():
+    """Connect to Neo4j, or return None so the caller skips cleanly.
+
+    The credentials come from the environment first. Hardcoding them meant
+    every EXPLAIN test below silently skipped on any stack whose password was
+    not the old default - a green run that had validated nothing, which is how
+    19 unparseable examples stayed in the prompt.
+    """
+    import os
+
     try:
         from neo4j import GraphDatabase  # type: ignore
     except Exception:
         return None
+    uri = os.environ.get("NEO4J_URI") or "bolt://localhost:7687"
+    user = os.environ.get("NEO4J_USER") or "neo4j"
+    password = os.environ.get("NEO4J_PASSWORD") or "changeme123"
     try:
-        drv = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "changeme123"))
+        drv = GraphDatabase.driver(uri, auth=(user, password))
         drv.verify_connectivity()
         return drv
     except Exception:
@@ -564,6 +576,92 @@ def test_each_example_query_parses_against_live_neo4j():
         drv.close()
     assert not failures, (
         "Cypher example(s) failed to parse against live Neo4j:\n"
+        + "\n".join(f"  EXAMPLE: {q}\n    ERROR: {e}" for q, e in failures)
+    )
+
+
+# ---------------------------------------------------------------------------
+# WHOLE-PROMPT Cypher validity
+#
+# Everything above validates the AI Surface Annotations subsection, which is
+# about 7% of the prompt near the end. That is how 19 broken examples shipped
+# in `## Common Query Patterns` and `## Relationships`: a stale `.format()`
+# escape left them as `MATCH (d:Domain {{name: "x"}})`, which Neo4j rejects
+# with `Invalid input '{'`.
+#
+# Note that the balanced-bracket test above cannot catch this either: `{{` and
+# `}}` are balanced. Only counting doubles, or asking Neo4j, finds it.
+#
+# These two tests take the WHOLE literal instead.
+# ---------------------------------------------------------------------------
+
+def _fenced_cypher_queries(prompt_body: str) -> list[str]:
+    """Every runnable query inside a ```cypher fence, anywhere in the prompt.
+
+    A fence holds several queries separated by blank lines, each usually
+    preceded by a `//` comment. Comments are dropped and each blank-line-
+    separated fragment is treated as one query.
+    """
+    import re
+
+    out: list[str] = []
+    for block in re.findall(r"```cypher\n(.*?)```", prompt_body, re.S):
+        for frag in re.split(r"\n\s*\n", block):
+            lines = [
+                ln for ln in frag.split("\n")
+                if ln.strip() and not ln.strip().startswith("//")
+            ]
+            if not lines:
+                continue
+            q = "\n".join(lines).strip()
+            if q.upper().startswith(
+                ("MATCH", "OPTIONAL", "WITH", "CALL", "UNWIND", "RETURN")
+            ):
+                out.append(q)
+    return out
+
+
+def test_prompt_has_no_doubled_braces():
+    """`{{` is a `.format()` / PromptTemplate escape, and nothing formats this
+    string any more - all three consumers take it verbatim, and f-string
+    INTERPOLATION does not unescape an interpolated value. So a `{{` here
+    reaches the model as a literal `{{` and teaches it invalid Cypher."""
+    body = _extract_text_to_cypher_block(_read_prompt_source())
+    assert "{{" not in body and "}}" not in body, (
+        "TEXT_TO_CYPHER_SYSTEM contains doubled braces. Cypher maps take single "
+        "braces: write `{name: \"x\"}`, not `{{name: \"x\"}}`. Nothing calls "
+        ".format() on this prompt, so the escape is not consumed and the model "
+        "is taught syntax Neo4j rejects."
+    )
+
+
+def test_every_fenced_example_parses_against_live_neo4j():
+    """The whole-prompt counterpart to the AI-block EXPLAIN test above.
+
+    EXPLAIN plans without executing, so this reads no data and writes none.
+    """
+    drv = _neo4j_driver()
+    if drv is None:
+        print("SKIP: test_every_fenced_example_parses_against_live_neo4j (neo4j unreachable)")
+        return
+    body = _extract_text_to_cypher_block(_read_prompt_source())
+    queries = _fenced_cypher_queries(body)
+    assert len(queries) >= 30, (
+        f"only {len(queries)} fenced examples found; the extractor is probably "
+        "broken, which would make this test silently vacuous"
+    )
+    failures: list[tuple[str, str]] = []
+    try:
+        with drv.session() as s:
+            for q in queries:
+                try:
+                    s.run("EXPLAIN " + q).consume()
+                except Exception as exc:  # noqa: BLE001
+                    failures.append((q.splitlines()[0][:90], str(exc).splitlines()[0][:140]))
+    finally:
+        drv.close()
+    assert not failures, (
+        f"{len(failures)} of {len(queries)} fenced Cypher example(s) do not parse:\n"
         + "\n".join(f"  EXAMPLE: {q}\n    ERROR: {e}" for q, e in failures)
     )
 
