@@ -95,7 +95,7 @@ test('every row keeps its Edit and Revoke buttons inside the panel', async ({ pa
   // and pushed the row actions past its right edge, behind a scrollbar.
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.route(`**/api/users/${USER}/mcp-tokens`, route => route.fulfill({
-    json: { tokens: [{ ...TOKENS[0], name: 'e2e full', scopes: ['recon:read', 'recon:scan', 'recon:overwrite', 'recon:settings', 'graph:cypher'] }, ...TOKENS] },
+    json: { tokens: [{ ...TOKENS[0], name: 'e2e full', scopes: ['recon:read', 'recon:scan', 'recon:overwrite', 'recon:settings', 'triage:read', 'graph:cypher', 'kali:exec'] }, ...TOKENS] },
   }))
   await openTab(page)
   const wrap = await page.locator('[class*="__tableWrap"]').boundingBox()
@@ -123,7 +123,7 @@ test('New token form with its permissions', async ({ page }) => {
   await page.getByRole('button', { name: 'New token' }).click()
   await page.getByLabel('Name').fill('CI nightly rescan')
   await page.getByLabel('Expires').selectOption('365')
-  for (const scope of ['recon:scan', 'recon:settings']) {
+  for (const scope of ['recon:scan', 'recon:settings', 'triage:read']) {
     await page.locator('label', { hasText: scope }).locator('input[type="checkbox"]').check()
   }
   const form = page.getByRole('heading', { name: 'New access token' })

@@ -45,6 +45,12 @@ the generated reference page, never by this skill.
   [apiReference.ts](../../webapp/src/lib/mcp/apiReference.ts) when a tool's body requires
   an argument its JSON Schema marks optional.** The generated example sends only
   schema-required arguments, and the test calls every example.
+- **A tool that reads NO backend must be added to `BACKEND_FREE_TOOLS` in
+  [apiReference.test.ts](../../webapp/src/lib/mcp/apiReference.test.ts).** That file proves a
+  tool's declared scopes are enough by calling it and expecting the generic database failure,
+  because every Prisma model is mocked away. A tool derived purely from constants
+  (`describe_recon_settings`, `list_recon_presets`) SUCCEEDS instead, and would otherwise read
+  as a failure. Do not relax the assertion; name the tool.
 
 ---
 

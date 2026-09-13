@@ -17,7 +17,7 @@ set of recon tuning settings, and query the attack-surface graph.
 
 ## 1. What is and is not exposed
 
-**Exposed (thirteen tools).**
+**Exposed (twenty-one tools).**
 
 | Tool | What it does | Permission |
 | --- | --- | --- |
@@ -34,11 +34,27 @@ set of recon tuning settings, and query the attack-surface graph.
 | `kali_exec` | One allowlisted, scope-checked command in the sandbox. Not a shell. | `kali:exec` |
 | `kali_output` | That command's output, paged from a byte cursor. | `kali:exec` |
 | `kali_cancel` | Stop a command it started. | `kali:exec` |
+| `list_findings` | Every finding, ranked when a triage run has produced a ranking and honest about it when not. | `recon:read` |
+| `list_muted_findings` | The findings a person suppressed. Hidden from every other tool here. | `triage:read` |
+| `list_remediations` | What to fix, with CVSS, CVE/CWE/CAPEC, exploit and KEV flags. | `triage:read` |
+| `get_project_activity` | Every scan in flight on this project, plus whether a start would be refused. | `recon:read` |
+| `list_scan_versions` | Saved graph versions, with `pinned` and `hasSnapshot`. | `recon:read` |
+| `compare_scan_versions` | What changed between two graph states. Counts and names only. | `recon:read` |
+| `describe_recon_settings` | The reference manual for `update_recon_settings`: meanings, types, bounds. | `recon:read` |
+| `list_recon_presets` | The curated engagement presets, and how much of each is applicable here. | `recon:read` |
 
 **Deliberately not exposed:** the agent chat, a shell, partial recon, project
 create/delete/import, secrets and LLM keys, target and scope fields, Rules of
-Engagement, guardrails, GVM/TruffleHog/supply-chain/AI attack-surface scan
-control, and any graph **write**.
+Engagement, guardrails, **starting** a GVM / TruffleHog / supply-chain / AI
+attack-surface scan, captured HTTP traffic, version activation or deletion, and
+any graph **write**.
+
+Note the distinction the reads above draw: their FINDINGS are readable (a
+finding is a finding whichever scanner wrote it), while **starting** those scans
+is not. Muting and unmuting are not exposed either, in either direction: mute is
+the one action that makes a finding invisible to every other read here, and
+unmute reverses a human's suppression decision, which is exactly the power the
+architecture withholds from the model-driven path.
 
 `kali_toolbox` is served from the `kali_shell` `TOOL_REGISTRY` description via
 the agent's `GET /kali/toolbox` (`require_internal_auth_only`), the same bytes
@@ -205,6 +221,12 @@ Agent-side bounds (the agent **does** have an `env_file`, so `.env` reaches it):
 - **Permissions default to read-only.** Every write permission is opt-in, and
   each says what it allows. `recon:overwrite` says plainly that it permits
   discarding the current graph.
+- **`triage:read` is separate from `recon:read` on purpose**, and it is the one
+  read permission that is not ticked by default. It unlocks the findings a
+  person deliberately suppressed (with who muted them and why) and the
+  remediation write-ups. Neither was reachable by any route before, so folding
+  them into `recon:read` would have changed what every already-minted token can
+  read, with no operator action and no visible change to its permission chips.
 - **Expiry** defaults to 90 days. It is re-checked on *every call*, so expiry and
   revocation take effect mid-session rather than at the client's next reconnect.
 - The token is shown **once**. Afterwards only its first 8 characters are ever

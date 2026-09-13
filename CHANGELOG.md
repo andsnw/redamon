@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The MCP server can now observe, not only act.** It held the most consequential verb in the product — `start_recon`, which rebuilds the attack-surface graph and consumes a retention slot — while being unable to answer what was found, what changed since last time, or what is happening on the project right now. Eight reads close those three gaps: `list_findings`, `list_muted_findings`, `list_remediations`, `get_project_activity`, `list_scan_versions`, `compare_scan_versions`, `describe_recon_settings` and `list_recon_presets`.
+
+  **Existing tokens gain the six on `recon:read` and nothing else.** The two that reach data no token could previously see by any route — the findings a person suppressed, and the remediation write-ups — are behind a **new `triage:read` permission that is off by default**. Folding them into `recon:read` would have changed what every already-minted credential can read on deploy day, while the permission chips an incident responder looks at stayed identical.
+
+  **`list_findings` refuses to imply a ranking it does not have.** `triage_priority_score` is written only by a triage run, which a person starts deliberately, so on a freshly scanned project every finding is unscored and the order is scanner severity alone. It reports `triageState` and says so, because a caller told "ranked by priority" over a list of nulls will otherwise read *unscored* as *unimportant*.
+
+  **`list_muted_findings` closes a false negative that was invisible by construction.** Muted findings are excluded from `graph_summary`'s counts, excluded from `list_findings`, and unreachable by Cypher, so "zero open findings" and "a human suppressed thirty criticals" were the same answer to an agent writing a report.
+
+  **`compare_scan_versions` summarises rather than handing back the raw delta**, whose identity keys embed secret *values* and whose payload is unbounded. It also refuses instead of guessing: version activation clears the graph and restores it as two separate steps, so a comparison that straddled one would have succeeded while reporting the entire project as removed.
+
+  **`describe_recon_settings` makes `update_recon_settings` usable.** It was a 126-field API whose only reference was a list of key names and current values, so an agent learned each bound by being refused — and because one bad key refuses the whole call, a batch of guesses applied nothing at all. It also documents the two-level model behind the commonest silent failure: enable a phase with every tool in it disabled and the scan runs, scans nothing, and says nothing.
+
+  **`list_recon_presets` is read-only deliberately.** Between a third and 60% of each preset is outside what this surface may write, and for the stealth presets the excluded part *is* the stealth — the rate limits, passive mode and brute-force switches. Applying one here would leave a scan louder than the preset asked for while reporting success, so each preset reports how much of it is applicable instead.
+
+- **`get_recon_status` reports progress a poller can actually use**: the total phase count beside the phase number, and the domain-batch group progress. Phases restart per group, so on a multi-domain scan the phase number barely moves for an hour and the group was the only thing advancing.
+
 ### Fixed
 
 - **`graph_summary` called the graph settled during five of the seven scan kinds.** It resolved `liveGraphState` from a check that covers full and partial recon only, while GVM, GitHub Secret Hunt, TruffleHog, supply-chain and AI attack-surface scans all write finding nodes into the same live graph. So an agent asking for a malicious-package count *during the supply-chain scan that produces those nodes* got a partial count stamped `stable`, which the manual documents as "the counts are trustworthy". That is the same false negative the tool exists to prevent, one level up: the mitigation was absent in exactly the window it was built for.
