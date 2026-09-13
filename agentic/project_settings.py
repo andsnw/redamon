@@ -18,6 +18,20 @@ logger = logging.getLogger(__name__)
 INTERNAL_HEADERS = {"X-Internal-Key": os.environ.get("INTERNAL_API_KEY", "")}
 
 # =============================================================================
+# GRAPH COMPANION TOOLS — one switch for three verbs
+# =============================================================================
+# graph_schema and graph_summary are the support acts for query_graph: what the
+# graph MEANS and what this project actually HAS. The operator sees one tool;
+# enabling query_graph grants all three, and {"query_graph": []} turns all three
+# off. There is no second checkbox anywhere, and no Prisma, frontend or jsonb
+# change - which is the point, because a new TOOL_PHASE_MAP key would be
+# permanently disabled on every existing project until someone backfilled it.
+#
+# Neither belongs in DANGEROUS_TOOLS: both are read-only, send no target
+# traffic, and so have no stealth rule, RoE category or confirmation gate.
+GRAPH_COMPANION_TOOLS = frozenset({"graph_schema", "graph_summary"})
+
+# =============================================================================
 # DANGEROUS TOOLS — require manual confirmation before execution
 # =============================================================================
 DANGEROUS_TOOLS = frozenset({
@@ -930,6 +944,17 @@ def is_tool_allowed_in_phase(tool_name: str, phase: str) -> bool:
     if tool_name.startswith("fs_") or tool_name.startswith("job_"):
         return True
 
+    # graph_schema / graph_summary INHERIT query_graph's gating: the operator
+    # sees one tool, and enabling it grants all three. They must NOT become
+    # TOOL_PHASE_MAP keys of their own, for two reasons that both fail silently:
+    # this function returns False for an unmapped tool, and fetch_agent_settings
+    # REPLACES the whole map rather than merging, so a project whose stored map
+    # predates the new keys would have the tools permanently disabled until
+    # someone backfilled the jsonb. Inheritance avoids both, and is total:
+    # {"query_graph": []} turns all three off.
+    if tool_name in GRAPH_COMPANION_TOOLS:
+        return is_tool_allowed_in_phase("query_graph", phase)
+
     tool_phase_map = get_setting('TOOL_PHASE_MAP', {})
     if tool_name in tool_phase_map:
         return phase in tool_phase_map[tool_name]
@@ -965,6 +990,15 @@ def get_allowed_tools_for_phase(phase: str) -> list:
         for tool_name, allowed_phases in tool_phase_map.items()
         if phase in allowed_phases
     }
+
+    # The graph companions ride on query_graph (see is_tool_allowed_in_phase).
+    # This list builds the LLM's available-tools enum, so patching only the
+    # other function would leave them permitted but never offered - exactly the
+    # BUG #20 shape recorded in this docstring.
+    if is_tool_allowed_in_phase("query_graph", phase):
+        allowed.update(GRAPH_COMPANION_TOOLS)
+    else:
+        allowed.difference_update(GRAPH_COMPANION_TOOLS)
 
     # Always include foundational workspace + job tools (mirror of the
     # fs_/job_ bypass in is_tool_allowed_in_phase). Import lazily to keep
