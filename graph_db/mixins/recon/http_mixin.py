@@ -315,9 +315,20 @@ class HttpMixin:
                             issuer=issuer_str, not_before=not_before, not_after=not_after,
                         )
 
+                        def _join(value):
+                            if isinstance(value, list):
+                                return ", ".join(str(v) for v in value if v)
+                            return value
+
                         cert_props = {
                             "subject_cn": subject_cn or None,
+                            "subject_dn": cert_data.get("subject_dn"),
+                            "subject_org": _join(cert_data.get("subject_org")),
                             "issuer": issuer_str,
+                            "issuer_cn": cert_data.get("issuer_cn"),
+                            "issuer_dn": cert_data.get("issuer_dn"),
+                            "issuer_org": _join(cert_data.get("issuer_org")),
+                            "serial": cert_data.get("serial"),
                             "not_before": not_before,
                             "not_after": not_after,
                             "san": cert_data.get("san", []),  # full SAN list as presented
@@ -330,6 +341,14 @@ class HttpMixin:
                             # thrown away every scan.
                             "jarm": (cert_data.get("jarm") or tls_data.get("jarm")
                                      or url_info.get("jarm")),
+                            # Same verdicts the tlsx writer stores. None means the
+                            # probe predates http_probe keeping them, and the
+                            # filter below drops it, so an unknown never overwrites
+                            # a verdict tlsx already wrote on the converged node.
+                            "expired": cert_data.get("expired"),
+                            "self_signed": cert_data.get("self_signed"),
+                            "mismatched": cert_data.get("mismatched"),
+                            "wildcard": cert_data.get("wildcard"),
                         }
                         if fingerprint:
                             cert_props["fingerprint_sha256"] = fingerprint
