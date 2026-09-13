@@ -3313,18 +3313,13 @@ async def graph_exec(body: GraphExecRequest):
         params = {"tenant_user_id": body.user_id, "tenant_project_id": body.project_id}
     elif op == "summary":
         # Two fixed queries, so this op answers alone rather than making the
-        # caller issue two and stitch them.
+        # caller issue two and stitch them. It returns early, so it takes the
+        # MCP concurrency ceiling here rather than at the shared exit below.
         params = {"tenant_user_id": body.user_id, "tenant_project_id": body.project_id}
-        try:
-            nodes, _ = await asyncio.to_thread(_graph_exec_run, _GRAPH_SUMMARY_NODES_CYPHER, params)
-            rels, _ = await asyncio.to_thread(_graph_exec_run, _GRAPH_SUMMARY_RELS_CYPHER, params)
-        except Exception as e:
-            logger.error(f"graph/exec summary failed: {e}")
-            return JSONResponse(status_code=500, content={"error": "graph query failed"})
-        # COUNTS ONLY, never sample values: sample values are live target data
-        # (hostnames, secrets, endpoints) and would leak recon output into an
-        # external agent's context ahead of any deliberate query.
-        return JSONResponse(content={"nodes": nodes, "relationships": rels})
+        if body.source == "mcp":
+            async with _graph_exec_mcp_semaphore():
+                return await asyncio.to_thread(_graph_exec_summary, params)
+        return await asyncio.to_thread(_graph_exec_summary, params)
     elif op == "cypher":
         cypher = (body.cypher or "").strip()
         if not cypher:
@@ -3352,6 +3347,22 @@ async def graph_exec(body: GraphExecRequest):
         async with _graph_exec_mcp_semaphore():
             return await asyncio.to_thread(_graph_exec_respond, final, params)
     return await asyncio.to_thread(_graph_exec_respond, final, params)
+
+
+def _graph_exec_summary(params: dict) -> JSONResponse:
+    """The fixed label + relationship census behind `op: "summary"`.
+
+    COUNTS ONLY, never sample values: sample values are live target data
+    (hostnames, secrets, endpoints) and would leak recon output into an external
+    agent's context ahead of any deliberate query.
+    """
+    try:
+        nodes, _ = _graph_exec_run(_GRAPH_SUMMARY_NODES_CYPHER, params)
+        rels, _ = _graph_exec_run(_GRAPH_SUMMARY_RELS_CYPHER, params)
+    except Exception as e:
+        logger.error(f"graph/exec summary failed: {e}")
+        return JSONResponse(status_code=500, content={"error": "graph query failed"})
+    return JSONResponse(content={"nodes": nodes, "relationships": rels})
 
 
 def _graph_exec_respond(final: str, params: dict) -> JSONResponse:

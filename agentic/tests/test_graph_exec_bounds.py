@@ -254,3 +254,53 @@ class McpConcurrencyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SummaryOpTests(unittest.TestCase):
+    """`op: "summary"` returns early, so it must take the concurrency ceiling
+    itself rather than at the shared exit the other ops use."""
+
+    def test_it_runs_two_fixed_queries(self):
+        driver, session, _ = _driver_with(2)
+        seen = []
+        real = api._graph_exec_run
+
+        def spy(final, params, max_records=None):
+            seen.append(final)
+            return real(final, params, max_records)
+
+        with mock.patch.object(api, "_graph_exec_get_driver", return_value=driver), \
+             mock.patch.object(api, "_graph_exec_run", spy):
+            resp = api._graph_exec_summary({"tenant_user_id": "u1", "tenant_project_id": "p1"})
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(seen), 2)
+        # Both are the server-controlled constants, never caller input.
+        self.assertIn(seen[0], (api._GRAPH_SUMMARY_NODES_CYPHER, api._GRAPH_SUMMARY_RELS_CYPHER))
+
+    def test_both_queries_carry_the_tenant_key_and_the_exclusions(self):
+        for cypher in (api._GRAPH_SUMMARY_NODES_CYPHER, api._GRAPH_SUMMARY_RELS_CYPHER):
+            self.assertIn("$tenant_user_id", cypher)
+            self.assertIn("$tenant_project_id", cypher)
+            self.assertIn("Muted", cypher)
+            self.assertIn("stale_since IS NULL", cypher)
+
+    def test_it_projects_counts_only_never_values(self):
+        for cypher in (api._GRAPH_SUMMARY_NODES_CYPHER, api._GRAPH_SUMMARY_RELS_CYPHER):
+            self.assertIn("count(*)", cypher)
+            # No whole-node or property projection: sample values are live
+            # target data and must not leak into an agent's context.
+            self.assertNotIn("RETURN n ", cypher)
+            self.assertNotIn("RETURN n,", cypher)
+
+    def test_a_failure_is_a_500_with_no_detail(self):
+        import json
+
+        def boom():
+            raise RuntimeError("bolt://neo4j:7687 refused")
+
+        with mock.patch.object(api, "_graph_exec_get_driver", side_effect=boom):
+            resp = api._graph_exec_summary({"tenant_user_id": "u1", "tenant_project_id": "p1"})
+
+        self.assertEqual(resp.status_code, 500)
+        self.assertNotIn("bolt", json.loads(resp.body)["error"].lower())

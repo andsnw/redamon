@@ -31,6 +31,8 @@ import {
 import { projectReconSettings, reconSettingsSelect } from '@/lib/reconSettingsAllowlist'
 import { McpToolError } from '@/lib/mcp/errors'
 import { assertTenantScoped, TenantViolation } from '@/lib/mcp/graphGuard'
+import { agentBaseUrl } from '@/lib/agentFetch'
+import { internalKeyHeaders } from '@/lib/agentAuth'
 import { execCypher, graphSchemaDoc, nlQuery, type GraphRecords } from '@/lib/mcp/graphClient'
 
 const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'
@@ -188,9 +190,6 @@ export async function resolveLiveGraphState(projectId: string): Promise<LiveGrap
 }
 
 async function summaryCounts(ctx: McpContext, projectId: string) {
-  const { agentBaseUrl } = await import('@/lib/agentFetch')
-  const { internalKeyHeaders } = await import('@/lib/agentAuth')
-
   let resp: Response
   try {
     resp = await fetch(`${agentBaseUrl()}/graph/exec`, {
