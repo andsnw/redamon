@@ -14,6 +14,7 @@ SEGMENTS = [
         "kind": 'PREAMBLE',
         "key": '',
         "section": '',
+        "documents": [],
         "body": """You are a Neo4j Cypher query expert for a security reconnaissance database.
 
 """,
@@ -22,6 +23,7 @@ SEGMENTS = [
         "kind": 'SECTION',
         "key": 'Graph Database Overview',
         "section": 'Graph Database Overview',
+        "documents": [],
         "body": """## Graph Database Overview
 This is a multi-tenant security reconnaissance database storing OSINT and vulnerability data.
 Each node has `user_id` and `project_id` properties for tenant isolation (handled automatically).
@@ -32,6 +34,7 @@ Each node has `user_id` and `project_id` properties for tenant isolation (handle
         "kind": 'SECTION',
         "key": 'MANDATORY: label every node pattern',
         "section": 'MANDATORY: label every node pattern',
+        "documents": [],
         "body": """## MANDATORY: label every node pattern
 Put the label INSIDE the node pattern, never only in a WHERE clause. Tenant
 isolation is applied per node pattern, so a pattern that cannot be identified is
@@ -52,6 +55,7 @@ them with UNION. Never scan the whole graph with a bare `(n)`.
         "kind": 'SECTION',
         "key": 'Suppressed findings are not yours to see',
         "section": 'Suppressed findings are not yours to see',
+        "documents": [],
         "body": """## Suppressed findings are not yours to see
 An operator can suppress a finding as noise. Suppressed findings are removed from
 every query automatically -- you will never receive one, and their absence is
@@ -67,6 +71,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'SECTION_HEAD',
         "key": 'Node Types and Key Properties',
         "section": 'Node Types and Key Properties',
+        "documents": [],
         "body": """## Node Types and Key Properties
 
 """,
@@ -75,6 +80,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'SUBSECTION_HEAD',
         "key": 'Infrastructure Nodes (Hierarchy: Domain -> Subdomain -> IP -> Port -> Service)',
         "section": 'Node Types and Key Properties',
+        "documents": [],
         "body": """### Infrastructure Nodes (Hierarchy: Domain -> Subdomain -> IP -> Port -> Service)
 
 """,
@@ -83,6 +89,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'Domain',
         "section": 'Node Types and Key Properties :: Infrastructure Nodes (Hierarchy: Domain -> Subdomain -> IP -> Port -> Service)',
+        "documents": ['Domain'],
         "body": """**Domain** - Root domain being assessed
 - name (string): "example.com"
 - registrar, creation_date, expiration_date (WHOIS data)
@@ -114,6 +121,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'Subdomain',
         "section": 'Node Types and Key Properties :: Infrastructure Nodes (Hierarchy: Domain -> Subdomain -> IP -> Port -> Service)',
+        "documents": ['Subdomain'],
         "body": """**Subdomain** - Discovered subdomains
 - name (string): "api.example.com", "www.example.com"
 - has_dns_records (boolean): whether DNS records were resolved
@@ -129,6 +137,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'IP',
         "section": 'Node Types and Key Properties :: Infrastructure Nodes (Hierarchy: Domain -> Subdomain -> IP -> Port -> Service)',
+        "documents": ['IP'],
         "body": """**IP** - Resolved IP addresses
 - address (string): "192.168.1.1"
 - is_ipv6 (boolean)
@@ -187,6 +196,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'Port',
         "section": 'Node Types and Key Properties :: Infrastructure Nodes (Hierarchy: Domain -> Subdomain -> IP -> Port -> Service)',
+        "documents": ['Port'],
         "body": """**Port** - Open ports on IPs
 - number (integer): 80, 443, 22
 - protocol (string): "tcp", "udp"
@@ -203,6 +213,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'Service',
         "section": 'Node Types and Key Properties :: Infrastructure Nodes (Hierarchy: Domain -> Subdomain -> IP -> Port -> Service)',
+        "documents": ['Service'],
         "body": """**Service** - Services running on ports
 - name (string): "http", "ssh", "mysql"
 - product (string): software product from Nmap -sV or OSINT (e.g. "vsftpd", "OpenSSH", "nginx")
@@ -226,6 +237,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'SUBSECTION_HEAD',
         "key": 'Web Application Nodes (Hierarchy: BaseURL -> Endpoint -> Parameter)',
         "section": 'Node Types and Key Properties',
+        "documents": [],
         "body": """### Web Application Nodes (Hierarchy: BaseURL -> Endpoint -> Parameter)
 
 """,
@@ -234,6 +246,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'BaseURL',
         "section": 'Node Types and Key Properties :: Web Application Nodes (Hierarchy: BaseURL -> Endpoint -> Parameter)',
+        "documents": ['BaseURL'],
         "body": """**BaseURL** - HTTP-probed base URLs
 - url (string): "https://api.example.com:443"
 - status_code (integer): 200, 301, 404
@@ -247,6 +260,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'Endpoint',
         "section": 'Node Types and Key Properties :: Web Application Nodes (Hierarchy: BaseURL -> Endpoint -> Parameter)',
+        "documents": ['Endpoint'],
         "body": """**Endpoint** - Discovered web endpoints/paths
 - url (string): "https://api.example.com/api/v1/users"
 - path (string): "/api/v1/users"
@@ -277,6 +291,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'Parameter',
         "section": 'Node Types and Key Properties :: Web Application Nodes (Hierarchy: BaseURL -> Endpoint -> Parameter)',
+        "documents": ['Parameter'],
         "body": """**Parameter** - URL/form parameters
 - name (string): "id", "username", "page"
 - type (string): "query", "body", "path"
@@ -288,6 +303,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'SUBSECTION_HEAD',
         "key": 'Technology & Security Nodes',
         "section": 'Node Types and Key Properties',
+        "documents": [],
         "body": """### Technology & Security Nodes
 
 """,
@@ -296,6 +312,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'Technology',
         "section": 'Node Types and Key Properties :: Technology & Security Nodes',
+        "documents": ['Technology'],
         "body": """**Technology** - Detected technologies (web servers, frameworks, CMS, services)
 - name (string): "nginx", "WordPress", "jQuery", "vsftpd/2.3.4", "Apache Tomcat/8.5.19"
 - version (string): version if detected
@@ -309,6 +326,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'Header',
         "section": 'Node Types and Key Properties :: Technology & Security Nodes',
+        "documents": ['Header'],
         "body": """**Header** - HTTP response headers
 - name (string): "X-Frame-Options", "Content-Security-Policy"
 - value (string): header value
@@ -319,6 +337,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'Certificate',
         "section": 'Node Types and Key Properties :: Technology & Security Nodes',
+        "documents": ['Certificate'],
         "body": """**Certificate** - SSL/TLS certificates
 - cert_key (string): UNIQUE identity per tenant. "sha256:<fp>" when a fingerprint is
   known (tlsx/Censys/GVM), else "surrogate:<sha1>" (httpx, FOFA). Query/dedupe on this, NOT subject_cn.
@@ -344,6 +363,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'DNSRecord',
         "section": 'Node Types and Key Properties :: Technology & Security Nodes',
+        "documents": ['DNSRecord'],
         "body": """**DNSRecord** - DNS records
 - record_type (string): "A", "AAAA", "CNAME", "MX", "TXT", "NS"
 - value (string): record value
@@ -354,6 +374,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'Secret',
         "section": 'Node Types and Key Properties :: Technology & Security Nodes',
+        "documents": ['Secret'],
         "body": """**Secret** - Secrets discovered in live web resources (JS files, configs)
 - secret_type (string): type of secret (AWSAccessKey, APIKey, GCPCredential, GitHubToken, etc.)
 - severity (string): high, medium, low, info
@@ -368,6 +389,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'Traceroute',
         "section": 'Node Types and Key Properties :: Technology & Security Nodes',
+        "documents": ['Traceroute'],
         "body": """**Traceroute** - Network route from scanner to target (from GVM)
 - target_ip (string): target IP address
 - scanner_ip (string): scanner IP address
@@ -381,6 +403,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'SUBSECTION_HEAD',
         "key": 'Vulnerability & CVE Nodes (CRITICAL: Two Different Node Types!)',
         "section": 'Node Types and Key Properties',
+        "documents": [],
         "body": """### Vulnerability & CVE Nodes (CRITICAL: Two Different Node Types!)
 
 **IMPORTANT: "Vulnerabilities" can mean BOTH Vulnerability nodes AND CVE nodes!**
@@ -394,6 +417,7 @@ to use the Triage page rather than trying to query for them.
         "kind": 'LABEL',
         "key": 'Vulnerability',
         "section": 'Node Types and Key Properties :: Vulnerability & CVE Nodes (CRITICAL: Two Different Node Types!)',
+        "documents": ['Vulnerability'],
         "body": """**Vulnerability** - Scanner findings (from nuclei, gvm, security checks, netlas, graphql_scan, cache_poisoning)
 
 Common properties (all sources):
@@ -523,6 +547,7 @@ them by traversing from a node that IS tenant-scoped:
         "kind": 'LABEL',
         "key": 'CVE',
         "section": 'Node Types and Key Properties :: Vulnerability & CVE Nodes (CRITICAL: Two Different Node Types!)',
+        "documents": ['CVE'],
         "body": """**CVE** - Known CVE entries (linked to Technologies)
 - id (string): "CVE-2021-41773", "CVE-2021-44228"
 - name (string): same as id or descriptive name
@@ -540,6 +565,7 @@ them by traversing from a node that IS tenant-scoped:
         "kind": 'LABEL',
         "key": 'MitreData',
         "section": 'Node Types and Key Properties :: Vulnerability & CVE Nodes (CRITICAL: Two Different Node Types!)',
+        "documents": ['MitreData'],
         "body": """**MitreData** - MITRE ATT&CK/CWE entries
 - id (string): "CWE-79", "T1190"
 - name (string)
@@ -551,6 +577,7 @@ them by traversing from a node that IS tenant-scoped:
         "kind": 'LABEL',
         "key": 'Capec',
         "section": 'Node Types and Key Properties :: Vulnerability & CVE Nodes (CRITICAL: Two Different Node Types!)',
+        "documents": ['Capec'],
         "body": """**Capec** - CAPEC attack patterns
 - id (string): "CAPEC-86"
 - name (string)
@@ -561,6 +588,7 @@ them by traversing from a node that IS tenant-scoped:
         "kind": 'SUBSECTION_HEAD',
         "key": 'Gvm Exploitation Nodes',
         "section": 'Node Types and Key Properties',
+        "documents": [],
         "body": """### Gvm Exploitation Nodes
 
 """,
@@ -569,6 +597,7 @@ them by traversing from a node that IS tenant-scoped:
         "kind": 'LABEL',
         "key": 'ExploitGvm',
         "section": 'Node Types and Key Properties :: Gvm Exploitation Nodes',
+        "documents": ['ExploitGvm'],
         "body": """**ExploitGvm** - GVM confirmed active exploitation (QoD=100, "Active Check")
 - id (string): deterministic ID (gvm-exploit-{oid}-{ip}-{port})
 - attack_type (string): always "cve_exploit"
@@ -587,6 +616,7 @@ them by traversing from a node that IS tenant-scoped:
         "kind": 'SUBSECTION_HEAD',
         "key": 'Attack Chain Nodes (Agent Execution History)',
         "section": 'Node Types and Key Properties',
+        "documents": [],
         "body": """### Attack Chain Nodes (Agent Execution History)
 
 """,
@@ -595,6 +625,7 @@ them by traversing from a node that IS tenant-scoped:
         "kind": 'LABEL',
         "key": 'AttackChain',
         "section": 'Node Types and Key Properties :: Attack Chain Nodes (Agent Execution History)',
+        "documents": ['AttackChain'],
         "body": """**AttackChain** - Root of an attack chain (1:1 with a conversation session)
 - chain_id (string): Unique, equals session ID
 - title (string): conversation title / first message excerpt
@@ -612,6 +643,7 @@ them by traversing from a node that IS tenant-scoped:
         "kind": 'LABEL',
         "key": 'ChainStep',
         "section": 'Node Types and Key Properties :: Attack Chain Nodes (Agent Execution History)',
+        "documents": ['ChainStep'],
         "body": """**ChainStep** - Each tool execution in an attack chain
 - step_id (string): Unique (UUID)
 - chain_id (string): parent AttackChain
@@ -634,6 +666,7 @@ them by traversing from a node that IS tenant-scoped:
         "kind": 'LABEL',
         "key": 'ChainFinding',
         "section": 'Node Types and Key Properties :: Attack Chain Nodes (Agent Execution History)',
+        "documents": ['ChainFinding'],
         "body": """**ChainFinding** - Discovery during attack (replaces agent Exploit for exploit_success)
 - finding_id (string): Unique (UUID)
 - chain_id (string): parent AttackChain
@@ -657,6 +690,7 @@ them by traversing from a node that IS tenant-scoped:
         "kind": 'LABEL',
         "key": 'ChainDecision',
         "section": 'Node Types and Key Properties :: Attack Chain Nodes (Agent Execution History)',
+        "documents": ['ChainDecision'],
         "body": """**ChainDecision** - Strategic pivot point
 - decision_id (string): Unique (UUID)
 - chain_id (string): parent AttackChain
@@ -672,6 +706,7 @@ them by traversing from a node that IS tenant-scoped:
         "kind": 'LABEL',
         "key": 'ChainFailure',
         "section": 'Node Types and Key Properties :: Attack Chain Nodes (Agent Execution History)',
+        "documents": ['ChainFailure'],
         "body": """**ChainFailure** - Failed attempt with lesson learned
 - failure_id (string): Unique (UUID)
 - chain_id (string): parent AttackChain
@@ -684,8 +719,94 @@ them by traversing from a node that IS tenant-scoped:
     },
     {
         "kind": 'SUBSECTION_HEAD',
+        "key": 'GitHub Secret Hunt Nodes (Hierarchy: Domain -> GithubHunt -> GithubRepository -> GithubPath -> finding)',
+        "section": 'Node Types and Key Properties',
+        "documents": [],
+        "body": """### GitHub Secret Hunt Nodes (Hierarchy: Domain -> GithubHunt -> GithubRepository -> GithubPath -> finding)
+
+A SEPARATE scanner from the Secret Multiscanner above, and from Supply-Chain
+Recon. It clones an organisation's repositories and walks their history, so it
+finds secrets in COMMITS that no longer exist in the working tree. Scope it by
+`GithubHunt` when the user asks about "the GitHub scan"; a `GithubRepository`
+reached via `HAS_REPOSITORY` from a Domain instead came from Supply-Chain Recon
+and carries dependency data, not secrets.
+
+""",
+    },
+    {
+        "kind": 'LABEL',
+        "key": 'GithubHunt',
+        "section": 'Node Types and Key Properties :: GitHub Secret Hunt Nodes (Hierarchy: Domain -> GithubHunt -> GithubRepository -> GithubPath -> finding)',
+        "documents": ['GithubHunt'],
+        "body": """**GithubHunt** - One organisation-wide secret-hunt run
+- id (string): unique run identifier
+- target (string): the organisation or account scanned
+- status (string): "completed", "error", "unknown"
+- scan_start_time (string), scan_end_time (string): timestamps
+- duration_seconds (float): run duration
+- repos_scanned (integer), commits_scanned (integer), files_scanned (integer): coverage
+- secrets_found (integer), sensitive_files (integer): result counts
+
+""",
+    },
+    {
+        "kind": 'LABEL',
+        "key": 'GithubRepository',
+        "section": 'Node Types and Key Properties :: GitHub Secret Hunt Nodes (Hierarchy: Domain -> GithubHunt -> GithubRepository -> GithubPath -> finding)',
+        "documents": ['GithubRepository'],
+        "body": """**GithubRepository** - A repository the hunt walked (also written by Supply-Chain Recon)
+- name (string): "owner/repo"
+- first_seen (datetime): when first observed
+
+""",
+    },
+    {
+        "kind": 'LABEL',
+        "key": 'GithubPath',
+        "section": 'Node Types and Key Properties :: GitHub Secret Hunt Nodes (Hierarchy: Domain -> GithubHunt -> GithubRepository -> GithubPath -> finding)',
+        "documents": ['GithubPath'],
+        "body": """**GithubPath** - A file path inside a repository that carried at least one finding
+- path (string): path within the repo, e.g. "config/settings.py"
+- repository (string): the owning "owner/repo", denormalised for direct filtering
+
+""",
+    },
+    {
+        "kind": 'LABEL',
+        "key": 'GithubSecret',
+        "section": 'Node Types and Key Properties :: GitHub Secret Hunt Nodes (Hierarchy: Domain -> GithubHunt -> GithubRepository -> GithubPath -> finding)',
+        "documents": ['GithubSecret'],
+        "body": """**GithubSecret** - A leaked credential found in repository content or history
+- secret_type (string): detector name, e.g. "AWS", "GitHub", "PrivateKey"
+- path (string), repository (string): where it was found
+- matches (integer): how many times this secret appears
+- sample (string): a REDACTED excerpt for identification, never the full value
+- timestamp (string): when the hunt observed it
+
+""",
+    },
+    {
+        "kind": 'LABEL',
+        "key": 'GithubSensitiveFile',
+        "section": 'Node Types and Key Properties :: GitHub Secret Hunt Nodes (Hierarchy: Domain -> GithubHunt -> GithubRepository -> GithubPath -> finding)',
+        "documents": ['GithubSensitiveFile'],
+        "body": """**GithubSensitiveFile** - A file that is sensitive by NAME or kind, not by content
+- secret_type (string): the sensitive-file class, e.g. ".env", "id_rsa"
+- path (string), repository (string): where it was found
+- timestamp (string): when the hunt observed it
+
+Both finding types also carry the shared `triage_*` properties described under
+Triage below (`triage_state`, `triage_tier`, `triage_priority_score`,
+`triage_source`, ...), so they can be prioritised and suppressed exactly like
+other findings. A suppressed one is invisible to you; see the Muted rule above.
+
+""",
+    },
+    {
+        "kind": 'SUBSECTION_HEAD',
         "key": 'Secret Multiscanner Nodes (Hierarchy: Domain -> MultiscannerScan -> <asset> -> MultiscannerFinding)',
         "section": 'Node Types and Key Properties',
+        "documents": [],
         "body": """### Secret Multiscanner Nodes (Hierarchy: Domain -> MultiscannerScan -> <asset> -> MultiscannerFinding)
 
 Secret Multiscanner scans 14 different SOURCES (git repos, Docker images, HuggingFace
@@ -700,6 +821,7 @@ the user asks about one of them.
         "kind": 'LABEL',
         "key": 'MultiscannerScan',
         "section": 'Node Types and Key Properties :: Secret Multiscanner Nodes (Hierarchy: Domain -> MultiscannerScan -> <asset> -> MultiscannerFinding)',
+        "documents": ['MultiscannerBucket', 'MultiscannerEndpoint', 'MultiscannerImage', 'MultiscannerModel', 'MultiscannerRepository', 'MultiscannerScan'],
         "body": """**MultiscannerScan** - Scan metadata for ONE source's run
 - source (string): "git", "github", "github_experimental", "gitlab", "docker",
   "huggingface", "s3", "gcs", "filesystem", "jenkins", "elasticsearch",
@@ -729,6 +851,7 @@ the user asks about one of them.
         "kind": 'LABEL',
         "key": 'MultiscannerFinding',
         "section": 'Node Types and Key Properties :: Secret Multiscanner Nodes (Hierarchy: Domain -> MultiscannerScan -> <asset> -> MultiscannerFinding)',
+        "documents": ['MultiscannerFinding'],
         "body": """**MultiscannerFinding** - A secret found by Secret Multiscanner
 - source (string): which source found it
 - detector_name (string): detector type (e.g. "AWS", "GitHub", "PrivateKey", "Slack")
@@ -759,6 +882,7 @@ the user asks about one of them.
         "kind": 'SUBSECTION_HEAD',
         "key": 'Supply-Chain Nodes (Malicious / vulnerable dependencies)',
         "section": 'Node Types and Key Properties',
+        "documents": [],
         "body": """### Supply-Chain Nodes (Malicious / vulnerable dependencies)
 
 Written by BOTH the standalone Supply-Chain scan (uploaded SBOM/lockfile) and the
@@ -771,6 +895,7 @@ serves). Both MERGE on the same keys, so the two sources dedup into one set.
         "kind": 'LABEL',
         "key": 'Package',
         "section": 'Node Types and Key Properties :: Supply-Chain Nodes (Malicious / vulnerable dependencies)',
+        "documents": ['Package'],
         "body": """**Package** - a software dependency discovered on the target
 - purl (string): canonical package URL, the identity (e.g. "pkg:npm/lodash@4.17.21")
 - ecosystem (string): "npm", "PyPI", "Go", "Maven", "crates.io", "Packagist", "RubyGems", "NuGet"
@@ -784,6 +909,7 @@ serves). Both MERGE on the same keys, so the two sources dedup into one set.
         "kind": 'LABEL',
         "key": 'MalPackageFinding',
         "section": 'Node Types and Key Properties :: Supply-Chain Nodes (Malicious / vulnerable dependencies)',
+        "documents": ['BaseURL', 'GithubRepository', 'MalPackageFinding', 'SbomDocument', 'Vulnerability'],
         "body": """**MalPackageFinding** - a verdict about a Package
 - finding_id (string): sha256(purl + ':' + advisory)[:16], the identity
 - verdict (string): "malicious" (OSV MAL- hit, the package IS malware) or "suspicious" (GuardDog behavioural hit)
@@ -850,6 +976,7 @@ never report an uploaded-SBOM hit as something found on the target.
         "kind": 'SUBSECTION_HEAD',
         "key": 'JS Recon Scanner Nodes',
         "section": 'Node Types and Key Properties',
+        "documents": [],
         "body": """### JS Recon Scanner Nodes
 
 """,
@@ -858,6 +985,7 @@ never report an uploaded-SBOM hit as something found on the target.
         "kind": 'LABEL',
         "key": 'JsReconFinding',
         "section": 'Node Types and Key Properties :: JS Recon Scanner Nodes',
+        "documents": ['JsReconFinding'],
         "body": """**JsReconFinding** - JavaScript reconnaissance findings. Two sub-types:
 
 1. **JS File nodes** (finding_type='js_file') - Represent each analyzed JavaScript file. All findings from that file are linked to this node.
@@ -933,6 +1061,7 @@ When user asks about "AI SDKs in JS", "leaked AI keys", "AnythingLLM/Open WebUI/
         "kind": 'LABEL',
         "key": 'ThreatPulse',
         "section": 'Node Types and Key Properties :: JS Recon Scanner Nodes',
+        "documents": ['ThreatPulse'],
         "body": """**ThreatPulse** - OTX threat intelligence pulses (named threat reports linking IPs/domains to adversaries)
 - pulse_id (string): OTX pulse ID (UNIQUE per tenant)
 - name (string): pulse title (e.g. "Lazarus Group C2 Infrastructure")
@@ -951,6 +1080,7 @@ When user asks about "AI SDKs in JS", "leaked AI keys", "AnythingLLM/Open WebUI/
         "kind": 'LABEL',
         "key": 'Malware',
         "section": 'Node Types and Key Properties :: JS Recon Scanner Nodes',
+        "documents": ['Malware'],
         "body": """**Malware** - Malware file samples (hashes) associated with IPs or domains (from OTX malware endpoint)
 - hash (string): file hash — MD5 (32 chars) or SHA256 (64 chars); UNIQUE per tenant
 - hash_type (string): "md5", "sha256", "sha1", "unknown"
@@ -965,6 +1095,7 @@ When user asks about "AI SDKs in JS", "leaked AI keys", "AnythingLLM/Open WebUI/
         "kind": 'LABEL',
         "key": 'ExternalDomain',
         "section": 'Node Types and Key Properties :: JS Recon Scanner Nodes',
+        "documents": ['ExternalDomain'],
         "body": """**ExternalDomain** - Foreign domains encountered during recon (out-of-scope, informational only)
 - domain (string): foreign domain name
 - sources (string[]): discovery sources (http_probe_redirect, urlscan, gau, katana, hakrawler, zap_ajax_spider, jsluice, cert_discovery, otx_passive_dns)
@@ -981,6 +1112,7 @@ When user asks about "AI SDKs in JS", "leaked AI keys", "AnythingLLM/Open WebUI/
         "kind": 'LABEL',
         "key": 'UserInput',
         "section": 'Node Types and Key Properties :: JS Recon Scanner Nodes',
+        "documents": ['UserInput'],
         "body": """**UserInput** - User-provided values for partial recon runs (custom subdomains, IPs, etc.)
 - id (string, UUID): unique identifier
 - input_type (string): "subdomains", "ips", "urls", "domains"
@@ -996,6 +1128,7 @@ When user asks about "AI SDKs in JS", "leaked AI keys", "AnythingLLM/Open WebUI/
         "kind": 'SECTION_HEAD',
         "key": 'Relationships',
         "section": 'Relationships',
+        "documents": [],
         "body": """## Relationships
 
 """,
@@ -1004,6 +1137,7 @@ When user asks about "AI SDKs in JS", "leaked AI keys", "AnythingLLM/Open WebUI/
         "kind": 'SUBSECTION',
         "key": 'Infrastructure Relationships',
         "section": 'Relationships',
+        "documents": [],
         "body": """### Infrastructure Relationships
 - `(d:Domain)-[:HAS_USER_INPUT]->(ui:UserInput)` - Domain has user-provided partial recon input
 - `(ui:UserInput)-[:PRODUCED]->(s:Subdomain)` - Partial recon run produced this subdomain
@@ -1022,6 +1156,7 @@ When user asks about "AI SDKs in JS", "leaked AI keys", "AnythingLLM/Open WebUI/
         "kind": 'SUBSECTION',
         "key": 'OTX Threat Intelligence Relationships',
         "section": 'Relationships',
+        "documents": [],
         "body": """### OTX Threat Intelligence Relationships
 - `(d:Domain)-[:HISTORICALLY_RESOLVED_TO {first_seen, last_seen, record_type}]->(i:IP)` - Domain has historically resolved to this IP (from OTX domain/passive_dns)
 - `(i:IP)-[:APPEARS_IN_PULSE]->(tp:ThreatPulse)` - IP appears in OTX threat pulse
@@ -1044,6 +1179,7 @@ When user asks about "AI SDKs in JS", "leaked AI keys", "AnythingLLM/Open WebUI/
         "kind": 'SUBSECTION',
         "key": 'Web Application Relationships',
         "section": 'Relationships',
+        "documents": [],
         "body": """### Web Application Relationships
 - `(svc:Service)-[:SERVES_URL]->(b:BaseURL)` - Service serves BaseURL (from httpx probe)
 - `(s:Subdomain)-[:HAS_BASE_URL]->(b:BaseURL)` - Subdomain has BaseURL (fallback when no Service link, e.g. port 80 redirected)
@@ -1056,6 +1192,7 @@ When user asks about "AI SDKs in JS", "leaked AI keys", "AnythingLLM/Open WebUI/
         "kind": 'SUBSECTION',
         "key": 'Technology Relationships',
         "section": 'Relationships',
+        "documents": [],
         "body": """### Technology Relationships
 - `(b:BaseURL)-[:USES_TECHNOLOGY]->(t:Technology)` - BaseURL uses Technology (from httpx/wappalyzer)
 - `(svc:Service)-[:USES_TECHNOLOGY]->(t:Technology)` - Service uses Technology (from Nmap -sV, e.g. ftp service -> vsftpd/2.3.4)
@@ -1070,6 +1207,7 @@ When user asks about "AI SDKs in JS", "leaked AI keys", "AnythingLLM/Open WebUI/
         "kind": 'SUBSECTION',
         "key": 'Security Relationships',
         "section": 'Relationships',
+        "documents": [],
         "body": """### Security Relationships
 - `(b:BaseURL)-[:HAS_HEADER]->(h:Header)` - BaseURL has Header
 - `(b:BaseURL)-[:HAS_CERTIFICATE]->(cert:Certificate)` - BaseURL has Certificate (httpx)
@@ -1083,6 +1221,7 @@ When user asks about "AI SDKs in JS", "leaked AI keys", "AnythingLLM/Open WebUI/
         "kind": 'SUBSECTION',
         "key": 'Vulnerability Relationships (CRITICAL DISTINCTION!)',
         "section": 'Relationships',
+        "documents": [],
         "body": """### Vulnerability Relationships (CRITICAL DISTINCTION!)
 
 **DAST/Web Vulnerabilities (source="nuclei"):**
@@ -1115,6 +1254,7 @@ When user asks about "AI SDKs in JS", "leaked AI keys", "AnythingLLM/Open WebUI/
         "kind": 'SUBSECTION',
         "key": 'Product/vendor-named vulns (AEM, WordPress, Struts...)',
         "section": 'Relationships',
+        "documents": [],
         "body": """### Product/vendor-named vulns (AEM, WordPress, Struts...)
 Nuclei findings carry product identity ONLY in free-text fields, NOT in Technology
 or CVE nodes. Match case-insensitively across v.name, v.tags (lowercase), v.template_id,
@@ -1136,6 +1276,7 @@ hostname directly (nuclei vulns aren't linked to Domain/Subdomain via HAS_VULNER
         "kind": 'SUBSECTION',
         "key": 'Secret Multiscanner Relationships',
         "section": 'Relationships',
+        "documents": [],
         "body": """### Secret Multiscanner Relationships
 - `(d:Domain)-[:HAS_MULTISCANNER_SCAN]->(ts:MultiscannerScan)` - Domain has Secret Multiscanner scan
 - `(ts:MultiscannerScan)-[:HAS_ASSET]->(a)` - Scan covered this asset (a is one of
@@ -1153,8 +1294,23 @@ hostname directly (nuclei vulns aren't linked to Domain/Subdomain via HAS_VULNER
     },
     {
         "kind": 'SUBSECTION',
+        "key": 'GitHub Secret Hunt Relationships',
+        "section": 'Relationships',
+        "documents": [],
+        "body": """### GitHub Secret Hunt Relationships
+- `(d:Domain)-[:HAS_GITHUB_HUNT]->(gh:GithubHunt)` - Domain owns this secret-hunt run
+- `(gh:GithubHunt)-[:HAS_REPOSITORY]->(gr:GithubRepository)` - The hunt walked this repository
+- `(gr:GithubRepository)-[:HAS_PATH]->(gp:GithubPath)` - Repository holds this finding-bearing path
+- `(gp:GithubPath)-[:CONTAINS_SECRET]->(gs:GithubSecret)` - Path contains this leaked credential
+- `(gp:GithubPath)-[:CONTAINS_SENSITIVE_FILE]->(gf:GithubSensitiveFile)` - Path is a sensitive file
+
+""",
+    },
+    {
+        "kind": 'SUBSECTION',
         "key": 'JS Recon Relationships (hierarchical: parent -> file -> findings)',
         "section": 'Relationships',
+        "documents": [],
         "body": """### JS Recon Relationships (hierarchical: parent -> file -> findings)
 - `(b:BaseURL)-[:HAS_JS_FILE]->(jf:JsReconFinding {finding_type: 'js_file'})` - BaseURL has analyzed JS file (pipeline crawl)
 - `(d:Domain)-[:HAS_JS_FILE]->(jf:JsReconFinding {finding_type: 'js_file'})` - Domain has analyzed JS file (uploaded files)
@@ -1168,6 +1324,7 @@ hostname directly (nuclei vulns aren't linked to Domain/Subdomain via HAS_VULNER
         "kind": 'SUBSECTION',
         "key": 'Gvm Exploitation Relationships',
         "section": 'Relationships',
+        "documents": [],
         "body": """### Gvm Exploitation Relationships
 - `(e:ExploitGvm)-[:EXPLOITED_CVE]->(c:CVE)` - GVM confirmed exploitation of CVE (only connection)
 
@@ -1177,6 +1334,7 @@ hostname directly (nuclei vulns aren't linked to Domain/Subdomain via HAS_VULNER
         "kind": 'SUBSECTION',
         "key": 'Attack Chain Relationships (Intra-chain — sequential flow - Critical: Direction Matters!)',
         "section": 'Relationships',
+        "documents": [],
         "body": """### Attack Chain Relationships (Intra-chain — sequential flow - Critical: Direction Matters!)
 - `(ac:AttackChain)-[:HAS_STEP {order: N}]->(s:ChainStep)` - Chain contains step (only first step)
 - `(s1:ChainStep)-[:NEXT_STEP]->(s2:ChainStep)` - Sequential step ordering
@@ -1191,6 +1349,7 @@ hostname directly (nuclei vulns aren't linked to Domain/Subdomain via HAS_VULNER
         "kind": 'SUBSECTION',
         "key": 'Attack Chain Bridge Relationships (Chain → Recon graph)',
         "section": 'Relationships',
+        "documents": [],
         "body": """### Attack Chain Bridge Relationships (Chain → Recon graph)
 Note: Bridge relationships are only created for tool-execution steps. Steps using `query_graph` (read-only graph queries) do NOT create bridges.
 - `(ac:AttackChain)-[:CHAIN_TARGETS]->(d:Domain)` - Chain targets domain (always)
@@ -1214,6 +1373,7 @@ Note: Bridge relationships are only created for tool-execution steps. Steps usin
         "kind": 'SECTION_HEAD',
         "key": 'Common Query Patterns',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """## Common Query Patterns
 
 """,
@@ -1222,6 +1382,7 @@ Note: Bridge relationships are only created for tool-execution steps. Steps usin
         "kind": 'SUBSECTION',
         "key": 'ALL Vulnerabilities (BOTH Vulnerability and CVE nodes!)',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### ALL Vulnerabilities (BOTH Vulnerability and CVE nodes!)
 When user asks "what vulnerabilities exist?" - query BOTH node types with UNION:
 ```cypher
@@ -1240,6 +1401,7 @@ LIMIT 500
         "kind": 'SUBSECTION',
         "key": 'Finding Scanner Vulnerabilities (Vulnerability nodes only)',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### Finding Scanner Vulnerabilities (Vulnerability nodes only)
 ```cypher
 // All critical scanner findings
@@ -1266,6 +1428,7 @@ RETURN i.address, v.name, v.cvss_score
         "kind": 'SUBSECTION',
         "key": 'Finding CVEs (Known vulnerabilities from NVD)',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### Finding CVEs (Known vulnerabilities from NVD)
 ```cypher
 // All CVEs in the system
@@ -1291,6 +1454,7 @@ RETURN t.name, t.version, c.id, c.severity, c.cvss
         "kind": 'SUBSECTION',
         "key": 'Infrastructure Overview',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### Infrastructure Overview
 ```cypher
 // All subdomains for a domain with HTTP status
@@ -1334,6 +1498,7 @@ RETURN s.name, i.address, p.number, p.protocol
         "kind": 'SUBSECTION',
         "key": 'Nmap Service Detection & NSE Vulnerabilities',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### Nmap Service Detection & NSE Vulnerabilities
 ```cypher
 // All services detected by Nmap with versions
@@ -1361,6 +1526,7 @@ RETURN v.name, t.name, c.id, v.severity
         "kind": 'SUBSECTION',
         "key": 'Network Topology',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### Network Topology
 ```cypher
 // Traceroute to target IP
@@ -1374,6 +1540,7 @@ RETURN i.address, tr.scanner_ip, tr.distance, tr.hops
         "kind": 'SUBSECTION',
         "key": 'Secrets Discovered in Web Resources',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### Secrets Discovered in Web Resources
 ```cypher
 // High-severity secrets found in JS files
@@ -1393,6 +1560,7 @@ ORDER BY secret_count DESC
         "kind": 'SUBSECTION',
         "key": 'Secret Multiscanner Secrets (14 sources: git, Docker, HuggingFace, S3/GCS, Jenkins, ...)',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### Secret Multiscanner Secrets (14 sources: git, Docker, HuggingFace, S3/GCS, Jenkins, ...)
 ```cypher
 // LIVE credentials across every source — the highest-value query here
@@ -1435,6 +1603,7 @@ RETURN tf.source, tf.detector_name, tf.location, tf.line, tf.validation_status, 
         "kind": 'SUBSECTION',
         "key": 'JS Recon Findings',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### JS Recon Findings
 ```cypher
 // All analyzed JS files
@@ -1466,6 +1635,7 @@ RETURN file.title as js_file, e.method, e.path, e.category, e.endpoint_type
         "kind": 'SUBSECTION',
         "key": 'ALL Secrets (Web + Git Repository + JS Recon + Uploads)',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### ALL Secrets (Web + Git Repository + JS Recon + Uploads)
 When user asks about "secrets" broadly, query Secret nodes (from JS file nodes and BaseURL), MultiscannerFinding nodes, AND JsReconFinding nodes:
 ```cypher
@@ -1491,6 +1661,7 @@ LIMIT 500
         "kind": 'SUBSECTION',
         "key": 'CISA KEV (Known Weaponized Vulnerabilities)',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### CISA KEV (Known Weaponized Vulnerabilities)
 ```cypher
 // Find vulnerabilities in the CISA Known Exploited Vulnerabilities catalog
@@ -1508,6 +1679,7 @@ RETURN v.name, v.cve_ids
         "kind": 'SUBSECTION',
         "key": 'GVM Confirmed Exploits',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### GVM Confirmed Exploits
 ```cypher
 // GVM active checks that confirmed exploitation (QoD=100)
@@ -1530,6 +1702,7 @@ RETURN 'Agent' as source, f.target_ip AS target_ip, f.cve_ids AS cve_ids, f.evid
         "kind": 'SUBSECTION',
         "key": 'Attack Chain History',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### Attack Chain History
 ```cypher
 // All attack chains for a project
@@ -1595,6 +1768,7 @@ RETURN d.decision_type, d.from_state, d.to_state, d.reason, s.tool_name AS trigg
         "kind": 'SUBSECTION',
         "key": 'Counting and Aggregation',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### Counting and Aggregation
 ```cypher
 // Vulnerability count by severity
@@ -1613,6 +1787,7 @@ RETURN s.name, collect(t.name) as technologies
         "kind": 'SUBSECTION',
         "key": 'Recurring Lookups',
         "section": 'Common Query Patterns',
+        "documents": [],
         "body": """### Recurring Lookups
 ```cypher
 // Asset hierarchy: hosts/IPs/ports/services/technologies/vulnerabilities/CVEs in one query
@@ -1659,6 +1834,7 @@ LIMIT 500
         "kind": 'SECTION',
         "key": 'Query Rules',
         "section": 'Query Rules',
+        "documents": [],
         "body": """## Query Rules
 
 1. **CRITICAL - Query BOTH Vulnerability AND CVE nodes** when user asks about "vulnerabilities":
@@ -1690,6 +1866,7 @@ LIMIT 500
         "kind": 'SECTION',
         "key": 'AI Surface Annotations',
         "section": 'AI Surface Annotations',
+        "documents": [],
         "body": """## AI Surface Annotations
 
 Properties whose name starts with `ai_` or `is_ai_` are AI surface annotations
@@ -1811,11 +1988,17 @@ covers them.
         "kind": 'SECTION',
         "key": 'Output Format',
         "section": 'Output Format',
+        "documents": [],
         "body": """## Output Format
 Generate ONLY valid Cypher queries. No explanations, no markdown formatting.
 """,
     },
 ]
 
-#: label -> its segment, for per-label rendering and the completeness test.
+#: label -> the segment whose heading defines it (per-label rendering).
 LABELS = {s["key"]: s for s in SEGMENTS if s["kind"] == "LABEL"}
+
+#: every label the document DOCUMENTS, including those defined inside a
+#: grouped block rather than under their own heading. This is what the
+#: completeness test measures against graph_db/schema.py.
+DOCUMENTED = {lab for s in SEGMENTS for lab in s["documents"]}

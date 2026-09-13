@@ -108,6 +108,39 @@ def segment(doc: str) -> list[dict]:
     return segs
 
 
+#: Labels documented as a SHARED group rather than under their own heading.
+#: The Secret Multiscanner asset nodes are one shape with five labels, listed
+#: backticked inside an "**Asset nodes**" block; detecting them by bold mention
+#: would need the block to repeat itself five times for no reader benefit.
+GROUP_COVERAGE = {
+    "MultiscannerRepository",
+    "MultiscannerImage",
+    "MultiscannerModel",
+    "MultiscannerBucket",
+    "MultiscannerEndpoint",
+}
+
+
+def covered_labels(body: str) -> set[str]:
+    """Labels a segment DOCUMENTS, not merely mentions.
+
+    A bold `**Label**` is the document's definitional form, and it is used both
+    for a top-level block and for a bullet inside a grouped section (the
+    supply-chain sources list defines `**GithubRepository**` and
+    `**SbomDocument**` that way). Matching only headings under-reports coverage
+    and turns real documentation into phantom debt, which is worse than useless:
+    it trains people to ignore the completeness test.
+
+    Backticked mentions are deliberately NOT counted. Every relationship line
+    names its endpoints in backticks, so counting them would mark a label
+    documented because something points at it.
+    """
+    found = set(re.findall(r"\*\*([A-Z][A-Za-z0-9]*)\*\*", body))
+    if "Asset nodes" in body:
+        found |= GROUP_COVERAGE
+    return found
+
+
 def emit(segs: list[dict]) -> str:
     parts: list[str] = [
         '"""Addressable segments of the graph-schema document.',
@@ -128,12 +161,18 @@ def emit(segs: list[dict]) -> str:
         parts.append(f'        "kind": {s["kind"]!r},')
         parts.append(f'        "key": {s["key"]!r},')
         parts.append(f'        "section": {s["section"]!r},')
+        parts.append(f'        "documents": {sorted(covered_labels(s["body"]))!r},')
         parts.append('        "body": """' + s["body"] + '""",')
         parts.append("    },")
     parts.append("]")
     parts.append("")
-    parts.append("#: label -> its segment, for per-label rendering and the completeness test.")
+    parts.append("#: label -> the segment whose heading defines it (per-label rendering).")
     parts.append("LABELS = {s[\"key\"]: s for s in SEGMENTS if s[\"kind\"] == \"LABEL\"}")
+    parts.append("")
+    parts.append("#: every label the document DOCUMENTS, including those defined inside a")
+    parts.append("#: grouped block rather than under their own heading. This is what the")
+    parts.append("#: completeness test measures against graph_db/schema.py.")
+    parts.append("DOCUMENTED = {lab for s in SEGMENTS for lab in s[\"documents\"]}")
     parts.append("")
     return "\n".join(parts)
 

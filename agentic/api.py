@@ -2799,7 +2799,7 @@ async def text_to_cypher(body: TextToCypherRequest):
     """
     Generate a Cypher query from a natural language description.
 
-    Reuses the TEXT_TO_CYPHER_SYSTEM prompt and Neo4jToolManager._generate_cypher()
+    Reuses the rendered schema catalog and Neo4jToolManager._generate_cypher()
     so the graph schema is always in sync with the agent's query_graph tool.
 
     Returns the raw Cypher (without tenant filters) for the webapp to save and execute.
@@ -2907,7 +2907,7 @@ async def graph_schema_doc():
     its properties mean, which relationships connect what, and the distinctions
     that are easy to get wrong.
 
-    Served from TEXT_TO_CYPHER_SYSTEM, the same content the Cypher generator is
+    Served from graph_db/schema_catalog.py, the same content the Cypher generator is
     prompted with on every call. One source, no second copy, nothing to drift.
 
     Deliberately NOT `CALL db.schema.visualization()`: that carries no semantics
@@ -2917,9 +2917,14 @@ async def graph_schema_doc():
     Reads from code only: no database, no project id, no tenant data. It is
     therefore the one graph tool that still answers when Neo4j is down.
     """
-    from prompts import TEXT_TO_CYPHER_SYSTEM
+    # Rendered from graph_db/schema_catalog.py rather than read from the prompt
+    # constant. render_schema() with no arguments is byte-identical to that
+    # constant (asserted in recon/tests/test_schema_catalog.py), so this swap
+    # changes no output today; what it buys is that the catalog is completeness-
+    # checked against schema.py, and can later serve a per-label subset.
+    from graph_db.schema_render import render_schema
 
-    return JSONResponse(content={"schema": TEXT_TO_CYPHER_SYSTEM})
+    return JSONResponse(content={"schema": render_schema()})
 
 # =============================================================================
 # GRAPH EXEC — run a read-only, tenant-scoped graph query on behalf of the

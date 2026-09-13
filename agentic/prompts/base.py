@@ -1958,6 +1958,49 @@ them by traversing from a node that IS tenant-scoped:
 - retry_possible (boolean), phase (string)
 - created_at (datetime)
 
+### GitHub Secret Hunt Nodes (Hierarchy: Domain -> GithubHunt -> GithubRepository -> GithubPath -> finding)
+
+A SEPARATE scanner from the Secret Multiscanner above, and from Supply-Chain
+Recon. It clones an organisation's repositories and walks their history, so it
+finds secrets in COMMITS that no longer exist in the working tree. Scope it by
+`GithubHunt` when the user asks about "the GitHub scan"; a `GithubRepository`
+reached via `HAS_REPOSITORY` from a Domain instead came from Supply-Chain Recon
+and carries dependency data, not secrets.
+
+**GithubHunt** - One organisation-wide secret-hunt run
+- id (string): unique run identifier
+- target (string): the organisation or account scanned
+- status (string): "completed", "error", "unknown"
+- scan_start_time (string), scan_end_time (string): timestamps
+- duration_seconds (float): run duration
+- repos_scanned (integer), commits_scanned (integer), files_scanned (integer): coverage
+- secrets_found (integer), sensitive_files (integer): result counts
+
+**GithubRepository** - A repository the hunt walked (also written by Supply-Chain Recon)
+- name (string): "owner/repo"
+- first_seen (datetime): when first observed
+
+**GithubPath** - A file path inside a repository that carried at least one finding
+- path (string): path within the repo, e.g. "config/settings.py"
+- repository (string): the owning "owner/repo", denormalised for direct filtering
+
+**GithubSecret** - A leaked credential found in repository content or history
+- secret_type (string): detector name, e.g. "AWS", "GitHub", "PrivateKey"
+- path (string), repository (string): where it was found
+- matches (integer): how many times this secret appears
+- sample (string): a REDACTED excerpt for identification, never the full value
+- timestamp (string): when the hunt observed it
+
+**GithubSensitiveFile** - A file that is sensitive by NAME or kind, not by content
+- secret_type (string): the sensitive-file class, e.g. ".env", "id_rsa"
+- path (string), repository (string): where it was found
+- timestamp (string): when the hunt observed it
+
+Both finding types also carry the shared `triage_*` properties described under
+Triage below (`triage_state`, `triage_tier`, `triage_priority_score`,
+`triage_source`, ...), so they can be prioritised and suppressed exactly like
+other findings. A suppressed one is invisible to you; see the Muted rule above.
+
 ### Secret Multiscanner Nodes (Hierarchy: Domain -> MultiscannerScan -> <asset> -> MultiscannerFinding)
 
 Secret Multiscanner scans 14 different SOURCES (git repos, Docker images, HuggingFace
@@ -2300,6 +2343,13 @@ hostname directly (nuclei vulns aren't linked to Domain/Subdomain via HAS_VULNER
 - `(dom:Domain)-[:HAS_REPOSITORY]->(gr:GithubRepository)` - The domain owns a repo scanned by Supply Chain (a secret hunt instead reaches it via GithubHunt)
 - `(p:Package)-[:FLAGGED_AS]->(mf:MalPackageFinding)` - Package has a malicious/suspicious verdict
 - `(p:Package)-[:HAS_VULNERABILITY]->(v:Vulnerability)` - Package has a known CVE/GHSA (source='osv')
+
+### GitHub Secret Hunt Relationships
+- `(d:Domain)-[:HAS_GITHUB_HUNT]->(gh:GithubHunt)` - Domain owns this secret-hunt run
+- `(gh:GithubHunt)-[:HAS_REPOSITORY]->(gr:GithubRepository)` - The hunt walked this repository
+- `(gr:GithubRepository)-[:HAS_PATH]->(gp:GithubPath)` - Repository holds this finding-bearing path
+- `(gp:GithubPath)-[:CONTAINS_SECRET]->(gs:GithubSecret)` - Path contains this leaked credential
+- `(gp:GithubPath)-[:CONTAINS_SENSITIVE_FILE]->(gf:GithubSensitiveFile)` - Path is a sensitive file
 
 ### JS Recon Relationships (hierarchical: parent -> file -> findings)
 - `(b:BaseURL)-[:HAS_JS_FILE]->(jf:JsReconFinding {finding_type: 'js_file'})` - BaseURL has analyzed JS file (pipeline crawl)

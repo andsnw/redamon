@@ -1,0 +1,178 @@
+{
+  "BaseURL": [
+    "urlscan_enriched",
+    "urlscan_screenshot_url",
+    "urlscan_server",
+    "urlscan_title"
+  ],
+  "Capec": [
+    "capec_id",
+    "examples",
+    "execution_flow",
+    "likelihood",
+    "numeric_id",
+    "prerequisites",
+    "related_cwes"
+  ],
+  "Certificate": [
+    "issuer_dn",
+    "ja3",
+    "serial",
+    "subject_dn"
+  ],
+  "ChainFailure": [
+    "error_category"
+  ],
+  "ChainFinding": [
+    "agent_id",
+    "source_agent"
+  ],
+  "ChainStep": [
+    "agent_id",
+    "agent_name"
+  ],
+  "Domain": [
+    "admin_name",
+    "admin_org",
+    "anonymous_mode",
+    "apex_domain_age_days",
+    "bruteforce_mode",
+    "dnssec",
+    "domain_age_days",
+    "domain_name",
+    "expanded_ips",
+    "filtered_mode",
+    "http_probe_live_urls",
+    "http_probe_technology_count",
+    "http_probe_timestamp",
+    "ip_mode",
+    "is_mock",
+    "modules_executed",
+    "name_servers",
+    "port_scan_ports_config",
+    "port_scan_timestamp",
+    "port_scan_total_open_ports",
+    "port_scan_type",
+    "registrant_name",
+    "registrant_postal_code",
+    "registrar_url",
+    "resource_enum_timestamp",
+    "resource_enum_total_endpoints",
+    "resource_enum_total_forms",
+    "resource_enum_total_parameters",
+    "scan_type",
+    "subdomain_filter",
+    "target_ips",
+    "tech_name",
+    "tech_org",
+    "updated_date",
+    "urlscan_enriched",
+    "vuln_scan_critical_count",
+    "vuln_scan_dast_mode",
+    "vuln_scan_dast_urls_discovered",
+    "vuln_scan_high_count",
+    "vuln_scan_low_count",
+    "vuln_scan_medium_count",
+    "vuln_scan_timestamp",
+    "vuln_scan_total_urls_scanned",
+    "whois_emails",
+    "whois_server"
+  ],
+  "Endpoint": [
+    "body_param_count",
+    "body_sha256",
+    "content_length",
+    "form_count",
+    "form_enctype",
+    "form_found_at_pages",
+    "form_input_names",
+    "full_url",
+    "has_parameters",
+    "header_sha256",
+    "is_cdn",
+    "is_form",
+    "is_live",
+    "line_count",
+    "path_param_count",
+    "query_param_count",
+    "resolved_ip",
+    "resolved_url",
+    "tls_cipher",
+    "urls_found",
+    "word_count"
+  ],
+  "Header": [
+    "is_security_header",
+    "reveals_technology"
+  ],
+  "IP": [
+    "cdn_name",
+    "ip_mode",
+    "is_cdn",
+    "origin_discovery_enriched",
+    "urlscan_enriched"
+  ],
+  "JsReconFinding": [
+    "discovered_at",
+    "sample_urls"
+  ],
+  "MalPackageFinding": [
+    "aliases",
+    "soft_error"
+  ],
+  "MitreData": [
+    "abstraction",
+    "consequences",
+    "cwe_description",
+    "cwe_name",
+    "cwe_url",
+    "detection_methods",
+    "mapping",
+    "mitigations"
+  ],
+  "MultiscannerScan": [
+    "run_id"
+  ],
+  "Package": [
+    "source_path"
+  ],
+  "Parameter": [
+    "endpoint_path"
+  ],
+  "Port": [
+    "ip_address"
+  ],
+  "Service": [
+    "ip_address",
+    "tls_cipher",
+    "tls_connection",
+    "tls_probe_error",
+    "tls_probe_failed",
+    "tls_service_hint",
+    "tls_updated_at",
+    "tls_versions_supported"
+  ],
+  "Subdomain": [
+    "actual_ip",
+    "discovered_at",
+    "discovered_by",
+    "has_records",
+    "ip_mode",
+    "is_mock"
+  ],
+  "ThreatPulse": [
+    "sca_blast_radius",
+    "sca_feed_revised",
+    "sca_incident_url",
+    "sca_remediation",
+    "sca_summary"
+  ],
+  "Vulnerability": [
+    "cert_match",
+    "header_match",
+    "html_similarity",
+    "match_method",
+    "missing_header",
+    "recommendation"
+  ]
+}

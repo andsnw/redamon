@@ -32,6 +32,9 @@ CATALOG_PY = PROJECT_ROOT / "graph_db" / "schema_catalog.py"
 RENDER_PY = PROJECT_ROOT / "graph_db" / "schema_render.py"
 SCHEMA_PY = PROJECT_ROOT / "graph_db" / "schema.py"
 BASELINE = PROJECT_ROOT / "recon" / "tests" / "fixtures" / "text_to_cypher_baseline.md"
+KNOWN_UNDOCUMENTED_PROPS = (
+    PROJECT_ROOT / "recon" / "tests" / "fixtures" / "undocumented_properties.json"
+)
 PROMPT_PY = PROJECT_ROOT / "agentic" / "prompts" / "base.py"
 
 
@@ -112,22 +115,11 @@ INTENTIONALLY_UNDOCUMENTED = {
     "Exploit",
 }
 
-# Real documentation debt, measured in graph_schema_track.md §12.1. These node
-# types EXIST and an agent asked about them has no property names to work with,
-# so it guesses. Shrinking this set is the work; growing it is a regression.
-UNDOCUMENTED_DEBT = {
-    "GithubHunt",
-    "GithubPath",
-    "GithubRepository",
-    "GithubSecret",
-    "GithubSensitiveFile",
-    "MultiscannerBucket",
-    "MultiscannerEndpoint",
-    "MultiscannerImage",
-    "MultiscannerModel",
-    "MultiscannerRepository",
-    "SbomDocument",
-}
+# Real documentation debt. EMPTY, and the test below keeps it that way: a label
+# listed here that turns out to be documented fails, and a declared label that is
+# neither documented nor listed fails too. The GitHub secret-hunt subgraph named
+# in graph_schema_track.md §12.1 was the last entry and is now documented.
+UNDOCUMENTED_DEBT: set[str] = set()
 
 
 def declared_labels() -> set[str]:
@@ -153,7 +145,7 @@ def test_every_declared_label_is_catalogued_or_explicitly_excluded():
     that loud. A genuinely new gap fails here; the known set is listed above
     with reasons so the debt is visible instead of ambient.
     """
-    missing = declared_labels() - set(catalog.LABELS)
+    missing = declared_labels() - catalog.DOCUMENTED
     unexpected = missing - INTENTIONALLY_UNDOCUMENTED - UNDOCUMENTED_DEBT
     assert not unexpected, (
         f"{len(unexpected)} label(s) are declared in graph_db/schema.py with no "
@@ -169,7 +161,7 @@ def test_the_known_gaps_are_still_real_gaps():
     Once a label IS documented, leaving it listed as debt would mask a future
     regression on that same label. So documenting one requires removing it here.
     """
-    stale = (INTENTIONALLY_UNDOCUMENTED | UNDOCUMENTED_DEBT) & set(catalog.LABELS)
+    stale = (INTENTIONALLY_UNDOCUMENTED | UNDOCUMENTED_DEBT) & catalog.DOCUMENTED
     assert not stale, (
         f"these are listed as undocumented but now HAVE catalog entries: "
         f"{', '.join(sorted(stale))}. Remove them from the list."
@@ -180,10 +172,153 @@ def test_catalog_documents_no_label_the_code_does_not_declare():
     """Documentation ahead of the code is its own drift: the model is told a
     node type exists that nothing ever writes, and queries come back empty for
     a reason no one can find."""
-    phantom = set(catalog.LABELS) - declared_labels()
+    phantom = catalog.DOCUMENTED - declared_labels()
     assert not phantom, (
         f"catalogued but not declared in schema.py: {', '.join(sorted(phantom))}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 2b. Property drift: the live graph as an ORACLE, never as prompt content
+#
+# Label names are fully derivable from schema.py. Property names are NOT: 22 of
+# 36 labels are written with `SET n += $props`, where the dict is assembled in
+# Python from scanner output, so the names never appear literally in any source
+# file. A static parse of the mixins finds 57 of Domain's 75.
+#
+# The live database is the one place that knows all of them, because it holds
+# what was actually written. So it is used HERE, in a test, instead of being
+# pasted into the prompt the way apoc.meta.data used to be. Same information,
+# none of the costs: nothing cross-tenant reaches a model, no tokens are spent
+# per query, and it cannot go stale in a cached snapshot.
+#
+# Skips cleanly without a database, like the EXPLAIN tests next door.
+# ---------------------------------------------------------------------------
+
+#: Properties every tenant-scoped node carries. They are deliberately NOT
+#: documented per label: the schema states the rule once and tells the model
+#: never to filter on them.
+_TENANT_KEYS = {"user_id", "project_id"}
+
+#: Bookkeeping written by the triage/mute feature onto many finding types. The
+#: schema documents the family once rather than repeating ~25 keys per label.
+_TRIAGE_PREFIX = "triage"
+
+
+def _neo4j_driver():
+    """Connect, or return None so the caller skips. Credentials from the env."""
+    import os
+
+    try:
+        from neo4j import GraphDatabase  # type: ignore
+    except Exception:
+        return None
+    uri = os.environ.get("NEO4J_URI") or "bolt://localhost:7687"
+    user = os.environ.get("NEO4J_USER") or "neo4j"
+    password = os.environ.get("NEO4J_PASSWORD") or "changeme123"
+    try:
+        drv = GraphDatabase.driver(uri, auth=(user, password))
+        drv.verify_connectivity()
+        return drv
+    except Exception:
+        return None
+
+
+def test_no_property_in_the_live_graph_is_missing_from_the_schema():
+    """A scanner adds a property, the schema never learns about it, and the
+    agent cannot ask for it. Nothing fails today. This is that alarm."""
+    drv = _neo4j_driver()
+    if drv is None:
+        print("SKIP: test_no_property_in_the_live_graph_is_missing_from_the_schema (neo4j unreachable)")
+        return
+
+    doc = BASELINE.read_text(encoding="utf-8")
+    undocumented: dict[str, list[str]] = {}
+    try:
+        with drv.session() as sess:
+            labels = [r["label"] for r in sess.run("CALL db.labels() YIELD label RETURN label")]
+            for lab in labels:
+                if lab not in catalog.DOCUMENTED:
+                    continue  # completeness is the other test's job
+                rows = sess.run(
+                    "CALL apoc.meta.nodeTypeProperties({includeLabels:[$l]}) "
+                    "YIELD propertyName RETURN propertyName",
+                    l=lab,
+                ).data()
+                missing = [
+                    r["propertyName"]
+                    for r in rows
+                    if r["propertyName"] not in _TENANT_KEYS
+                    and not r["propertyName"].startswith(_TRIAGE_PREFIX)
+                    and r["propertyName"] not in doc
+                ]
+                if missing:
+                    undocumented[lab] = sorted(missing)
+    finally:
+        drv.close()
+
+    # Known drift, measured once and recorded. 134 properties across 21 labels
+    # exist today with no schema entry. They are NOT invented descriptions here:
+    # guessing at what a property means would put a wrong claim into a security
+    # tool's schema, which is worse than a gap the agent can see. So the debt is
+    # frozen, and anything NEW fails immediately.
+    import json
+
+    known = json.loads(KNOWN_UNDOCUMENTED_PROPS.read_text(encoding="utf-8"))
+    new_drift = {
+        lab: [p for p in ps if p not in known.get(lab, [])]
+        for lab, ps in undocumented.items()
+    }
+    new_drift = {lab: ps for lab, ps in new_drift.items() if ps}
+    assert not new_drift, (
+        "NEW properties exist in the graph that the schema never mentions, so an "
+        "agent cannot ask for them:\n"
+        + "\n".join(f"  {lab}: {', '.join(ps)}" for lab, ps in sorted(new_drift.items()))
+        + "\n\nDocument them in TEXT_TO_CYPHER_SYSTEM, re-seed the catalog, and "
+        "re-run. Do not add them to the known-drift fixture to silence this."
+    )
+
+
+def test_the_schema_does_not_promise_properties_that_were_removed():
+    """The opposite drift: a property documented but no longer written. The
+    model asks for it, gets null, and nobody can explain why."""
+    drv = _neo4j_driver()
+    if drv is None:
+        print("SKIP: test_the_schema_does_not_promise_properties_that_were_removed (neo4j unreachable)")
+        return
+    # Only checked for labels that HAVE nodes here: an absent label proves
+    # nothing about its properties, and this database is one deployment.
+    phantom: dict[str, list[str]] = {}
+    try:
+        with drv.session() as sess:
+            present = {r["label"] for r in sess.run("CALL db.labels() YIELD label RETURN label")}
+            for lab in sorted(present & set(catalog.LABELS)):
+                live = {
+                    r["propertyName"]
+                    for r in sess.run(
+                        "CALL apoc.meta.nodeTypeProperties({includeLabels:[$l]}) "
+                        "YIELD propertyName RETURN propertyName",
+                        l=lab,
+                    ).data()
+                }
+                if not live:
+                    continue
+                documented = set(
+                    re.findall(r"^- ([a-z_][a-z0-9_]*)\s*\(", catalog.LABELS[lab]["body"], re.M)
+                )
+                gone = sorted(documented - live - _TENANT_KEYS)
+                if gone:
+                    phantom[lab] = gone
+    finally:
+        drv.close()
+
+    # Reported, not enforced: a property can be legitimately documented before
+    # any scan in THIS database has produced it. Printing keeps it visible
+    # without failing a gate on one deployment's coverage.
+    if phantom:
+        print("NOTE: documented but absent from this database (may simply be unscanned):")
+        for lab, ps in phantom.items():
+            print(f"      {lab}: {', '.join(ps)}")
 
 
 # ---------------------------------------------------------------------------

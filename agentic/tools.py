@@ -18,7 +18,6 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_neo4j import Neo4jGraph
 
 from project_settings import get_setting, is_tool_allowed_in_phase
-from prompts import TEXT_TO_CYPHER_SYSTEM
 from graph_db.tenant_filter import (
     find_disallowed_write_operation as _shared_find_disallowed_write_operation,
     inject_tenant_filter as _shared_inject_tenant_filter,
@@ -550,6 +549,61 @@ class Neo4jToolManager:
         """
         return _shared_scope_query(cypher, user_id, project_id)
 
+    def _project_property_census(self) -> str:
+        """Per-label property names for the CALLER'S project only.
+
+        Answers the same question the old global introspection did - "which
+        properties can I actually reference?" - without answering it about other
+        tenants. Scoped on user_id + project_id, which every entity node carries.
+
+        Failure returns an empty census, never a global one. The semantic schema
+        from the catalog still describes the graph, so the model degrades to
+        "documented properties only" rather than silently widening its view to
+        the whole database. Failing open here would reintroduce the exact leak
+        this method exists to close.
+
+        :Muted nodes are excluded. The schema tells the model suppressed findings
+        are invisible and that mentioning the label is rejected; leaking their
+        property shape here would contradict that.
+        """
+        user_id = current_user_id.get()
+        project_id = current_project_id.get()
+        if not user_id or not project_id or self.graph is None:
+            return ""
+
+        # One bounded pass. LIMIT guards a large project: a census is a hint for
+        # query writing, not an inventory, so a partial one is fine and a slow
+        # one is not.
+        cypher = """
+        MATCH (n)
+        WHERE n.user_id = $uid AND n.project_id = $pid AND NOT n:Muted
+        WITH labels(n)[0] AS lab, keys(n) AS ks
+        LIMIT 50000
+        UNWIND ks AS k
+        WITH lab, collect(DISTINCT k) AS props
+        WHERE lab IS NOT NULL
+        RETURN lab, props ORDER BY lab
+        """
+        try:
+            rows = self.graph.query(cypher, params={"uid": user_id, "pid": project_id})
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"project property census failed, continuing without it: {e}")
+            return ""
+
+        lines = []
+        for r in rows:
+            props = sorted(p for p in (r.get("props") or []) if p not in ("user_id", "project_id"))
+            if props:
+                lines.append(f"{r['lab']}: {', '.join(props)}")
+        if not lines:
+            return ""
+        return (
+            "Properties present on THIS project's nodes (tenant-scoped, live). "
+            "A property listed here but not described above still exists and can "
+            "be returned; a node type absent here simply has no nodes yet.\n"
+            + "\n".join(lines)
+        )
+
     async def _generate_cypher(
         self,
         question: str,
@@ -576,7 +630,29 @@ class Neo4jToolManager:
                 "Please try again or check that the agent model is configured."
             )
 
-        schema = self.graph.get_schema
+        # The SEMANTIC schema, rendered from graph_db/schema_catalog.py. Same
+        # content the graph_schema tool serves on both surfaces, and today
+        # byte-identical to the TEXT_TO_CYPHER_SYSTEM constant it replaces.
+        from graph_db.schema_render import render_schema
+
+        semantic_schema = render_schema()
+
+        # What THIS project actually holds, scoped to the tenant.
+        #
+        # This replaces `self.graph.get_schema`, which was apoc.meta.data and
+        # wrong here in three ways at once: database-GLOBAL, so every generation
+        # embedded the label and property shape of every other tenant's projects
+        # in the prompt; SAMPLED at 1000 nodes per label, so it could miss a rare
+        # property anyway; and computed once when Neo4jGraph was constructed and
+        # never refreshed, so a scan creating new labels mid-session stayed
+        # invisible to it.
+        #
+        # It is still needed because ~134 properties exist that the catalog does
+        # not yet describe (recon/tests/fixtures/undocumented_properties.json),
+        # and a property the model cannot name is a property it cannot query.
+        # Scoped, live and smaller is strictly better than global, stale and
+        # sampled for exactly the same job.
+        schema = self._project_property_census()
 
         # Build the prompt with optional error context for retries
         error_context = ""
@@ -619,7 +695,7 @@ Incorporate the filter pattern into your MATCH clauses so results are scoped app
   Example: MATCH (s:Subdomain)-[:RESOLVES_TO]->(i:IP) WITH s, count(i) AS cnt WHERE cnt >= 4 MATCH (s)-[r:RESOLVES_TO]->(i:IP) RETURN s, r, i LIMIT 300
 - Never use RETURN with property accessors (e.g. n.name). Always RETURN the node/relationship variable itself."""
 
-        prompt = f"""{TEXT_TO_CYPHER_SYSTEM}
+        prompt = f"""{semantic_schema}
 
 ## Current Database Schema
 {schema}
@@ -797,7 +873,7 @@ Cypher Query:"""
     def get_schema_tool(self) -> Optional[callable]:
         """The graph schema INCLUDING its semantics.
 
-        Content source: TEXT_TO_CYPHER_SYSTEM, the same text `_generate_cypher`
+        Content source: graph_db/schema_catalog.py, the same text `_generate_cypher`
         is prompted with on every call. One source, no second copy, nothing to
         drift. It reads from code only, so it needs no database and no tenant,
         and it is the one graph tool that still answers when Neo4j is down.
@@ -823,8 +899,11 @@ Cypher Query:"""
             expected, or returned nothing or something surprising, and
             graph_summary was not enough to explain why.
             """
-            from prompts import TEXT_TO_CYPHER_SYSTEM
-            return TEXT_TO_CYPHER_SYSTEM
+            # Same content source as the MCP surface's graph_schema and as the
+            # Cypher generator, now via the catalog. Byte-identical to the old
+            # constant; see recon/tests/test_schema_catalog.py.
+            from graph_db.schema_render import render_schema
+            return render_schema()
 
         return graph_schema
 
