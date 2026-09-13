@@ -65,6 +65,71 @@ def _filter_relationship_lines(body: str, labels: set[str]) -> str:
     return "\n".join(kept)
 
 
+
+def render_label(label: str, live_props: list[str] | None = None) -> str:
+    """Render ONE label block from its parsed fields.
+
+    With `live_props`, the attribute list is driven by the property names that
+    actually exist in the caller's graph, and the catalog supplies the meaning:
+
+        vt_jarm (string): JARM TLS fingerprint from VirusTotal   <- both
+        cache_header                                             <- live only
+
+    That is the whole point of the split. A property a scanner started writing
+    last week appears in the prompt automatically, undescribed but NAMEABLE, so
+    the agent can return it. Previously it was invisible until someone
+    remembered to edit 1300 lines of prose.
+
+    A property the catalog describes but the graph does not have is still
+    rendered: this graph is one project, and absence here means "not scanned
+    yet", not "does not exist".
+    """
+    seg = LABELS.get(label)
+    if seg is None:
+        raise ValueError(f"unknown label {label!r}")
+
+    out = [f"**{label}** - {seg['description']}"]
+    described: set[str] = set()
+
+    for g in seg["groups"]:
+        if g["header"]:
+            out.append("")
+            out.append(g["header"])
+        for pr in g["properties"]:
+            described.add(pr["name"])
+            typ = f" ({pr['type']})" if pr["type"] else ""
+            desc = f": {pr['desc']}" if pr["desc"] else ""
+            out.append(f"- {pr['name']}{typ}{desc}")
+
+    if live_props:
+        extra = sorted(set(live_props) - described - {"user_id", "project_id"})
+        if extra:
+            out.append("")
+            out.append(
+                "Present on this project's nodes but not described above "
+                "(returnable, meaning undocumented):"
+            )
+            out.append("- " + ", ".join(extra))
+
+    for st in seg["subtypes"]:
+        qual = f" ({st['qualifier']})" if st["qualifier"] else ""
+        out.append("")
+        out.append(f"{st.get('lead', '')}**{st['name']}**{qual} - {st['desc']}")
+
+    for r in seg["relationships"]:
+        out.append(
+            f"{r.get('prefix', '')}`({r['source_var']}:{r['source']})"
+            f"-[:{r['type']}{r.get('rel_props', '')}]->"
+            f"({r['target_var']}:{r['target']})` {r.get('sep', '')} {r['desc']}".rstrip()
+        )
+
+    if seg["notes"]:
+        out.append("")
+        out.extend(n.rstrip() for n in seg["notes"])
+
+    return "\n".join(out) + "\n"
+
+
 def _wanted(seg: dict, detail: str, labels: set[str] | None, include_examples: bool) -> bool:
     kind, section = seg["kind"], seg["section"]
 
@@ -93,6 +158,7 @@ def render_schema(
     labels: list[str] | None = None,
     include_examples: bool = True,
     name_omitted_labels: bool = True,
+    live_properties: dict[str, list[str]] | None = None,
 ) -> str:
     """Render the schema document.
 
@@ -128,6 +194,12 @@ def render_schema(
         if not _wanted(s, detail, wanted, include_examples):
             continue
         body = s["body"]
+        # Field-rendered ONLY when live property names are supplied. Without
+        # them the verbatim body is emitted, which keeps the no-argument render
+        # byte-identical to the committed baseline and keeps graph_schema
+        # answering when no database is reachable.
+        if live_properties is not None and s["kind"] == "LABEL":
+            body = render_label(s["key"], live_properties.get(s["key"]))
         if wanted is not None and "Relationships" in s["section"]:
             body = _filter_relationship_lines(body, wanted)
         out.append(body)

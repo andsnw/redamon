@@ -45,25 +45,25 @@ class TestProjectPropertyCensus(unittest.TestCase):
         m = _manager()
         m.graph = mock.Mock()
         self.uid.set("")
-        self.assertEqual(m._project_property_census(), "")
+        self.assertEqual(m._project_property_census(), {})
         m.graph.query.assert_not_called()
 
     def test_no_project_context_yields_nothing(self):
         m = _manager()
         m.graph = mock.Mock()
         self.pid.set("")
-        self.assertEqual(m._project_property_census(), "")
+        self.assertEqual(m._project_property_census(), {})
         m.graph.query.assert_not_called()
 
     def test_no_graph_yields_nothing(self):
-        self.assertEqual(_manager()._project_property_census(), "")
+        self.assertEqual(_manager()._project_property_census(), {})
 
     def test_a_query_failure_degrades_to_nothing(self):
         """A broken census must not fall back to the global schema."""
         m = _manager()
         m.graph = mock.Mock()
         m.graph.query.side_effect = RuntimeError("neo4j is down")
-        self.assertEqual(m._project_property_census(), "")
+        self.assertEqual(m._project_property_census(), {})
 
     # -- scoping -----------------------------------------------------------
 
@@ -97,38 +97,34 @@ class TestProjectPropertyCensus(unittest.TestCase):
 
     # -- output ------------------------------------------------------------
 
-    def test_tenant_keys_are_not_listed_back_to_the_model(self):
-        """The rules say never to filter on them, so listing them invites exactly
-        the query the rules forbid."""
+    def test_tenant_keys_are_not_returned(self):
+        """The rules tell the model never to filter on them, so surfacing them
+        invites exactly the query the rules forbid."""
         m = _manager()
         m.graph = mock.Mock()
         m.graph.query.return_value = [
             {"lab": "Domain", "props": ["name", "user_id", "project_id", "source"]}
         ]
-        out = m._project_property_census()
-        self.assertIn("name", out)
-        self.assertIn("source", out)
-        self.assertNotIn("user_id", out)
-        self.assertNotIn("project_id", out)
+        self.assertEqual(m._project_property_census(), {"Domain": ["name", "source"]})
 
-    def test_labels_are_rendered_one_per_line(self):
+    def test_it_returns_a_mapping_keyed_by_label(self):
+        """The renderer merges these names into each label's attribute list, so
+        the shape matters: a flat list could not be attributed to a label."""
         m = _manager()
         m.graph = mock.Mock()
         m.graph.query.return_value = [
             {"lab": "Domain", "props": ["name"]},
             {"lab": "IP", "props": ["address"]},
         ]
-        out = m._project_property_census()
-        self.assertIn("Domain: name", out)
-        self.assertIn("IP: address", out)
+        self.assertEqual(
+            m._project_property_census(), {"Domain": ["name"], "IP": ["address"]}
+        )
 
-    def test_an_empty_project_yields_nothing_rather_than_a_bare_header(self):
-        """A header with no rows reads as "this project has no properties",
-        which is not what an empty result means."""
+    def test_an_empty_project_yields_an_empty_mapping(self):
         m = _manager()
         m.graph = mock.Mock()
         m.graph.query.return_value = []
-        self.assertEqual(m._project_property_census(), "")
+        self.assertEqual(m._project_property_census(), {})
 
 
 if __name__ == "__main__":

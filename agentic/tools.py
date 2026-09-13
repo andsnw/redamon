@@ -549,7 +549,7 @@ class Neo4jToolManager:
         """
         return _shared_scope_query(cypher, user_id, project_id)
 
-    def _project_property_census(self) -> str:
+    def _project_property_census(self) -> dict:
         """Per-label property names for the CALLER'S project only.
 
         Answers the same question the old global introspection did - "which
@@ -569,7 +569,7 @@ class Neo4jToolManager:
         user_id = current_user_id.get()
         project_id = current_project_id.get()
         if not user_id or not project_id or self.graph is None:
-            return ""
+            return {}
 
         # One bounded pass. LIMIT guards a large project: a census is a hint for
         # query writing, not an inventory, so a partial one is fine and a slow
@@ -588,21 +588,15 @@ class Neo4jToolManager:
             rows = self.graph.query(cypher, params={"uid": user_id, "pid": project_id})
         except Exception as e:  # noqa: BLE001
             logger.warning(f"project property census failed, continuing without it: {e}")
-            return ""
+            return {}
 
-        lines = []
-        for r in rows:
-            props = sorted(p for p in (r.get("props") or []) if p not in ("user_id", "project_id"))
-            if props:
-                lines.append(f"{r['lab']}: {', '.join(props)}")
-        if not lines:
-            return ""
-        return (
-            "Properties present on THIS project's nodes (tenant-scoped, live). "
-            "A property listed here but not described above still exists and can "
-            "be returned; a node type absent here simply has no nodes yet.\n"
-            + "\n".join(lines)
-        )
+        return {
+            r["lab"]: sorted(
+                p for p in (r.get("props") or []) if p not in ("user_id", "project_id")
+            )
+            for r in rows
+            if r.get("lab")
+        }
 
     async def _generate_cypher(
         self,
@@ -635,7 +629,12 @@ class Neo4jToolManager:
         # byte-identical to the TEXT_TO_CYPHER_SYSTEM constant it replaces.
         from graph_db.schema_render import render_schema
 
-        semantic_schema = render_schema()
+        # The census drives the attribute lists inside the rendered schema: the
+        # property NAMES come from the caller's own graph, the meanings from the
+        # catalog. A property a scanner started writing last week is therefore
+        # nameable immediately, undescribed but returnable, instead of being
+        # invisible until someone edits 1300 lines of prose.
+        semantic_schema = render_schema(live_properties=self._project_property_census())
 
         # What THIS project actually holds, scoped to the tenant.
         #
@@ -652,8 +651,6 @@ class Neo4jToolManager:
         # and a property the model cannot name is a property it cannot query.
         # Scoped, live and smaller is strictly better than global, stale and
         # sampled for exactly the same job.
-        schema = self._project_property_census()
-
         # Build the prompt with optional error context for retries
         error_context = ""
         if previous_error and previous_cypher:
@@ -696,9 +693,6 @@ Incorporate the filter pattern into your MATCH clauses so results are scoped app
 - Never use RETURN with property accessors (e.g. n.name). Always RETURN the node/relationship variable itself."""
 
         prompt = f"""{semantic_schema}
-
-## Current Database Schema
-{schema}
 {error_context}{view_scope}
 ## Important Rules
 - Generate ONLY the Cypher query, no explanations

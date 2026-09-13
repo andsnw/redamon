@@ -322,6 +322,74 @@ def test_the_schema_does_not_promise_properties_that_were_removed():
 
 
 # ---------------------------------------------------------------------------
+# 2c. Field rendering: the attribute list is GENERATED, not transcribed
+#
+# The catalog stores each label as parsed fields - description, property groups,
+# relationships, sub-types, notes - alongside the verbatim body it came from.
+# The parse is proven lossless below: re-rendering from the fields reproduces
+# every word of the source. That is what allows the attribute list to be driven
+# by the property names that actually exist, with the catalog supplying meaning.
+# ---------------------------------------------------------------------------
+
+def test_the_parse_loses_no_word_of_any_label_block():
+    """The information-loss guard for decomposition.
+
+    Byte-identity cannot apply here: field rendering normalises whitespace and
+    expands comma-grouped properties onto their own lines. So the guarantee is
+    word-level - every word in the source block still appears in the render.
+    """
+    from collections import Counter
+
+    def words(t):
+        return Counter(re.findall(r"[A-Za-z0-9_]+", t))
+
+    lost = Counter()
+    for lab, seg in catalog.LABELS.items():
+        lost += words(seg["body"]) - words(render.render_label(lab))
+    assert not lost, (
+        "field rendering dropped words that the verbatim body contains: "
+        f"{dict(list(lost.items())[:12])}"
+    )
+
+
+def test_every_label_has_a_description_and_properties_as_fields():
+    for lab, seg in catalog.LABELS.items():
+        assert seg["description"], f"{lab} parsed with no description"
+    total = sum(len(catalog.label_properties(l)) for l in catalog.LABELS)
+    assert total > 400, f"only {total} properties parsed into fields; the parser regressed"
+
+
+def test_a_live_property_the_catalog_never_heard_of_is_still_rendered():
+    """THE point of the split. A scanner starts writing a new property; nobody
+    edits the prose. It must still reach the model, undescribed but nameable,
+    or the agent cannot return a column that exists."""
+    out = render.render_label("Domain", live_props=["name", "brand_new_scanner_prop"])
+    assert "brand_new_scanner_prop" in out
+    assert "not described above" in out
+
+
+def test_live_properties_do_not_leak_the_tenant_keys():
+    out = render.render_label("Domain", live_props=["user_id", "project_id", "name"])
+    assert "user_id" not in out.split("not described above")[-1]
+
+
+def test_a_documented_property_absent_from_this_graph_is_still_rendered():
+    """One database is one deployment. Absent here means "not scanned yet", so
+    dropping it would hide a property the agent can legitimately ask about."""
+    out = render.render_label("Domain", live_props=["name"])
+    assert "vt_jarm" in out
+
+
+def test_field_rendering_is_off_unless_live_properties_are_supplied():
+    """Without a database, graph_schema must still serve the full document, and
+    the no-argument render must stay byte-identical to the baseline."""
+    assert render.render_schema() == BASELINE.read_text(encoding="utf-8")
+    with_live = render.render_schema(live_properties={"Domain": ["zzz_new_prop"]})
+    assert "zzz_new_prop" in with_live
+    assert with_live != BASELINE.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
 # 3. Scoping: a subset must still be usable, and honest about what it omitted
 # ---------------------------------------------------------------------------
 

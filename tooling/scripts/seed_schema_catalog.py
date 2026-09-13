@@ -34,6 +34,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from parse_label_block import parse_label_block  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent.parent
 PROMPT = REPO / "agentic" / "prompts" / "base.py"
 FIXTURE = REPO / "recon" / "tests" / "fixtures" / "text_to_cypher_baseline.md"
@@ -162,6 +165,13 @@ def emit(segs: list[dict]) -> str:
         parts.append(f'        "key": {s["key"]!r},')
         parts.append(f'        "section": {s["section"]!r},')
         parts.append(f'        "documents": {sorted(covered_labels(s["body"]))!r},')
+        if s["kind"] == "LABEL":
+            fields = parse_label_block(s["body"], s["key"])
+            parts.append(f'        "description": {fields["description"]!r},')
+            parts.append(f'        "groups": {fields["groups"]!r},')
+            parts.append(f'        "relationships": {fields["relationships"]!r},')
+            parts.append(f'        "subtypes": {fields["subtypes"]!r},')
+            parts.append(f'        "notes": {fields["notes"]!r},')
         parts.append('        "body": """' + s["body"] + '""",')
         parts.append("    },")
     parts.append("]")
@@ -173,6 +183,18 @@ def emit(segs: list[dict]) -> str:
     parts.append("#: grouped block rather than under their own heading. This is what the")
     parts.append("#: completeness test measures against graph_db/schema.py.")
     parts.append("DOCUMENTED = {lab for s in SEGMENTS for lab in s[\"documents\"]}")
+    parts.append("")
+    parts.append("")
+    parts.append("def label_properties(label):")
+    parts.append('    """{name: {type, desc, group}} for one label, flattened across groups."""')
+    parts.append("    seg = LABELS.get(label)")
+    parts.append("    if not seg:")
+    parts.append("        return {}")
+    parts.append("    out = {}")
+    parts.append("    for g in seg[\"groups\"]:")
+    parts.append("        for p in g[\"properties\"]:")
+    parts.append("            out.setdefault(p[\"name\"], {**p, \"group\": g[\"header\"]})")
+    parts.append("    return out")
     parts.append("")
     return "\n".join(parts)
 
