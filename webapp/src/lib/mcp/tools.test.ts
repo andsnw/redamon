@@ -17,9 +17,12 @@ const h = vi.hoisted(() => ({
   findProject: vi.fn(),
   findManyProjects: vi.fn(),
   findVersion: vi.fn(),
+  findConversation: vi.fn(),
+  liveTriageRun: vi.fn(),
   orchestratorFetch: vi.fn(),
   isActivating: vi.fn(),
-  busy: vi.fn(),
+  /** The raw `/system/active-scans` body, cross-project exactly as it ships. */
+  activeScans: vi.fn(),
   fetch: vi.fn(),
 }))
 
@@ -30,16 +33,18 @@ vi.mock('@/lib/prisma', () => ({
       findMany: (...a: unknown[]) => h.findManyProjects(...a),
     },
     scanVersion: { findFirst: (...a: unknown[]) => h.findVersion(...a) },
+    conversation: { findFirst: (...a: unknown[]) => h.findConversation(...a) },
   },
 }))
 vi.mock('@/lib/orchestrator', () => ({ orchestratorFetch: (...a: unknown[]) => h.orchestratorFetch(...a) }))
 vi.mock('@/lib/activationLock', () => ({ isActivationInProgress: (...a: unknown[]) => h.isActivating(...a) }))
-vi.mock('@/lib/graphWriters', () => ({ describeScanWriters: (...a: unknown[]) => h.busy(...a) }))
+vi.mock('@/lib/triageRun', () => ({ findLiveTriageRun: (...a: unknown[]) => h.liveTriageRun(...a) }))
 
 import { McpScopeError, McpAccessDenied, __resetRateLimiter, __resetLlmBudget } from '@/lib/mcpAuth'
 import { McpToolError } from './errors'
 import { __resetSchemaCache } from './graphClient'
 import { __resetToolboxCache } from './kaliClient'
+import { readProjectActivity } from './activity'
 import {
   getReconSettings,
   getReconStatus,
@@ -63,6 +68,14 @@ const ownNode = (label: string) => ({
   _kind: 'node', labels: [label], properties: { user_id: 'owner', project_id: 'p1' },
 })
 
+/** One `/system/active-scans` row, in the orchestrator's own snake_case shape. */
+const scanRow = (over: Record<string, unknown> = {}) => ({
+  kind: 'full_recon', project_id: 'p1', run_id: '', tool_id: '', status: 'running',
+  current_phase: 'port_scan', current_group: null, group_number: null,
+  total_groups: null, started_at: '2026-09-14T10:00:00Z',
+  ...over,
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.unstubAllEnvs()
@@ -75,7 +88,17 @@ beforeEach(() => {
   h.findManyProjects.mockResolvedValue([{ id: 'p1', name: 'Target', targetDomain: 'x.tld' }])
   h.findVersion.mockResolvedValue({ id: 'v3', seq: 3, label: 'Scan 3', createdAt: new Date() })
   h.isActivating.mockResolvedValue(false)
-  h.busy.mockResolvedValue(null)
+  h.findConversation.mockResolvedValue(null)
+  h.liveTriageRun.mockResolvedValue(null)
+  h.activeScans.mockReturnValue([])
+  // Dispatch on the path: get_recon_status and the activity helper both go
+  // through orchestratorFetch, and they are different endpoints.
+  h.orchestratorFetch.mockImplementation(async (url: unknown) => {
+    if (String(url).includes('/system/active-scans')) {
+      return { ok: true, json: async () => ({ scans: h.activeScans() }) }
+    }
+    return { ok: true, json: async () => ({ status: 'idle' }) }
+  })
 })
 
 // --- list_projects -------------------------------------------------------------
@@ -190,13 +213,25 @@ describe('get_recon_settings', () => {
 // --- graph_summary ----------------------------------------------------------------
 
 describe('graph_summary', () => {
-  const okSummary = () =>
-    h.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        nodes: [{ label: 'IP', count: 12 }],
-        relationships: [{ type: 'RESOLVES_TO', count: 8 }],
-      }),
+  /**
+   * graph_summary makes TWO agent calls: the fixed `summary` op for the counts,
+   * and one counted Cypher for the stale total. They are told apart by op, so a
+   * test can fail one without failing the other.
+   */
+  const okSummary = (stale?: number | 'fail') =>
+    h.fetch.mockImplementation(async (_url: unknown, init: { body: string }) => {
+      const body = JSON.parse(init.body) as { op?: string }
+      if (body.op === 'summary') {
+        return {
+          ok: true,
+          json: async () => ({
+            nodes: [{ label: 'IP', count: 12 }],
+            relationships: [{ type: 'RESOLVES_TO', count: 8 }],
+          }),
+        }
+      }
+      if (stale === 'fail') throw new Error('ECONNREFUSED')
+      return { ok: true, json: async () => ({ records: stale === undefined ? [] : [{ stale }] }) }
     })
 
   test('returns counts per label and the current version', async () => {
@@ -236,7 +271,7 @@ describe('graph_summary', () => {
 
   test('a scan in flight is reported, with a warning', async () => {
     okSummary()
-    h.busy.mockResolvedValue('a full recon scan is running')
+    h.activeScans.mockReturnValue([scanRow()])
     const r = await graphSummary(ctx(), 'p1')
     expect(r.liveGraphState).toBe('scan_running')
     expect(r.warning).toMatch(/not settled/i)
@@ -256,13 +291,131 @@ describe('graph_summary', () => {
     expect(r.liveGraphState).toBe('stable')
     expect(r.warning).toBeUndefined()
   })
+
+  test('the stale total is reported when it can be read', async () => {
+    okSummary(7)
+    expect((await graphSummary(ctx(), 'p1')).hiddenFromCounts).toEqual({ stale: 7 })
+  })
+
+  test('a readable stale total of zero is still reported', async () => {
+    // Zero is a real answer here and means "nothing is hidden"; it is only a
+    // lie when it stands in for "could not read".
+    okSummary(0)
+    expect((await graphSummary(ctx(), 'p1')).hiddenFromCounts).toEqual({ stale: 0 })
+  })
+
+  test('an unreadable stale total OMITS the key rather than reporting 0', async () => {
+    okSummary('fail')
+    const r = await graphSummary(ctx(), 'p1')
+    expect(r).not.toHaveProperty('hiddenFromCounts')
+    // The counts themselves are still true, so the tool degrades by dropping an
+    // explanatory field rather than by refusing to answer.
+    expect(r.nodes).toEqual([{ label: 'IP', count: 12 }])
+  })
+
+  test('no muted count is ever emitted', async () => {
+    // Deferred deliberately: the only implementation available today would make
+    // this tool fetch every muted finding on every call.
+    okSummary(3)
+    expect(JSON.stringify(await graphSummary(ctx(), 'p1'))).not.toMatch(/muted/i)
+  })
+})
+
+// =============================================================================
+// REGRESSION: graph_summary reported `stable` during five of the seven scan
+// kinds. describeScanWriters covers full and partial recon only; the GVM,
+// GitHub Secret Hunt, TruffleHog, supply-chain and AI attack-surface scans all
+// write finding nodes into the live graph and were invisible here. The wiki
+// documents `stable` as "the counts are trustworthy", so an agent asking for a
+// malicious-package count DURING the supply-chain scan that produces those
+// nodes got a partial count stamped trustworthy.
+// =============================================================================
+
+describe('REGRESSION: every scan kind moves the live-graph state', () => {
+  for (const kind of [
+    'full_recon', 'gvm', 'github_hunt', 'supply_chain',
+    'trufflehog', 'partial_recon', 'ai_attack',
+  ]) {
+    test(`${kind} reports scan_running, never stable`, async () => {
+      h.activeScans.mockReturnValue([scanRow({ kind })])
+      expect(await resolveLiveGraphState('p1')).toBe('scan_running')
+    })
+  }
 })
 
 describe('resolveLiveGraphState', () => {
   test('activation outranks a running scan', async () => {
     h.isActivating.mockResolvedValue(true)
-    h.busy.mockResolvedValue('a scan is running')
+    h.activeScans.mockReturnValue([scanRow()])
     expect(await resolveLiveGraphState('p1')).toBe('activating')
+  })
+
+  test('an unreachable orchestrator is "unknown", NEVER stable', async () => {
+    // The rule the whole surface exists to protect: a dependency failure is not
+    // an empty result. The webapp's own Activity view answers [] here, which is
+    // right for a UI with database fallbacks and a false negative on this one.
+    h.orchestratorFetch.mockRejectedValue(new Error('ECONNREFUSED'))
+    expect(await resolveLiveGraphState('p1')).toBe('unknown')
+  })
+
+  test('a non-200 from active-scans is "unknown" too', async () => {
+    h.orchestratorFetch.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) })
+    expect(await resolveLiveGraphState('p1')).toBe('unknown')
+  })
+
+  test('unknown outranks a running scan, because it must never read as stable', async () => {
+    h.activeScans.mockReturnValue([scanRow()])
+    h.liveTriageRun.mockRejectedValue(new Error('db down'))
+    expect(await resolveLiveGraphState('p1')).toBe('unknown')
+  })
+
+  test('a live agent session is agent_writing', async () => {
+    h.findConversation.mockResolvedValue({ id: 'c1' })
+    expect(await resolveLiveGraphState('p1')).toBe('agent_writing')
+  })
+
+  test('a live triage run is agent_writing', async () => {
+    h.liveTriageRun.mockResolvedValue({ id: 'r1', status: 'running' })
+    expect(await resolveLiveGraphState('p1')).toBe('agent_writing')
+  })
+
+  test('a running scan outranks an agent session', async () => {
+    h.activeScans.mockReturnValue([scanRow()])
+    h.findConversation.mockResolvedValue({ id: 'c1' })
+    expect(await resolveLiveGraphState('p1')).toBe('scan_running')
+  })
+
+  test('nothing running is stable', async () => {
+    expect(await resolveLiveGraphState('p1')).toBe('stable')
+  })
+})
+
+describe('another project\'s activity never leaks', () => {
+  test('a foreign active scan does not set the state', async () => {
+    // /system/active-scans is cross-project by design: it returns every user's
+    // running scans. The operator's Activity view deliberately shows a count of
+    // other people's work; on a token surface that is cross-tenant metadata.
+    h.activeScans.mockReturnValue([scanRow({ project_id: 'someone-elses-project' })])
+    expect(await resolveLiveGraphState('p1')).toBe('stable')
+  })
+
+  test("a foreign project's id is never returned", async () => {
+    h.activeScans.mockReturnValue([
+      scanRow({ project_id: 'someone-elses-project', kind: 'gvm' }),
+      scanRow({ project_id: 'p1' }),
+    ])
+    const activity = await readProjectActivity('p1')
+    expect(activity.scans).toHaveLength(1)
+    expect(JSON.stringify(activity)).not.toContain('someone-elses-project')
+  })
+
+  test('and is not reported as a count either', async () => {
+    h.activeScans.mockReturnValue([
+      scanRow({ project_id: 'a' }), scanRow({ project_id: 'b' }),
+    ])
+    const activity = await readProjectActivity('p1')
+    expect(activity.scans).toEqual([])
+    expect(activity.unknown).toBe(false)
   })
 })
 
@@ -515,11 +668,11 @@ describe('REGRESSION: the live-graph state is sampled AFTER the counts', () => {
     // count read was reported `stable` alongside mid-wipe near-zero counts -
     // the exact false negative the field exists to prevent. Reading it after
     // makes the same race over-warn instead.
-    h.busy.mockResolvedValue(null)
+    h.activeScans.mockReturnValue([])
     h.fetch.mockImplementation(async () => {
       // The scan starts while the counts are being read.
-      h.busy.mockResolvedValue('a full recon scan is running')
-      return { ok: true, json: async () => ({ nodes: [], relationships: [] }) }
+      h.activeScans.mockReturnValue([scanRow()])
+      return { ok: true, json: async () => ({ nodes: [], relationships: [], records: [] }) }
     })
 
     const r = await graphSummary(ctx(), 'p1')

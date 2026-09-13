@@ -19,8 +19,7 @@
  */
 import prisma from '@/lib/prisma'
 import { orchestratorFetch } from '@/lib/orchestrator'
-import { isActivationInProgress } from '@/lib/activationLock'
-import { describeScanWriters } from '@/lib/graphWriters'
+import { readProjectActivity, type ProjectActivity } from '@/lib/mcp/activity'
 import {
   assertMcpProjectAccess,
   checkLlmBudget,
@@ -34,6 +33,7 @@ import { assertTenantScoped, TenantViolation } from '@/lib/mcp/graphGuard'
 import { agentBaseUrl } from '@/lib/agentFetch'
 import { internalKeyHeaders } from '@/lib/agentAuth'
 import { execCypher, graphSchemaDoc, nlQuery, type GraphRecords } from '@/lib/mcp/graphClient'
+import { staleFindingsCypher } from '@/lib/mcp/findingLabels'
 import { kaliToolboxDoc } from '@/lib/mcp/kaliClient'
 
 const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'
@@ -204,6 +204,7 @@ export async function graphSummary(ctx: McpContext, projectId: string) {
   // the same race over-warns instead: the counts predate the wipe and the
   // state still says the graph is moving.
   const summary = await summaryCounts(ctx, projectId)
+  const stale = await staleFindingCount(ctx, projectId)
   const liveGraphState = await resolveLiveGraphState(projectId)
 
   return {
@@ -211,25 +212,51 @@ export async function graphSummary(ctx: McpContext, projectId: string) {
     // Prepended deliberately: counts taken during a wipe or a version swap are
     // near-zero, which a reader would otherwise take for "never scanned".
     liveGraphState,
-    ...(liveGraphState !== 'stable'
-      ? {
-          warning:
-            'The live graph is being rewritten right now, so these counts are not settled. ' +
-            'Re-check once the state is "stable".',
-        }
-      : {}),
+    ...(liveGraphState === 'stable' ? {} : { warning: STATE_WARNING[liveGraphState] }),
     scanVersion: version,
     nodes: summary.nodes,
     relationships: summary.relationships,
+    // Omitted entirely when it could not be read. Reporting 0 for "could not
+    // count" would be the same false negative the rest of this tool exists to
+    // prevent, one field down.
+    ...(stale === null ? {} : { hiddenFromCounts: { stale } }),
   }
 }
 
-export type LiveGraphState = 'stable' | 'scan_running' | 'activating'
+export type LiveGraphState = 'stable' | 'scan_running' | 'agent_writing' | 'activating' | 'unknown'
+
+const STATE_WARNING: Record<Exclude<LiveGraphState, 'stable'>, string> = {
+  activating:
+    'A saved version is being swapped in, so these counts are mid-restore and can be near zero. ' +
+    'Re-check once the state is "stable".',
+  scan_running:
+    'A scan is writing the live graph right now, so these counts are not settled. ' +
+    'Re-check once the state is "stable".',
+  agent_writing:
+    'A triage run or an in-app agent session is writing the live graph, so these counts are not ' +
+    'settled. Re-check once the state is "stable".',
+  unknown:
+    'Whether anything is rewriting the graph could NOT be determined, so these counts cannot be ' +
+    'trusted. This is not a report that the graph is settled - treat it as "do not know".',
+}
+
+/**
+ * Which of the five states the graph is in, worst-case first.
+ *
+ * `unknown` outranks the running states because it is the honest answer when a
+ * source could not be read, and because the one thing it must never be mistaken
+ * for is `stable`, which the wiki documents as "the counts are trustworthy".
+ */
+export function liveGraphStateOf(activity: ProjectActivity): LiveGraphState {
+  if (activity.activating) return 'activating'
+  if (activity.unknown) return 'unknown'
+  if (activity.scans.length > 0) return 'scan_running'
+  if (activity.agentSession || activity.triageRun) return 'agent_writing'
+  return 'stable'
+}
 
 export async function resolveLiveGraphState(projectId: string): Promise<LiveGraphState> {
-  if (await isActivationInProgress(projectId)) return 'activating'
-  if (await describeScanWriters(projectId)) return 'scan_running'
-  return 'stable'
+  return liveGraphStateOf(await readProjectActivity(projectId))
 }
 
 async function summaryCounts(ctx: McpContext, projectId: string) {
@@ -259,6 +286,35 @@ async function summaryCounts(ctx: McpContext, projectId: string) {
   return (await resp.json()) as {
     nodes: { label: string; count: number }[]
     relationships: { type: string; count: number }[]
+  }
+}
+
+/**
+ * How many findings the census is hiding because a later scan stopped
+ * reporting them.
+ *
+ * `null`, never 0, when it cannot be read: the caller is deciding whether to
+ * trust a count, and a fabricated zero is worse than an absent field. This is
+ * the one place in `graph_summary` where a dependency failure is NOT fatal -
+ * the counts themselves are still true, so the tool degrades by omitting an
+ * explanatory field rather than by refusing to answer.
+ *
+ * No muted count. There is no counting query for the `Muted` label anywhere in
+ * the product: `list_muted` is uncapped and returns every suppressed finding in
+ * full, and Cypher cannot reach them at all. Sourcing one here would make the
+ * most-called tool on the surface fetch every muted finding on every call, over
+ * the one dependency with no record cap. `list_muted_findings` is where that
+ * number lives.
+ */
+async function staleFindingCount(ctx: McpContext, projectId: string): Promise<number | null> {
+  try {
+    const result = await execCypher(ctx.token.userId, projectId, staleFindingsCypher())
+    const row = (result.records?.[0] ?? {}) as Record<string, unknown>
+    const n = row.stale
+    return typeof n === 'number' && Number.isFinite(n) ? n : null
+  } catch (err) {
+    console.error('[mcp] stale finding count could not be read:', err)
+    return null
   }
 }
 

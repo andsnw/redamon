@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`graph_summary` called the graph settled during five of the seven scan kinds.** It resolved `liveGraphState` from a check that covers full and partial recon only, while GVM, GitHub Secret Hunt, TruffleHog, supply-chain and AI attack-surface scans all write finding nodes into the same live graph. So an agent asking for a malicious-package count *during the supply-chain scan that produces those nodes* got a partial count stamped `stable`, which the manual documents as "the counts are trustworthy". That is the same false negative the tool exists to prevent, one level up: the mitigation was absent in exactly the window it was built for.
+
+  It now reads all seven kinds in **one** call to the orchestrator rather than five more HTTP round trips, and reports two new states: `agent_writing` when a triage run or an in-app agent session is writing, and `unknown` when a source could not be read. `unknown` outranks every running state, because the one thing it must never be mistaken for is `stable`. Another project's running scan is filtered out before anything is returned, so the cross-project endpoint behind this cannot leak either a foreign project id or a count of other tenants' work.
+
+- **`graph_summary` silently hid resolved findings from its own counts.** The census leaves out findings a later scan stopped reporting, while raw Cypher includes them, so an agent cross-checking the two numbers got a discrepancy with no way to learn why. The answer now carries `hiddenFromCounts.stale`. When that figure cannot be read the **key is absent rather than `0`**: a fabricated zero would be the same false negative the field exists to close.
+
 ## [6.16.0] - 2026-09-14
 
 ### Added
