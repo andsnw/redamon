@@ -2,12 +2,15 @@
 VHost & SNI enumeration graph updates.
 
 Writes Vulnerability nodes with source="vhost_sni_enum" that reuse the existing
-Vulnerability label (no new node type). Each finding is attached to the
-Subdomain node corresponding to the discovered hidden vhost. The IP node is
+Vulnerability label. Findings are linked to an existing Subdomain when DNS/recon
+has already established that hostname, but VHost/SNI probing never creates a
+Subdomain or RESOLVES_TO edge by itself: routing a candidate hostname to an IP
+is not evidence that public DNS resolves that name to the IP. The IP node is
 also enriched with vhost_* properties (baseline, reverse-proxy flag, hidden
 vhost count). When the module discovers a hidden vhost and inject_discovered
-is enabled, a BaseURL is also created so downstream tools (Nuclei, Katana in
-follow-up partial recon runs) can pick it up.
+is enabled, a BaseURL is still created so downstream tools (Nuclei, Katana in
+follow-up partial recon runs) can pick it up; it is linked to a Subdomain only
+when that Subdomain already exists.
 
 Properties written on each Vulnerability:
     id                       deterministic hash (hostname+ip+port+layer)
@@ -111,7 +114,7 @@ class VhostSniMixin:
                     stats["errors"].append(f"vhost_sni IP {ip_addr} enrichment failed: {e}")
 
             # ----------------------------------------------------------
-            # 2. Per-finding Vulnerability nodes + Subdomain enrichment
+            # 2. Per-finding Vulnerability nodes + existing Subdomain enrichment
             # ----------------------------------------------------------
             for finding in findings:
                 try:
@@ -166,7 +169,8 @@ class VhostSniMixin:
                     )
                     stats["vulnerabilities_created"] += 1
 
-                    # Attach to Subdomain (creating defensively if missing).
+                    # Enrich/link a Subdomain ONLY when recon/DNS already created it.
+                    # A hidden virtual host is not proof that a public DNS name exists.
                     sub_props = {
                         "vhost_tested": True,
                         "vhost_hidden": True,
@@ -178,29 +182,31 @@ class VhostSniMixin:
                     }
                     sub_props = {k: v for k, v in sub_props.items() if v is not None}
 
-                    session.run(
+                    res_sub = session.run(
                         """
-                        MERGE (s:Subdomain {name: $hostname, user_id: $uid, project_id: $pid})
-                        ON CREATE SET s.source = 'vhost_sni_enum',
-                                      s.created_at = datetime()
-                        SET s += $sprops,
-                            s.updated_at = datetime()
+                        OPTIONAL MATCH (s:Subdomain {
+                            name: $hostname, user_id: $uid, project_id: $pid
+                        })
                         WITH s
-                        MATCH (v:Vulnerability {id: $id, user_id: $uid, project_id: $pid})
-                        MERGE (s)-[:HAS_VULNERABILITY]->(v)
+                        MATCH (v:Vulnerability {
+                            id: $id, user_id: $uid, project_id: $pid
+                        })
+                        FOREACH (_ IN CASE WHEN s IS NOT NULL THEN [1] ELSE [] END |
+                            SET s += $sprops,
+                                s.updated_at = datetime()
+                            MERGE (s)-[:HAS_VULNERABILITY]->(v)
+                        )
+                        RETURN count(s) AS matched
                         """,
                         hostname=hostname, uid=user_id, pid=project_id,
                         id=vuln_id, sprops=sub_props,
                     )
-                    stats["subdomains_enriched"] += 1
-                    stats["relationships_created"] += 1
+                    if res_sub.single()["matched"] > 0:
+                        stats["subdomains_enriched"] += 1
+                        stats["relationships_created"] += 1
 
-                    # Wire the Subdomain into the rest of the graph so it isn't
-                    # orphaned when vhost_sni invented it (a newly discovered
-                    # hidden vhost won't exist as a Subdomain yet). Link to the
-                    # parent Domain (BELONGS_TO/HAS_SUBDOMAIN) when the hostname
-                    # falls under the project's target domain, and to the IP
-                    # (RESOLVES_TO) it was discovered on.
+                    # Keep an existing Subdomain wired to its parent Domain, but
+                    # never create the Subdomain from VHost/SNI evidence alone.
                     if target_domain and hostname.endswith(target_domain) and hostname != target_domain:
                         res_d = session.run(
                             """
@@ -216,19 +222,9 @@ class VhostSniMixin:
                         if res_d.single()["matched"] > 0:
                             stats["relationships_created"] += 2
 
-                    if ip_addr:
-                        res_ip = session.run(
-                            """
-                            MATCH (s:Subdomain {name: $hostname, user_id: $uid, project_id: $pid})
-                            MATCH (i:IP {address: $addr, user_id: $uid, project_id: $pid})
-                            MERGE (s)-[:RESOLVES_TO {discovered_via: 'vhost_sni_enum'}]->(i)
-                            RETURN count(i) AS matched
-                            """,
-                            hostname=hostname, addr=ip_addr,
-                            uid=user_id, pid=project_id,
-                        )
-                        if res_ip.single()["matched"] > 0:
-                            stats["relationships_created"] += 1
+                    # Do NOT create RESOLVES_TO here. VHost/SNI enumeration proves
+                    # only that a hostname candidate was tested against an IP, not
+                    # that DNS resolves the hostname to that IP.
 
                     # For host_header_bypass (L7 vs L4 disagreement) the IP is
                     # also a vulnerable surface — attach the same Vulnerability
@@ -276,11 +272,13 @@ class VhostSniMixin:
                                       b.port = $port
                         SET b.updated_at = datetime()
                         WITH b
-                        MERGE (s:Subdomain {name: $host, user_id: $uid, project_id: $pid})
-                        ON CREATE SET s.source = 'vhost_sni_enum',
-                                      s.created_at = datetime()
-                        SET s.updated_at = datetime()
-                        MERGE (s)-[:HAS_BASE_URL]->(b)
+                        OPTIONAL MATCH (s:Subdomain {
+                            name: $host, user_id: $uid, project_id: $pid
+                        })
+                        FOREACH (_ IN CASE WHEN s IS NOT NULL THEN [1] ELSE [] END |
+                            SET s.updated_at = datetime()
+                            MERGE (s)-[:HAS_BASE_URL]->(b)
+                        )
                         RETURN count(b) AS created
                         """,
                         url=url, uid=user_id, pid=project_id,
