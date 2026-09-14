@@ -8,8 +8,10 @@ containing null, so those representations can become parallel Technology
 nodes.
 
 The public ``graph_db.Neo4jClient`` runs this lightweight duplicate sweep before
-closing. Only nodes with the same tenant, project, case-folded name and version
-are merged. APOC's ``mergeNodes`` preserves all relationships.
+closing. The package also rebinds the legacy ``graph_db.neo4j_client`` export so
+direct imports use the same integrity-enabled client. Only nodes with the same
+tenant, project, case-folded name and version are merged. APOC's ``mergeNodes``
+preserves all relationships.
 """
 
 
@@ -52,5 +54,9 @@ class TechnologyIntegrityMixin:
                     f"[+][graph-db] merged {merged} duplicate Technology "
                     "identity group(s)"
                 )
+        except Exception as exc:
+            # Integrity cleanup is best-effort; never leak an open Neo4j driver
+            # because APOC is temporarily unavailable or a sweep fails.
+            print(f"[!][graph-db] Technology integrity sweep failed: {exc}")
         finally:
-            return super().close()
+            super().close()
