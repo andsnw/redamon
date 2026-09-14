@@ -373,6 +373,21 @@ describe('resolveLiveGraphState', () => {
     expect(await resolveLiveGraphState('p1')).toBe('unknown')
   })
 
+  // REGRESSION: a 200 carrying valid JSON whose `scans` key is missing or
+  // renamed was substituted with [] and NOT flagged unknown, so graph_summary
+  // reported `stable` - "the counts are trustworthy" - during a live scan.
+  // That is the exact false negative FIX-0 closed, re-entered through schema
+  // drift instead of through a missing scan kind.
+  test('REGRESSION: a 200 with no scans key is "unknown", not "nothing running"', async () => {
+    h.orchestratorFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
+    expect(await resolveLiveGraphState('p1')).toBe('unknown')
+  })
+
+  test('REGRESSION: a 200 whose scans key is not an array is "unknown"', async () => {
+    h.orchestratorFetch.mockResolvedValue({ ok: true, json: async () => ({ scans: 'none' }) })
+    expect(await resolveLiveGraphState('p1')).toBe('unknown')
+  })
+
   test('a non-200 from active-scans is "unknown" too', async () => {
     h.orchestratorFetch.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) })
     expect(await resolveLiveGraphState('p1')).toBe('unknown')
@@ -784,6 +799,14 @@ describe('get_project_activity', () => {
     const r = await getProjectActivity(ctx(), 'p1')
     expect(r.canStartFullScan).toBe(true)
     expect(r).not.toHaveProperty('startBlockedBecause')
+  })
+
+  // One call fans out to as many as eight upstream requests, so it cannot sit
+  // in the bucket sized for a single cheap read.
+  test('it is metered as a query, not as a cheap read', async () => {
+    vi.stubEnv('MCP_RATE_QUERY_PER_MIN', '1')
+    await getProjectActivity(ctx(), 'p1')
+    await expect(getProjectActivity(ctx(), 'p1')).rejects.toThrow(/rate limit/i)
   })
 
   test('an unreadable source is reported, never as "nothing running"', async () => {

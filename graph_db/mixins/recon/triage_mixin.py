@@ -189,14 +189,21 @@ class TriageMixin:
             return {"unmuted": False, "label": None}
         return {"unmuted": True, "label": record["label"]}
 
-    def list_muted(self, user_id: str, project_id: str) -> list:
+    def list_muted(self, user_id: str, project_id: str,
+                   limit: int | None = None) -> list:
         """Every suppressed finding in the project.
 
         The ONLY query in the codebase that deliberately matches `:Muted`. It is
         reachable exclusively from the webapp's Muted-table endpoint over the
         internal API; the agent cannot reach it, and `scope_query` refuses any
         agent query that so much as names the label.
+
+        `limit` is OPTIONAL and defaults to no clause at all, so the Muted table
+        in the UI keeps counting every row exactly as before. A caller that
+        cannot afford an unbounded transfer - the MCP surface, which has no cap
+        on this path - passes one and reports its own result as partial.
         """
+        limit_clause = "\n        LIMIT $limit" if limit else ""
         query = f"""
         MATCH (n:Muted)
         WHERE n.user_id = $user_id AND n.project_id = $project_id
@@ -210,11 +217,13 @@ class TriageMixin:
                coalesce(n.muted_reason, '')        AS muted_reason,
                coalesce(n.triage_status, 'unreviewed') AS triage_status,
                n.triage_reason                     AS triage_reason
-        ORDER BY n.muted_at DESC
+        ORDER BY n.muted_at DESC{limit_clause}
         """
+        params = {"user_id": user_id, "project_id": project_id}
+        if limit:
+            params["limit"] = int(limit)
         with self.driver.session() as session:
-            return [dict(r) for r in session.run(
-                query, user_id=user_id, project_id=project_id)]
+            return [dict(r) for r in session.run(query, **params)]
 
     def list_triage_findings(self, user_id: str, project_id: str, limit: int = 2000) -> list:
         """Every finding in triage scope that is NOT muted, for the Priority Board.

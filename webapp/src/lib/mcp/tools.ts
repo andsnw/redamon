@@ -193,7 +193,14 @@ function projectReconState(raw: unknown): Record<string, unknown> {
  */
 export async function getProjectActivity(ctx: McpContext, projectId: string) {
   requireScope(ctx.token, 'recon:read')
-  enforceRate(ctx, 'read')
+  // The `query` bucket, not `read`, because this is not a cheap read. One call
+  // costs one in-memory orchestrator read plus, for canStartFullScan, up to
+  // SEVEN more sequential orchestrator round trips. At the read bucket's 120 a
+  // minute a single looping token could issue nearly a thousand orchestrator
+  // requests a minute while staying inside its documented limit, and the
+  // orchestrator is shared by every project on the host. Telling the model not
+  // to poll is advice to an untrusted caller, not a control.
+  enforceRate(ctx, 'query')
   await assertMcpProjectAccess(ctx.token.userId, projectId)
 
   const activity = await readProjectActivity(projectId)

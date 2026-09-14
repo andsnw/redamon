@@ -55,8 +55,8 @@ class _FakeTriageClient:
         self.calls.append(("count_triage_findings", user_id, project_id))
         return 137
 
-    def list_muted(self, user_id, project_id):
-        self.calls.append(("list_muted", user_id, project_id))
+    def list_muted(self, user_id, project_id, limit=None):
+        self.calls.append(("list_muted", user_id, project_id, limit))
         return [{"id": "m1"}]
 
     def set_human_verdict(self, user_id, project_id, node_id, status, reason,
@@ -269,3 +269,85 @@ class VerdictProvenanceTests(unittest.IsolatedAsyncioTestCase):
         self.client.verdict_updates = False
         await api.graph_triage(self._req())
         self.assertEqual(self.events, [])
+
+
+class MutedLimitTests(unittest.IsolatedAsyncioTestCase):
+    """`list_muted` is unbounded for the UI and bounded for MCP.
+
+    The Muted table counts the rows it receives, so a default cap would silently
+    change an operator-visible number; the MCP path has no record cap on this
+    dependency at all, so its bound has to travel with the request.
+    """
+
+    def setUp(self):
+        self.client = _FakeTriageClient()
+        self._patches = [
+            mock.patch.object(api, "_triage_graph_client", lambda: self.client),
+            mock.patch.object(api, "master_key_is_weak", lambda: False),
+        ]
+        for p in self._patches:
+            p.start()
+        self.addCleanup(lambda: [p.stop() for p in self._patches])
+
+    def _req(self, **kw):
+        base = dict(op="list_muted", user_id="u1", project_id="p1")
+        base.update(kw)
+        return api.GraphTriageRequest(**base)
+
+    def _limit(self):
+        for c in self.client.calls:
+            if c[0] == "list_muted":
+                return c[3]
+        self.fail("list_muted was never called")
+
+    async def test_no_limit_stays_unbounded_for_the_browser(self):
+        await api.graph_triage(self._req())
+        self.assertIsNone(self._limit())
+
+    async def test_a_limit_is_passed_through(self):
+        await api.graph_triage(self._req(limit=2000, source="mcp"))
+        self.assertEqual(self._limit(), 2000)
+
+    async def test_a_limit_is_clamped_to_the_same_ceiling(self):
+        await api.graph_triage(self._req(limit=10_000_000))
+        self.assertEqual(self._limit(), api._TRIAGE_LIST_MAX)
+
+    async def test_a_nonsense_limit_cannot_produce_an_empty_page(self):
+        await api.graph_triage(self._req(limit=0))
+        self.assertEqual(self._limit(), 1)
+
+
+class GateAcknowledgementTests(unittest.IsolatedAsyncioTestCase):
+    """The caller can tell whether this agent understood the MCP gate.
+
+    Without it, a deploy that rebuilds only the webapp leaves an older agent
+    that ignores `source`, `limit` and `verdict_by`, answers 200, and silently
+    applies neither the concurrency ceiling nor the verdict provenance.
+    """
+
+    def setUp(self):
+        self.client = _FakeTriageClient()
+        self._patches = [
+            mock.patch.object(api, "_triage_graph_client", lambda: self.client),
+            mock.patch.object(api, "master_key_is_weak", lambda: False),
+        ]
+        for p in self._patches:
+            p.start()
+        self.addCleanup(lambda: [p.stop() for p in self._patches])
+
+    async def test_an_mcp_call_is_acknowledged(self):
+        resp = await api.graph_triage(api.GraphTriageRequest(
+            op="list_findings", user_id="u1", project_id="p1", source="mcp"))
+        self.assertIs(_body(resp)["mcp_gated"], True)
+
+    async def test_a_browser_call_gets_no_extra_field(self):
+        resp = await api.graph_triage(api.GraphTriageRequest(
+            op="list_findings", user_id="u1", project_id="p1"))
+        self.assertNotIn("mcp_gated", _body(resp))
+
+    async def test_the_acknowledgement_does_not_displace_the_result(self):
+        resp = await api.graph_triage(api.GraphTriageRequest(
+            op="list_findings", user_id="u1", project_id="p1", source="mcp"))
+        body = _body(resp)
+        self.assertEqual(body["total"], 137)
+        self.assertEqual(len(body["findings"]), 1)

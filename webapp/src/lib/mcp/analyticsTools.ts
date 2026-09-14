@@ -132,12 +132,11 @@ export function attackSurfaceCypher(): string {
  * truncate or 413 on any real project.
  */
 export const EXPLOIT_PATHS_CYPHER = `MATCH (t:Technology)-[:HAS_KNOWN_CVE]->(c:CVE)
-OPTIONAL MATCH (ex:ExploitGvm)-[:EXPLOITED_CVE]->(c:CVE)
+OPTIONAL MATCH (ex:ExploitGvm)-[:EXPLOITED_CVE]->(c:CVE) WHERE ex.stale_since IS NULL
 OPTIONAL MATCH (c:CVE)-[:HAS_CWE]->(m:MitreData)
 OPTIONAL MATCH (bu:BaseURL)-[:USES_TECHNOLOGY]->(t)
 OPTIONAL MATCH (svc:Service)-[:USES_TECHNOLOGY]->(t)
 OPTIONAL MATCH (p:Port)-[:HAS_TECHNOLOGY]->(t)
-WITH t, c, m, bu, svc, p, ex WHERE ex IS NULL OR ex.stale_since IS NULL
 WITH t, c, count(DISTINCT ex) > 0 AS cisaKev,
      collect(DISTINCT m.cwe_id)[0..3] AS cweIds,
      count(DISTINCT bu) + count(DISTINCT svc) + count(DISTINCT p) AS reachedBy
@@ -152,8 +151,7 @@ export const BLAST_RADIUS_CYPHER = `MATCH (t:Technology)-[:HAS_KNOWN_CVE]->(c:CV
 OPTIONAL MATCH (bu:BaseURL)-[:USES_TECHNOLOGY]->(t)
 OPTIONAL MATCH (svc:Service)-[:USES_TECHNOLOGY]->(t)
 OPTIONAL MATCH (p:Port)-[:HAS_TECHNOLOGY]->(t)
-OPTIONAL MATCH (ex:ExploitGvm)-[:EXPLOITED_CVE]->(c:CVE)
-WITH t, c, bu, svc, p, ex WHERE ex IS NULL OR ex.stale_since IS NULL
+OPTIONAL MATCH (ex:ExploitGvm)-[:EXPLOITED_CVE]->(c:CVE) WHERE ex.stale_since IS NULL
 WITH t, count(DISTINCT c) AS cveCount, max(toFloat(c.cvss)) AS maxCvss,
      count(DISTINCT ex) AS knownExploitCount,
      count(DISTINCT bu) AS baseUrlCount,

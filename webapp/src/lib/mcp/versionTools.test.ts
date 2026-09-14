@@ -169,6 +169,26 @@ describe('compare_scan_versions defaults', () => {
     expect(r.lenses.newlyExposedPorts).toBe(1)
   })
 
+  // REGRESSION: `from: "current"` is accepted by the schema and documented in
+  // the tool description, and was then silently discarded: the guard fell
+  // through to the default lookup and compared two STORED versions instead.
+  // A caller asking "what would reverting to v2 cost me" got a comparison it
+  // never requested, with no error.
+  test('REGRESSION: from "current" captures the live graph, it is not substituted', async () => {
+    const r = await compareScanVersions(ctx(), 'p1', { from: 'current', to: 'v2' })
+    expect(r.from.versionId).toBe('current')
+    expect(r.to.versionId).toBe('v2')
+    expect(h.capture).toHaveBeenCalledOnce()
+  })
+
+  test('comparing the live graph with itself is refused, not captured twice', async () => {
+    // Two captures of the same graph is a guaranteed no-op answer bought with
+    // two snapshot slots the UI also needs.
+    await expect(compareScanVersions(ctx(), 'p1', { from: 'current', to: 'current' }))
+      .rejects.toThrow(/with itself/i)
+    expect(h.capture).not.toHaveBeenCalled()
+  })
+
   test('a project with no comparable version says so rather than failing obscurely', async () => {
     h.queryRaw.mockResolvedValue([])
     await expect(compareScanVersions(ctx(), 'p1')).rejects.toThrow(/no earlier saved version/i)
@@ -299,6 +319,23 @@ describe('compare_scan_versions explains the two confusing failures', () => {
 })
 
 describe('compare_scan_versions rate limiting', () => {
+  // REGRESSION: same shape as queue_recon. The compare bucket is shared across
+  // tokens for a given project, so consuming it before the ownership check let
+  // a stranger exhaust a project's comparison budget.
+  test('REGRESSION: a foreign project does not consume the per-project budget', async () => {
+    h.queryRaw.mockResolvedValue([vrow()])
+    h.loadSnapshot.mockResolvedValue(graph([]))
+    h.capture.mockResolvedValue(graph([]))
+    vi.stubEnv('MCP_RATE_COMPARE_PER_WINDOW', '1')
+
+    h.findProject.mockResolvedValue({ id: 'p1', userId: 'someone-else' })
+    await expect(compareScanVersions(ctx(), 'p1')).rejects.toBeInstanceOf(McpAccessDenied)
+
+    h.findProject.mockResolvedValue({ id: 'p1', userId: 'owner' })
+    await expect(compareScanVersions(ctx(), 'p1')).resolves.toBeTruthy()
+    vi.unstubAllEnvs()
+  })
+
   test('it uses its own per-project bucket, not the query one', async () => {
     h.queryRaw.mockResolvedValue([vrow()])
     h.loadSnapshot.mockResolvedValue(graph([]))

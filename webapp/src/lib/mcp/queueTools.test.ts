@@ -80,6 +80,23 @@ describe('queue_recon permissions', () => {
     expect(h.enqueue).not.toHaveBeenCalled()
   })
 
+  // REGRESSION: the start bucket is keyed PER PROJECT and therefore shared
+  // across every token in the deployment. Consuming it before proving ownership
+  // let anyone who knew a project id burn that project's one-start-per-five-
+  // minutes window, and the owner's own start_recon was then refused with
+  // "Rate limit reached for this token" - blaming their own credential.
+  // start_recon itself checks ownership first; these two did not.
+  test('REGRESSION: a foreign project does not consume the per-project budget', async () => {
+    vi.stubEnv('MCP_RATE_START_PER_WINDOW', '1')
+    h.findProject.mockResolvedValue({ id: 'p1', userId: 'someone-else' })
+    await expect(queueRecon(ctx(), 'p1')).rejects.toBeInstanceOf(McpAccessDenied)
+
+    // The owner's window must still be intact.
+    h.findProject.mockResolvedValue({ id: 'p1', userId: 'owner' })
+    await expect(queueRecon(ctx(), 'p1')).resolves.toBeTruthy()
+    vi.unstubAllEnvs()
+  })
+
   test('it uses the per-project start window, not the ordinary write budget', async () => {
     // An enqueue reaches the same dispatcher a start reaches, so metering it as
     // a write would be an unmetered path to the same version-retention churn.

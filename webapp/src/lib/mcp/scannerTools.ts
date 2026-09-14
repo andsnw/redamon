@@ -135,7 +135,14 @@ export async function getScanStatus(ctx: McpContext, projectId: string, scanner:
     return { projectId, scanner, scan: maskState(body) }
   }
 
-  const runs = Array.isArray(body.runs) ? body.runs : []
+  // A 200 whose `runs` key is absent or the wrong type is NOT zero runs: that
+  // would answer "no scan is running" during one, which is the distinction this
+  // tool exists to draw.
+  if (!Array.isArray(body.runs)) {
+    console.error(`[mcp] ${scanner} returned an unexpected shape`)
+    throw new McpToolError(`The ${spec.label} status is unknown.`, 'status_unknown')
+  }
+  const runs = body.runs
   return {
     projectId,
     scanner,

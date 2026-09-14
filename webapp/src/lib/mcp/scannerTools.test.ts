@@ -109,6 +109,14 @@ describe('a dependency failure is "unknown", never "idle"', () => {
     await expect(getScanStatus(ctx(), 'p1', 'supply_chain')).rejects.toThrow(/unknown/i)
   })
 
+  // REGRESSION: same shape as the activity helper. A 200 whose `runs` key is
+  // absent was read as zero runs, so "is the TruffleHog scan running" answered
+  // no during one.
+  test('REGRESSION: a 200 with no runs key is "unknown", not zero runs', async () => {
+    returns({})
+    await expect(getScanStatus(ctx(), 'p1', 'trufflehog')).rejects.toThrow(/unknown/i)
+  })
+
   test('an unparseable body fails rather than reporting an empty scan', async () => {
     h.orchestratorFetch.mockResolvedValue({ ok: true, json: async () => { throw new Error('nope') } })
     await expect(getScanStatus(ctx(), 'p1', 'trufflehog')).rejects.toThrow(/unknown/i)

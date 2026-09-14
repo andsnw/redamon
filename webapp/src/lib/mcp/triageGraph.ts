@@ -78,7 +78,37 @@ export async function callTriage(
   if (!body || typeof body !== 'object') {
     throw new McpToolError('The findings could not be read.', 'agent_failed')
   }
+  warnIfAgentIsOlder(body)
   return body
+}
+
+/** Once per process: a hundred identical lines would bury the one that matters. */
+let staleAgentWarned = false
+
+/**
+ * Say so when the agent on the other end predates this code.
+ *
+ * The agent's Python is baked into its own image; a deploy that rebuilds only
+ * the webapp leaves an older one running. Pydantic ignores unknown fields, so
+ * that agent accepts `source`, `limit` and `verdict_by`, silently discards all
+ * three, and answers 200. The MCP concurrency ceiling then does not apply to
+ * these calls, and every verdict is recorded with no channel and no actor -
+ * with nothing anywhere to indicate it.
+ */
+function warnIfAgentIsOlder(body: Record<string, unknown>): void {
+  if (body.mcp_gated === true || staleAgentWarned) return
+  staleAgentWarned = true
+  console.error(
+    '[mcp] the agent did not acknowledge the MCP triage gate. It predates this webapp build, ' +
+    'so findings calls are NOT taking the graph concurrency ceiling and verdicts are being ' +
+    'written without a channel or an actor. Rebuild the agent image: ' +
+    '`docker compose build agent && docker compose up -d agent`.'
+  )
+}
+
+/** Test seam: the warning is once-per-process by design. */
+export function __resetAgentVersionWarning(): void {
+  staleAgentWarned = false
 }
 
 /** `list_findings`, with the row cap pushed down to the agent. */
@@ -98,14 +128,16 @@ export async function listTriageFindings(
 
 /**
  * `list_muted`. Note the asymmetry with the above: this op returns NO `total`,
- * so a count is `findings.length`, and the mixin applies no limit at all - the
- * cap has to be imposed on this side.
+ * so a count is `findings.length`. The mixin applies no limit unless one is
+ * asked for, so the cap has to travel WITH the request - capping only the rows
+ * this side returns still pulls the whole suppressed set across the wire.
  */
 export async function listMutedFindings(
   userId: string,
-  projectId: string
+  projectId: string,
+  limit: number
 ): Promise<TriageFinding[]> {
-  const body = await callTriage('list_muted', userId, projectId)
+  const body = await callTriage('list_muted', userId, projectId, { limit })
   const findings = Array.isArray(body.findings) ? (body.findings as TriageFinding[]) : null
   if (!findings) throw new McpToolError('The muted findings could not be read.', 'agent_failed')
   return findings

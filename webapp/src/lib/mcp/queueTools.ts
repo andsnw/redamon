@@ -101,8 +101,14 @@ const JOB_NOTES = [
  */
 export async function queueRecon(ctx: McpContext, projectId: string) {
   requireScope(ctx.token, 'recon:queue')
-  enforceRate(ctx, 'start', projectId, { perProject: true })
+  // OWNERSHIP FIRST. The start bucket is keyed per PROJECT, so its counter is
+  // shared across every token in the deployment; charging it before proving
+  // ownership let anyone holding a project id burn that project's
+  // one-start-per-five-minutes window, and its owner was then refused with
+  // "Rate limit reached for this token" - blaming their own credential for a
+  // stranger's call. `startRecon` orders these the same way.
   await assertMcpProjectAccess(ctx.token.userId, projectId)
+  enforceRate(ctx, 'start', projectId, { perProject: true })
 
   // `enqueueJob` does NOT check ownership - its header says callers own that -
   // and does NOT dedupe: it is an unconditional create against a table with no

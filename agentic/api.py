@@ -3260,7 +3260,13 @@ async def graph_triage(body: GraphTriageRequest):
         if body.op == "unmute":
             return client.unmute_finding(body.user_id, body.project_id, body.node_id)
         if body.op == "list_muted":
-            return {"findings": client.list_muted(body.user_id, body.project_id)}
+            # Unbounded unless the caller asks for a bound. The Muted table in
+            # the UI needs every row to count them; the MCP surface cannot
+            # afford that transfer and passes a limit.
+            muted_limit = (max(1, min(int(body.limit), _TRIAGE_LIST_MAX))
+                           if body.limit is not None else None)
+            return {"findings": client.list_muted(
+                body.user_id, body.project_id, limit=muted_limit)}
         if body.op == "list_findings":
             # `total` is what stops the table lying: the query is capped, so
             # without it the operator reads a truncated list as complete. It
@@ -3307,6 +3313,17 @@ async def graph_triage(body: GraphTriageRequest):
     except Exception as e:
         logger.error(f"graph/triage {body.op} failed: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+    # An acknowledgement the CALLER can check. The agent's Python is baked into
+    # its image while the webapp is a separate one, so a deploy that rebuilds
+    # only the webapp leaves an older agent here. Pydantic ignores fields it
+    # does not know, so such an agent accepts `source`, `limit` and
+    # `verdict_by`, discards all three, and answers 200: the MCP concurrency
+    # ceiling silently does not apply, and every verdict is written with no
+    # channel and no actor. Without this marker that mismatch has no signal at
+    # all. Only added for MCP callers, so the browser paths are untouched.
+    if body.source == "mcp" and isinstance(result, dict):
+        result = {**result, "mcp_gated": True}
 
     # Who suppressed what, and when. The node itself carries muted_by/muted_at;
     # this is the time-ordered half. log_event never raises, so auditability

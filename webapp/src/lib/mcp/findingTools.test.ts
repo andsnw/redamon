@@ -32,6 +32,7 @@ vi.mock('@/lib/prisma', () => ({
 import { McpScopeError, McpAccessDenied, __resetRateLimiter } from '@/lib/mcpAuth'
 import { McpToolError } from './errors'
 import { listFindings, listMuted, MUTED_MAX_ROWS } from './findingTools'
+import { __resetAgentVersionWarning } from './triageGraph'
 import type { McpContext } from './tools'
 
 const ctx = (scopes: string[] = ['recon:read', 'triage:read']): McpContext => ({
@@ -66,6 +67,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', h.fetch)
   h.findProject.mockResolvedValue({ id: 'p1', userId: 'owner' })
   h.triageRuns.mockResolvedValue([])
+  __resetAgentVersionWarning()
 })
 
 describe('list_findings ownership and scope', () => {
@@ -216,6 +218,41 @@ describe('list_findings paging cannot pass a page off as the whole set', () => {
     expect(r.findings.every(f => f.severity === 'high')).toBe(true)
   })
 
+  // REGRESSION: the filter is applied on THIS side, over a window the agent
+  // caps at 2000. On a project with more findings than that, a filtered `total`
+  // counts only what matched inside the window and was reported as the whole
+  // answer with no truncation flag - four criticals where there are forty.
+  // The original test filtered over 10 rows and never crossed the ceiling.
+  test('REGRESSION: a filtered total from a FULL window is flagged partial', async () => {
+    agentReturns({ findings: many(2000), total: 6000 })
+    const r = await listFindings(ctx(), 'p1', { severity: 'high' })
+    expect(r.totalIsPartial).toBe(true)
+    expect(r.truncated).toBe(true)
+    expect(r.scannedWindow).toBe(2000)
+  })
+
+  test('a filtered total from a PARTIAL window is complete, and says nothing', async () => {
+    agentReturns({ findings: many(10), total: 10 })
+    const r = await listFindings(ctx(), 'p1', { severity: 'high' })
+    expect(r.total).toBe(5)
+    expect(r).not.toHaveProperty('totalIsPartial')
+  })
+
+  // REGRESSION: `want` was capped at the ceiling, so slicing at an offset past
+  // it returned [] while `truncated` stayed true - an agent paging through
+  // 6000 findings got empty pages forever and no reason why.
+  test('REGRESSION: an offset past the window is refused, not an empty page', async () => {
+    agentReturns({ findings: many(2000), total: 6000 })
+    await expect(listFindings(ctx(), 'p1', { offset: 2500 }))
+      .rejects.toThrow(/first 2000 findings/)
+  })
+
+  test('the last offset inside the window still works', async () => {
+    agentReturns({ findings: many(2000), total: 6000 })
+    const r = await listFindings(ctx(), 'p1', { offset: 1990, limit: 25 })
+    expect(r.returned).toBe(10)
+  })
+
   test('an unknown section names the valid ones instead of returning nothing', async () => {
     agentReturns({ findings: [], total: 0 })
     await expect(listFindings(ctx(), 'p1', { section: 'nope' })).rejects.toThrow(/one of/i)
@@ -285,6 +322,33 @@ describe('list_muted_findings', () => {
     expect((await listMuted(ctx(), 'p1', { detail: true })).total).toBe(300)
   })
 
+  // REGRESSION: the OUTPUT was capped at 200 while the FETCH was unbounded, so
+  // a project with tens of thousands of suppressed findings had every one of
+  // them serialised by the agent, transferred, parsed and grouped on every
+  // call. The cap has to travel with the request.
+  test('REGRESSION: the cap travels WITH the request, not only over the result', async () => {
+    agentReturns({ findings: [muted()] })
+    await listMuted(ctx(), 'p1')
+    const body = JSON.parse(h.fetch.mock.calls[0][1].body)
+    expect(body.op).toBe('list_muted')
+    expect(body.limit).toBe(2000)
+  })
+
+  test('a full window is reported as a floor, not as the total', async () => {
+    agentReturns({ findings: Array.from({ length: 2000 }, (_, i) => muted({ id: `m${i}` })) })
+    const r = await listMuted(ctx(), 'p1')
+    expect(r.totalIsPartial).toBe(true)
+    expect(r.scannedWindow).toBe(2000)
+    expect(r.totalNote).toMatch(/AT LEAST/)
+  })
+
+  test('a partial window is a complete count and says nothing', async () => {
+    agentReturns({ findings: [muted(), muted({ id: 'm2' })] })
+    const r = await listMuted(ctx(), 'p1')
+    expect(r.total).toBe(2)
+    expect(r).not.toHaveProperty('totalIsPartial')
+  })
+
   test('it is marked MCP-originated too', async () => {
     agentReturns({ findings: [] })
     await listMuted(ctx(), 'p1')
@@ -298,5 +362,42 @@ describe('list_muted_findings', () => {
     const r = await listMuted(ctx(), 'p1')
     expect(r.total).toBe(0)
     expect(r.groups).toEqual([])
+  })
+})
+
+
+// REGRESSION: the agent's Python is baked into a separate image, so a deploy
+// that rebuilds only the webapp leaves an older agent running. Pydantic ignores
+// unknown fields, so that agent accepts `source`, `limit` and `verdict_by`,
+// discards all three and answers 200 - the concurrency ceiling silently stops
+// applying and every verdict loses its channel and actor, with no signal.
+describe('REGRESSION: an agent older than this build is reported', () => {
+  let errors: string[]
+
+  beforeEach(() => {
+    errors = []
+    vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { errors.push(String(a[0])) })
+  })
+
+  test('an unacknowledged call logs an actionable line naming the fix', async () => {
+    agentReturns({ findings: [], total: 0 })
+    await listFindings(ctx(), 'p1')
+    expect(errors.join(' ')).toMatch(/did not acknowledge the MCP triage gate/)
+    expect(errors.join(' ')).toMatch(/docker compose build agent/)
+  })
+
+  test('a current agent logs nothing', async () => {
+    agentReturns({ findings: [], total: 0, mcp_gated: true })
+    await listFindings(ctx(), 'p1')
+    expect(errors.join(' ')).not.toMatch(/did not acknowledge/)
+  })
+
+  test('it warns once, not once per call', async () => {
+    agentReturns({ findings: [], total: 0 })
+    await listFindings(ctx(), 'p1')
+    __resetRateLimiter()
+    await listFindings(ctx(), 'p1')
+    const hits = errors.filter(e => /did not acknowledge/.test(e))
+    expect(hits).toHaveLength(1)
   })
 })

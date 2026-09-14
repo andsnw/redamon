@@ -123,13 +123,25 @@ export async function readProjectActivity(projectId: string): Promise<ProjectAct
       unreadable('the scan state could not be read')
     } else {
       const body = (await resp.json()) as { scans?: unknown }
-      const all = Array.isArray(body.scans) ? (body.scans as RawScan[]) : []
-      // The FILTER, before anything is returned or counted. This endpoint is
-      // cross-project by design: the operator's Activity view deliberately shows
-      // a count of other people's running scans, which on a token surface is
-      // cross-tenant metadata. Never echo another project's id, and never
-      // report how many of them there are.
-      out.scans = all.filter(s => str(s.project_id) === projectId).map(projectScan)
+      if (!Array.isArray(body?.scans)) {
+        // A 200 carrying a shape we do not recognise is NOT "nothing is
+        // running". Substituting an empty list here reported the graph settled
+        // during a live scan, which is the false negative this whole module
+        // exists to prevent - reached through schema drift rather than through
+        // a scan kind nobody checked. The other sources are still read below,
+        // so an activation in flight is still named precisely.
+        console.error('[mcp] active-scans returned an unexpected shape')
+        unreadable('the scan state could not be read')
+      } else {
+        // The FILTER, before anything is returned or counted. This endpoint is
+        // cross-project by design: the operator's Activity view deliberately
+        // shows a count of other people's running scans, which on a token
+        // surface is cross-tenant metadata. Never echo another project's id,
+        // and never report how many of them there are.
+        out.scans = (body.scans as RawScan[])
+          .filter(s => str(s.project_id) === projectId)
+          .map(projectScan)
+      }
     }
   } catch (err) {
     console.error('[mcp] active-scans unreachable:', err)

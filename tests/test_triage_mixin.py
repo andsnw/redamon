@@ -361,6 +361,28 @@ class TestAHumanVerdictIsNeverOverwritten(unittest.TestCase):
         self.assertFalse(result["updated"])
         self.assertEqual(client.queries, [])
 
+    def test_list_muted_is_unbounded_by_default(self):
+        # The Muted table in the UI counts `muted.length`, so capping it by
+        # default would silently change an operator-visible number.
+        client = FakeClient(records=[])
+        client.list_muted(UID, PID)
+        self.assertNotIn("LIMIT", client.last)
+        self.assertNotIn("limit", client.params[-1])
+
+    def test_list_muted_takes_a_limit_when_the_caller_cannot_afford_one(self):
+        # The MCP path has no record cap on this dependency, so the bound has to
+        # travel WITH the query rather than being applied after the transfer.
+        client = FakeClient(records=[])
+        client.list_muted(UID, PID, limit=2000)
+        self.assertIn("LIMIT $limit", client.last)
+        self.assertEqual(client.params[-1]["limit"], 2000)
+
+    def test_a_limited_list_muted_is_still_tenant_scoped(self):
+        client = FakeClient(records=[])
+        client.list_muted(UID, PID, limit=10)
+        self.assertIn("n.user_id = $user_id", client.last)
+        self.assertIn("n.project_id = $project_id", client.last)
+
     def test_a_delegated_verdict_is_STILL_human(self):
         # The tempting design - a third triage_source value so an agent's
         # verdict is not laundered as a human's - breaks four behaviours that

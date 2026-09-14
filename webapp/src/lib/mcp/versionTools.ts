@@ -124,13 +124,16 @@ async function resolveSide(
   fallbackToNewestPast: boolean
 ): Promise<Side> {
   const raw = selector?.trim()
-  if (!raw || raw === 'current') {
-    if (!fallbackToNewestPast) return { kind: 'current' }
-  }
-  if (raw && raw !== 'current') {
+  // An EXPLICIT 'current' always means the live graph, on either side. Folding
+  // it in with "no selector given" let the `from` side's fallback swallow it,
+  // so a caller that asked for the live graph silently got a stored version and
+  // a comparison it never requested.
+  if (raw === 'current') return { kind: 'current' }
+  if (raw) {
     const version = await assertVersionInProject(userId, projectId, raw)
     return { kind: 'version', version }
   }
+  if (!fallbackToNewestPast) return { kind: 'current' }
 
   // The default `from`: the newest version that still HAS bytes. Defaulting to
   // the newest row would usually pick the current one, whose snapshot is null
@@ -289,14 +292,31 @@ export async function compareScanVersions(
   args: { from?: string; to?: string } = {}
 ) {
   requireScope(ctx.token, 'recon:read')
-  // Its own bucket, per project. This is orders of magnitude heavier than any
-  // other read: a stored side is a full Postgres Bytes fetch plus gunzip plus
-  // JSON.parse, and a `current` side runs two unbounded Cypher queries.
-  enforceRate(ctx, 'compare', projectId, { perProject: true })
+  // OWNERSHIP FIRST, unlike the per-token buckets elsewhere on this surface.
+  // This bucket is keyed per PROJECT, so its counter is shared by every token
+  // in the deployment: charging it before proving ownership would let anyone
+  // who knows a project id exhaust that project's comparison budget, and the
+  // owner would then be refused with a message blaming their own token.
+  // `startRecon` checks ownership first for exactly this reason.
   await assertMcpProjectAccess(ctx.token.userId, projectId)
+  // Orders of magnitude heavier than any other read: a stored side is a full
+  // Postgres Bytes fetch plus gunzip plus JSON.parse, and a `current` side
+  // runs two unbounded Cypher queries.
+  enforceRate(ctx, 'compare', projectId, { perProject: true })
 
   const fromSide = await resolveSide(ctx.token.userId, projectId, args.from, true)
   const toSide = await resolveSide(ctx.token.userId, projectId, args.to, false)
+
+  // Two captures of the same graph buy a guaranteed no-op answer with two of
+  // the only two snapshot slots, which the UI and version activation share.
+  if (fromSide.kind === 'current' && toSide.kind === 'current') {
+    throw new McpToolError(
+      'Both sides are the live graph, so this would compare it with itself. Pass a version id ' +
+      'from list_scan_versions for one side, or omit both to compare the newest saved version ' +
+      'against the live graph.',
+      'bad_args'
+    )
+  }
 
   const from = fromSide.kind === 'current'
     ? await captureCurrentSide(projectId)

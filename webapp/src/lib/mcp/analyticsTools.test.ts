@@ -173,6 +173,34 @@ describe('the stale half is written by hand', () => {
     }
   })
 
+  // REGRESSION: PLACEMENT, not presence. `WITH ... WHERE ex.stale_since IS NULL`
+  // DROPS the row, and the row carries the CVE - so a CVE whose only exploit
+  // record is stale disappears from the ranking, taking its CVSS out of
+  // maxCvss and its technology possibly out of the result entirely. Attached to
+  // the OPTIONAL MATCH instead, a stale exploit simply does not match, `ex` is
+  // null, and the CVE is still counted with knownExploitCount 0.
+  //
+  // The original test asserted the predicate was PRESENT, which it was, and
+  // passed while the query was wrong.
+  test('REGRESSION: every stale filter sits on its OPTIONAL MATCH, not on a WITH', () => {
+    for (const [name, q] of Object.entries(ALL_QUERIES())) {
+      for (const line of q.split('\n')) {
+        if (!/stale_since/.test(line)) continue
+        expect(line.trimStart(), `${name}: "${line.trim()}" filters rows instead of the match`)
+          .toMatch(/^OPTIONAL MATCH /)
+      }
+    }
+  })
+
+  test('REGRESSION: no query drops rows on a null-or-fresh test', () => {
+    // The specific shape of the bug, pinned so it cannot come back in another
+    // form: `ex IS NULL OR ex.stale_since IS NULL` is only ever needed when the
+    // filter has been moved off the match it belongs to.
+    for (const [name, q] of Object.entries(ALL_QUERIES())) {
+      expect(q, `${name}`).not.toMatch(/IS NULL OR \w+\.stale_since IS NULL/)
+    }
+  })
+
   test('asset labels are NOT stale-filtered, because assets are not findings', () => {
     const overview = attackSurfaceCypher()
     expect(overview).toMatch(/OPTIONAL MATCH \(a0:Subdomain\)\nWITH/)

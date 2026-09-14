@@ -31,11 +31,20 @@ export const FINDINGS_MAX_LIMIT = 100
 const TRIAGE_FETCH_CEILING = 2000
 
 /**
- * Muted findings have no count query anywhere in the product and `list_muted`
- * has no limit of its own, so the cap has to be here. Past this the tool
- * reports the cap rather than growing the payload.
+ * How many individual muted rows this tool will RETURN. Past this it reports
+ * the cap rather than growing the payload.
  */
 export const MUTED_MAX_ROWS = 200
+
+/**
+ * The cap that travels WITH the request.
+ *
+ * `MUTED_MAX_ROWS` bounds what this tool returns; it does nothing about what
+ * crosses the wire. Without this the agent serialised, and the webapp parsed
+ * and grouped, every suppressed finding in the project on every call - the
+ * unbounded-dependency cost this surface refuses everywhere else.
+ */
+const MUTED_FETCH_CEILING = 2000
 
 /**
  * The fields a finding is projected down to.
@@ -136,6 +145,16 @@ export async function listFindings(
 
   const limit = clampLimit(args.limit)
   const offset = Math.max(0, Math.trunc(args.offset ?? 0))
+  // Paging stops at the window, and says so. Slicing past it returned an empty
+  // page while still reporting `truncated`, so an agent walking a large project
+  // got empty answers and a "there is more" flag, forever.
+  if (offset >= TRIAGE_FETCH_CEILING) {
+    throw new McpToolError(
+      `This tool can page through the first ${TRIAGE_FETCH_CEILING} findings, and offset ` +
+      `${offset} is past that. Narrow with severity or section rather than paging further.`,
+      'bad_args'
+    )
+  }
   const section = args.section?.trim().toLowerCase()
   if (section && !FINDING_SECTIONS.includes(section)) {
     throw new McpToolError(
@@ -167,6 +186,13 @@ export async function listFindings(
   const matched = filtering ? rows.length : (total ?? rows.length)
   const page = rows.slice(offset, offset + limit)
 
+  // A filter is applied HERE, over a window the agent caps. When that window
+  // came back full there may be further matches beyond it, so the filtered
+  // count is a floor rather than a total and must not be reported as one: a
+  // caller told "4 critical findings" when there are forty has been given the
+  // false negative this whole surface exists to prevent.
+  const partialTotal = filtering && raw.length >= TRIAGE_FETCH_CEILING
+
   return {
     projectId,
     triageState,
@@ -175,9 +201,19 @@ export async function listFindings(
     returned: page.length,
     offset,
     // From the UNCAPPED count when unfiltered, so a page can never pass for the
-    // whole set. With a filter it is the number that matched.
+    // whole set. With a filter it is the number that matched in the window.
     total: matched,
-    ...(offset + page.length < matched ? { truncated: true } : {}),
+    ...(partialTotal
+      ? {
+          totalIsPartial: true,
+          scannedWindow: TRIAGE_FETCH_CEILING,
+          totalNote:
+            `This project has more than ${TRIAGE_FETCH_CEILING} findings and the filter was ` +
+            `applied to the highest-ranked ${TRIAGE_FETCH_CEILING}. "total" is therefore AT ` +
+            `LEAST this many, not exactly this many. Do not report it as a complete count.`,
+        }
+      : {}),
+    ...(offset + page.length < matched || partialTotal ? { truncated: true } : {}),
   }
 }
 
@@ -215,7 +251,11 @@ export async function listMuted(
   enforceRate(ctx, 'read')
   await assertMcpProjectAccess(ctx.token.userId, projectId)
 
-  const all = await listMutedFindings(ctx.token.userId, projectId)
+  const all = await listMutedFindings(ctx.token.userId, projectId, MUTED_FETCH_CEILING)
+  // A full window means there may be more suppressed findings than this. Saying
+  // "42 muted" when there are 4000 is the same false negative as reporting a
+  // clean project, one level in.
+  const partialTotal = all.length >= MUTED_FETCH_CEILING
 
   const groups = new Map<string, MutedGroup>()
   for (const f of all) {
@@ -232,6 +272,16 @@ export async function listMuted(
   return {
     projectId,
     total: all.length,
+    ...(partialTotal
+      ? {
+          totalIsPartial: true,
+          scannedWindow: MUTED_FETCH_CEILING,
+          totalNote:
+            `This project has at least ${MUTED_FETCH_CEILING} suppressed findings and only the ` +
+            `most recently muted ${MUTED_FETCH_CEILING} were read. "total" is AT LEAST this ` +
+            `many, not exactly this many.`,
+        }
+      : {}),
     groups: [...groups.values()].sort((a, b) => b.count - a.count),
     // Rows only on request, and capped whatever happens: `list_muted` applies
     // no limit of its own, so an unbounded project would otherwise ship every
