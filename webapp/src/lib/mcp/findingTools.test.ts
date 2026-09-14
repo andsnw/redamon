@@ -241,6 +241,29 @@ describe('list_findings paging cannot pass a page off as the whole set', () => {
   // REGRESSION: `want` was capped at the ceiling, so slicing at an offset past
   // it returned [] while `truncated` stayed true - an agent paging through
   // 6000 findings got empty pages forever and no reason why.
+  // REGRESSION (missing-total-reported-as-page-size): `total` falls back to
+  // `rows.length` when the agent does not return one, and rows.length is the
+  // WINDOW, not the project. So a drifted or older agent made an unfiltered
+  // call answer "25 findings" for a project with six thousand, with no
+  // truncation flag - the same confident-wrong-answer shape as reading a
+  // missing `scans` key as "nothing running".
+  test('REGRESSION: a missing total is never reported as the page size', async () => {
+    agentReturns({ findings: many(25) })            // no `total` key at all
+    const r = await listFindings(ctx(), 'p1', { limit: 25 })
+    expect(r.totalIsPartial).toBe(true)
+    expect(r.truncated).toBe(true)
+    expect(r.totalNote).toMatch(/AT LEAST/)
+  })
+
+  test('a present total of zero is still an exact answer', async () => {
+    // The fallback must key on ABSENCE, not on falsiness: an empty project
+    // legitimately reports zero and must not be flagged partial.
+    agentReturns({ findings: [], total: 0 })
+    const r = await listFindings(ctx(), 'p1')
+    expect(r.total).toBe(0)
+    expect(r).not.toHaveProperty('totalIsPartial')
+  })
+
   test('REGRESSION: an offset past the window is refused, not an empty page', async () => {
     agentReturns({ findings: many(2000), total: 6000 })
     await expect(listFindings(ctx(), 'p1', { offset: 2500 }))

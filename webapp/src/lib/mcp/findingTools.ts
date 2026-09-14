@@ -191,7 +191,13 @@ export async function listFindings(
   // count is a floor rather than a total and must not be reported as one: a
   // caller told "4 critical findings" when there are forty has been given the
   // false negative this whole surface exists to prevent.
-  const partialTotal = filtering && raw.length >= TRIAGE_FETCH_CEILING
+  //
+  // The same applies when the agent returns no `total` at all. It always does
+  // today, so that is drift - and a drifted answer must degrade to "at least
+  // this many" rather than to the WINDOW SIZE, which would report 25 findings
+  // for a project with six thousand.
+  const partialTotal =
+    (filtering && raw.length >= TRIAGE_FETCH_CEILING) || total === undefined
 
   return {
     projectId,

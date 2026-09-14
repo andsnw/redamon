@@ -12,6 +12,18 @@
 #          orchestrator). tests/redamon_mcp_env_test.sh asserts the compose TEXT
 #          lists it; only this asserts the running process honours it.
 #
+#   ROW 10 MCP_DISABLED_TOOLS must actually WITHDRAW a tool from the running
+#          server. It is the only per-tool rollback lever; every other MCP knob
+#          reaching the process has been proven inert at least once in this
+#          repo's history (MCP_KALI_EXEC_ENABLED shipped unreachable). A lever
+#          that parses and does nothing is worse than no lever, because it is
+#          reached for during an incident.
+#
+#   ROW 11 The expanded surface must actually be SERVED over real HTTP with a
+#          real bearer. The contract test uses the SDK's in-memory transport, so
+#          it cannot see the route, the Accept-header enforcement, or a payload
+#          that grew past a limit when the tool count more than doubled.
+#
 #   ROW 3  The nginx `location = /api/mcp-server` must actually be the block
 #          that handles the request. A prefix block would silently fall through
 #          to `location /api/` with the wrong rate zone and the Basic-auth gate.
@@ -47,12 +59,20 @@ fi
 
 # --- restore whatever we change, however we exit -------------------------------
 ORIGINAL_FLAG="$(grep '^MCP_SERVER_ENABLED=' "$ENV_FILE" 2>/dev/null || true)"
+ORIGINAL_DISABLED="$(grep '^MCP_DISABLED_TOOLS=' "$ENV_FILE" 2>/dev/null || true)"
 NGINX_NAME="redamon-mcp-live-nginx-$$"
 WORK="$REPO_ROOT/.mcp-live-check.$$"
 
 cleanup() {
     docker rm -f "$NGINX_NAME" >/dev/null 2>&1 || true
     rm -rf "$WORK"
+    sed -i '/^MCP_DISABLED_TOOLS=/d' "$ENV_FILE"
+    if [[ -n "$ORIGINAL_DISABLED" ]]; then
+        printf '%s\n' "$ORIGINAL_DISABLED" >> "$ENV_FILE"
+    fi
+    docker compose exec -T postgres psql -U "${POSTGRES_USER:-redamon}" \
+        -d "${POSTGRES_DB:-redamon}" -qtAc \
+        "delete from mcp_access_tokens where id='mcp-live-check'" >/dev/null 2>&1 || true
     if [[ -n "$ORIGINAL_FLAG" ]]; then
         sed -i "s|^MCP_SERVER_ENABLED=.*|${ORIGINAL_FLAG}|" "$ENV_FILE"
     else
@@ -79,6 +99,53 @@ set_flag() {   # set_flag true|false  -> writes .env and restarts the webapp
 mcp_status() {  # mcp_status [extra curl args...] -> HTTP code
     curl -s -o /dev/null -w '%{http_code}' -X POST "$WEBAPP_URL/api/mcp-server" \
         -H 'Content-Type: application/json' -H "$ACCEPT" "$@" -d "$RPC"
+}
+
+mcp_body() {    # mcp_body [extra curl args...] -> response body
+    curl -s -X POST "$WEBAPP_URL/api/mcp-server" \
+        -H 'Content-Type: application/json' -H "$ACCEPT" "$@" -d "$RPC"
+}
+
+# The surface is advertised by tools/list, so counting its entries is the only
+# honest way to ask the RUNNING server what it serves.
+tool_count() { python3 -c '
+import json,sys
+raw = sys.stdin.read()
+# Streamable HTTP may answer as SSE; take the data frame if so.
+for line in raw.splitlines():
+    if line.startswith("data: "):
+        raw = line[6:]
+        break
+try:
+    print(len(json.loads(raw)["result"]["tools"]))
+except Exception:
+    print(-1)
+'; }
+
+has_tool() {  # has_tool <body> <name> -> yes|no
+    python3 -c '
+import json,sys
+raw, want = sys.argv[1], sys.argv[2]
+for line in raw.splitlines():
+    if line.startswith("data: "):
+        raw = line[6:]
+        break
+try:
+    names = [t["name"] for t in json.loads(raw)["result"]["tools"]]
+except Exception:
+    print("parse-error"); sys.exit()
+print("yes" if want in names else "no")
+' "$1" "$2"; }
+
+set_disabled() {  # set_disabled <csv> -> writes .env and restarts the webapp
+    sed -i '/^MCP_DISABLED_TOOLS=/d' "$ENV_FILE"
+    printf 'MCP_DISABLED_TOOLS=%s\n' "$1" >> "$ENV_FILE"
+    docker compose up -d webapp >/dev/null 2>&1
+    for _ in $(seq 1 40); do
+        [[ "$(curl -s -o /dev/null -w '%{http_code}' "$WEBAPP_URL/api/health" 2>/dev/null)" == "200" ]] && return 0
+        sleep 1
+    done
+    return 1
 }
 
 # =============================================================================
@@ -125,6 +192,77 @@ else
         docker compose exec -T postgres psql -U "${POSTGRES_USER:-redamon}" -d "${POSTGRES_DB:-redamon}" \
           -qtAc "delete from audit_log where source='mcp'" >/dev/null 2>&1
     fi
+fi
+
+# =============================================================================
+echo
+echo "== ROWS 10 + 11: the served surface, and the per-tool rollback lever =="
+# =============================================================================
+# Needs the server ON and a real credential. The token is minted here and
+# deleted on exit, and every call below is tools/list - a read.
+MCP_TOOL_COUNT_EXPECTED=30
+
+TOKEN="rdmn_mcp_$(openssl rand -hex 24)"
+HASH="$(printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1)"
+UID_ROW="$(docker compose exec -T postgres psql -U "${POSTGRES_USER:-redamon}" \
+    -d "${POSTGRES_DB:-redamon}" -qtAc 'select id from users order by created_at limit 1' 2>/dev/null | tr -d '\r')"
+
+if [[ -z "$UID_ROW" ]]; then
+    skip "rows 10+11" "no user row to attach a token to"
+elif ! set_disabled ""; then
+    bad "webapp came back with MCP_DISABLED_TOOLS empty" "unhealthy" "healthy"
+else
+    docker compose exec -T postgres psql -U "${POSTGRES_USER:-redamon}" -d "${POSTGRES_DB:-redamon}" -qtAc \
+      "insert into mcp_access_tokens (id,user_id,name,token_prefix,token_hash,scopes,created_at)
+       values ('mcp-live-check','$UID_ROW','live check','${TOKEN:0:17}','$HASH',ARRAY['recon:read'],now())
+       on conflict (id) do update set token_hash='$HASH', revoked_at=null, expires_at=null" >/dev/null 2>&1
+
+    AUTH="Authorization: Bearer $TOKEN"
+
+    # ROW 11: the whole surface reaches a real client over real HTTP.
+    eq "tools/list answers 200 with a real bearer" "$(mcp_status -H "$AUTH")" "200"
+    BODY_ALL="$(mcp_body -H "$AUTH")"
+    eq "the running server serves every tool" \
+       "$(printf '%s' "$BODY_ALL" | tool_count)" "$MCP_TOOL_COUNT_EXPECTED"
+
+    # The SDK enforces the spec's Accept header; a client sending only JSON is
+    # refused, which is how this surface failed its first live test.
+    eq "a request without the SSE Accept is refused" \
+       "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WEBAPP_URL/api/mcp-server" \
+            -H 'Content-Type: application/json' -H 'Accept: application/json' \
+            -H "$AUTH" -d "$RPC")" "406"
+
+    # ROW 10: the lever has to reach the process, not merely parse.
+    if ! set_disabled "list_findings,queue_recon"; then
+        bad "webapp came back with MCP_DISABLED_TOOLS set" "unhealthy" "healthy"
+    else
+        eq "MCP_DISABLED_TOOLS reaches the container" \
+           "$(docker compose exec -T webapp printenv MCP_DISABLED_TOOLS 2>/dev/null | tr -d '\r')" \
+           "list_findings,queue_recon"
+        BODY_CUT="$(mcp_body -H "$AUTH")"
+        # ABSENT, not advertised-and-refusing: a client that can see a tool
+        # plans around it and retries.
+        eq "a withdrawn tool is absent from tools/list" \
+           "$(has_tool "$BODY_CUT" list_findings)" "no"
+        eq "the second withdrawn tool is absent too" \
+           "$(has_tool "$BODY_CUT" queue_recon)" "no"
+        eq "an untouched tool is still served" \
+           "$(has_tool "$BODY_CUT" graph_summary)" "yes"
+        eq "exactly the named tools were withdrawn" \
+           "$(printf '%s' "$BODY_CUT" | tool_count)" "$((MCP_TOOL_COUNT_EXPECTED - 2))"
+    fi
+
+    # A name matching no tool must not stop the server starting: this is an
+    # emergency lever, and a typo turning a narrow withdrawal into a total
+    # outage is the failure it must not have.
+    if set_disabled "no_such_tool_at_all"; then
+        eq "an unknown name is ignored, the surface is intact" \
+           "$(mcp_body -H "$AUTH" | tool_count)" "$MCP_TOOL_COUNT_EXPECTED"
+    else
+        bad "an unknown name is ignored" "webapp unhealthy" "healthy"
+    fi
+
+    set_disabled "" >/dev/null 2>&1
 fi
 
 # =============================================================================
