@@ -61,7 +61,14 @@ class AllowlistedBinariesExistTests(unittest.TestCase):
         names = sorted(ALLOWED_BINARIES)
         probe = "; ".join(f'command -v {n} >/dev/null || echo MISSING:{n}' for n in names)
         result = subprocess.run(
-            ["docker", "exec", CONTAINER, "bash", "-lc", probe],
+            # `bash -c`, NOT `bash -lc`, because that is what kali_shell runs
+            # (network_recon_server.py: subprocess.run(["bash", "-c", command])).
+            # A LOGIN shell sources the image's profile, which REPLACES PATH with
+            # the distro default and so drops /opt/venv/bin and /root/go/bin -
+            # where every Go tool and arjun live. Probing with -lc reported ten
+            # correctly installed tools as missing. The probe has to resolve
+            # names exactly the way the runtime will.
+            ["docker", "exec", CONTAINER, "bash", "-c", probe],
             capture_output=True, text=True, timeout=120,
         )
         missing = [

@@ -112,15 +112,24 @@ describe('run_graph_view permissions', () => {
       .rejects.toBeInstanceOf(McpScopeError)
   })
 
-  test("another project's view is a flat access denial, not a different error", async () => {
+  test("another project's view is refused without running its query", async () => {
     h.findView.mockResolvedValue({ id: 'g1', projectId: 'other', cypherQuery: SECRET_QUERY })
-    await expect(runGraphView(ctx(), 'p1', 'g1')).rejects.toBeInstanceOf(McpAccessDenied)
+    await expect(runGraphView(ctx(), 'p1', 'g1'))
+      .rejects.toMatchObject({ code: 'not_found' })
     expect(h.execCypher).not.toHaveBeenCalled()
   })
 
-  test('a missing view is the same answer, so ids cannot be enumerated', async () => {
+  test('a missing view is the SAME answer, so ids cannot be enumerated', async () => {
+    h.findView.mockResolvedValue({ id: 'g1', projectId: 'other', cypherQuery: SECRET_QUERY })
+    const foreign = await runGraphView(ctx(), 'p1', 'g1').catch(e => e)
     h.findView.mockResolvedValue(null)
-    await expect(runGraphView(ctx(), 'p1', 'nope')).rejects.toBeInstanceOf(McpAccessDenied)
+    const missing = await runGraphView(ctx(), 'p1', 'nope').catch(e => e)
+
+    expect(missing.message).toBe(foreign.message)
+    // It names the VIEW, not the project: the caller has already proved it owns
+    // the project, so "Project not found" sent it retrying the wrong argument.
+    expect(missing.message).toMatch(/saved view/)
+    expect(missing.message).not.toBe('Project not found')
   })
 })
 

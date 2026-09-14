@@ -496,8 +496,19 @@ export interface BudgetDecision {
 
 const MAX_BUDGET_ENTRIES = 10_000
 
+/**
+ * The daily cap, read WITHOUT spending any of it.
+ *
+ * `checkLlmBudget` is the only other way to learn the number and it consumes a
+ * call to do so, which makes it useless to anything that merely documents the
+ * limit.
+ */
+export function llmBudgetLimit(): number {
+  return envInt('MCP_LLM_DAILY_BUDGET', 200)
+}
+
 export function checkLlmBudget(tokenId: string): BudgetDecision {
-  const limit = envInt('MCP_LLM_DAILY_BUDGET', 200)
+  const limit = llmBudgetLimit()
   const now = Date.now()
 
   // Bounded like `limiter` and `lastUsedAt`. Without this the map grew one

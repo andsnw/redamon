@@ -32,6 +32,7 @@ vi.mock('@/lib/prisma', () => ({
 }))
 
 import { McpAccessDenied } from '@/lib/mcpAuth'
+import { McpToolError } from './errors'
 import {
   assertJobInProject,
   assertRemediationInProject,
@@ -69,7 +70,8 @@ describe('a child belonging to another project is refused', () => {
       is_current: false, pinned: false, node_count: 1, link_count: 0,
       created_at: new Date(), snapshot_bytes: 4096,
     }])
-    await expect(assertVersionInProject('owner', 'p1', 'v1')).rejects.toBeInstanceOf(McpAccessDenied)
+    await expect(assertVersionInProject('owner', 'p1', 'v1'))
+      .rejects.toMatchObject({ code: 'not_found' })
   })
 
   test('a job, a view and a remediation', async () => {
@@ -77,9 +79,12 @@ describe('a child belonging to another project is refused', () => {
     h.findView.mockResolvedValue({ id: 'g1', projectId: 'other', cypherQuery: 'MATCH (n) RETURN n' })
     h.findRemediation.mockResolvedValue({ id: 'r1', projectId: 'other' })
 
-    await expect(assertJobInProject('owner', 'p1', 'j1')).rejects.toBeInstanceOf(McpAccessDenied)
-    await expect(assertViewInProject('owner', 'p1', 'g1')).rejects.toBeInstanceOf(McpAccessDenied)
-    await expect(assertRemediationInProject('owner', 'p1', 'r1')).rejects.toBeInstanceOf(McpAccessDenied)
+    await expect(assertJobInProject('owner', 'p1', 'j1'))
+      .rejects.toMatchObject({ code: 'not_found' })
+    await expect(assertViewInProject('owner', 'p1', 'g1'))
+      .rejects.toMatchObject({ code: 'not_found' })
+    await expect(assertRemediationInProject('owner', 'p1', 'r1'))
+      .rejects.toMatchObject({ code: 'not_found' })
   })
 })
 
@@ -96,11 +101,37 @@ describe('a missing child is the same answer as a foreign one', () => {
       assertViewInProject('owner', 'p1', 'nope').catch(e => e),
       assertRemediationInProject('owner', 'p1', 'nope').catch(e => e),
     ])
+    // REGRESSION (e2e finding): these used to answer "Project not found" for a
+    // bad CHILD id, on a project the caller had just proved it owns - sending an
+    // agent off to retry with a different projectId over a bad viewId.
     for (const e of errors) {
-      expect(e).toBeInstanceOf(McpAccessDenied)
-      // The same flat message the ownership failure produces.
-      expect(e.message).toBe('Project not found')
+      expect(e).toBeInstanceOf(McpToolError)
+      expect(e.code).toBe('not_found')
+      expect(e.message).not.toBe('Project not found')
+      expect(e.message).toMatch(/in this project/)
     }
+  })
+
+  test('a foreign child and a missing child give the SAME message', async () => {
+    // The one distinction that must never leak. Naming the child kind is safe
+    // precisely because both branches produce this identical string.
+    h.findView.mockResolvedValue(null)
+    const missing = await assertViewInProject('owner', 'p1', 'nope').catch(e => e)
+    h.findView.mockResolvedValue({ id: 'g1', projectId: 'someone-else' })
+    const foreign = await assertViewInProject('owner', 'p1', 'g1').catch(e => e)
+
+    expect(missing.message).toBe(foreign.message)
+    expect(missing.code).toBe(foreign.code)
+  })
+
+  test('a foreign PROJECT still fails earlier, with the flat message', async () => {
+    // The project boundary is untouched: it is enforced before any child is
+    // read, and still cannot be told apart from a project that does not exist.
+    h.findProject.mockResolvedValue({ id: 'p1', userId: 'someone-else' })
+    const e = await assertViewInProject('owner', 'p1', 'g1').catch(err => err)
+    expect(e).toBeInstanceOf(McpAccessDenied)
+    expect(e.message).toBe('Project not found')
+    expect(h.findView).not.toHaveBeenCalled()
   })
 })
 

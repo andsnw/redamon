@@ -141,6 +141,23 @@ export async function stopRecon(ctx: McpContext, projectId: string) {
   await assertMcpProjectAccess(ctx.token.userId, projectId)
   enforceRate(ctx, 'write')
 
+  // The orchestrator answers a stop with the POST-stop state, which is `idle`
+  // whether it just killed a scan or there was never one running. Returning
+  // that verbatim left an agent unable to report what it had done - and left a
+  // stray stop that really did kill a running scan looking like a no-op. So
+  // observe first, and say so. `null` where the observation failed: on this
+  // surface "I could not tell" is never reported as "nothing was running".
+  let wasRunning: boolean | null = null
+  try {
+    const pre = await orchestratorFetch(`${RECON_ORCHESTRATOR_URL}/recon/${projectId}/status`)
+    if (pre.ok) {
+      const status = (await pre.json() as { status?: unknown })?.status
+      wasRunning = status !== 'idle' && status !== 'completed' && status !== undefined
+    }
+  } catch (err) {
+    console.error('[mcp] stop_recon pre-stop status unreadable:', err)
+  }
+
   let resp: Response
   try {
     resp = await orchestratorFetch(`${RECON_ORCHESTRATOR_URL}/recon/${projectId}/stop`, {
@@ -163,10 +180,28 @@ export async function stopRecon(ctx: McpContext, projectId: string) {
     action: 'mcp.stop_recon',
     targetType: 'project',
     targetId: projectId,
-    after: { tokenId: ctx.token.tokenId, tokenPrefix: ctx.token.tokenPrefix, outcome: 'ok' },
+    after: {
+      tokenId: ctx.token.tokenId,
+      tokenPrefix: ctx.token.tokenPrefix,
+      // Distinguished in the log too: reading back "a token stopped a scan" for
+      // a call that halted nothing is how an incident review reaches the wrong
+      // conclusion about which agent ended a run.
+      outcome: wasRunning === null ? 'ok_unverified'
+        : wasRunning ? 'stopped' : 'nothing_running',
+    },
     source: 'mcp',
   })
-  return await resp.json()
+  return {
+    ...(await resp.json() as Record<string, unknown>),
+    stopped: wasRunning,
+    note: wasRunning === null
+      ? 'The stop was issued, but the scan state could not be read beforehand, so '
+        + 'whether anything was actually running is unknown.'
+      : wasRunning
+        ? 'A scan was running and has been told to stop. Poll get_recon_status '
+          + 'until it reports idle.'
+        : 'Nothing was running, so nothing was stopped.',
+  }
 }
 
 export interface UpdateSettingsResult {

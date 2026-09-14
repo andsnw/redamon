@@ -3872,18 +3872,50 @@ async def traffic_browser(body: TrafficBrowserRequest):
 # =============================================================================
 
 
+def _kali_runnable_section() -> str:
+    """What kali_exec will actually ADMIT, rendered from the guard's own specs.
+
+    Derived from kali_exec_guard.SPECS rather than written out, so it cannot
+    drift from the thing that does the admitting - the same "one source, no
+    second copy" rule the catalogue below is served under.
+    """
+    from kali_exec_guard import SPECS
+
+    lines = [
+        "## RUNNABLE VIA kali_exec",
+        "",
+        "These are the ONLY programs kali_exec will run, with the ONLY options each "
+        "accepts. Anything else is refused by name. Write a flag's value as a separate "
+        "argument or with '=', never attached to a short option.",
+        "",
+    ]
+    for name in sorted(SPECS):
+        spec = SPECS[name]
+        flags = " ".join(sorted(spec.flags)) or "(no options)"
+        reach = "network" if spec.network else "offline"
+        lines.append(f"- **{name}** ({reach}): {flags}")
+    return "\n".join(lines)
+
+
 @app.get(
     "/kali/toolbox",
     tags=["Kali"],
     dependencies=[Depends(require_internal_auth_only)],
 )
 async def kali_toolbox():
-    """The Kali sandbox's installed-tooling catalogue, by category.
+    """What kali_exec can run, plus what the sandbox image carries.
 
-    Served from the `kali_shell` TOOL_REGISTRY description, the same bytes this
-    agent's own model is prompted with. One source, no second copy: a
-    transcription would drift from the image the moment a tool is added, and a
-    catalogue that lies about what is installed is worse than none.
+    TWO SECTIONS, and the order matters. The first is generated from
+    kali_exec_guard.SPECS: the 23 programs this surface will actually admit and
+    the exact options each takes. The second is the `kali_shell` TOOL_REGISTRY
+    description - the full image, which is much larger.
+
+    They are different sets on purpose, and saying so is the point. Serving only
+    the second (which is what this did) advertised sqlmap, msfvenom, nc, gcc and
+    hashcat to an agent that would then be refused on every one, costing it a
+    turn per tool to discover a boundary this could have stated. A catalogue that
+    lies about what is runnable is worse than none, which is the same argument
+    the second section is served under.
 
     Reads from code only: no container call, no project id, no tenant data. It
     therefore still answers when the kali-sandbox is down, which is the point -
@@ -3898,7 +3930,19 @@ async def kali_toolbox():
         # forbids everywhere else.
         logger.error("Kali toolbox catalogue is empty - TOOL_REGISTRY['kali_shell'] lost its description")
         return JSONResponse(status_code=500, content={"error": "toolbox catalogue unavailable"})
-    return JSONResponse(content={"toolbox": catalogue})
+
+    toolbox = (
+        f"{_kali_runnable_section()}\n\n"
+        "## ALSO INSTALLED, NOT RUNNABLE HERE\n\n"
+        "The sandbox image carries the full Kali toolset below, and RedAmon's own "
+        "in-app agent can use it. kali_exec CANNOT: anything absent from the list "
+        "above is refused, because this surface admits only read-only observers "
+        "whose flags cannot load or run code. Exploitation, brute-force and "
+        "interpreters are deliberately excluded. Treat this section as what the "
+        "platform is capable of, not as what you may run.\n\n"
+        f"{catalogue}"
+    )
+    return JSONResponse(content={"toolbox": toolbox})
 
 
 # =============================================================================
@@ -3930,9 +3974,24 @@ def _kali_scope(project_id: str):
     """The project's authorised reach, from the same source both agent
     guardrails use, so an ad-hoc command cannot outreach a scan."""
     from kali_exec_guard import KaliScope
-    from project_settings import get_setting, load_project_settings, target_scope_domains
+    from project_settings import (
+        SETTINGS_SOURCE_KEY,
+        get_setting,
+        load_project_settings,
+        target_scope_domains,
+    )
 
-    load_project_settings(project_id)
+    settings = load_project_settings(project_id)
+    # load_project_settings NEVER raises: it logs and falls back to
+    # DEFAULT_AGENT_SETTINGS, whose target scope is empty. Without this check an
+    # unreachable webapp produced an empty scope, and the guard then refused
+    # every command with "This project has no target domain or IPs configured.
+    # Configure the target first." - on projects that were configured correctly
+    # all along. Safe, because the default happens to be empty, but it sent the
+    # operator to the project form to fix something that was not broken, and it
+    # would fail OPEN the day that default is not empty.
+    if settings.get(SETTINGS_SOURCE_KEY) != "api":
+        raise RuntimeError("project settings came from defaults, not the settings API")
     return KaliScope(
         domains=tuple(target_scope_domains()),
         ips=tuple(get_setting("TARGET_IPS", []) or []),
@@ -3993,6 +4052,19 @@ def _kali_read_log(path: str, cursor: int) -> dict:
     }
 
 
+def _kali_lookup_failed(state: dict) -> bool:
+    """Did the REGISTRY fail to find this job, as opposed to the job failing?
+
+    JobHandle carries its own `error` field, so a job that ran and failed - a
+    tool that exited non-zero, or the 300s kali_shell timeout - comes back as a
+    dict with `error` set. Treating any `error` as "not found" reported a real,
+    finished run as a job that never existed: the output was unreachable and the
+    caller was told the wrong thing. A genuine lookup miss has no job_id,
+    because JobRegistry.status() returns a bare {"error": ...} for it.
+    """
+    return not state.get("job_id")
+
+
 def _kali_job_view(state: dict, cursor: int, project_id: str, job_id: str) -> dict:
     """The wire shape shared by exec, poll and cancel, so a caller parses one.
 
@@ -4007,6 +4079,10 @@ def _kali_job_view(state: dict, cursor: int, project_id: str, job_id: str) -> di
         "ended_at": state.get("ended_at"),
     }
     view.update(_kali_read_log(_kali_log_path(project_id, job_id), cursor))
+    # WHY it failed, not just that it did. Without this a timed-out scan is
+    # indistinguishable from a scan that ran clean and found nothing.
+    if state.get("error"):
+        view["error"] = str(state["error"])
     if view["status"] == "cancelled":
         # Honest wording. reg.cancel() cancels the asyncio task awaiting the MCP
         # call; kali_shell is a blocking subprocess.run in the SANDBOX process,
@@ -4108,7 +4184,7 @@ async def kali_exec_status(
     # status() keys on (project_id, job_id) and reads a per-project directory,
     # so another project's job id resolves to nothing rather than to its output.
     state = reg.status(project_id, job_id)
-    if state.get("error"):
+    if _kali_lookup_failed(state):
         return JSONResponse(status_code=404, content={"error": "no such command"})
     return JSONResponse(content=_kali_job_view(state, cursor, project_id, job_id))
 
@@ -4120,7 +4196,7 @@ async def kali_exec_cancel(job_id: str, project_id: str = Query(...)):
         return JSONResponse(status_code=404, content={"error": "no such command"})
     reg = job_runner.get_registry()
     state = reg.status(project_id, job_id)
-    if state.get("error"):
+    if _kali_lookup_failed(state):
         return JSONResponse(status_code=404, content={"error": "no such command"})
     result = await reg.cancel(project_id, job_id)
     if isinstance(result, dict) and result.get("error"):

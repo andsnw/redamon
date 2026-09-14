@@ -285,3 +285,34 @@ describe('the list views report their cap', () => {
     expect(notes).toMatch(/not\s+that the CVE is on a public exploited list/)
   })
 })
+
+// REGRESSION (e2e finding: an empty ranking read as "nothing is exploitable").
+// Both views start from (:Technology)-[:HAS_KNOWN_CVE]->(:CVE), so a project
+// whose CVE lookup never ran answers zero rows however much it holds. Observed
+// live on a project with 19 technologies and 215 vulnerabilities: both tools
+// returned `returned: 0` and not one of their notes said why.
+describe('an empty analytics answer explains itself', () => {
+  test('list_exploit_paths says an empty result is not "nothing exploitable"', async () => {
+    h.execCypher.mockResolvedValue({ records: [] })
+    const r = await listExploitPaths(ctx(), 'p1')
+    expect(r.returned).toBe(0)
+    expect(r.notes.join(' ')).toMatch(/not the same as "nothing is exploitable"/)
+    expect(r.notes.join(' ')).toMatch(/cveLookupEnabled/)
+  })
+
+  test('get_blast_radius says the same', async () => {
+    h.execCypher.mockResolvedValue({ records: [] })
+    const r = await getBlastRadius(ctx(), 'p1')
+    expect(r.returned).toBe(0)
+    expect(r.notes.join(' ')).toMatch(/not the same as "nothing is exploitable"/)
+  })
+
+  test('a populated answer does NOT carry the explanation', async () => {
+    // It is an explanation of emptiness; on a real ranking it is noise.
+    h.execCypher.mockResolvedValue({
+      records: [{ technology: 'nginx', cveCount: 3, maxCvss: 9.8 }],
+    })
+    const r = await getBlastRadius(ctx(), 'p1')
+    expect(r.notes.join(' ')).not.toMatch(/not the same as/)
+  })
+})

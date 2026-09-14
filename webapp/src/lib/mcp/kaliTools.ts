@@ -101,6 +101,7 @@ function auditExec(
 /** The wire shape, with the note a caller needs to act on an unfinished job. */
 function jobResult(projectId: string, job: KaliJob): Record<string, unknown> {
   const running = job.status === 'running'
+  const timedOut = !running && /timed out/i.test(job.failure ?? '')
   return {
     projectId,
     jobId: job.jobId,
@@ -111,9 +112,18 @@ function jobResult(projectId: string, job: KaliJob): Record<string, unknown> {
     nextCursor: job.nextCursor,
     ...(job.truncated ? { truncated: true } : {}),
     ...(job.command ? { command: job.command } : {}),
+    ...(job.failure ? { failure: job.failure } : {}),
     note: running
       ? 'Still running. Call kali_output with this jobId and nextCursor for more, or ' +
         'kali_cancel to stop it.'
+      : timedOut
+        // The single most common failure for real scanning work, and the one an
+        // agent can actually do something about. Saying only "it failed" sends
+        // it round the retry loop running the same too-broad command again.
+        ? 'The sandbox caps one command at 300 seconds and this run hit it. Whatever it ' +
+          'printed before the cap is in output, but the run is INCOMPLETE - do not report ' +
+          'it as clean. Split the work: fewer nuclei -tags or -severity values, a smaller ' +
+          'nmap port range, testssl --fast, or nikto -maxtime under 300.'
       : job.truncated
         ? 'Output continues. Call kali_output with this jobId and nextCursor for the rest.'
         : 'Finished. A non-zero exitCode is the TOOL failing, not RedAmon refusing.',

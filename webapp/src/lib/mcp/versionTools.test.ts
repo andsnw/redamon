@@ -311,11 +311,17 @@ describe('compare_scan_versions explains the two confusing failures', () => {
       .rejects.toThrow(/trimmed by retention/i)
   })
 
-  test("another project's version id is a flat access denial", async () => {
-    h.queryRaw.mockResolvedValue([vrow({ project_id: 'someone-elses' })])
-    await expect(compareScanVersions(ctx(), 'p1', { from: 'vX' }))
-      .rejects.toBeInstanceOf(McpAccessDenied)
-  })
+  test("another project's version id is refused, indistinguishably from a missing one",
+    async () => {
+      h.queryRaw.mockResolvedValue([vrow({ project_id: 'someone-elses' })])
+      const foreign = await compareScanVersions(ctx(), 'p1', { from: 'vX' }).catch(e => e)
+      h.queryRaw.mockResolvedValue([])
+      const missing = await compareScanVersions(ctx(), 'p1', { from: 'vNope' }).catch(e => e)
+
+      expect(foreign.code).toBe('not_found')
+      expect(missing.message).toBe(foreign.message)
+      expect(foreign.message).toMatch(/scan version/)
+    })
 })
 
 describe('compare_scan_versions rate limiting', () => {

@@ -65,12 +65,24 @@ the one action that makes a finding invisible to every other read here, and
 unmute reverses a human's suppression decision, which is exactly the power the
 architecture withholds from the model-driven path.
 
-`kali_toolbox` is served from the `kali_shell` `TOOL_REGISTRY` description via
-the agent's `GET /kali/toolbox` (`require_internal_auth_only`), the same bytes
-the in-app agent is prompted with: one source, so a catalogue cannot promise a
-tool the image does not carry. It never calls the kali-sandbox, holds no
-`MCP_AUTH_TOKEN`, and takes no `projectId`. Most of what it lists is **not**
-reachable through `kali_exec`.
+`kali_toolbox` answers in TWO labelled sections, because there are two different
+questions and conflating them costs the caller a turn per wrong guess:
+
+1. **RUNNABLE VIA kali_exec** - generated from `kali_exec_guard.SPECS`: every
+   admitted binary and the exact options each accepts. Derived, never
+   transcribed, so adding a binary to `SPECS` changes the answer with no second
+   edit.
+2. **ALSO INSTALLED, NOT RUNNABLE HERE** - the `kali_shell` `TOOL_REGISTRY`
+   description verbatim, the same bytes the in-app agent is prompted with.
+
+It shipped serving only (2), which advertised `sqlmap`, `msfvenom`, `nc`, `gcc`
+and `hashcat` to an agent that is refused on every one. The endpoint's own
+argument - a catalogue that lies about the image is worse than none - applies
+just as well to a catalogue that lies about what is *runnable*.
+
+Served by the agent's `GET /kali/toolbox` (`require_master_internal_auth`). It
+never calls the kali-sandbox, holds no `MCP_AUTH_TOKEN`, and takes no
+`projectId`.
 
 ### 1.1 Why `kali_exec` is not `kali_shell`
 
@@ -111,9 +123,28 @@ curl -K/tmp/c acme.tld                                  config file = arbitrary 
 ```
 
 So every binary now declares **each flag it accepts and the KIND of value that
-flag takes** (`BOOL` / `HOST` / `PATH` / `OPAQUE` / `RRTYPE`). A token that is not
-in the spec is refused by name. There are no unrecognised tokens left, so there
-is nothing to launder.
+flag takes** (`BOOL` / `HOST` / `PATH` / `OPAQUE` / `RRTYPE` / `CHOICE` / `TEXT`).
+A token that is not in the spec is refused by name. There are no unrecognised
+tokens left, so there is nothing to launder.
+
+`CHOICE` pins a subcommand to a closed set: `openssl req` writes key material and
+`amass intel` reaches past the `-d` domain, so the verb is checked like any other
+value rather than waved through as free text. `TEXT` is the deliberate relaxation
+- a header, body, user-agent or referer MAY contain a URL, because curl dials the
+URL slot and nothing else. `OPAQUE` refusing every `://` had made CORS testing,
+referer checks and SSRF probes against the target impossible, which is ordinary
+bug-bounty work. The slots that steer the connection stay `HOST` or denied, and
+a test asserts they never become `TEXT`.
+
+The allowlist is **23 binaries** (was 9): `amass arjun curl dalfox dig dnsrecon
+dnsx gau host httpx katana naabu nikto nmap nslookup nuclei openssl searchsploit
+subfinder subzy testssl whatweb wpscan`, carrying 469 allowed flags and 160
+explicit denials. `nmap` and `nuclei` are admitted with `--script` / `-t` denied
+by name, which is the rule working rather than an exception to it: the danger is
+the flag, not the tool. `nuclei` also has `-no-interactsh` and
+`-disable-update-check` **injected**, so a caller cannot re-enable the public OAST
+collector this codebase has already leaked a session cookie to, nor have the
+template tree silently replaced mid-run.
 
 | Rule | Refuses |
 | --- | --- |
@@ -236,6 +267,8 @@ Agent-side bounds (the agent **does** have an `env_file`, so `.env` reaches it):
 - **Permissions default to read-only.** Every write permission is opt-in, and
   each says what it allows. `recon:overwrite` says plainly that it permits
   discarding the current graph.
+- **An Agent Profile picks the starting permission set** (§3.1). It is a label
+  and a suggestion, never an authorization input.
 - **`triage:write` is the only write to a finding**, and the only one that
   cannot be undone from this surface except by another verdict. It writes
   `triage_source = 'human'` deliberately: a third provenance value would make
@@ -284,6 +317,122 @@ reset (which needs no current password). A reset that left live programmatic
 credentials behind would not actually lock the account.
 
 ---
+
+### 3.1 Agent Profiles, and why they are safe
+
+A token is minted FOR A JOB. `McpAccessToken.profile` records which, and the
+registry lives in [`webapp/src/lib/mcp/profiles.ts`](../../webapp/src/lib/mcp/profiles.ts).
+
+```prisma
+/// NOT an authorization input. Scopes alone are enforced.
+profile String?
+```
+
+Nullable, so every row minted before the field existed is valid and reads as
+`custom`. An UNKNOWN profile is rejected at mint and at PATCH rather than
+coerced, mirroring `validateScopes`: silently storing something the operator did
+not ask for labels a credential as a job nobody chose.
+
+**The field is never read by any authorization path.** Not `resolveMcpToken`,
+not `requireScope`, not the rate limiter, not a tool body. `profiles.test.ts`
+enforces this two ways: `mcpAuth.ts` must not contain the string `profile` at
+all, and no other module under `src/lib/mcp/` may read `.profile` off a token or
+context. A second, weaker authorization path is the one genuinely dangerous
+thing this feature could have introduced, so the control is a grep rather than a
+convention.
+
+The profile is read in exactly one place on the request path,
+[`instructions.ts`](../../webapp/src/lib/mcp/instructions.ts), to choose the
+editorial slant of the connect-time onboarding string, and only on `initialize`.
+That read selects `{ profile: true }` and nothing else, and any failure falls
+back to `custom`: failing to personalise a paragraph must never fail a
+connection.
+
+**Profile → recommended scopes.** Every profile starts from `recon:read`, and
+seven of the thirteen grant no write of any kind.
+
+| Profile | Recommended | Opt-in (never auto-ticked) |
+| --- | --- | --- |
+| `bug_bounty` | read, scan, triage:read, cypher | `kali:exec` |
+| `pentest` | read, scan, triage:read, cypher | `kali:exec` |
+| `asm` | read, scan, queue, triage:read | - |
+| `vuln_mgmt` | read, triage:read | - |
+| `triage` | read, triage:read, **triage:write** | - |
+| `inventory` | read, cypher | - |
+| `compliance` | read, triage:read | - |
+| `ci_gating` | read, queue, triage:read | - |
+| `reporting` | read, triage:read, cypher | - |
+| `ma_risk` | read, scan, triage:read, cypher | - |
+| `threat_intel` | read, triage:read, cypher | - |
+| `soc` | read, cypher | - |
+| `research` | read, scan, **settings**, triage:read, cypher | `recon:overwrite`, `kali:exec` |
+| `custom` | read | - |
+
+The rules behind it, each asserted in `profiles.test.ts`:
+
+1. **`kali:exec` and `recon:overwrite` are in NO profile's `recommendedScopes`.**
+   They may appear only in `optInScopes`, which the form renders unchecked behind
+   a danger callout. This is the most important assertion in the feature:
+   command execution at a live target and irreversible graph destruction must
+   not arrive as a side effect of a dropdown.
+2. **`triage:write` and `recon:settings` each go to exactly one profile.**
+3. **Unattended profiles prefer `recon:queue`.** `asm` and `ci_gating` run with
+   nobody watching, where a direct start just fails on a busy project.
+4. **Read-only wherever the job allows it.**
+
+**A profile switch is judged by the existing widening check.** Switching profile
+in the UI re-ticks the boxes, and the resulting scope SET flows through
+`isTokenWidening` exactly like a hand tick, so a profile-driven widen demands the
+same password step-up. A profile change with no scope change grants nothing and
+needs no step-up; it is also allowed on a revoked token, like a rename.
+
+### 3.2 Agent Onboarding: generating the pack
+
+[`onboarding.ts`](../../webapp/src/lib/mcp/onboarding.ts) renders the operator's
+download, and [`instructions.ts`](../../webapp/src/lib/mcp/instructions.ts) the
+connect-time string, from one source. Built like `apiReference.ts`: the
+machine-readable half comes from the server's own `tools/list`, so it cannot
+describe a tool differently from how the server serves it, and a tool withdrawn
+by `MCP_DISABLED_TOOLS` is absent from the pack for free because it never
+reaches the list.
+
+**Two filters, deliberately separate:**
+
+- the **scope filter** is hard. `canCall` renders a tool as available only when
+  the token holds every required scope; everything else goes in the
+  "cannot call" tail with the permission it needs. A conditional scope is
+  reported as a withheld ARGUMENT, not a missing tool.
+- the **profile filter** is editorial. It chooses which workflows and tone are
+  emphasised, and nothing else.
+
+The pack renders **profile ∩ scopes**, plus the cannot-do tail. A profile that
+leans on a tool this token cannot reach names the missing PERMISSION, never the
+tool, so the profile section can never promise a call that will be refused;
+`onboarding.test.ts` asserts exactly that over every profile and several scope
+sets.
+
+The hand-written half lives in
+[`playbook.ts`](../../webapp/src/lib/mcp/playbook.ts) as three registries, each
+guarded by a coverage test: `CAPABILITY_AREAS` (every tool in exactly one area),
+`ONBOARDING_PLAYBOOK` (one entry per tool) and `WORKFLOWS` (rendered only when
+the token can call every tool they need).
+
+**Adding a tool to the MCP server now also means adding its playbook entry and
+filing it under a capability area.** The coverage test goes red in the same
+commit otherwise, which is what makes "the pack covers the whole surface" a
+guarantee rather than an intention.
+
+Output is deterministic: no dates, and the version stamp is injected, so the
+same `(profile, scopes, serverUrl, style, layout)` renders byte-identical bytes.
+
+**Nothing user-specific may enter the output** - no token, no project name, no
+target, no rules-of-engagement text - because a `SKILL.md` gets committed into a
+repository. The route
+(`POST /api/users/[id]/agent-onboarding`) is session-authed with
+`requireUserAccess`, not bearer-authed, and it grants nothing: the scopes in its
+body describe a document, no token is read and no row is written. The only
+caller-controlled string that reaches the file is the server URL, and only its
+ORIGIN survives, after an http/https check.
 
 ## 4. Connecting a client
 
@@ -517,3 +666,4 @@ against `audit_log`. Known and accepted; a minimal admin view is a follow-up.
 - [README.GRAPH_DB.md](README.GRAPH_DB.md) — the attack-surface graph
 - [graph_db/schema_sections.md](../../graph_db/schema_sections.md) — the node labels and relationships `graph_schema` serves
 - [GRAPH.SCHEMA.md](GRAPH.SCHEMA.md) — why the graph is shaped this way (lists no labels)
+- [MCP-Server wiki page](../../redamon.wiki/MCP-Server.md) — the operator's view, including the Agent Profile table

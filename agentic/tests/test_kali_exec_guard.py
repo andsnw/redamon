@@ -20,6 +20,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from kali_exec_guard import (  # noqa: E402
+    CHOICE,
+    HOST,
     ALLOWED_BINARIES,
     NETWORK_BINARIES,
     SPECS,
@@ -133,20 +135,87 @@ class BypassRegressionTests(unittest.TestCase):
 
 
 class AllowlistShapeTests(unittest.TestCase):
-    def test_code_loading_and_shell_granting_tools_are_absent(self):
+    def test_shell_granting_and_exploitation_tools_are_absent(self):
+        """The rule is 'read-only observers whose flags cannot load or run code'.
+
+        These are excluded as WHOLE TOOLS because the dangerous capability is
+        the tool's purpose, not one flag: an interpreter runs code by running,
+        and sqlmap/commix/hydra are active intrusions rather than observations.
+        Adding one is a deliberate act with this test in front of it."""
         for binary in (
-            "nmap", "nuclei", "sqlmap", "commix", "metasploit", "msfvenom",
-            "nc", "ncat", "socat", "bash", "sh", "python3", "perl", "ruby", "php",
-            "ssh", "git", "wget", "openssl", "hydra", "ffuf", "gobuster",
+            "sqlmap", "commix", "metasploit", "msfvenom", "hydra", "medusa",
+            "john", "hashcat", "nc", "ncat", "socat", "bash", "sh", "zsh",
+            "python3", "perl", "ruby", "php", "ssh", "git", "svn", "wget",
+            "ffuf", "gobuster", "feroxbuster", "wfuzz", "dirb", "masscan",
+            "smbclient", "tcpdump", "jq",
         ):
             self.assertNotIn(binary, ALLOWED_BINARIES, f"{binary} must not be allowlisted")
 
-    def test_binaries_the_sandbox_does_not_install_are_not_allowlisted(self):
-        """REGRESSION: allowlist/image drift. Four were never installed, and
-        `httpx` resolved to the PYTHON httpx CLI rather than ProjectDiscovery's,
-        so every flag the RedAmon catalogue documents for it failed."""
-        for binary in ("dnsx", "wafw00f", "subzy", "hashid", "httpx"):
-            self.assertNotIn(binary, ALLOWED_BINARIES)
+    def test_the_admitted_tools_deny_their_own_code_loading_flags(self):
+        """The counterpart to the test above: nmap, nuclei, amass, whatweb,
+        katana and openssl ARE allowlisted, and every one of them can load or
+        run code through a flag. Admitting the tool is only safe while that
+        specific flag stays denied, so each is pinned by name."""
+        must_deny = {
+            "nmap": ("--script", "--script-args", "--datadir", "-sC", "-A"),
+            "nuclei": ("-t", "-templates", "-w", "-workflows", "-code", "-tu", "-ud"),
+            "amass": ("-script", "-config"),
+            "whatweb": ("-p", "--plugins", "--custom-plugin"),
+            "nikto": ("-config", "-Plugins"),
+            "katana": ("-hl", "-headless", "-sc", "-system-chrome"),
+            "openssl": ("-engine",),
+            "naabu": ("-nmap-cli", "-nmap"),
+            "dalfox": ("--custom-payload", "--remote-payloads"),
+            "testssl": ("--openssl", "--bin"),
+            "curl": ("-K", "--config"),
+        }
+        for binary, flags in must_deny.items():
+            self.assertIn(binary, SPECS, f"{binary} is no longer allowlisted; drop its row")
+            for flag in flags:
+                self.assertIn(
+                    flag, SPECS[binary].denied,
+                    f"{binary} must deny {flag}: it loads or runs code",
+                )
+
+    def test_out_of_band_and_redirect_flags_stay_denied(self):
+        """Two whole classes a pre-flight string check cannot see through: a
+        redirect lets the TARGET pick the next host, and an arbitrary
+        resolver/collector is an exfiltration channel that never touches the
+        scope-checked host at all."""
+        for binary, flag in (
+            ("curl", "-L"), ("curl", "--location"),
+            ("httpx", "-fr"), ("httpx", "-follow-redirects"),
+            ("nuclei", "-iserver"), ("nuclei", "-interactsh-server"),
+            ("dnsx", "-r"), ("subfinder", "-r"), ("amass", "-r"),
+            ("dnsrecon", "-n"), ("naabu", "-r"),
+            ("dalfox", "-b"), ("dalfox", "--blind"),
+        ):
+            self.assertIn(flag, SPECS[binary].denied, f"{binary} must deny {flag}")
+
+    def test_nuclei_cannot_drop_its_injected_bounds(self):
+        """interactsh is a PUBLIC third-party collector and this codebase has
+        already leaked a live session cookie to one. The update check silently
+        replaces the template tree mid-run, which would defeat denying -t."""
+        spec = SPECS["nuclei"]
+        self.assertIn("-no-interactsh", spec.inject)
+        self.assertIn("-disable-update-check", spec.inject)
+
+    def test_katana_cannot_widen_its_own_crawl_scope(self):
+        """A crawler follows links the TARGET writes, so its field scope is the
+        only thing keeping it on the checked host."""
+        self.assertEqual(SPECS["katana"].inject, ("-field-scope", "rdn"))
+        self.assertIn("-fs", SPECS["katana"].denied)
+        self.assertIn("-cos", SPECS["katana"].denied)
+
+    def test_subcommand_tools_pin_their_verb_to_a_closed_set(self):
+        """`openssl req` writes key material and `amass intel` reaches past the
+        -d domain. An OPAQUE verb slot would admit both."""
+        self.assertEqual(SPECS["openssl"].choices, frozenset({"s_client"}))
+        self.assertEqual(SPECS["amass"].choices, frozenset({"enum"}))
+        self.assertEqual(SPECS["subzy"].choices, frozenset({"run"}))
+        self.assertEqual(SPECS["dalfox"].choices, frozenset({"url"}))
+        for name in ("openssl", "amass", "subzy", "dalfox"):
+            self.assertEqual(SPECS[name].positional, CHOICE, f"{name} verb must be CHOICE")
 
     def test_every_binary_declares_a_spec(self):
         self.assertEqual(set(SPECS), set(ALLOWED_BINARIES))
@@ -215,9 +284,13 @@ class FlagAllowlistTests(unittest.TestCase):
         refuses(self, "curl -s=yes https://acme.tld", contains="takes no value")
 
     def test_opaque_values_cannot_smuggle_a_url_or_a_file(self):
-        refuses(self, "curl -A https://evil.tld https://acme.tld", contains="not a target")
+        # -X and -r are OPAQUE: neither is a header or a body, so a URL there is
+        # a smuggled destination rather than data. (-A, -d and -b are TEXT and
+        # DO take a URL - see TextSlotTests for why that is safe.)
+        refuses(self, "curl -X https://evil.tld https://acme.tld", contains="not a target")
+        refuses(self, "curl -r https://evil.tld https://acme.tld", contains="not a target")
         refuses(self, "curl -d @/etc/passwd https://acme.tld", contains="'@'")
-        refuses(self, "curl -b /etc/shadow https://acme.tld", contains="not a file argument")
+        refuses(self, "curl -X /etc/shadow https://acme.tld", contains="not a file argument")
 
     def test_safety_bounds_are_appended_and_not_caller_controlled(self):
         argv = admit("curl https://acme.tld", PLAIN)
@@ -360,8 +433,68 @@ class LimitTests(unittest.TestCase):
             refuses(self, command)
 
     def test_an_unlisted_binary_is_refused_by_name(self):
-        refuses(self, "nmap -sS 10.0.0.5", contains="nmap")
+        refuses(self, "sqlmap -u https://acme.tld/?id=1", contains="sqlmap")
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TextSlotTests(unittest.TestCase):
+    """A URL in a HEADER or BODY is data the target reads, not a destination.
+
+    OPAQUE refused anything containing '://', which made CORS testing, referer
+    checks and SSRF probes against the target impossible - all three are
+    ordinary bug-bounty work. TEXT allows the URL and keeps the file read out.
+    """
+
+    def test_a_url_in_a_header_body_or_referer_is_admitted(self):
+        for command in (
+            "curl -H 'Origin: https://evil.tld' https://acme.tld/",
+            "curl -H 'Referer: https://evil.tld/x' https://acme.tld/",
+            "curl -e https://evil.tld/ https://acme.tld/",
+            "curl -A 'Mozilla https://x' https://acme.tld/",
+            "curl -d 'callback=https://evil.tld/cb' https://acme.tld/api",
+            "curl -b 'next=https://evil.tld/' https://acme.tld/",
+            "httpx -u https://acme.tld -H 'Origin: https://evil.tld' -silent",
+        ):
+            admit(command, PLAIN)   # must not raise
+
+    def test_a_text_slot_still_refuses_an_at_file(self):
+        # curl reads a local file for -H, -d, -b and -w alike.
+        for command in (
+            "curl -H @/etc/passwd https://acme.tld/",
+            "curl -d @/proc/self/environ https://acme.tld/",
+            "curl -b @/tmp/cookies https://acme.tld/",
+        ):
+            refuses(self, command, contains="@")
+
+    def test_text_did_not_leak_into_the_slots_that_steer_the_connection(self):
+        """The whole basis for TEXT is that curl dials the URL slot and nothing
+        else. If a TEXT kind ever reached a destination slot, the scope check
+        would be bypassable by writing the target as a header."""
+        refuses(self, "curl --url https://evil.tld/", contains="outside this project's scope")
+        refuses(self, "curl -H 'X: ok' https://evil.tld/", contains="outside this project's scope")
+        refuses(self, "curl --resolve acme.tld:443:6.6.6.6 https://acme.tld/", contains="--resolve")
+        refuses(self, "curl -x http://evil.tld:8080 https://acme.tld/", contains="-x")
+        for name, spec in SPECS.items():
+            for flag in ("--url", "--resolve", "--connect-to", "-connect"):
+                if flag in spec.flags:
+                    self.assertIn(spec.flags[flag], (HOST,),
+                                  f"{name} {flag} must stay HOST, not {spec.flags[flag]}")
+
+    def test_dash_is_stdout_not_a_file(self):
+        """`curl -D -` is the idiomatic header dump; it writes no file."""
+        admit("curl -D - https://acme.tld/", PLAIN)
+        admit("curl -o - https://acme.tld/", PLAIN)
+        admit("curl -sI -D /tmp/h.txt https://acme.tld/", PLAIN)
+        refuses(self, "curl -D /etc/cron.d/pwn https://acme.tld/", contains="points outside")
+
+
+class DnsNameserverMessageTests(unittest.TestCase):
+    def test_an_at_nameserver_is_refused_by_what_it_is(self):
+        """`dig @8.8.8.8 x` was refused as URL 'userinfo', which says nothing
+        about what the caller typed. A refusal an agent cannot act on gets
+        retried blindly, which looks exactly like probing."""
+        msg = refuses(self, "dig @8.8.8.8 acme.tld", contains="names an explicit nameserver")
+        self.assertIn("out-of-band", msg)

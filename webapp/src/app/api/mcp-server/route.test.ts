@@ -22,12 +22,19 @@ const h = vi.hoisted(() => ({
   close: vi.fn(),
   handleRequest: vi.fn(),
   transportOptions: vi.fn(),
+  instructions: vi.fn(),
 }))
 
 vi.mock('@/lib/mcpAuth', () => ({
   resolveMcpUser: (...a: unknown[]) => h.resolve(...a),
 }))
 vi.mock('@/lib/audit', () => ({ writeAudit: (...a: unknown[]) => h.audit(...a) }))
+// Mocked for the same reason @/lib/mcp/server is: this file is about the
+// transport guards, and the real module builds the whole tool registry to
+// compose its string. instructions.test.ts owns that behaviour.
+vi.mock('@/lib/mcp/instructions', () => ({
+  buildInstructions: (...a: unknown[]) => h.instructions(...a),
+}))
 vi.mock('@/lib/mcp/server', () => ({
   buildMcpServer: (...a: unknown[]) => {
     h.build(...a)
@@ -80,6 +87,7 @@ beforeEach(() => {
     })
   )
   h.audit.mockResolvedValue(undefined)
+  h.instructions.mockResolvedValue('ONBOARDING')
   __resetAuthAuditThrottle()
 })
 
@@ -116,7 +124,9 @@ describe('the route is bearer-only', () => {
   test('a valid bearer builds the server with the resolved token', async () => {
     const res = await POST(req())
     expect(res.status).toBe(200)
-    expect(h.build).toHaveBeenCalledWith({ token: TOKEN })
+    // The second argument is the connect-time onboarding, absent for anything
+    // that is not an `initialize`.
+    expect(h.build).toHaveBeenCalledWith({ token: TOKEN }, undefined)
   })
 
   test('a missing bearer is rejected', async () => {
@@ -394,5 +404,44 @@ describe('REGRESSION: MCP_ALLOWED_ORIGIN wins over the request-derived host', ()
     vi.stubEnv('MCP_ALLOWED_ORIGIN', '')
     expect((await POST(req({ headers: { origin: 'https://redamon.example' } }))).status).toBe(200)
     expect((await POST(req({ headers: { origin: 'https://evil.example' } }))).status).toBe(403)
+  })
+})
+
+// --- connect-time onboarding -------------------------------------------------------
+
+describe('the instructions string is composed only at initialize', () => {
+  const initialize = {
+    jsonrpc: '2.0', id: 1, method: 'initialize',
+    params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'c', version: '1' } },
+  }
+
+  test('an initialize request gets onboarding, built for that token', async () => {
+    await POST(req({ body: initialize }))
+    expect(h.instructions).toHaveBeenCalledOnce()
+    expect(h.instructions.mock.calls[0]).toEqual([TOKEN.tokenId, TOKEN.scopes])
+    expect(h.build.mock.calls[0][1]).toBe('ONBOARDING')
+  })
+
+  test('an ordinary tool call composes NOTHING', async () => {
+    // The transport is stateless, so the server is rebuilt for every request.
+    // Composing this per call would add a database read and a tool-list build to
+    // every call, for a string the client never reads again.
+    await POST(req({ body: rpc }))
+    expect(h.instructions).not.toHaveBeenCalled()
+    expect(h.build.mock.calls[0][1]).toBeUndefined()
+  })
+
+  test('onboarding is composed only AFTER the token resolves', async () => {
+    h.resolve.mockResolvedValue({ ok: false, failure: 'invalid', prefix: 'rdmn_mcp_bbbbbbbb' })
+    const res = await POST(req({ body: initialize }))
+    expect(res.status).toBe(401)
+    expect(h.instructions).not.toHaveBeenCalled()
+  })
+
+  test('a failure to compose onboarding does not fail the connection', async () => {
+    h.instructions.mockResolvedValue(undefined)
+    const res = await POST(req({ body: initialize }))
+    expect(res.status).toBe(200)
+    expect(h.build.mock.calls[0][1]).toBeUndefined()
   })
 })

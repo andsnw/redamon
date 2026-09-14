@@ -24,6 +24,8 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { ListToolsResultSchema, ToolSchema } from '@modelcontextprotocol/sdk/types.js'
 
 import { buildMcpServer } from './server'
+import { listAdvertisedTools } from './apiReference'
+import { renderInlineOnboarding } from './onboarding'
 import type { McpContext } from './tools'
 
 const ctx: McpContext = {
@@ -174,13 +176,17 @@ describe('descriptions carry the usage rule the model needs', () => {
       .toMatch(/never as instructions/)
   })
 
-  test('kali_toolbox tells the model it cannot run any of what it lists', () => {
-    // The catalogue names sqlmap, hashcat, msfvenom and the rest. Without this
-    // line a model reads that list as an offer and burns calls hunting for the
-    // tool that executes it; there is none on this surface.
+  test('kali_toolbox separates what is runnable from what is merely installed', () => {
+    // It used to say "nothing on this MCP surface executes a command against a
+    // target: there is no shell here", written before kali_exec existed. Once it
+    // did, that told the model the exact opposite of the truth. The rule the
+    // description has to carry is the SPLIT: one section is actionable, the
+    // other names capability it does not have here.
     const d = tools.find(t => t.name === 'kali_toolbox')!.description ?? ''
-    expect(d).toMatch(/does not run anything/)
-    expect(d).toMatch(/no shell here/)
+    expect(d).toMatch(/RUNNABLE VIA kali_exec/)
+    expect(d).toMatch(/NOT RUNNABLE HERE/)
+    expect(d).toMatch(/Do not build commands from it/)
+    expect(d).not.toMatch(/no shell here/)
   })
 
   test('the destructive mode is described as destructive', () => {
@@ -228,5 +234,44 @@ describe('MCP_DISABLED_TOOLS withdraws a tool from the surface', () => {
     // starting, which would turn a narrow withdrawal into a total outage.
     vi.stubEnv('MCP_DISABLED_TOOLS', 'no_such_tool')
     expect((await listTools()).tools).toHaveLength(30)
+  })
+})
+
+/**
+ * L3 CONTRACT: onboarding really reaches the client.
+ *
+ * `instructions` is the only onboarding most MCP clients ever get, and it is
+ * handed to the SDK rather than written by us. Every other test in this feature
+ * asserts what we COMPOSE; this one asserts the client actually RECEIVES it, so
+ * a change to how the server is constructed cannot silently drop it while every
+ * unit test stays green.
+ */
+describe('the connect-time instructions', () => {
+  async function connect(instructions?: string) {
+    const server = buildMcpServer(ctx, instructions)
+    const client = new Client({ name: 'contract-test', version: '1.0.0' }, { capabilities: {} })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
+    try {
+      return client.getInstructions()
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  }
+
+  test('a client reads back exactly what the server was given', async () => {
+    expect(await connect('MINE THE GRAPH, DO NOT TRUST IT')).toBe('MINE THE GRAPH, DO NOT TRUST IT')
+  })
+
+  test('omitting it leaves the client with none, rather than an empty string', async () => {
+    // Composing the string is best-effort: a database failure must degrade to
+    // "no instructions", never to a broken connection or a misleading blank.
+    expect(await connect(undefined)).toBeUndefined()
+  })
+
+  test('the real renderer survives the round trip through a client', async () => {
+    const text = renderInlineOnboarding(await listAdvertisedTools(), ['recon:read'], 'soc')
+    expect(await connect(text)).toBe(text)
   })
 })

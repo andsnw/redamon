@@ -65,6 +65,17 @@ async function agentFailure(resp: Response, context: string): Promise<never> {
       'execute_failed'
     )
   }
+  // /graph/exec sets no `stage`, so every refusal it writes used to be replaced
+  // by the generic line below - on the one path where the agent composed the
+  // query itself and could actually fix it. "write operation rejected (MERGE);
+  // read-only" and "give every node pattern an explicit label" are written FOR
+  // the caller; discarding them turned a one-line correction into a retry loop.
+  // Only 4xx: a 5xx is the deployment's problem and its text is not the
+  // caller's to act on (the agent logs the exception and returns a generic
+  // string there anyway).
+  if (known && resp.status >= 400 && resp.status < 500) {
+    throw new McpToolError(known, 'query_rejected')
+  }
   throw new McpToolError(`${context} failed.`, 'agent_failed')
 }
 

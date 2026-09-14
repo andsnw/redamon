@@ -1,14 +1,17 @@
 /**
  * MCP personal access tokens: edit and revoke.
  *
- * PATCH changes a token's name, scopes and expiry. The hash and the owner are
- * never mutable, and a revoked token keeps its capability frozen (it can only
- * be renamed): restoring access means minting a new token.
+ * PATCH changes a token's name, profile, scopes and expiry. The hash and the
+ * owner are never mutable, and a revoked token keeps its capability frozen (only
+ * its labels can change): restoring access means minting a new token.
  *
  * The rule an edit is judged by is DIRECTION, not field:
  *  - a change that NARROWS the token (drop a scope, earlier expiry, "expire
  *    now", rename) keeps the admin bypass, exactly like revoke. Taking power
- *    away is a safe privilege during an incident.
+ *    away is a safe privilege during an incident. A profile change is in this
+ *    group: it is a label, never an authorization input, so on its own it grants
+ *    nothing and needs no step-up. Switching profile in the UI also re-ticks the
+ *    scopes, and THAT change is judged here on its own merits.
  *  - a change that WIDENS it (add a scope, later or no expiry, reviving an
  *    expired token) gets the mint's step-up: self-only on the REAL identity,
  *    password re-confirmed, same limiter. Otherwise a stolen session cookie
@@ -30,6 +33,7 @@ import {
   validateScopes,
   type McpScope,
 } from '@/lib/mcpAuth'
+import { validateProfile, type ProfileId } from '@/lib/mcp/profiles'
 
 interface RouteParams {
   params: Promise<{ id: string; tokenId: string }>
@@ -40,6 +44,7 @@ const SELECT = {
   name: true,
   tokenPrefix: true,
   scopes: true,
+  profile: true,
   lastUsedAt: true,
   expiresAt: true,
   revokedAt: true,
@@ -77,7 +82,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const existing = await loadOwned(id, tokenId)
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const data: { name?: string; scopes?: McpScope[]; expiresAt?: Date | null } = {}
+  const data: {
+    name?: string
+    scopes?: McpScope[]
+    profile?: ProfileId | null
+    expiresAt?: Date | null
+  } = {}
 
   if ('name' in body) {
     const name = sanitizeTokenName(body.name)
@@ -91,6 +101,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
     if (!sameScopes(scopeResult.scopes, existing.scopes)) data.scopes = scopeResult.scopes
   }
+  if ('profile' in body) {
+    const profileResult = validateProfile(body.profile)
+    if ('error' in profileResult) {
+      return NextResponse.json({ error: profileResult.error }, { status: 400 })
+    }
+    if (profileResult.profile !== existing.profile) data.profile = profileResult.profile
+  }
   if ('expiry' in body) {
     const expiryResult = resolveExpiryChange(body.expiry)
     if ('error' in expiryResult) {
@@ -99,7 +116,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (!sameExpiry(expiryResult.expiresAt, existing.expiresAt)) data.expiresAt = expiryResult.expiresAt
   }
 
-  if (!('name' in body) && !('scopes' in body) && !('expiry' in body)) {
+  if (!('name' in body) && !('scopes' in body) && !('expiry' in body) && !('profile' in body)) {
     return NextResponse.json({ error: 'Nothing to change' }, { status: 400 })
   }
   if (Object.keys(data).length === 0) {
@@ -109,6 +126,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ token })
   }
 
+  // A profile is deliberately NOT capability-changing: it grants nothing, so it
+  // needs no password and is allowed on a revoked token, exactly like a rename.
   const changesCapability = 'scopes' in data || 'expiresAt' in data
   if (changesCapability && existing.revokedAt) {
     return NextResponse.json(
@@ -177,7 +196,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       select: SELECT,
     })
 
-    const renameOnly = !changesCapability
+    // A profile change is recorded as an update, not a rename: it does not
+    // change what the token may do, but it restates what it is FOR, and an
+    // incident reader needs the before/after of that alongside the scope diff.
+    const renameOnly = !changesCapability && !('profile' in data)
     await writeAudit({
       actorId: session?.userId ?? null,
       action: renameOnly ? 'mcp-token.rename' : 'mcp-token.update',
@@ -187,13 +209,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         ? { name: existing.name, tokenPrefix: existing.tokenPrefix }
         : {
             name: existing.name, tokenPrefix: existing.tokenPrefix,
-            scopes: existing.scopes, expiresAt: existing.expiresAt,
+            scopes: existing.scopes, profile: existing.profile,
+            expiresAt: existing.expiresAt,
           },
       after: renameOnly
         ? { name: updated.name, tokenPrefix: existing.tokenPrefix }
         : {
             name: updated.name, tokenPrefix: existing.tokenPrefix,
-            scopes: updated.scopes, expiresAt: updated.expiresAt,
+            scopes: updated.scopes, profile: updated.profile,
+            expiresAt: updated.expiresAt,
             widened, ownerId: id,
           },
       source: 'ui',

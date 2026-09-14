@@ -346,3 +346,126 @@ class PollAndCancelTests(_Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FailedJobIsNotAMissingJobTests(_Base):
+    """REGRESSION: a job that RAN AND FAILED was reported as "no such command".
+
+    JobHandle carries its own `error` field, so `reg.status()` returns a dict
+    with `error` set for a finished-but-failed run - a tool that exited
+    non-zero, or the 300s kali_shell timeout. Both endpoints treated ANY
+    `error` as a lookup miss and answered 404.
+
+    Found live: a 5-minute nuclei scan hit kali_shell's 300s cap, the registry
+    correctly recorded status=failed / exit_code=1 / error="[ERROR] Command
+    timed out after 300 seconds.", and the caller polling it got "No such
+    command." The output was on disk and unreachable, and the message said the
+    job had never existed. That is the could-not-ask/found-nothing conflation
+    this whole surface exists to prevent.
+    """
+
+    def _failed_job(self, error="[ERROR] Command timed out after 300 seconds."):
+        self._seed("p1", JOB, "partial output before it died\n")
+        self.registry._state[("p1", JOB)].update(
+            {"status": "failed", "exit_code": 1, "error": error}
+        )
+
+    async def test_a_failed_job_is_readable_not_404(self):
+        self._failed_job()
+        resp = await api.kali_exec_status(JOB, project_id="p1", cursor=0)
+        self.assertNotEqual(getattr(resp, "status_code", 200), 404)
+        body = _body(resp)
+        self.assertEqual(body["status"], "failed")
+        self.assertEqual(body["exit_code"], 1)
+        self.assertIn("partial output", body["output"])
+
+    async def test_the_failure_reason_reaches_the_caller(self):
+        # "it failed" without "why" sends an agent round the retry loop.
+        self._failed_job()
+        body = _body(await api.kali_exec_status(JOB, project_id="p1", cursor=0))
+        self.assertIn("timed out after 300 seconds", body.get("error", ""))
+
+    async def test_a_timed_out_scan_is_never_reported_as_a_clean_run(self):
+        """The dangerous direction: a scan killed at 300s must not look like a
+        scan that completed and found nothing."""
+        self._failed_job()
+        body = _body(await api.kali_exec_status(JOB, project_id="p1", cursor=0))
+        self.assertNotEqual(body["status"], "done")
+        self.assertNotEqual(body["exit_code"], 0)
+
+    async def test_cancel_also_works_on_a_failed_job(self):
+        self._failed_job()
+        resp = await api.kali_exec_cancel(JOB, project_id="p1")
+        self.assertNotEqual(getattr(resp, "status_code", 200), 404)
+
+    async def test_a_genuine_lookup_miss_is_still_404(self):
+        # The fix must not turn every unknown id into a 200.
+        for bad in (OTHER_JOB, "c" * 32):
+            resp = await api.kali_exec_status(bad, project_id="p1", cursor=0)
+            self.assertEqual(resp.status_code, 404, bad)
+
+    async def test_another_projects_failed_job_is_still_404(self):
+        self._failed_job()
+        resp = await api.kali_exec_status(JOB, project_id="p2", cursor=0)
+        self.assertEqual(resp.status_code, 404)
+
+
+class UnreadableScopeIsNotAnUnconfiguredProjectTests(unittest.IsolatedAsyncioTestCase):
+    """REGRESSION: an unreachable webapp read as "you have not set a target".
+
+    `load_project_settings` never raises - it logs and falls back to
+    DEFAULT_AGENT_SETTINGS, whose target scope is EMPTY. `_kali_scope` built a
+    KaliScope from that, `is_configured()` was False, and the guard refused with
+    "This project has no target domain or IPs configured. Configure the target
+    first." on a project that was configured correctly.
+
+    Seen for real while the webapp was restarting mid-run. The refusal was safe
+    only because the default happens to be empty; it sent the operator to fix
+    something that was not broken, and the same code fails OPEN the day that
+    default stops being empty.
+    """
+
+    def _settings(self, source):
+        from project_settings import SETTINGS_SOURCE_KEY
+
+        return {
+            SETTINGS_SOURCE_KEY: source,
+            "TARGET_DOMAIN": "acme.tld", "IP_MODE": False, "TARGET_IPS": [],
+            "ROE_ENABLED": False, "ROE_EXCLUDED_HOSTS": [],
+            "DOMAIN_BATCH_MODE": False, "DOMAIN_BATCH_GROUPS": [],
+        }
+
+    async def test_defaulted_settings_refuse_rather_than_read_as_no_target(self):
+        import project_settings
+
+        with mock.patch.object(project_settings, "load_project_settings",
+                               return_value=self._settings("default")):
+            with self.assertRaises(RuntimeError):
+                api._kali_scope("p1")
+
+    async def test_settings_read_from_the_api_build_a_real_scope(self):
+        import project_settings
+
+        with mock.patch.object(project_settings, "load_project_settings",
+                               return_value=self._settings("api")):
+            with mock.patch.object(project_settings, "get_setting",
+                                   side_effect=lambda k, d=None: self._settings("api").get(k, d)):
+                with mock.patch.object(project_settings, "target_scope_domains",
+                                       return_value=["acme.tld"]):
+                    scope = api._kali_scope("p1")
+        self.assertTrue(scope.is_configured())
+        self.assertIn("acme.tld", scope.domains)
+
+    async def test_the_endpoint_says_the_scope_was_unreadable_not_unconfigured(self):
+        """The two messages send an operator to different places."""
+        executor = _FakeExecutor()
+        with mock.patch.object(api, "orchestrator", mock.Mock(tool_executor=executor)):
+            with mock.patch.object(api, "_kali_scope", side_effect=RuntimeError("settings defaulted")):
+                resp = await api.kali_exec(
+                    api.KaliExecRequest(project_id="p1", command="curl https://acme.tld/")
+                )
+        self.assertEqual(resp.status_code, 503)
+        body = _body(resp)
+        self.assertIn("could not be read", body["error"])
+        self.assertNotIn("Configure the target", body["error"])
+        self.assertEqual(executor.calls, [], "a command ran with no scope to check it against")

@@ -179,6 +179,24 @@ const STALE_NOTE =
   'Counts exclude findings someone suppressed and findings a later scan stopped reporting, so ' +
   'they match graph_summary rather than raw Cypher.'
 
+/**
+ * Why an empty answer is empty.
+ *
+ * Both of these tools start from `(:Technology)-[:HAS_KNOWN_CVE]->(:CVE)`, so a
+ * project whose CVE enrichment never ran returns zero rows however many
+ * technologies and vulnerabilities it holds. Without this the caller reads that
+ * as "nothing here is exploitable" - the false negative this whole surface is
+ * written to avoid - and a project with 19 technologies and 215 findings
+ * answers "0 technologies ranked by exposure" with no way to tell why.
+ *
+ * Added ONLY when the result is empty: on a populated answer it is noise.
+ */
+const NO_CVE_LINKS_NOTE =
+  'This answer is EMPTY, and that is not the same as "nothing is exploitable". Both of these ' +
+  'views start from a technology linked to a CVE record, which only exists once CVE lookup has ' +
+  'run for this project. Check get_recon_settings for cveLookupEnabled and get_recon_status for ' +
+  'whether a scan has completed; list_findings still reports findings that carry no CVE link.'
+
 export async function getAttackSurfaceOverview(ctx: McpContext, projectId: string) {
   requireScope(ctx.token, 'recon:read')
   enforceRate(ctx, 'query')
@@ -220,6 +238,7 @@ export async function listExploitPaths(ctx: McpContext, projectId: string) {
       'reachedBy counts the base URLs, services and ports running the technology: it is how ' +
         'widely the problem is exposed, not how severe it is.',
       STALE_NOTE,
+      ...(rows.length === 0 ? [NO_CVE_LINKS_NOTE] : []),
     ],
   }
 }
@@ -240,6 +259,7 @@ export async function getBlastRadius(ctx: McpContext, projectId: string) {
         'usually the highest-leverage single fix.',
       'hostSurfaceCount counts services and ports; baseUrlCount counts web origins.',
       STALE_NOTE,
+      ...(rows.length === 0 ? [NO_CVE_LINKS_NOTE] : []),
     ],
   }
 }

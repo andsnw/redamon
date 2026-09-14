@@ -11,7 +11,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   KeyRound, Plus, Loader2, Copy, Check, Trash2, Pencil,
-  AlertTriangle, RefreshCw, ShieldAlert, Braces,
+  AlertTriangle, RefreshCw, ShieldAlert, Braces, GraduationCap,
 } from 'lucide-react'
 import { useAlertModal, WikiInfoButton } from '@/components/ui'
 import { useDirtyState } from '@/hooks/useDirtyState'
@@ -23,7 +23,17 @@ import {
   isTokenWidening,
   type McpScope,
 } from '@/lib/mcpAuth'
-import { MCP_SCOPE_COPY as SCOPE_COPY } from '@/lib/mcp/scopeCopy'
+import {
+  DEFAULT_PROFILE,
+  PROFILES,
+  PROFILE_LIST,
+  profileOrDefault,
+  profileScopeDiff,
+  scopesForProfile,
+  type ProfileId,
+} from '@/lib/mcp/profiles'
+import ScopeChecklist from './ScopeChecklist'
+import AgentOnboardingModal from './AgentOnboardingModal'
 import styles from './McpTokensTab.module.css'
 
 interface Props {
@@ -36,6 +46,7 @@ interface TokenRow {
   name: string
   tokenPrefix: string
   scopes: string[]
+  profile: string | null
   lastUsedAt: string | null
   expiresAt: string | null
   revokedAt: string | null
@@ -108,7 +119,7 @@ function clientSnippet(token: string): string {
 }
 
 export default function McpTokensTab({ userId, onDirtyChange }: Props) {
-  const { dangerConfirm, alertError } = useAlertModal()
+  const { dangerConfirm, confirm, alertError } = useAlertModal()
 
   const [tokens, setTokens] = useState<TokenRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -121,6 +132,7 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
 
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
+  const [profile, setProfile] = useState<ProfileId>(DEFAULT_PROFILE)
   const [scopes, setScopes] = useState<McpScope[]>([...DEFAULT_MCP_SCOPES])
   const [expiresInDays, setExpiresInDays] = useState<number | 'never'>(MCP_DEFAULT_EXPIRY_DAYS)
   const [password, setPassword] = useState('')
@@ -128,10 +140,16 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
   const [formError, setFormError] = useState<string | null>(null)
 
   const [minted, setMinted] = useState<string | null>(null)
+  // The shape the token was minted WITH, kept because resetForm has already run
+  // by the time the reveal panel is on screen.
+  const [mintedShape, setMintedShape] = useState<
+    { profile: ProfileId; scopes: McpScope[]; name: string } | null
+  >(null)
   const [copied, setCopied] = useState<'token' | 'snippet' | null>(null)
 
   const [editing, setEditing] = useState<TokenRow | null>(null)
   const [editName, setEditName] = useState('')
+  const [editProfile, setEditProfile] = useState<ProfileId>(DEFAULT_PROFILE)
   const [editScopes, setEditScopes] = useState<McpScope[]>([])
   const [editExpiry, setEditExpiry] = useState<EditExpiry>('keep')
   const [editDate, setEditDate] = useState('')
@@ -142,14 +160,24 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
   // predict (a preset computed a moment later lands past the current expiry).
   const [serverWantsPassword, setServerWantsPassword] = useState(false)
 
-  const draft = { name, scopes, expiresInDays, password }
+  const [onboarding, setOnboarding] = useState<
+    { profile: ProfileId | null; scopes: McpScope[]; name?: string } | null
+  >(null)
+  // A pack downloaded before this edit now describes the wrong token, so the
+  // offer to re-export is made at the moment that becomes true.
+  const [reExport, setReExport] = useState<
+    { profile: ProfileId; scopes: McpScope[]; name: string } | null
+  >(null)
+
+  const draft = { name, profile, scopes, expiresInDays, password }
   const { isDirty, setBaseline } = useDirtyState(draft)
 
   const editScopesChanged = editing !== null && (
     editScopes.length !== editing.scopes.length || editScopes.some(s => !editing.scopes.includes(s))
   )
+  const editProfileChanged = editing !== null && editProfile !== profileOrDefault(editing.profile)
   const editDirty = editing !== null && (
-    editName.trim() !== editing.name || editScopesChanged || editExpiry !== 'keep'
+    editName.trim() !== editing.name || editScopesChanged || editProfileChanged || editExpiry !== 'keep'
   )
   const editWidens = editing !== null && isTokenWidening(
     { scopes: editing.scopes, expiresAt: editing.expiresAt ? new Date(editing.expiresAt) : null },
@@ -202,21 +230,72 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
 
   const resetForm = useCallback(() => {
     setName('')
+    setProfile(DEFAULT_PROFILE)
     setScopes([...DEFAULT_MCP_SCOPES])
     setExpiresInDays(MCP_DEFAULT_EXPIRY_DAYS)
     setPassword('')
     setFormError(null)
-    setBaseline({ name: '', scopes: [...DEFAULT_MCP_SCOPES], expiresInDays: MCP_DEFAULT_EXPIRY_DAYS, password: '' })
+    setBaseline({
+      name: '', profile: DEFAULT_PROFILE, scopes: [...DEFAULT_MCP_SCOPES],
+      expiresInDays: MCP_DEFAULT_EXPIRY_DAYS, password: '',
+    })
   }, [setBaseline])
 
   const toggleScope = (s: McpScope) => {
     setScopes(prev => (prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]))
   }
 
+  /**
+   * Picking a profile re-ticks the permissions, which is the whole point of the
+   * feature. But it must not silently discard a set the operator hand-tuned, so
+   * a divergent selection is confirmed first.
+   *
+   * `kali:exec` and `recon:overwrite` are never carried in by this, even for the
+   * profiles that recommend them: `scopesForProfile` returns the recommended set
+   * only, and those two live in `optInScopes`.
+   */
+  const changeProfile = async (next: ProfileId) => {
+    const diverged = profileScopeDiff(profile, scopes).modified
+    if (diverged) {
+      const ok = await confirm(
+        `Switching to ${PROFILES[next].label} resets the permissions to that profile's ` +
+          'recommendation, discarding the ones you picked by hand.',
+        'Change Agent Profile',
+        { confirmLabel: "Use the profile's permissions", cancelLabel: 'Keep mine' }
+      )
+      setProfile(next)
+      if (!ok) return
+    } else {
+      setProfile(next)
+    }
+    setScopes(scopesForProfile(next))
+  }
+
+  const changeEditProfile = async (next: ProfileId) => {
+    if (!editing) return
+    const current = profileOrDefault(editing.profile)
+    const diverged = profileScopeDiff(current, editScopes).modified
+    setServerWantsPassword(false)
+    if (diverged) {
+      const ok = await confirm(
+        `Switching to ${PROFILES[next].label} resets the permissions to that profile's ` +
+          'recommendation. Adding one still asks for your password; removing one does not.',
+        'Change Agent Profile',
+        { confirmLabel: "Use the profile's permissions", cancelLabel: 'Keep the current ones' }
+      )
+      setEditProfile(next)
+      if (!ok) return
+    } else {
+      setEditProfile(next)
+    }
+    setEditScopes(scopesForProfile(next))
+  }
+
   const openEdit = (t: TokenRow) => {
     setShowForm(false)
     setEditing(t)
     setEditName(t.name)
+    setEditProfile(profileOrDefault(t.profile))
     setEditScopes(t.scopes.filter((s): s is McpScope => (MCP_SCOPES as readonly string[]).includes(s)))
     setEditExpiry('keep')
     setEditDate('')
@@ -238,6 +317,7 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
     try {
       const body: Record<string, unknown> = { name: editName }
       if (editScopesChanged) body.scopes = editScopes
+      if (editProfileChanged) body.profile = editProfile === 'custom' ? null : editProfile
       const expiry = expiryPayload(editExpiry, editDate)
       if (expiry !== undefined) body.expiry = expiry
       if (editNeedsPassword) body.password = editPassword
@@ -254,8 +334,11 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
         setEditError(data.error || `Could not save the token (${r.status})`)
         return
       }
+      const saved = { profile: editProfile, scopes: [...editScopes], name: editName }
+      const changedWhatThePackSays = editScopesChanged || editProfileChanged
       closeEdit()
       await load()
+      if (changedWhatThePackSays) setReExport(saved)
     } catch (e) {
       setEditError(e instanceof Error ? e.message : 'Could not save the token')
     } finally {
@@ -271,7 +354,13 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
       const r = await fetch(`/api/users/${userId}/mcp-tokens`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, scopes, expiresInDays, password }),
+        body: JSON.stringify({
+          name, scopes, expiresInDays, password,
+          // `custom` means "no profile", which is what every pre-existing row
+          // already reads as. Storing the literal string would make the absence
+          // of a choice indistinguishable from choosing Custom.
+          profile: profile === 'custom' ? null : profile,
+        }),
       })
       const data = await r.json().catch(() => ({}))
       if (!r.ok) {
@@ -280,6 +369,7 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
         return
       }
       setMinted(data.plaintext)
+      setMintedShape({ profile, scopes: [...scopes], name })
       setShowForm(false)
       resetForm()
       await load()
@@ -342,6 +432,13 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
           </p>
         </div>
         <div className={styles.headerActions}>
+          <button
+            className={styles.secondaryBtn}
+            title="Generate the instructions an external agent loads"
+            onClick={() => setOnboarding({ profile: null, scopes: [...DEFAULT_MCP_SCOPES] })}
+          >
+            <GraduationCap size={14} /> Agent Onboarding
+          </button>
           <button className={styles.secondaryBtn} onClick={() => void load()} disabled={loading}>
             <RefreshCw size={14} /> Refresh
           </button>
@@ -365,6 +462,30 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
         </div>
       )}
 
+      {reExport && (
+        <div className={styles.noticeBanner}>
+          <GraduationCap size={14} />
+          <span>
+            You changed what <strong>{reExport.name}</strong> can do, so any onboarding pack you
+            already gave that agent is out of date.
+          </span>
+          <button
+            className={styles.linkBtn}
+            onClick={() => {
+              setOnboarding({
+                profile: reExport.profile === 'custom' ? null : reExport.profile,
+                scopes: reExport.scopes,
+                name: reExport.name,
+              })
+              setReExport(null)
+            }}
+          >
+            Re-export onboarding
+          </button>
+          <button className={styles.linkBtn} onClick={() => setReExport(null)}>Dismiss</button>
+        </div>
+      )}
+
       {minted && (
         <div className={styles.revealPanel}>
           <div className={styles.revealHeader}>
@@ -384,6 +505,24 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
               {copied === 'snippet' ? <Check size={14} /> : <Copy size={14} />} Copy
             </button>
           </div>
+          {mintedShape && (
+            <>
+              <p className={styles.muted}>
+                Now teach your agent how to use RedAmon. This is a second, separate install from the
+                config above.
+              </p>
+              <button
+                className={styles.secondaryBtn}
+                onClick={() => setOnboarding({
+                  profile: mintedShape.profile === 'custom' ? null : mintedShape.profile,
+                  scopes: mintedShape.scopes,
+                  name: mintedShape.name,
+                })}
+              >
+                <GraduationCap size={14} /> Export onboarding
+              </button>
+            </>
+          )}
           <button className={styles.linkBtn} onClick={() => setMinted(null)}>I have saved it - dismiss</button>
         </div>
       )}
@@ -413,6 +552,24 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
             </div>
 
             <div className={`formGroup ${styles.field}`}>
+              <label className="formLabel" htmlFor="mcpTokenProfile">Agent Profile</label>
+              <select
+                id="mcpTokenProfile"
+                className={`select ${styles.control}`}
+                value={profile}
+                onChange={e => void changeProfile(e.target.value as ProfileId)}
+              >
+                {PROFILE_LIST.map(p => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
+              <span className="formHint">
+                {PROFILES[profile].blurb} Choosing a job ticks the permissions it needs; you can
+                still change them.
+              </span>
+            </div>
+
+            <div className={`formGroup ${styles.field}`}>
               <label className="formLabel" htmlFor="mcpTokenExpiry">Expires</label>
               <select
                 id="mcpTokenExpiry"
@@ -426,7 +583,7 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
               </select>
             </div>
 
-            <ScopeChecklist selected={scopes} onToggle={toggleScope} />
+            <ScopeChecklist selected={scopes} onToggle={toggleScope} profile={profile} />
 
             <div className={`formGroup ${styles.field}`}>
               <label className="formLabel" htmlFor="mcpTokenPassword">Confirm your password</label>
@@ -491,6 +648,22 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
             </div>
 
             <div className={`formGroup ${styles.field}`}>
+              <label className="formLabel" htmlFor="mcpEditProfile">Agent Profile</label>
+              <select
+                id="mcpEditProfile"
+                className={`select ${styles.control}`}
+                value={editProfile}
+                disabled={!!editing.revokedAt}
+                onChange={e => void changeEditProfile(e.target.value as ProfileId)}
+              >
+                {PROFILE_LIST.map(p => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
+              <span className="formHint">{PROFILES[editProfile].blurb}</span>
+            </div>
+
+            <div className={`formGroup ${styles.field}`}>
               <label className="formLabel" htmlFor="mcpEditExpiry">Expires</label>
               <select
                 id="mcpEditExpiry"
@@ -533,11 +706,24 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
             <ScopeChecklist
               selected={editScopes}
               disabled={!!editing.revokedAt}
+              profile={editProfile}
               onToggle={s => {
                 setEditScopes(prev => (prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]))
                 setServerWantsPassword(false)
               }}
             />
+
+            {editScopesChanged && profileScopeDiff(editProfile, editScopes).modified && (
+              <div className={styles.noticeBanner}>
+                <ShieldAlert size={14} />
+                <span>
+                  These permissions no longer match the <strong>{PROFILES[editProfile].label}</strong>{' '}
+                  profile. That is allowed: the profile is a starting point and a label, never a
+                  permission. Switch the profile above if you want it to match, or leave it, and the
+                  onboarding pack will still describe only what this token can actually call.
+                </span>
+              </div>
+            )}
 
             {editNeedsPassword && !canMint && (
               <div className={styles.noticeBanner}>
@@ -611,6 +797,15 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
         </div>
       )}
 
+      <AgentOnboardingModal
+        userId={userId}
+        isOpen={onboarding !== null}
+        onClose={() => setOnboarding(null)}
+        initialProfile={onboarding?.profile ?? null}
+        initialScopes={onboarding?.scopes ?? [...DEFAULT_MCP_SCOPES]}
+        tokenName={onboarding?.name}
+      />
+
       {!loading && !loadError && tokens.length > 0 && (
         <div className={styles.tableWrap}>
           <table className={styles.table}>
@@ -649,6 +844,18 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
                       <div className={styles.rowActions}>
                         <button
                           className={styles.rowBtn}
+                          title="Generate the instructions an external agent loads"
+                          onClick={() => setOnboarding({
+                            profile: profileOrDefault(t.profile),
+                            scopes: t.scopes.filter((x): x is McpScope =>
+                              (MCP_SCOPES as readonly string[]).includes(x)),
+                            name: t.name,
+                          })}
+                        >
+                          <GraduationCap size={13} /> Onboard
+                        </button>
+                        <button
+                          className={styles.rowBtn}
                           title="Edit"
                           onClick={() => openEdit(t)}
                           disabled={editing?.id === t.id}
@@ -674,51 +881,5 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
         </div>
       )}
     </div>
-  )
-}
-
-/** The permission checkboxes, shared by the create and edit forms. */
-function ScopeChecklist({
-  selected,
-  onToggle,
-  disabled = false,
-}: {
-  selected: McpScope[]
-  onToggle: (scope: McpScope) => void
-  disabled?: boolean
-}) {
-  return (
-    <fieldset className={styles.scopes} disabled={disabled}>
-      <legend className="formLabel">Permissions</legend>
-      <div className={styles.scopeList}>
-        {MCP_SCOPES.map(s => {
-          const checked = selected.includes(s)
-          return (
-            <label
-              key={s}
-              className={[
-                styles.scopeRow,
-                checked ? styles.scopeChecked : '',
-                SCOPE_COPY[s].danger ? styles.scopeDanger : '',
-              ].join(' ')}
-            >
-              <input
-                type="checkbox"
-                className={`checkbox ${styles.scopeCheckbox}`}
-                checked={checked}
-                onChange={() => onToggle(s)}
-              />
-              <span className={styles.scopeText}>
-                <span className={styles.scopeTitleRow}>
-                  <strong className={styles.scopeLabel}>{SCOPE_COPY[s].label}</strong>
-                  <code className={styles.scopeCode}>{s}</code>
-                </span>
-                <span className={styles.scopeBlurb}>{SCOPE_COPY[s].blurb}</span>
-              </span>
-            </label>
-          )
-        })}
-      </div>
-    </fieldset>
   )
 }

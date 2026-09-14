@@ -30,6 +30,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { writeAudit } from '@/lib/audit'
 import { resolveMcpUser, type McpAuthFailure } from '@/lib/mcpAuth'
 import { buildMcpServer } from '@/lib/mcp/server'
+import { buildInstructions } from '@/lib/mcp/instructions'
 
 export const runtime = 'nodejs'
 /** The tools read live data; a cached MCP response would be actively wrong. */
@@ -204,6 +205,12 @@ export async function POST(request: NextRequest) {
   } catch {
     return jsonRpcError(-32700, 'Parse error', 400)
   }
+  // Read from the already-parsed body rather than re-parsing: this only decides
+  // whether to spend a database read composing the connect-time instructions,
+  // so a malformed method simply means "not initialize".
+  const isInitialize =
+    typeof parsed === 'object' && parsed !== null &&
+    (parsed as { method?: unknown }).method === 'initialize'
   if (Array.isArray(parsed)) {
     // Stateless mode answers one request per call; a batch would let one
     // authenticated call fan out past every per-call budget below.
@@ -229,7 +236,15 @@ export async function POST(request: NextRequest) {
     return unauthorized(auth.failure ?? 'invalid', auth.prefix)
   }
 
-  const server = buildMcpServer({ token: auth.token })
+  // Onboarding is composed only for `initialize`, which is where the client
+  // reads it. The transport is stateless, so the server is rebuilt for every
+  // request; doing this on each tool call would add a database read and a
+  // tool-list build to every call for a string that is never read again.
+  const instructions = isInitialize
+    ? await buildInstructions(auth.token.tokenId, auth.token.scopes)
+    : undefined
+
+  const server = buildMcpServer({ token: auth.token }, instructions)
   const transport = new WebStandardStreamableHTTPServerTransport({
     // Stateless: no session id, so nothing is held between requests and the
     // token is re-verified on every call.

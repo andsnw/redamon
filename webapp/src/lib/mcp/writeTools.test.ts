@@ -245,7 +245,69 @@ describe('stop_recon', () => {
   })
 
   test('an agent that can start can stop', async () => {
-    await expect(stopRecon(ctx(['recon:scan']), 'p1')).resolves.toEqual({ status: 'stopping' })
+    await expect(stopRecon(ctx(['recon:scan']), 'p1'))
+      .resolves.toMatchObject({ status: 'stopping' })
+  })
+
+  // REGRESSION (e2e finding: a stop that stopped nothing looked like a stop
+  // that worked). The orchestrator answers a stop with the post-stop state,
+  // which is `idle` either way, and this tool returned it verbatim. An agent
+  // winding a test down inside its rules of engagement could not report whether
+  // it had actually halted anything, and the audit row said `outcome: ok` for
+  // both. Worse in the other direction: a stray stop that DID kill a running
+  // scan was indistinguishable from a harmless no-op.
+  describe('REGRESSION: a stop says whether it stopped anything', () => {
+    test('stopping a running scan reports stopped: true', async () => {
+      h.orchestratorFetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'running' }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'stopping' }) })
+      const r = await stopRecon(ctx(), 'p1') as Record<string, never>
+      expect(r.stopped).toBe(true)
+      expect(String(r.note)).toMatch(/was running/i)
+    })
+
+    test('stopping an idle project reports stopped: false, not a bare success',
+      async () => {
+        h.orchestratorFetch
+          .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'idle' }) })
+          .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'idle' }) })
+        const r = await stopRecon(ctx(), 'p1') as Record<string, never>
+        expect(r.stopped).toBe(false)
+        expect(String(r.note)).toMatch(/nothing/i)
+      })
+
+    test('an unreadable pre-stop status reports UNKNOWN, never false', async () => {
+      // Fails closed the way the rest of this surface does: "I could not tell"
+      // must not be reported as "there was nothing to stop".
+      h.orchestratorFetch
+        .mockResolvedValueOnce({ ok: false, status: 500 })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'idle' }) })
+      const r = await stopRecon(ctx(), 'p1') as Record<string, never>
+      expect(r.stopped).toBeNull()
+      expect(String(r.note)).toMatch(/could not be read/i)
+    })
+
+    test('the stop is still issued when the pre-stop read fails', async () => {
+      h.orchestratorFetch
+        .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'idle' }) })
+      await expect(stopRecon(ctx(), 'p1')).resolves.toMatchObject({ stopped: null })
+      expect(h.orchestratorFetch).toHaveBeenCalledTimes(2)
+      expect(String(h.orchestratorFetch.mock.calls[1][0])).toMatch(/\/stop$/)
+    })
+
+    test('the audit row records whether anything was stopped', async () => {
+      h.orchestratorFetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'idle' }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'idle' }) })
+      await stopRecon(ctx(), 'p1')
+      expect(h.audit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'mcp.stop_recon',
+          after: expect.objectContaining({ outcome: 'nothing_running' }),
+        })
+      )
+    })
   })
 
   test('an unreachable orchestrator reports UNKNOWN, not "stopped"', async () => {

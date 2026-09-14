@@ -45,6 +45,13 @@ the generated reference page, never by this skill.
   [apiReference.ts](../../webapp/src/lib/mcp/apiReference.ts) when a tool's body requires
   an argument its JSON Schema marks optional.** The generated example sends only
   schema-required arguments, and the test calls every example.
+- **ALWAYS give a new tool an `ONBOARDING_PLAYBOOK` entry and a capability area in
+  [playbook.ts](../../webapp/src/lib/mcp/playbook.ts).** The Agent Onboarding pack is
+  generated from the live `tools/list`, and a coverage test in
+  [onboarding.test.ts](../../webapp/src/lib/mcp/onboarding.test.ts) fails the moment a
+  tool ships without `whenToUse` + gotchas, or sits in zero or two capability areas. Also
+  decide whether any profile in [profiles.ts](../../webapp/src/lib/mcp/profiles.ts) should
+  `leansOn` it; that half is editorial and is not enforced.
 - **A tool that reads NO backend must be added to `BACKEND_FREE_TOOLS` in
   [apiReference.test.ts](../../webapp/src/lib/mcp/apiReference.test.ts).** That file proves a
   tool's declared scopes are enough by calling it and expecting the generic database failure,
@@ -71,7 +78,7 @@ particular argument goes under `conditional`, and the arguments that trigger it 
 ```bash
 cd webapp
 npm run docs:mcp                 # rewrites ../redamon.wiki/MCP-API-Reference.md
-npx vitest run src/lib/mcp/      # scope, example-call and stale-page checks
+npx vitest run src/lib/mcp/      # scope, example-call, onboarding-coverage and stale-page checks
 
 cd ../redamon.wiki
 git add MCP-API-Reference.md
@@ -83,5 +90,5 @@ git commit -m "docs: regenerate MCP API reference"
 ## Resources
 
 - [MCP-Server.md](../../redamon.wiki/MCP-Server.md), section "Regenerating the API reference" - what the page is built from, and the stale-page test
-- [README.MCP.SERVER.md](../../docs/readmes/README.MCP.SERVER.md) - security model, settings allowlist, deploy wiring
+- [README.MCP.SERVER.md](../../docs/readmes/README.MCP.SERVER.md) - security model, settings allowlist, deploy wiring; §3.1-3.2 cover Agent Profiles (never an authorization input) and how the onboarding pack is generated
 - Related skills: `agentic-tool-integration`, `project-settings-cascade`, `redamon-testing`

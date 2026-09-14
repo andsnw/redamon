@@ -23,6 +23,7 @@ import {
   sanitizeTokenName,
   validateScopes,
 } from '@/lib/mcpAuth'
+import { validateProfile } from '@/lib/mcp/profiles'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -33,6 +34,7 @@ const LIST_SELECT = {
   name: true,
   tokenPrefix: true,
   scopes: true,
+  profile: true,
   lastUsedAt: true,
   expiresAt: true,
   revokedAt: true,
@@ -87,6 +89,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   if ('error' in scopeResult) {
     return NextResponse.json({ error: scopeResult.error }, { status: 400 })
   }
+  // Rejected rather than coerced, exactly like an unknown scope: the profile is
+  // the operator's stated intent for this credential, and quietly storing a
+  // different one labels the token as a job nobody chose.
+  const profileResult = validateProfile(body.profile)
+  if ('error' in profileResult) {
+    return NextResponse.json({ error: profileResult.error }, { status: 400 })
+  }
   const expiryResult = resolveExpiry(body.expiresInDays ?? null)
   if ('error' in expiryResult) {
     return NextResponse.json({ error: expiryResult.error }, { status: 400 })
@@ -128,6 +137,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         tokenPrefix: prefix,
         tokenHash: hash,
         scopes: scopeResult.scopes,
+        profile: profileResult.profile,
         expiresAt: expiryResult.expiresAt,
       },
       select: LIST_SELECT,
@@ -138,7 +148,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       action: 'mcp-token.create',
       targetType: 'mcpAccessToken',
       targetId: created.id,
-      after: { tokenPrefix: prefix, name, scopes: scopeResult.scopes, expiresAt: expiryResult.expiresAt },
+      after: {
+        tokenPrefix: prefix, name, scopes: scopeResult.scopes,
+        profile: profileResult.profile, expiresAt: expiryResult.expiresAt,
+      },
       source: 'ui',
     })
 

@@ -62,14 +62,18 @@ class RouteRegistrationTests(unittest.TestCase):
 
 
 class CatalogueTests(unittest.IsolatedAsyncioTestCase):
-    async def test_it_serves_the_kali_shell_registry_description(self):
+    async def test_it_embeds_the_kali_shell_registry_description_verbatim(self):
         """One source, no second copy. A transcription would drift from the
-        image the moment a tool is added or removed."""
+        image the moment a tool is added or removed.
+
+        CONTAINS rather than EQUALS since the runnable-here section was added in
+        front of it: the catalogue is still served byte for byte, but it is no
+        longer the whole answer. See RunnableSectionTests for why."""
         from prompts.tool_registry import TOOL_REGISTRY
 
         expected = TOOL_REGISTRY["kali_shell"]["description"].strip()
         body = _body(await api.kali_toolbox())
-        self.assertEqual(body["toolbox"], expected)
+        self.assertIn(expected, body["toolbox"])
 
     async def test_the_catalogue_is_categorised_and_substantial(self):
         """Guards the registry entry being gutted to a stub: the tool's whole
@@ -101,3 +105,102 @@ class CatalogueTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunnableSectionTests(unittest.IsolatedAsyncioTestCase):
+    """REGRESSION: the catalogue advertised tools kali_exec always refuses.
+
+    /kali/toolbox served only the `kali_shell` TOOL_REGISTRY description, which
+    is the IN-APP agent's full bash toolbox: sqlmap, msfvenom, nc, gcc, hashcat.
+    kali_exec admits 23 read-only binaries and is not a shell, so the one tool
+    whose job is to say what may be run told the agent to run things that are
+    then refused - a turn burned per tool to discover a boundary this could have
+    stated outright. Found by a parallel MCP end-to-end exercise.
+    """
+
+    async def test_it_leads_with_what_kali_exec_actually_admits(self):
+        from kali_exec_guard import SPECS
+
+        toolbox = _body(await api.kali_toolbox())["toolbox"]
+        runnable_at = toolbox.index("RUNNABLE VIA kali_exec")
+        other_at = toolbox.index("ALSO INSTALLED, NOT RUNNABLE HERE")
+        self.assertLess(runnable_at, other_at, "the actionable half must come first")
+        for name in SPECS:
+            self.assertIn(f"**{name}**", toolbox, f"{name} is admitted but not listed")
+
+    async def test_every_listed_binary_carries_its_allowed_options(self):
+        """A name alone still costs a turn per wrong flag."""
+        from kali_exec_guard import SPECS
+
+        toolbox = _body(await api.kali_toolbox())["toolbox"]
+        for flag in sorted(SPECS["nuclei"].flags):
+            self.assertIn(flag, toolbox, f"nuclei {flag} is allowed but undocumented")
+
+    async def test_the_two_sets_are_not_presented_as_one(self):
+        toolbox = _body(await api.kali_toolbox())["toolbox"]
+        self.assertIn("CANNOT", toolbox)
+        self.assertIn("not as what you may run", toolbox)
+
+    async def test_the_full_image_is_still_described(self):
+        # Knowing a capability EXISTS is worth a section; it just must not read
+        # as permission.
+        toolbox = _body(await api.kali_toolbox())["toolbox"]
+        self.assertIn("sqlmap", toolbox)
+        self.assertGreater(len(toolbox), 8000)
+
+    async def test_the_runnable_list_is_generated_not_transcribed(self):
+        """Adding a binary to SPECS must change this answer with no second edit."""
+        from unittest import mock
+
+        import kali_exec_guard as guard
+
+        fake = dict(guard.SPECS)
+        fake["zzprobe"] = guard.BinarySpec(flags={"-x": guard.BOOL})
+        with mock.patch.object(guard, "SPECS", fake):
+            toolbox = _body(await api.kali_toolbox())["toolbox"]
+        self.assertIn("**zzprobe**", toolbox)
+
+
+class RouteBindingTests(unittest.IsolatedAsyncioTestCase):
+    """REGRESSION: the decorator bound to a HELPER, not the handler.
+
+    A helper was inserted between `@app.get("/kali/toolbox")` and
+    `async def kali_toolbox()`, so FastAPI routed the helper. GET /kali/toolbox
+    answered 200 with a bare JSON string instead of {"toolbox": ...}, the second
+    section never shipped, and the MCP tool failed with "The Kali toolbox could
+    not be loaded."
+
+    Every existing test in this file passed throughout, because they all call
+    `api.kali_toolbox()` as a plain function and never touch the routing. The
+    agent-side log said 200 OK. Found by a parallel session probing the real
+    endpoint from inside the webapp container.
+    """
+
+    def test_the_route_resolves_to_the_handler(self):
+        route = _route("/kali/toolbox", "GET")
+        self.assertIsNotNone(route)
+        self.assertIs(
+            route.endpoint, api.kali_toolbox,
+            f"/kali/toolbox is bound to {route.endpoint.__name__}, not kali_toolbox",
+        )
+
+    async def test_the_routed_endpoint_answers_the_documented_shape(self):
+        """What the webapp actually parses: an OBJECT with a string `toolbox`.
+        kaliClient.ts rejects anything else, so a bare string is a hard failure."""
+        route = _route("/kali/toolbox", "GET")
+        body = _body(await route.endpoint())
+        self.assertIsInstance(body, dict, "the body must be an object, not a bare string")
+        self.assertIsInstance(body.get("toolbox"), str)
+        self.assertIn("RUNNABLE VIA kali_exec", body["toolbox"])
+        self.assertIn("ALSO INSTALLED, NOT RUNNABLE HERE", body["toolbox"])
+
+    def test_no_kali_route_is_bound_to_a_private_helper(self):
+        """The same mistake in any of the other kali routes."""
+        for r in api.app.routes:
+            path = getattr(r, "path", "")
+            if path.startswith("/kali"):
+                name = getattr(r, "endpoint", None).__name__
+                self.assertFalse(
+                    name.startswith("_"),
+                    f"{path} is bound to private helper {name}",
+                )

@@ -804,6 +804,22 @@ def apply_memory_governor(settings: dict[str, Any]) -> dict[str, Any]:
     return settings
 
 
+# Whether these settings were READ or merely DEFAULTED.
+#
+# load_project_settings() swallows every fetch error and falls back to
+# DEFAULT_AGENT_SETTINGS, whose target scope is EMPTY. For most callers that
+# degradation is fine. For anything that derives a SECURITY boundary from the
+# settings it is not: the caller cannot tell "this project has no target"
+# from "the settings service was unreachable", and those are different facts.
+#
+# Seen for real - with the webapp restarting, kali_exec refused every command
+# with "This project has no target domain or IPs configured. Configure the
+# target first." on a project whose target was configured all along. The
+# refusal was safe, the message sent the operator to the wrong place, and it
+# only fails safe because the default happens to be empty.
+SETTINGS_SOURCE_KEY = "_SETTINGS_SOURCE"
+
+
 def load_project_settings(project_id: str) -> dict[str, Any]:
     """
     Fetch settings for a specific project from webapp API.
@@ -824,14 +840,17 @@ def load_project_settings(project_id: str) -> dict[str, Any]:
     if not webapp_url:
         logger.warning("WEBAPP_API_URL not set, using DEFAULT_AGENT_SETTINGS")
         settings = DEFAULT_AGENT_SETTINGS.copy()
+        settings[SETTINGS_SOURCE_KEY] = "default"
     else:
         try:
             settings = fetch_agent_settings(project_id, webapp_url)
             logger.info(f"Loaded {len(settings)} agent settings from API for project {project_id}")
+            settings[SETTINGS_SOURCE_KEY] = "api"
         except Exception as e:
             logger.error(f"Failed to fetch agent settings for project {project_id}: {e}")
             logger.warning("Falling back to DEFAULT_AGENT_SETTINGS")
             settings = DEFAULT_AGENT_SETTINGS.copy()
+            settings[SETTINGS_SOURCE_KEY] = "default"
 
     # Memory governor (Part 3): scale concurrency to RAM available this turn.
     settings = apply_memory_governor(settings)

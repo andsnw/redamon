@@ -288,3 +288,48 @@ describe('kali_output', () => {
     expect(h.status).toHaveBeenCalledTimes(5)
   })
 })
+
+describe('a finished job that FAILED', () => {
+  // REGRESSION: the agent reports why a job failed in `error`, and the webapp
+  // dropped it. "exitCode 1" with no reason is not actionable, and the most
+  // common reason by far is the sandbox's 300s cap.
+  const timedOut = {
+    ...doneJob, status: 'failed', exitCode: 1, output: 'partial\n',
+    failure: '[ERROR] Command timed out after 300 seconds.',
+  }
+
+  test('the reason reaches the caller', async () => {
+    h.status.mockResolvedValue(timedOut)
+    const r = await readCommandOutput(ctx(), 'p1', 'j1') as Record<string, unknown>
+    expect(r.failure).toMatch(/timed out after 300 seconds/)
+    expect(r.status).toBe('failed')
+    expect(r.exitCode).toBe(1)
+  })
+
+  test('a timeout is never presented as a clean run', async () => {
+    // The dangerous direction: an agent reporting a killed scan as "clean".
+    h.status.mockResolvedValue(timedOut)
+    const r = await readCommandOutput(ctx(), 'p1', 'j1') as Record<string, unknown>
+    expect(r.note).toMatch(/INCOMPLETE/)
+    expect(r.note).toMatch(/do not report it as clean/i)
+  })
+
+  test('the timeout note says how to split the work', async () => {
+    h.status.mockResolvedValue(timedOut)
+    const r = await readCommandOutput(ctx(), 'p1', 'j1') as Record<string, unknown>
+    expect(r.note).toMatch(/nuclei -tags|port range|--fast|maxtime/)
+  })
+
+  test('output collected before the cap is still returned', async () => {
+    h.status.mockResolvedValue(timedOut)
+    const r = await readCommandOutput(ctx(), 'p1', 'j1') as Record<string, unknown>
+    expect(r.output).toBe('partial\n')
+  })
+
+  test('an ordinary non-zero exit keeps the plain note', async () => {
+    h.status.mockResolvedValue({ ...doneJob, status: 'failed', exitCode: 1 })
+    const r = await readCommandOutput(ctx(), 'p1', 'j1') as Record<string, unknown>
+    expect(r.note).toMatch(/TOOL failing, not RedAmon refusing/)
+    expect(r.failure).toBeUndefined()
+  })
+})

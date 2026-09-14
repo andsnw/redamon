@@ -14,17 +14,38 @@
  * ownership violation to a logged warning.
  *
  * So: one module, and no tool may reach a child row any other way. Each helper
- * re-resolves the owning projectId FROM THE ROW and hands it to
- * `assertMcpProjectAccess`, which throws `McpAccessDenied` - rendered by the
- * server as the flat `Project not found`, so a token holder cannot tell a
- * foreign id from a missing one and cannot enumerate either.
+ * proves the PARENT with `assertMcpProjectAccess` first, then re-resolves the
+ * owning projectId FROM THE ROW. A row that is missing and a row belonging to
+ * someone else take the same path to the same message, so neither id space can
+ * be enumerated - see `childNotFound` for why that message names the child.
  *
  * A graph `nodeId` needs no helper here and deliberately has none: the triage
  * mixin's own WHERE carries `n.user_id` and `n.project_id` plus the
  * muteable-label expression, so a foreign id matches zero rows server-side.
  */
 import prisma from '@/lib/prisma'
-import { assertMcpProjectAccess, McpAccessDenied } from '@/lib/mcpAuth'
+import { assertMcpProjectAccess } from '@/lib/mcpAuth'
+import { McpToolError } from '@/lib/mcp/errors'
+
+/**
+ * A child row that is either missing or another project's. The caller is not
+ * told which, and that is the whole anti-enumeration property.
+ *
+ * It names the CHILD rather than reusing `McpAccessDenied`'s flat "Project not
+ * found". Every caller of these helpers has already cleared
+ * `assertMcpProjectAccess` one line above, so the project demonstrably exists
+ * and is theirs; answering "Project not found" sent an agent off to retry with
+ * a different projectId over a bad viewId, which is the retry loop this surface
+ * is written to avoid.
+ *
+ * The distinction that must NOT leak is foreign-versus-missing, and this
+ * preserves it exactly: both cases produce this identical message. The project
+ * boundary itself is untouched - a foreign PROJECT still fails earlier, in
+ * `assertMcpProjectAccess`, with the flat message.
+ */
+function childNotFound(kind: string): never {
+  throw new McpToolError(`No such ${kind} in this project.`, 'not_found')
+}
 
 /** Fields every caller of `assertVersionInProject` gets. Never `snapshot`. */
 export interface OwnedScanVersion {
@@ -74,7 +95,7 @@ export async function assertVersionInProject(
   `
   // The project predicate is applied HERE rather than in the WHERE so that a
   // foreign row and a missing row take the same path to the same answer.
-  if (!row || row.project_id !== projectId) throw new McpAccessDenied()
+  if (!row || row.project_id !== projectId) childNotFound('scan version')
 
   const bytes = Number(row.snapshot_bytes ?? 0)
   return {
@@ -110,7 +131,7 @@ export async function assertJobInProject(
     where: { id: jobId },
     select: { id: true, projectId: true, kind: true, status: true, runId: true, enqueuedAt: true },
   })
-  if (!row || row.projectId !== projectId) throw new McpAccessDenied()
+  if (!row || row.projectId !== projectId) childNotFound('queued job')
   return row
 }
 
@@ -139,7 +160,7 @@ export async function assertViewInProject(
     where: { id: viewId },
     select: { id: true, projectId: true, name: true, description: true, cypherQuery: true },
   })
-  if (!row || row.projectId !== projectId) throw new McpAccessDenied()
+  if (!row || row.projectId !== projectId) childNotFound('saved view')
   return row
 }
 
@@ -160,6 +181,6 @@ export async function assertRemediationInProject(
     where: { id: remediationId },
     select: { id: true, projectId: true, title: true, status: true },
   })
-  if (!row || row.projectId !== projectId) throw new McpAccessDenied()
+  if (!row || row.projectId !== projectId) childNotFound('remediation')
   return row
 }

@@ -237,10 +237,15 @@ export function disabledToolNames(): ReadonlySet<string> {
   )
 }
 
-export function buildMcpServer(ctx: McpContext): McpServer {
+export function buildMcpServer(ctx: McpContext, instructions?: string): McpServer {
   const server = new McpServer(
     { name: MCP_SERVER_NAME, version: process.env.NEXT_PUBLIC_REDAMON_VERSION || '0.0.0' },
-    { capabilities: { tools: {} } }
+    // `instructions` reaches the client at `initialize` and is the only
+    // onboarding most of them ever get: outside the Claude family, no client
+    // loads a SKILL.md. Built by instructions.ts from the same source as the
+    // downloadable pack, and omitted entirely rather than guessed at, so a
+    // failure to compose it cannot fail the connection.
+    { capabilities: { tools: {} }, instructions }
   )
 
   // Withdraw at the point of REGISTRATION, so a disabled tool is absent from
@@ -851,18 +856,21 @@ export function buildMcpServer(ctx: McpContext): McpServer {
     {
       title: 'List the Kali sandbox toolset',
       description:
-        'What RedAmon\'s Kali sandbox actually carries, by category: exploitation, password ' +
-        'cracking, web and infrastructure scanning, DNS, Windows/AD, API and GraphQL, secrets, ' +
-        'tunnelling, the wordlist paths and the pre-staged post-exploitation toolkits.\n\n' +
-        'Read this before assuming a tool exists. It is the same catalogue RedAmon\'s own agent ' +
-        'is given, so it describes the real image rather than what a general-purpose Kali ' +
-        'install usually has - niche tools are frequently absent.\n\n' +
-        'This tool READS A LIST. It does not run anything, and nothing on this MCP surface ' +
-        'executes a command against a target: there is no shell here. Use it to plan work, to ' +
-        'name a tool correctly, or to tell "RedAmon cannot do this" apart from "RedAmon did not ' +
-        'do this".\n\n' +
-        'Takes no arguments and reads no project data, so it works even when a scan does not. ' +
-        'The catalogue reflects the installed image, not what your Rules of Engagement permit.',
+        'CALL THIS FIRST, before any kali_exec. It answers two different questions in two ' +
+        'labelled sections.\n\n' +
+        '"RUNNABLE VIA kali_exec" is the one you act on: every program kali_exec will admit ' +
+        'and the exact options each one accepts, generated from the admission rules ' +
+        'themselves. Build your command from this and it will be accepted; anything outside ' +
+        'it is refused by name, so guessing costs you a turn per wrong guess.\n\n' +
+        '"ALSO INSTALLED, NOT RUNNABLE HERE" is the rest of the Kali image - exploitation, ' +
+        'password cracking, Windows/AD, tunnelling, the wordlist paths, the post-exploitation ' +
+        'toolkits. RedAmon\'s own in-app agent can use those; you cannot. That section tells ' +
+        'you what the platform is capable of, so you can tell "RedAmon cannot do this" apart ' +
+        'from "this surface will not let me do it". Do not build commands from it.\n\n' +
+        'This tool itself READS A LIST and runs nothing. Takes no arguments and reads no ' +
+        'project data, so it answers even when the sandbox is down and when a scan is ' +
+        'mid-flight. Neither section reflects your Rules of Engagement or your project scope: ' +
+        'kali_exec checks those separately, per command.',
       annotations: READ_ONLY,
       _meta: scopesMeta({ required: ['recon:read'] }),
       inputSchema: {},

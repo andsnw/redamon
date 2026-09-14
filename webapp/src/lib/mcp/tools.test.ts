@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
   findRemediations: vi.fn(),
   countRemediations: vi.fn(),
   orchestratorFetch: vi.fn(),
+  findScanJob: vi.fn(),
   isActivating: vi.fn(),
   /** The raw `/system/active-scans` body, cross-project exactly as it ships. */
   activeScans: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock('@/lib/prisma', () => ({
       findMany: (...a: unknown[]) => h.findManyProjects(...a),
     },
     scanVersion: { findFirst: (...a: unknown[]) => h.findVersion(...a) },
+    scanJob: { findFirst: (...a: unknown[]) => h.findScanJob(...a) },
     conversation: { findFirst: (...a: unknown[]) => h.findConversation(...a) },
     remediation: {
       findMany: (...a: unknown[]) => h.findRemediations(...a),
@@ -155,6 +157,86 @@ describe('get_recon_status', () => {
     })
     const r = await getReconStatus(ctx(), 'p1')
     expect(r).toMatchObject({ status: 'running', currentPhase: 'port_scan', failed: false })
+  })
+
+  // REGRESSION (e2e finding: a canceled scan was indistinguishable from no scan).
+  // The orchestrator only knows the RUNNING container. Once it exits, its status
+  // is a flat `idle` with null timestamps whether the scan completed, failed,
+  // was canceled at 10%, or never ran at all. Every scenario that reasons about
+  // a PAST scan - nightly monitoring diffing last night's run, CI gating on a
+  // fresh scan, an auditor asking for proof of coverage - was reading that
+  // `idle` as success. The durable answer is in ScanJob, and this surface was
+  // the only one not consulting it.
+  describe('REGRESSION: the last run is reported, not just the live one', () => {
+    test('a canceled run is named as canceled, with its timestamps', async () => {
+      h.orchestratorFetch.mockResolvedValue({ ok: true, json: async () => ({ status: 'idle' }) })
+      h.findScanJob.mockResolvedValue({
+        status: 'canceled',
+        startedAt: new Date('2026-09-14T13:52:26.441Z'),
+        finishedAt: new Date('2026-09-14T13:54:09.296Z'),
+        trigger: 'manual',
+        mode: 'new',
+        nodeCount: 9,
+      })
+      const r = await getReconStatus(ctx(), 'p1') as Record<string, never>
+
+      expect(r.status).toBe('idle')
+      expect(r.lastRun).toMatchObject({
+        status: 'canceled',
+        completed: false,
+        trigger: 'manual',
+        mode: 'new',
+        nodeCount: 9,
+        startedAt: '2026-09-14T13:52:26.441Z',
+        finishedAt: '2026-09-14T13:54:09.296Z',
+      })
+    })
+
+    test('a completed run is distinguishable from a canceled one', async () => {
+      h.orchestratorFetch.mockResolvedValue({ ok: true, json: async () => ({ status: 'idle' }) })
+      h.findScanJob.mockResolvedValue({
+        status: 'completed',
+        startedAt: new Date('2026-09-14T10:00:00.000Z'),
+        finishedAt: new Date('2026-09-14T10:40:00.000Z'),
+        trigger: 'scheduled',
+        mode: 'new',
+        nodeCount: 812,
+      })
+      const r = await getReconStatus(ctx(), 'p1') as Record<string, never>
+      expect(r.lastRun).toMatchObject({ status: 'completed', completed: true })
+    })
+
+    test('a project that has never been scanned says so, rather than idling', async () => {
+      h.orchestratorFetch.mockResolvedValue({ ok: true, json: async () => ({ status: 'idle' }) })
+      h.findScanJob.mockResolvedValue(null)
+      const r = await getReconStatus(ctx(), 'p1') as Record<string, never>
+      expect(r.lastRun).toBeNull()
+    })
+
+    test('only this project\'s FULL recon runs are consulted', async () => {
+      h.orchestratorFetch.mockResolvedValue({ ok: true, json: async () => ({ status: 'idle' }) })
+      h.findScanJob.mockResolvedValue(null)
+      await getReconStatus(ctx(), 'p1')
+      expect(h.findScanJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { projectId: 'p1', kind: 'full_recon' },
+          orderBy: { createdAt: 'desc' },
+        })
+      )
+    })
+
+    // A history read must never be the reason a status call fails: the live
+    // status is the part the caller asked for.
+    test('a history read that throws does not take the live status down with it',
+      async () => {
+        h.orchestratorFetch.mockResolvedValue({
+          ok: true, json: async () => ({ status: 'running', current_phase: 'vuln_scan' }),
+        })
+        h.findScanJob.mockRejectedValue(new Error('postgres is down'))
+        const r = await getReconStatus(ctx(), 'p1') as Record<string, never>
+        expect(r.status).toBe('running')
+        expect(r.lastRun).toBeUndefined()
+      })
   })
 
   // REGRESSION (audit finding F5): the raw ReconState carries `container_id`

@@ -68,6 +68,14 @@ model McpAccessToken {
   tokenHash   String    @unique @map("token_hash")
   /// ENFORCED on every call. An unknown scope rejects the whole token.
   scopes      String[]  @default(["recon:read"])
+  /// Why this token exists: the job it was minted for. Drives the recommended
+  /// scopes at mint and the generated Agent Onboarding pack.
+  ///
+  /// NOT an authorization input. Nothing in resolveMcpToken, requireScope, the
+  /// rate limiter or any tool body reads it, and profiles.test.ts asserts that.
+  /// A token's power is exactly its `scopes`, whatever this says. Nullable, so
+  /// every row minted before profiles existed is valid and reads as "custom".
+  profile     String?
   lastUsedAt  DateTime? @map("last_used_at")
   expiresAt   DateTime? @map("expires_at")
   revokedAt   DateTime? @map("revoked_at")

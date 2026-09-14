@@ -141,7 +141,43 @@ export async function getReconStatus(ctx: McpContext, projectId: string) {
     console.error(`[mcp] orchestrator status returned ${resp.status}`)
     throw new McpToolError('Scan status is unknown.', 'status_unknown')
   }
-  return projectReconState(await resp.json())
+  const live = projectReconState(await resp.json())
+
+  // The orchestrator only knows the RUNNING container. Once it exits, its
+  // status is a flat `idle` with null timestamps - identical whether the scan
+  // completed, failed, was canceled a minute in, or never ran at all. An agent
+  // diffing last night's rescan, gating a build on a fresh scan, or producing
+  // proof of coverage was reading that `idle` as success. ScanJob is the
+  // durable record; nothing else on this surface exposes it.
+  try {
+    const last = await prisma.scanJob.findFirst({
+      where: { projectId, kind: 'full_recon' },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        status: true, startedAt: true, finishedAt: true,
+        trigger: true, mode: true, nodeCount: true,
+      },
+    })
+    live.lastRun = last
+      ? {
+        status: last.status,
+        // The whole point of the field: an agent must not have to know which
+        // of six status strings count as success.
+        completed: last.status === 'completed',
+        startedAt: last.startedAt?.toISOString() ?? null,
+        finishedAt: last.finishedAt?.toISOString() ?? null,
+        trigger: last.trigger,
+        mode: last.mode,
+        nodeCount: last.nodeCount,
+      }
+      : null
+  } catch (err) {
+    // History is an addition to this answer, never a precondition for it.
+    // Omitted rather than nulled: `lastRun: null` is a claim ("never scanned")
+    // and this code does not know that.
+    console.error('[mcp] scan history unreadable:', err)
+  }
+  return live
 }
 
 /**

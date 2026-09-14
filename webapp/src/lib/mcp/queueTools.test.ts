@@ -172,7 +172,8 @@ describe('cancel_queued_scan', () => {
   test('it needs recon:queue and ownership of the job', async () => {
     await expect(cancelQueuedScan(ctx([]), 'p1', 'j1')).rejects.toBeInstanceOf(McpScopeError)
     h.findJob.mockResolvedValue(jobRow({ projectId: 'someone-elses' }))
-    await expect(cancelQueuedScan(ctx(), 'p1', 'j1')).rejects.toBeInstanceOf(McpAccessDenied)
+    await expect(cancelQueuedScan(ctx(), 'p1', 'j1'))
+      .rejects.toMatchObject({ code: 'not_found' })
     expect(h.updateManyJobs).not.toHaveBeenCalled()
   })
 

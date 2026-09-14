@@ -43,6 +43,13 @@ export async function kaliToolboxDoc(): Promise<string> {
   }
   const body = (await resp.json()) as { toolbox?: unknown }
   if (typeof body.toolbox !== 'string' || !body.toolbox) {
+    // Logged like the !resp.ok branch above. Without this the endpoint
+    // answering 200 with the WRONG SHAPE left nothing in any log on either
+    // side, and the only way to find it was to reproduce the fetch by hand.
+    console.error(
+      '[mcp] kali toolbox returned an unexpected body shape:',
+      `${typeof body} ${JSON.stringify(body).slice(0, 200)}`
+    )
     throw new McpToolError('The Kali toolbox could not be loaded.', 'agent_failed')
   }
   toolboxCache = body.toolbox
@@ -72,6 +79,8 @@ export interface KaliJob {
   nextCursor: number
   truncated?: boolean
   command?: string
+  /** The agent's reason a finished job failed, e.g. the 300s sandbox cap. */
+  failure?: string
   startedAt?: string | null
   endedAt?: string | null
 }
@@ -86,6 +95,10 @@ function toJob(raw: Record<string, unknown>): KaliJob {
     nextCursor: typeof raw.next_cursor === 'number' ? raw.next_cursor : 0,
     ...(raw.truncated ? { truncated: true } : {}),
     ...(typeof raw.command === 'string' ? { command: raw.command } : {}),
+    // WHY a finished job failed. Dropping it left "exitCode 1" with no reason,
+    // and the most common reason is the sandbox's 300s cap - which an agent
+    // can only act on if it is told.
+    ...(typeof raw.error === 'string' && raw.error ? { failure: raw.error } : {}),
     startedAt: (raw.started_at as string) ?? null,
     endedAt: (raw.ended_at as string) ?? null,
   }
@@ -110,6 +123,9 @@ async function execFailure(resp: Response): Promise<never> {
   if (resp.status === 400) {
     throw new McpToolError(message || 'That command was refused.', 'refused')
   }
+  // 404 is deliberately NOT quoted: the agent says "no such command" for a
+  // missing job and for another project's job alike, and that sameness is the
+  // anti-enumeration property.
   if (resp.status === 404) throw new McpToolError('No such command.', 'not_found')
   if (resp.status === 429) {
     throw new McpToolError(
@@ -119,6 +135,19 @@ async function execFailure(resp: Response): Promise<never> {
   }
   if (resp.status === 503) {
     throw new McpToolError(message || 'The sandbox is unavailable.', 'sandbox_unavailable')
+  }
+  // Any OTHER 4xx: the agent is telling the caller something it can act on, and
+  // the enumerated branches above cannot be the complete list forever. The
+  // cancel endpoint already answers 409 with the reason a job could not be
+  // stopped, and that reason was being replaced by a flat "could not be run" -
+  // the same defect a sibling session found in graphClient.ts, where a refusal
+  // the caller could have fixed was collapsed into five generic words.
+  //
+  // 5xx still degrades: those bodies are raw exception text (host paths, image
+  // names), which errors.ts forbids returning.
+  if (resp.status < 500 && message) {
+    console.error(`[mcp] kali exec ${resp.status}:`, message.slice(0, 200))
+    throw new McpToolError(message, 'agent_refused')
   }
   console.error(`[mcp] kali exec failed (${resp.status}):`, JSON.stringify(detail))
   throw new McpToolError('The command could not be run.', 'agent_failed')
