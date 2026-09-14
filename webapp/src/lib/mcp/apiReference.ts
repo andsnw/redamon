@@ -62,6 +62,8 @@ export function toolScopes(tool: Tool): ToolScopes | null {
 type JsonSchema = {
   type?: string | string[]
   enum?: unknown[]
+  const?: unknown
+  anyOf?: JsonSchema[]
   description?: string
   pattern?: string
   minLength?: number
@@ -77,6 +79,13 @@ function cell(text: string): string {
 
 function typeOf(schema: JsonSchema): string {
   if (schema.enum) return schema.enum.map(v => `\`${JSON.stringify(v)}\``).join(' or ')
+  // A literal branch of a union. Rendered as the value, because `string` would
+  // say nothing about the one string it actually accepts.
+  if (schema.const !== undefined) return `\`${JSON.stringify(schema.const)}\``
+  // A union ("a version id, or the word current") rendered as `any` understated
+  // a constrained argument: the JSON Schema below carried the real contract
+  // while the table told a reader anything would do.
+  if (schema.anyOf?.length) return schema.anyOf.map(typeOf).join(' or ')
   const t = Array.isArray(schema.type) ? schema.type.join(' or ') : schema.type
   return t ? `\`${t}\`` : 'any'
 }
@@ -309,7 +318,9 @@ export function renderApiReference(tools: Tool[]): string {
     '',
     `Every tool the RedAmon [MCP Server](MCP-Server) advertises: what it does, the arguments it takes, the permission its token needs and how it behaves. This page covers the tools only. Turning the server on, minting a token, connecting a client and the security model are in [MCP Server](MCP-Server).`,
     '',
-    `> **Generated, not written.** This page is produced from the tool list the server itself returns, so it always matches what a connected agent sees. Do not edit it by hand: the next run overwrites it, and a unit test fails while it is out of date. See [Regenerating the API reference](MCP-Server#regenerating-the-api-reference).`,
+    `> **Generated, not written.** This page is produced from the tool list the server itself returns, so it cannot describe a tool differently from how the server serves it. Do not edit it by hand: the next run overwrites it, and a unit test fails while it is out of date. See [Regenerating the API reference](MCP-Server#regenerating-the-api-reference).`,
+    '',
+    `> **It describes a build, not a deployment.** It is rendered with no tool withdrawn, so a deployment using \`MCP_DISABLED_TOOLS\` serves FEWER tools than are listed here. Ask the server itself with \`tools/list\` for the authoritative set on one host.`,
     '',
     '---',
     '',
@@ -319,7 +330,7 @@ export function renderApiReference(tools: Tool[]): string {
     '',
     `The server speaks JSON-RPC 2.0 over Streamable HTTP in stateless mode, at \`POST /api/mcp-server\`. Besides the \`Authorization\` header, every request needs \`Content-Type: application/json\` and \`Accept: application/json, text/event-stream\`. An MCP client handles all of this for you; the example calls below show the raw \`tools/call\` body for anyone calling it by hand, and each one is exercised against the server by the test that guards this page.`,
     '',
-    `Every tool below is listed by \`tools/list\` whatever permissions the token holds. A call without the needed permission fails with \`${deniedExample}\`. Each tool also advertises its permissions in \`tools/list\` under \`_meta["${SCOPES_META_KEY}"]\`, and its behaviour in the standard MCP \`annotations\` (\`readOnlyHint\`, \`destructiveHint\`, \`idempotentHint\`, \`openWorldHint\`), which clients use to decide when to ask you before running it.`,
+    `Every tool below is listed by \`tools/list\` whatever permissions the token holds, unless the deployment has withdrawn it with \`MCP_DISABLED_TOOLS\` - a withdrawn tool is absent from the list rather than present and refusing. A call without the needed permission fails with \`${deniedExample}\`. Each tool also advertises its permissions in \`tools/list\` under \`_meta["${SCOPES_META_KEY}"]\`, and its behaviour in the standard MCP \`annotations\` (\`readOnlyHint\`, \`destructiveHint\`, \`idempotentHint\`, \`openWorldHint\`), which clients use to decide when to ask you before running it.`,
     '',
     '## Tools at a glance',
     '',
