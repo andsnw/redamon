@@ -23,17 +23,17 @@ const iso = (offsetDays: number) => new Date(Date.now() + offsetDays * day).toIS
 const TOKENS = [
   {
     id: 'doc-token-1', name: 'Claude Code (laptop)', tokenPrefix: 'rdmn_mcp_4f1a9c2e',
-    scopes: ['recon:read', 'graph:cypher'],
+    scopes: ['recon:read', 'triage:read', 'graph:cypher'],
     lastUsedAt: iso(0), expiresAt: iso(88), revokedAt: null, createdAt: iso(-2),
   },
   {
     id: 'doc-token-2', name: 'CI nightly rescan', tokenPrefix: 'rdmn_mcp_b83d07e5',
-    scopes: ['recon:read', 'recon:scan', 'recon:settings'],
+    scopes: ['recon:read', 'recon:scan', 'recon:settings', 'recon:queue'],
     lastUsedAt: iso(-1), expiresAt: iso(340), revokedAt: null, createdAt: iso(-25),
   },
   {
     id: 'doc-token-3', name: 'triage assistant (old)', tokenPrefix: 'rdmn_mcp_09e6d4b1',
-    scopes: ['recon:read'],
+    scopes: ['recon:read', 'triage:read', 'triage:write'],
     lastUsedAt: iso(-12), expiresAt: iso(30), revokedAt: iso(-10), createdAt: iso(-60),
   },
 ]
@@ -56,7 +56,10 @@ async function stubTokenApi(page: Page) {
 
 async function openTab(page: Page) {
   await page.goto('/settings?tab=mcp-tokens')
-  await expect(page.getByRole('heading', { name: 'MCP Server', exact: true })).toBeVisible({ timeout: 30_000 })
+  // Prefix match, not exact: the section heading carries two wiki links, so its
+  // accessible name is 'MCP Server Open MCP Server wiki page ...'. An exact
+  // match silently stopped finding it when those links were added.
+  await expect(page.getByRole('heading', { name: /^MCP Server/ })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByText('CI nightly rescan')).toBeVisible()
   // Sticky chrome is painted over the element box and crops element shots.
   await page.addStyleTag({ content: `
@@ -67,7 +70,7 @@ async function openTab(page: Page) {
 
 /** The tab body: the heading's nearest `section` container. */
 function tabSection(page: Page) {
-  return page.getByRole('heading', { name: 'MCP Server', exact: true }).locator(
+  return page.getByRole('heading', { name: /^MCP Server/ }).locator(
     'xpath=ancestor::div[contains(@class,"__section") and not(contains(@class,"sectionHeader"))][1]')
 }
 
