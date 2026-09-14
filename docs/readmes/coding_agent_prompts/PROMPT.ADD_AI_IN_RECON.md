@@ -56,6 +56,15 @@ once before the tool's main command is built, don't.
 5. **Prisma**: add `{tool}Ai{Feature} Boolean @default(false) @map("{tool}_ai_{feature}")`
    to `Project`. Apply via `prisma db push` (or `ALTER TABLE` + `prisma generate`
    if push wants to drop unrelated tables — never use `--accept-data-loss`).
+5b. **Classify the new column** in `webapp/src/lib/reconSettingsAllowlist.generated.ts`:
+   `{tool}Ai{Feature}: 'llm'` in the **DENY** table, beside `ffufAiExtensions`,
+   `nucleiAiTags`, `nucleiAiResponseFilter` and `wafAiClassifier`. The inbound
+   MCP server writes settings through a positive allowlist, and a coverage test
+   walking `Prisma.ProjectScalarFieldEnum` goes red until every new `Project`
+   column sits in ALLOW or DENY. DENY is the right answer here: an AI toggle
+   spends the owner's LLM budget, so it is not something an external agent may
+   flip. That test reads the **generated** client, not `schema.prisma`, so a
+   green run straight after `db push` means nothing until `prisma generate`.
 6. **Zod**: add the field to `webapp/src/lib/recon-preset-schema.ts` (and a
    one-line note in the catalog comment) so AI-generated presets see it.
 7. **UI: the toggle MUST exist in TWO places, BOUND to the same form field

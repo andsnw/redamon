@@ -51,6 +51,16 @@ that toggles it, use `project-settings-cascade`.
   [recon/project_settings.py:1968](../../recon/project_settings.py#L1968)) is the
   single source of truth for per-tool AI flags. Presets must not hard-code them;
   update the Zod schema instead.
+- **ALWAYS classify the new `Project` column** `{tool}Ai{Feature}` in
+  [webapp/src/lib/reconSettingsAllowlist.generated.ts](../../webapp/src/lib/reconSettingsAllowlist.generated.ts),
+  as `'llm'` in the **DENY** table beside `ffufAiExtensions`, `nucleiAiTags`,
+  `nucleiAiResponseFilter` and `wafAiClassifier`. The inbound MCP server writes
+  settings through a positive allowlist, and a coverage test walking
+  `Prisma.ProjectScalarFieldEnum` is red until every new column sits in ALLOW or
+  DENY. DENY is correct here: the toggle spends the project owner's LLM budget,
+  so it is not a knob an external agent may flip. The test reads the
+  **generated** Prisma client, so a green run straight after `db push` proves
+  nothing until `prisma generate`.
 - **ALWAYS cache a per-target hook** keyed by tech fingerprint (Server,
   X-Powered-By, ...) so N targets behind one stack collapse to one LLM call
   ([ffuf_extensions.py](../../recon/helpers/ai_planner/ffuf_extensions.py)). A

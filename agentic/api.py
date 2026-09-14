@@ -3872,50 +3872,23 @@ async def traffic_browser(body: TrafficBrowserRequest):
 # =============================================================================
 
 
-def _kali_runnable_section() -> str:
-    """What kali_exec will actually ADMIT, rendered from the guard's own specs.
-
-    Derived from kali_exec_guard.SPECS rather than written out, so it cannot
-    drift from the thing that does the admitting - the same "one source, no
-    second copy" rule the catalogue below is served under.
-    """
-    from kali_exec_guard import SPECS
-
-    lines = [
-        "## RUNNABLE VIA kali_exec",
-        "",
-        "These are the ONLY programs kali_exec will run, with the ONLY options each "
-        "accepts. Anything else is refused by name. Write a flag's value as a separate "
-        "argument or with '=', never attached to a short option.",
-        "",
-    ]
-    for name in sorted(SPECS):
-        spec = SPECS[name]
-        flags = " ".join(sorted(spec.flags)) or "(no options)"
-        reach = "network" if spec.network else "offline"
-        lines.append(f"- **{name}** ({reach}): {flags}")
-    return "\n".join(lines)
-
-
 @app.get(
     "/kali/toolbox",
     tags=["Kali"],
     dependencies=[Depends(require_internal_auth_only)],
 )
 async def kali_toolbox():
-    """What kali_exec can run, plus what the sandbox image carries.
+    """The Kali sandbox's installed-tooling catalogue, by category.
 
-    TWO SECTIONS, and the order matters. The first is generated from
-    kali_exec_guard.SPECS: the 23 programs this surface will actually admit and
-    the exact options each takes. The second is the `kali_shell` TOOL_REGISTRY
-    description - the full image, which is much larger.
+    Served from the `kali_shell` TOOL_REGISTRY description, the same bytes this
+    agent's own model is prompted with. One source, no second copy: a
+    transcription would drift from the image the moment a tool is added, and a
+    catalogue that lies about what is installed is worse than none.
 
-    They are different sets on purpose, and saying so is the point. Serving only
-    the second (which is what this did) advertised sqlmap, msfvenom, nc, gcc and
-    hashcat to an agent that would then be refused on every one, costing it a
-    turn per tool to discover a boundary this could have stated. A catalogue that
-    lies about what is runnable is worse than none, which is the same argument
-    the second section is served under.
+    It describes the whole image because the whole image is runnable. kali_exec
+    is `bash -c` with no allowlist, at parity with the in-app agent, so unlike
+    the previous version there is no second set of "runnable here" to separate
+    out - what this lists is what you can run.
 
     Reads from code only: no container call, no project id, no tenant data. It
     therefore still answers when the kali-sandbox is down, which is the point -
@@ -3930,25 +3903,31 @@ async def kali_toolbox():
         # forbids everywhere else.
         logger.error("Kali toolbox catalogue is empty - TOOL_REGISTRY['kali_shell'] lost its description")
         return JSONResponse(status_code=500, content={"error": "toolbox catalogue unavailable"})
-
-    toolbox = (
-        f"{_kali_runnable_section()}\n\n"
-        "## ALSO INSTALLED, NOT RUNNABLE HERE\n\n"
-        "The sandbox image carries the full Kali toolset below, and RedAmon's own "
-        "in-app agent can use it. kali_exec CANNOT: anything absent from the list "
-        "above is refused, because this surface admits only read-only observers "
-        "whose flags cannot load or run code. Exploitation, brute-force and "
-        "interpreters are deliberately excluded. Treat this section as what the "
-        "platform is capable of, not as what you may run.\n\n"
-        f"{catalogue}"
+    # The catalogue is written FOR THE IN-APP AGENT, which has dedicated tools
+    # (execute_nmap, execute_nuclei, execute_curl ...) alongside kali_shell. It
+    # therefore ends by telling the reader NOT to use the shell for those. An
+    # MCP caller has no dedicated tools - kali_exec is the only way it runs
+    # anything - so that line reads as "do not use the one tool you have".
+    # Corrected here rather than by forking the text, which would put a second
+    # copy of the catalogue in the codebase.
+    note = (
+        "\n\n---\n\n"
+        "NOTE FOR MCP CALLERS: the line above about preferring dedicated tools "
+        "(execute_nmap, execute_nuclei, execute_curl and so on) applies to RedAmon's "
+        "IN-APP agent, which has them. You do not. On this surface `kali_exec` is the "
+        "only way to run anything, so use it for every tool listed here, including "
+        "curl, nmap, nuclei, httpx, ffuf, subfinder, katana and the rest.\n\n"
+        "`kali_exec` is `bash -c` with this whole toolset: pipelines, redirection and "
+        "shell syntax all work, and there is no allowlist. One command is capped at "
+        "300 seconds by the sandbox."
     )
-    return JSONResponse(content={"toolbox": toolbox})
+    return JSONResponse(content={"toolbox": catalogue + note})
 
 
 # =============================================================================
 # KALI EXEC — admitted, scope-checked single commands for the inbound MCP
-# server. The admission rules live in kali_exec_guard.py; this is transport,
-# job lifecycle and output paging only.
+# server. At parity with the in-app agent: no allowlist and no per-command
+# target check, so this is transport, job lifecycle and output paging only.
 # =============================================================================
 
 # An inline wait long enough for the quick checks (curl, dig, whatweb) to answer
@@ -3970,41 +3949,10 @@ class KaliExecRequest(BaseModel):
     wait_seconds: float = KALI_EXEC_DEFAULT_WAIT
 
 
-def _kali_scope(project_id: str):
-    """The project's authorised reach, from the same source both agent
-    guardrails use, so an ad-hoc command cannot outreach a scan."""
-    from kali_exec_guard import KaliScope
-    from project_settings import (
-        SETTINGS_SOURCE_KEY,
-        get_setting,
-        load_project_settings,
-        target_scope_domains,
-    )
-
-    settings = load_project_settings(project_id)
-    # load_project_settings NEVER raises: it logs and falls back to
-    # DEFAULT_AGENT_SETTINGS, whose target scope is empty. Without this check an
-    # unreachable webapp produced an empty scope, and the guard then refused
-    # every command with "This project has no target domain or IPs configured.
-    # Configure the target first." - on projects that were configured correctly
-    # all along. Safe, because the default happens to be empty, but it sent the
-    # operator to the project form to fix something that was not broken, and it
-    # would fail OPEN the day that default is not empty.
-    if settings.get(SETTINGS_SOURCE_KEY) != "api":
-        raise RuntimeError("project settings came from defaults, not the settings API")
-    return KaliScope(
-        domains=tuple(target_scope_domains()),
-        ips=tuple(get_setting("TARGET_IPS", []) or []),
-        ip_mode=bool(get_setting("IP_MODE", False)),
-        roe_enabled=bool(get_setting("ROE_ENABLED", False)),
-        roe_excluded=tuple(get_setting("ROE_EXCLUDED_HOSTS", []) or []),
-        # Confines writable paths to this project's own workspace subtree: the
-        # /workspace volume is shared by every project.
-        project_id=project_id,
-    )
-
-
-# A job id is a uuid4 hex. Validated because it reaches a filesystem path.
+# A job id reaches a filesystem path, so traversal in it must not. uuid4().hex
+# is what JobRegistry.spawn generates, and nothing else is accepted. This is NOT
+# part of the removed command guard - it protects the AGENT container from a
+# poisoned id, and stays whatever kali_exec is allowed to run.
 _KALI_JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
@@ -4101,35 +4049,37 @@ def _kali_job_view(state: dict, cursor: int, project_id: str, job_id: str) -> di
 # reasoning that gave /graph/triage the stricter dependency.
 @app.post("/kali/exec", tags=["Kali"], dependencies=[Depends(require_master_internal_auth)])
 async def kali_exec(body: KaliExecRequest):
-    """Admit one command, run it in the sandbox, and answer with what it produced.
+    """Run a command in the Kali sandbox and answer with what it produced.
 
-    The admission check is the whole security story (see kali_exec_guard): inside
-    the product a human approves `kali_shell`, and an MCP caller has no human.
+    PARITY WITH THE IN-APP AGENT, BY DECISION. This is `kali_shell`, which is
+    `bash -c` with the sandbox's whole toolset: pipelines, redirection, every
+    installed binary, no allowlist and no per-command target check. The drawer
+    agent has exactly this and no per-command admission either - its own gates
+    are a HUMAN clicking the DANGEROUS_TOOLS confirmation, an RoE check that
+    matches tool NAMES, and a scope guardrail that runs once per session.
+
+    The confirmation gate cannot apply here because there is no human, so what
+    carries the weight instead is who is allowed to reach this endpoint at all:
+
+        1. MCP_KALI_EXEC_ENABLED     operator, per deployment, default off
+        2. the `kali:exec` scope     user, password-confirmed at mint time
+        3. project.mcpKaliExecEnabled a human in the project form, per
+           engagement, and DENIED to update_recon_settings so a token can never
+           grant itself this
+
+    A token that holds all three has a shell in a container with NET_ADMIN,
+    NET_RAW, seccomp:unconfined and open egress. That is the intended contract.
     """
-    from kali_exec_guard import CommandRefused, admit, to_shell_command
-
     if not body.project_id:
         return JSONResponse(status_code=400, content={"error": "project_id is required"})
+    if not body.command or not body.command.strip():
+        return JSONResponse(status_code=400, content={"error": "a command is required"})
     if not orchestrator or not getattr(orchestrator, "tool_executor", None):
         return JSONResponse(status_code=503, content={"error": "the sandbox is not available"})
 
-    try:
-        scope = _kali_scope(body.project_id)
-    except Exception as exc:  # noqa: BLE001
-        # FAIL CLOSED. Without a scope there is nothing to check the command
-        # against, and "could not load the scope" must never become "no scope".
-        logger.error("kali_exec could not resolve scope for %s: %s", body.project_id, exc)
-        return JSONResponse(
-            status_code=503,
-            content={"error": "this project's scope could not be read, so no command can be checked"},
-        )
-
-    try:
-        argv = admit(body.command, scope)
-    except CommandRefused as refusal:
-        return JSONResponse(status_code=400, content={"error": str(refusal), "code": "refused"})
-
-    safe_command = to_shell_command(argv)
+    # Verbatim. `kali_shell` hands it to `bash -c`, so quoting it would break
+    # every pipeline the caller is now entitled to write.
+    safe_command = body.command
 
     async def runner(name, args, append_log):
         result = await orchestrator.tool_executor.execute(
@@ -4155,7 +4105,8 @@ async def kali_exec(body: KaliExecRequest):
 
     reg = job_runner.get_registry()
     spawned = await reg.spawn(
-        body.project_id, "kali_shell", {"command": safe_command}, runner, label=argv[0]
+        body.project_id, "kali_shell", {"command": safe_command}, runner,
+        label=safe_command.split()[0][:40] if safe_command.split() else "kali_shell",
     )
     if isinstance(spawned, dict) and spawned.get("error"):
         return JSONResponse(status_code=429, content={"error": spawned["error"]})
@@ -4165,8 +4116,6 @@ async def kali_exec(body: KaliExecRequest):
     state = await reg.wait(body.project_id, job_id, timeout_sec=wait)
 
     view = _kali_job_view(state, 0, body.project_id, job_id)
-    # Echoed back because admission re-quotes every argument: the caller should
-    # see exactly what ran, not what it typed.
     view["command"] = safe_command
     return JSONResponse(content=view)
 

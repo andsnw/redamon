@@ -1,13 +1,11 @@
 /**
- * The grouped permission checklist.
+ * The grouped permission checklist: its GROUPING and its copy.
  *
- * What this guards beyond "it renders" is the safety property the whole Agent
- * Profile feature rests on: **a profile ticks permissions on the operator's
- * behalf, and there are two it must NEVER tick.** Command execution at a live
- * target and irreversible graph destruction have to be deliberate acts, not
- * side effects of choosing a job from a dropdown. If that ever regresses, this
- * file is where it is caught in the UI, and profiles.test.ts is where it is
- * caught in the data.
+ * What it does NOT own is which boxes a profile ticks. This component only
+ * renders the `selected` array it is handed, so asserting the tick rule here
+ * would test the test's own fixture. That rule is owned once in the data
+ * (profiles.test.ts) and once through the real handler that computes the set
+ * (McpTokensTab.test.tsx "never auto-ticks"), which is where a bug would live.
  *
  * Run: npx vitest run src/components/settings/mcp-tokens/ScopeChecklist.test.tsx
  */
@@ -72,53 +70,26 @@ describe('kali:exec is presented as a different KIND of permission', () => {
     expect(screen.getByText(/not sufficient on its own/)).toBeDefined()
   })
 
-  test('it links out to what the sandbox carries AND what it may run, kept apart', () => {
+  test('it links out to the toolset AND to what a shell here means', () => {
     render(<ScopeChecklist selected={[]} onToggle={vi.fn()} />)
-    // Conflating these two is exactly the misunderstanding the panel exists to
-    // prevent: the toolbox lists far more than exec is permitted to run.
+    // These used to be "installed" vs "permitted to run", which were different
+    // sets. kali_exec is now a shell with no allowlist, so everything installed
+    // is runnable and that distinction is gone. The two links still answer
+    // different questions - what is in the box, and what handing over a shell
+    // means - so both stay.
     const carries = screen.getByText('What the sandbox carries') as HTMLAnchorElement
-    const runs = screen.getByText('What this can actually run') as HTMLAnchorElement
+    const shell = screen.getByText('What a shell here means') as HTMLAnchorElement
     expect(carries.getAttribute('href')).toContain('kali_toolbox')
-    expect(runs.getAttribute('href')).toContain('kali_exec')
+    expect(shell.getAttribute('href')).toContain('kali_exec')
   })
 
-  test('it does not enumerate the allowlist, which grows', () => {
+  test('it does not enumerate the sandbox toolset, which changes with the image', () => {
     const { container } = render(<ScopeChecklist selected={[]} onToggle={vi.fn()} />)
-    // A list pasted into the UI goes stale the moment the guard gains a tool,
-    // and a stale list that overstates the allowlist is wrong in the dangerous
-    // direction.
+    // A tool list pasted into the UI goes stale the moment the image changes.
+    // kali_toolbox serves the real catalogue; the consent screen should say
+    // what the permission GRANTS, not try to enumerate a sandbox.
     expect(container.textContent).not.toContain('searchsploit')
     expect(container.textContent).not.toContain('dnsrecon')
-  })
-})
-
-describe('a profile ticks boxes, but never these two', () => {
-  test.each(PROFILE_IDS)('%s never auto-ticks kali:exec or recon:overwrite', id => {
-    render(<ScopeChecklist selected={scopesForProfile(id)} profile={id} onToggle={vi.fn()} />)
-    expect(boxFor('kali:exec').checked, `${id} auto-ticked kali:exec`).toBe(false)
-    expect(boxFor('recon:overwrite').checked, `${id} auto-ticked recon:overwrite`).toBe(false)
-  })
-
-  test.each(PROFILE_IDS)('%s ticks exactly its recommended set', id => {
-    render(<ScopeChecklist selected={scopesForProfile(id)} profile={id} onToggle={vi.fn()} />)
-    const expected = new Set(PROFILES[id].recommendedScopes)
-    for (const scope of MCP_SCOPES) {
-      expect(boxFor(scope).checked, `${id}/${scope}`).toBe(expected.has(scope))
-    }
-  })
-
-  test('a profile that recommends a dangerous scope says so, with the box still clear', () => {
-    render(<ScopeChecklist selected={scopesForProfile('pentest')} profile="pentest" onToggle={vi.fn()} />)
-    expect(screen.getByText('recommended, tick it yourself')).toBeDefined()
-    expect(boxFor('kali:exec').checked).toBe(false)
-    expect(screen.getByText(/never ticks those for you/)).toBeDefined()
-  })
-
-  test('research, which recommends BOTH dangerous scopes, still ticks neither', () => {
-    render(<ScopeChecklist selected={scopesForProfile('research')} profile="research" onToggle={vi.fn()} />)
-    expect(boxFor('kali:exec').checked).toBe(false)
-    expect(boxFor('recon:overwrite').checked).toBe(false)
-    expect(screen.getAllByText('recommended, tick it yourself')).toHaveLength(2)
   })
 })
 

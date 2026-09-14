@@ -14,7 +14,7 @@
  *
  * @vitest-environment node
  */
-import { readFileSync, readdirSync } from 'fs'
+import { existsSync, readFileSync, readdirSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { describe, test, expect, vi } from 'vitest'
@@ -42,6 +42,15 @@ import {
 
 const LIB_MCP_DIR = fileURLToPath(new URL('.', import.meta.url))
 const MCP_AUTH = fileURLToPath(new URL('../mcpAuth.ts', import.meta.url))
+
+const WIKI_DIR = process.env.MCP_DOCS_WIKI_DIR
+  || fileURLToPath(new URL('../../../../redamon.wiki/', import.meta.url))
+/**
+ * A real wiki CHECKOUT, not merely the directory: the main repo records the
+ * wiki as a submodule pointer with no .gitmodules, so a fresh clone leaves
+ * redamon.wiki/ empty. Same guard apiReference.test.ts uses.
+ */
+const hasWikiCheckout = () => existsSync(path.join(WIKI_DIR, 'Home.md'))
 
 const known = new Set<string>(MCP_SCOPES)
 
@@ -344,5 +353,53 @@ describe('profile is never an authorization input', () => {
       if (/\b(token|ctx|ctx\.token|row|t)\s*\.\s*profile\b/.test(source)) offenders.push(file)
     }
     expect(offenders, `these modules read a token profile: ${offenders.join(', ')}`).toEqual([])
+  })
+})
+
+// --- ROW 1: the wiki's profile table is hand-written and drifts silently ------
+
+describe('the published profile table matches the registry', () => {
+  /**
+   * `MCP-Server.md` lists every profile and the permissions it ticks, by hand.
+   * It is the only place an operator can see the recommended set for their job,
+   * so a registry change that does not reach it publishes a permission model
+   * RedAmon does not implement. Nothing else notices: the page is prose, not
+   * generated like MCP-API-Reference.md.
+   */
+  test.skipIf(!hasWikiCheckout())('every documented row equals scopesForProfile(id)', () => {
+    const page = readFileSync(path.join(WIKI_DIR, 'MCP-Server.md'), 'utf8')
+
+    for (const p of PROFILE_LIST) {
+      const row = page.split('\n').find(l => l.startsWith(`| **${p.label}** |`))
+      expect(row, `MCP-Server.md documents no row for "${p.label}"`).toBeDefined()
+
+      const documented = [...row!.matchAll(/`([a-z]+:[a-z]+)`/g)].map(m => m[1])
+      expect(
+        [...documented].sort(),
+        `MCP-Server.md lists the wrong permissions for "${p.label}". ` +
+          'Update the Agent Profile table in the wiki repo.'
+      ).toEqual([...scopesForProfile(p.id)].sort())
+    }
+  })
+
+  test.skipIf(!hasWikiCheckout())('the table documents no profile the registry dropped', () => {
+    const page = readFileSync(path.join(WIKI_DIR, 'MCP-Server.md'), 'utf8')
+    const start = page.indexOf('### The Agent Profile')
+    const section = page.slice(start, page.indexOf('###', start + 10))
+    const labels = [...section.matchAll(/^\| \*\*(.+?)\*\* \|/gm)].map(m => m[1])
+    const known = new Set(PROFILE_LIST.map(p => p.label))
+    expect(labels.filter(l => !known.has(l)), 'wiki documents a profile that no longer exists').toEqual([])
+    expect(labels).toHaveLength(PROFILE_LIST.length)
+  })
+
+  test.skipIf(!hasWikiCheckout())('the page names the two permissions no profile may tick', () => {
+    // The wiki is where an operator learns this guarantee; losing the sentence
+    // loses the only published statement of the feature's core safety rule.
+    const page = readFileSync(path.join(WIKI_DIR, 'MCP-Server.md'), 'utf8')
+    for (const scope of NEVER_AUTO_TICKED) {
+      expect(page, `the wiki never mentions that ${scope} is left unticked`)
+        .toMatch(new RegExp(`\`${scope.replace(':', ':')}\`[^\n]*`))
+    }
+    expect(page).toContain('always left unticked')
   })
 })

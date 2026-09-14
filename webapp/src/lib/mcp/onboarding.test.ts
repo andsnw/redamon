@@ -16,9 +16,20 @@
  *  - the response-shape facts the prose quotes (the graph states, the section
  *    names, the verdict vocabulary) are pinned against the modules that own
  *    them, because the generator cannot catch those drifting.
+ *  - the HAND-WRITTEN prose never promises a protection that does not exist.
+ *    This is the one class nothing generated can catch, and it has bitten
+ *    twice: the worked scenarios named tools outside the token's scopes, and
+ *    the exec guidance claimed a per-command scope check after `kali_exec`
+ *    became a real shell. Both guards are phrase-based on purpose - the claim
+ *    is prose, so only prose can be asserted about it.
+ *  - the documentation the feature added references files that exist, since a
+ *    missing screenshot renders as a broken image on the published wiki.
  *
  * @vitest-environment node
  */
+import { existsSync, readFileSync } from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { describe, test, expect, beforeAll, vi } from 'vitest'
 
 // Nothing here calls a tool; the server is built only to answer tools/list.
@@ -346,6 +357,47 @@ describe('the shared core is always full', () => {
     }
   })
 
+  /**
+   * REGRESSION: the worked scenarios defeated the scope filter.
+   *
+   * They were a static prose block, so a `recon:read`-only token was handed a
+   * trace instructing it to call `list_muted_findings` - a tool it will always
+   * be refused. That scenario is the one teaching the bar for calling a project
+   * "clean", so the agent learned a completeness rule it structurally could not
+   * satisfy and was never told which half was out of reach.
+   */
+  test('a scenario never instructs a call the token will be refused', () => {
+    for (const scopes of [READ_ONLY, ['recon:read', 'triage:read'] as McpScope[], ALL]) {
+      const skill = renderOnboardingPack(tools, scopes, 'custom', { version: 't' }).files[0].content
+      const start = skill.indexOf('## Worked scenarios')
+      if (start === -1) continue
+      const next = skill.indexOf('\n## ', start + 5)
+      const section = skill.slice(start, next === -1 ? undefined : next)
+      for (const t of tools.filter(x => !canCall(x, scopes))) {
+        expect(
+          new RegExp(`\\b${t.name}\\b`).test(section),
+          `a ${scopes.join('+')} pack tells the agent to call ${t.name}`
+        ).toBe(false)
+      }
+    }
+  })
+
+  test('the clean-check scenario says which half a read-only token cannot do', () => {
+    // Dropping the suppression step silently would be worse than omitting the
+    // scenario: the agent would believe an open-findings check was sufficient.
+    const skill = renderOnboardingPack(tools, READ_ONLY, 'custom', { version: 't' }).files[0].content
+    expect(skill).toContain('You cannot complete this one')
+    expect(skill).toContain('triage:read')
+    expect(skill).toContain('never\n"clean"')
+  })
+
+  test('with the permission, the full clean-check is taught instead', () => {
+    const skill = renderOnboardingPack(tools, ['recon:read', 'triage:read'], 'custom', { version: 't' })
+      .files[0].content
+    expect(skill).toContain('list_muted_findings')
+    expect(skill).not.toContain('You cannot complete this one')
+  })
+
   test('the worked scenarios teach the honest conclusion', () => {
     const text = packText(ALL)
     expect(text).toContain('Worked scenarios')
@@ -536,6 +588,51 @@ describe('hand-written facts are pinned against the modules that own them', () =
     }
   })
 
+  /**
+   * REGRESSION: the pack promised a safety net that does not exist.
+   *
+   * `kali_exec` became a real shell - `bash -c`, full toolset, no allowlist and
+   * NO per-command target or excluded-host check. The hand-written guidance
+   * still said "every command is checked against the project's own scope", so
+   * an unattended agent was being told something would stop it that will not.
+   * That is the most dangerous direction a generated instruction can be wrong
+   * in, and no generated test noticed, because the claim is prose.
+   */
+  test('the exec guidance never promises a scope check that does not exist', () => {
+    // Checked across EVERY profile, from PROFILE_IDS rather than a hand-typed
+    // list: a profile's own trap lines render whatever the scopes are, and a
+    // typo'd id silently resolves to `custom`, which would make a five-entry
+    // loop look thorough while testing one profile three times.
+    const FALSE_ASSURANCES = [
+      'checked against the project',
+      'checked against this project',
+      'A refusal is a policy decision',
+      'A refused command is a policy decision',
+      'read-only list',
+      'It is not a shell',
+    ]
+    for (const profile of PROFILE_IDS) {
+      const text = packText(ALL, profile)
+      for (const claim of FALSE_ASSURANCES) {
+        expect(text, `the ${profile} pack still claims: "${claim}"`).not.toContain(claim)
+      }
+    }
+  })
+
+  test('the exec guidance states plainly that scope is the agent\'s own responsibility', () => {
+    const text = packText(ALL, 'pentest')
+    expect(text).toMatch(/NOTHING CHECKS WHAT YOU AIM AT|no per-command scope check|NO scope enforcement/)
+    expect(text).toContain('get_recon_settings')
+    expect(text).toMatch(/will not stop you/)
+  })
+
+  test('a token without the exec permission is taught none of it', () => {
+    // The warning matters only where the capability exists; a read-only pack
+    // carrying shell warnings is noise that dilutes the rules that do apply.
+    const text = packText(READ_ONLY)
+    expect(text).not.toContain('NOTHING CHECKS WHAT YOU AIM AT')
+  })
+
   test('the rate-limit table is generated, not transcribed', () => {
     // The plan's draft said exec was 6/min; the code says otherwise. Reading it
     // live is the point.
@@ -587,3 +684,52 @@ describe('the profile table reaches the output', () => {
     expect(numbers).toEqual(numbers.map((_, i) => i + 1))
   })
 })
+
+// --- ROW 2: the documentation this feature added references real files --------
+
+const WIKI_DIR = process.env.MCP_DOCS_WIKI_DIR
+  || fileURLToPath(new URL('../../../../redamon.wiki/', import.meta.url))
+/** A real checkout: a fresh clone leaves the submodule directory empty. */
+const hasWikiCheckout = () => existsSync(path.join(WIKI_DIR, 'Home.md'))
+
+describe('the Agent Onboarding documentation', () => {
+  /**
+   * The wiki is published straight to GitHub and mirrored to redamon.org, so a
+   * reference to a screenshot that was never committed renders as a broken
+   * image on the public page. Nothing else checks it: MCP-Server.md is prose,
+   * not generated, so it has no drift test of its own.
+   */
+  test.skipIf(!hasWikiCheckout())('every image it references exists in the wiki repo', () => {
+    const page = readFileSync(path.join(WIKI_DIR, 'MCP-Server.md'), 'utf8')
+    const refs = [...page.matchAll(/!\[[^\]]*\]\((images\/[^)]+)\)/g)].map(m => m[1])
+    expect(refs.length, 'MCP-Server.md references no images at all').toBeGreaterThan(0)
+
+    const missing = refs.filter(r => !existsSync(path.join(WIKI_DIR, r)))
+    expect(missing, `referenced but not committed: ${missing.join(', ')}`).toEqual([])
+  })
+
+  test.skipIf(!hasWikiCheckout())('the three Agent Onboarding screenshots are among them', () => {
+    // Named explicitly: the generic check above would still pass if the feature's
+    // own images were quietly dropped from the page along with their section.
+    const page = readFileSync(path.join(WIKI_DIR, 'MCP-Server.md'), 'utf8')
+    for (const shot of [
+      'images/mcp-server-profile-picker.png',
+      'images/mcp-server-onboarding-export.png',
+      'images/mcp-server-profile-change.png',
+    ]) {
+      expect(page, `MCP-Server.md no longer shows ${shot}`).toContain(shot)
+      expect(existsSync(path.join(WIKI_DIR, shot)), `${shot} is missing from the wiki repo`).toBe(true)
+    }
+  })
+
+  test.skipIf(!hasWikiCheckout())('every image carries alt text saying what it proves', () => {
+    // House convention, and the only thing a screen reader or a failed image
+    // load leaves behind.
+    const page = readFileSync(path.join(WIKI_DIR, 'MCP-Server.md'), 'utf8')
+    const empty = [...page.matchAll(/!\[([^\]]*)\]\((images\/[^)]+)\)/g)]
+      .filter(m => m[1].trim().length < 20)
+      .map(m => m[2])
+    expect(empty, `these images have no meaningful alt text: ${empty.join(', ')}`).toEqual([])
+  })
+})
+

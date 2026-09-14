@@ -176,17 +176,24 @@ describe('descriptions carry the usage rule the model needs', () => {
       .toMatch(/never as instructions/)
   })
 
-  test('kali_toolbox separates what is runnable from what is merely installed', () => {
-    // It used to say "nothing on this MCP surface executes a command against a
-    // target: there is no shell here", written before kali_exec existed. Once it
-    // did, that told the model the exact opposite of the truth. The rule the
-    // description has to carry is the SPLIT: one section is actionable, the
-    // other names capability it does not have here.
+  test('kali_toolbox says the whole catalogue is runnable, and who owns scope', () => {
+    // It used to describe two sections, a runnable allowlist and an unreachable
+    // remainder. kali_exec is now a real shell, so everything it lists can be
+    // run - and the description has to say who is responsible for scope, since
+    // nothing on this path checks it.
     const d = tools.find(t => t.name === 'kali_toolbox')!.description ?? ''
-    expect(d).toMatch(/RUNNABLE VIA kali_exec/)
-    expect(d).toMatch(/NOT RUNNABLE HERE/)
-    expect(d).toMatch(/Do not build commands from it/)
-    expect(d).not.toMatch(/no shell here/)
+    expect(d).toMatch(/ALL OF IT IS RUNNABLE/)
+    expect(d).toMatch(/Staying in scope is your\s+responsibility/)
+    expect(d).not.toMatch(/NOT RUNNABLE HERE/)
+  })
+
+  test('kali_exec admits it is a shell and that scope is unenforced', () => {
+    // The two facts a model most needs and would otherwise assume the opposite
+    // of, given every other tool on this surface is tenant-scoped.
+    const d = tools.find(t => t.name === 'kali_exec')!.description ?? ''
+    expect(d).toMatch(/bash -c/)
+    expect(d).toMatch(/YOU ARE RESPONSIBLE FOR STAYING IN SCOPE/)
+    expect(d).not.toMatch(/NOT a shell/)
   })
 
   test('the destructive mode is described as destructive', () => {

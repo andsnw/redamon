@@ -11,7 +11,7 @@
  *
  * @vitest-environment node
  */
-import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   requireUserAccess: vi.fn(),
@@ -45,6 +45,10 @@ const valid = (over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks()
   h.requireUserAccess.mockResolvedValue(null)
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 describe('access', () => {
@@ -185,5 +189,48 @@ describe('it grants nothing', () => {
     const data = await (await POST(req(valid({ scopes: ['recon:read'] })), params())).json()
     const text = data.files.map((f: { content: string }) => f.content).join('\n')
     expect(text).not.toMatch(/rdmn_mcp_[0-9a-f]{8,}/)
+  })
+})
+
+// --- ROW 4: a withdrawn tool must not be taught ---------------------------------
+
+describe('a tool this deployment withdrew is absent from the pack', () => {
+  /**
+   * `MCP_DISABLED_TOOLS` is the operator's emergency lever for one misbehaving
+   * tool. The pack is generated from the server's own `tools/list`, and the
+   * withdrawal happens at REGISTRATION inside buildMcpServer, so a withdrawn
+   * tool never reaches the renderer.
+   *
+   * That property is what this asserts, through the real route rather than by
+   * hand-filtering an array: if the filtering ever moved into a route or a
+   * caller, the pack would keep teaching an agent to call a tool the server has
+   * stopped advertising, and every call would fail at run time.
+   */
+  test('the withdrawn tool appears nowhere in the generated files', async () => {
+    vi.stubEnv('MCP_DISABLED_TOOLS', 'get_blast_radius,list_exploit_paths')
+    const res = await POST(req(valid({ profile: 'reporting', scopes: ['recon:read', 'triage:read'] })), params())
+    expect(res.status).toBe(200)
+
+    const data = await res.json()
+    const text = data.files.map((f: { content: string }) => f.content).join('\n')
+    expect(text, 'the pack still teaches a withdrawn tool').not.toContain('get_blast_radius')
+    expect(text).not.toContain('list_exploit_paths')
+    expect(data.available).not.toContain('get_blast_radius')
+    // Not merely absent everywhere: it must not be listed as "you cannot call"
+    // either, which would tell the agent to go and ask for a permission.
+    expect(data.unavailable).not.toContain('get_blast_radius')
+    // A tool that was NOT withdrawn is still there, so this is not an empty pack.
+    expect(text).toContain('list_findings')
+  })
+
+  test('with nothing withdrawn the same tools are present', async () => {
+    // The control: without this, the assertion above would pass on a pack that
+    // never mentioned those tools for an unrelated reason.
+    vi.stubEnv('MCP_DISABLED_TOOLS', '')
+    const data = await (await POST(
+      req(valid({ profile: 'reporting', scopes: ['recon:read', 'triage:read'] })), params()
+    )).json()
+    expect(data.available).toContain('get_blast_radius')
+    expect(data.available).toContain('list_exploit_paths')
   })
 })

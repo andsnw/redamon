@@ -659,6 +659,22 @@ Two paths: pick one of **39 prefilled Quick-Add presets** (OSINT, threat-intel, 
 
 > **Full operator manual** (every form field, all 39 presets, the auth flow, the live discovery workflow, validation rules, troubleshooting, and the storage / security model): **[MCP Tool Plugins wiki page](https://github.com/samugit83/redamon/wiki/MCP-Tool-Plugins)**.
 
+### MCP Server: Your Own Agent Connecting *Into* RedAmon
+
+The mirror image of the plugins above. Instead of RedAmon's agent reaching *out* to tools, **your** agent connects *in* and drives RedAmon: your Claude Code session, an internal triage assistant, a nightly CI job, anything that speaks the Model Context Protocol. Mint an access token in **Global Settings → MCP Server** and it gets **30 tools** behind **9 permissions**: list projects, read scan status and settings, query the attack-surface graph in plain English or raw Cypher, read findings / suppressed findings / remediations, run saved graph views, compare saved scan versions, get an attack-surface overview, exploit paths and blast radius, start / stop / queue a recon run, record a triage verdict, and (off by default, behind three independent switches) run a command in the Kali sandbox.
+
+The token acts as **you**, inside **your own projects**. It is re-checked on every call, so a revoke takes effect on the agent's next call rather than its next reconnect; every graph read is rewritten to match only your tenant's nodes and runs in a read-only Neo4j session; and every write is a positive allowlist. Deliberately not exposed: the agent chat, creating or deleting projects, your API keys, the target and scope fields, Rules of Engagement, muting a finding, and any write to the graph. `MCP_SERVER_ENABLED` is off after a normal install and refused over plain HTTP on a server deploy, and `MCP_DISABLED_TOOLS` withdraws a single misbehaving tool without taking the whole surface down.
+
+#### Agent Onboarding (teaching *your* agent how to use RedAmon)
+
+Connecting an agent tells it *that* the tools exist. It does not tell it what RedAmon is, what the recon pipeline produces, or which of the 30 tools to reach for first. **Agent Onboarding writes those instructions for you.** Pick one of **14 Agent Profiles** (bug bounty, penetration testing, continuous attack-surface monitoring, vulnerability management, triage assistance, asset inventory / CMDB, compliance evidence, DevSecOps CI gating, reporting, M&A and third-party risk, threat-intel correlation, SOC enrichment, research and training, or custom) and RedAmon ticks the permissions that job needs and generates a pack tailored to it: a `SKILL.md` plus reference files covering the operating model, the graph's shape, the tool sequence for that job, the traps specific to it, and tool by tool exactly what *this* token can and cannot do. The tool facts are read from the server's own live tool list at export time, so a pack can never describe a tool differently from how the server serves it. Clients that never load a skill file (Cursor, Windsurf, Cline, Goose, Gemini CLI, Codex CLI) receive a shorter version of the same guidance inline the moment they connect.
+
+No profile ever ticks `kali:exec` or `recon:overwrite` for you, not even the ones that recommend them: a shell on a target-facing box and an irreversible graph wipe should never arrive as the side effect of choosing an item from a dropdown.
+
+> **Agent Skills teach RedAmon's agent. Agent Onboarding teaches yours.**
+
+> **[Wiki: MCP Server](https://github.com/samugit83/redamon/wiki/MCP-Server)** | **[Wiki: MCP API Reference](https://github.com/samugit83/redamon/wiki/MCP-API-Reference)** | **[Technical: README.MCP.SERVER.md](docs/readmes/README.MCP.SERVER.md)**
+
 ### Agent Workspace: Per-Project Filesystem, Background Jobs, Auto-Offload
 
 > **Watch the demo:** [RedAmon Agent Workspace: AI Runs 4 Parallel Pentests and Writes Its Own Report (YouTube)](https://youtu.be/dkgIk78T7Hw)

@@ -273,8 +273,12 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
 
   const changeEditProfile = async (next: ProfileId) => {
     if (!editing) return
-    const current = profileOrDefault(editing.profile)
-    const diverged = profileScopeDiff(current, editScopes).modified
+    // Measured against the profile CURRENTLY SELECTED in the panel, not the one
+    // stored on the token. Using the stored one made every switch after the
+    // first compare the new profile's scopes against the ORIGINAL profile's
+    // recommendation, so a second switch always looked hand-edited and accused
+    // the operator of discarding permissions they had never touched.
+    const diverged = profileScopeDiff(editProfile, editScopes).modified
     setServerWantsPassword(false)
     if (diverged) {
       const ok = await confirm(

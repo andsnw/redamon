@@ -315,41 +315,109 @@ const REPORTING = [
 
 // --- worked scenarios --------------------------------------------------------
 
-const SCENARIOS = [
-  '## Worked scenarios',
-  '',
-  'Three end-to-end traces. Notice that the lesson in each is the HONEST conclusion, not the tool',
-  'sequence: the failure they teach against is a confident wrong answer.',
-  '',
-  '### "Is api.example.com clean?"',
-  '',
-  '1. `list_projects` to find the project.',
-  '2. `graph_summary`. Is the state `stable`? Is `Vulnerability` even present as a node type? If it',
-  '   is absent, that surface was never scanned and you already have your answer.',
-  '3. `list_findings` for what is open.',
-  '4. `list_muted_findings`. Thirty suppressed criticals change the answer completely.',
-  '',
-  'Your conclusion must distinguish three different things: "scanned, no open findings, but N',
-  'suppressed by a human", "never scanned", and "the scan was mid-flight so I could not tell".',
-  '',
-  '### "What is new since last week?"',
-  '',
-  '1. `list_scan_versions` to see what exists.',
-  '2. `compare_scan_versions` from the last version to the current one.',
-  '3. Report only the newly-ADDED findings. Do not report ones that merely stopped being reported.',
-  '4. Rank what is left by `triage_priority_score`.',
-  '',
-  '### "Find something exploitable"',
-  '',
-  '1. `list_exploit_paths`, which is already ranked by known-exploited status and then severity.',
-  '2. Pivot a CVE to its weakness class and attack patterns with `query_graph`.',
-  '3. If, and only if, you hold the command permission AND the host is in scope AND you are inside',
-  '   the window: run one careful, non-destructive confirmation.',
-  '4. Report with the evidence.',
-  '',
-  'If you are not authorized to reach the target, report the candidate and do not probe it. That is',
-  'a complete answer, not a failure.',
-].join('\n')
+/**
+ * The worked traces, each declaring the tools it actually instructs a call to.
+ *
+ * These were plain prose, which quietly defeated the scope filter: a
+ * `recon:read`-only token was handed a scenario telling it to call
+ * `list_muted_findings`, a tool it will always be refused. Worse, that scenario
+ * teaches the bar for calling a project "clean" - so the agent learned a
+ * completeness rule it structurally could not satisfy, and was never told which
+ * half of it was out of reach.
+ *
+ * A scenario now renders only when every tool it names is callable, and the
+ * clean-check carries an explicit fallback when the suppression half is not.
+ */
+interface Scenario {
+  title: string
+  requiredTools: string[]
+  body: string[]
+  /** Rendered instead when `requiredTools` are not all available. */
+  fallback?: { requiredTools: string[]; body: string[] }
+}
+
+const SCENARIOS: Scenario[] = [
+  {
+    title: '"Is api.example.com clean?"',
+    requiredTools: ['list_projects', 'graph_summary', 'list_findings', 'list_muted_findings'],
+    body: [
+      '1. `list_projects` to find the project.',
+      '2. `graph_summary`. Is the state `stable`? Is `Vulnerability` even present as a node type? If it',
+      '   is absent, that surface was never scanned and you already have your answer.',
+      '3. `list_findings` for what is open.',
+      '4. `list_muted_findings`. Thirty suppressed criticals change the answer completely.',
+      '',
+      'Your conclusion must distinguish three different things: "scanned, no open findings, but N',
+      'suppressed by a human", "never scanned", and "the scan was mid-flight so I could not tell".',
+    ],
+    fallback: {
+      requiredTools: ['list_projects', 'graph_summary', 'list_findings'],
+      body: [
+        '1. `list_projects` to find the project.',
+        '2. `graph_summary`. Is the state `stable`? Is `Vulnerability` even present as a node type? If it',
+        '   is absent, that surface was never scanned and you already have your answer.',
+        '3. `list_findings` for what is open.',
+        '',
+        '**You cannot complete this one.** Calling a project clean also requires reading the findings a',
+        'human suppressed, and this token cannot see them: that needs `triage:read`. So the honest',
+        'answer here is "no OPEN findings, and I could not check whether any were suppressed" - never',
+        '"clean". Say which half you checked, and ask for the permission if the question matters.',
+      ],
+    },
+  },
+  {
+    title: '"What is new since last week?"',
+    requiredTools: ['list_scan_versions', 'compare_scan_versions'],
+    body: [
+      '1. `list_scan_versions` to see what exists.',
+      '2. `compare_scan_versions` from the last version to the current one.',
+      '3. Report only the newly-ADDED findings. Do not report ones that merely stopped being reported.',
+      '4. Rank what is left by `triage_priority_score`.',
+    ],
+  },
+  {
+    title: '"Find something exploitable"',
+    requiredTools: ['list_exploit_paths', 'query_graph'],
+    body: [
+      '1. `list_exploit_paths`, which is already ranked by known-exploited status and then severity.',
+      '2. Pivot a CVE to its weakness class and attack patterns with `query_graph`.',
+      '3. If, and only if, you hold the command permission AND the host is in scope AND you are inside',
+      '   the window: run one careful, non-destructive confirmation.',
+      '4. Report with the evidence.',
+      '',
+      'If you are not authorized to reach the target, report the candidate and do not probe it. That is',
+      'a complete answer, not a failure.',
+    ],
+  },
+]
+
+function renderScenarios(tools: Tool[], scopes: readonly McpScope[]): string {
+  const byName = new Map(tools.map(t => [t.name, t]))
+  const allUsable = (names: string[]) =>
+    names.every(n => {
+      const tool = byName.get(n)
+      return tool !== undefined && canCall(tool, scopes)
+    })
+
+  const rendered: string[] = []
+  for (const sc of SCENARIOS) {
+    const variant = allUsable(sc.requiredTools) ? sc
+      : sc.fallback && allUsable(sc.fallback.requiredTools) ? sc.fallback
+      : null
+    if (!variant) continue
+    rendered.push(`### ${sc.title}`, '', ...variant.body, '')
+  }
+  if (rendered.length === 0) return ''
+
+  return [
+    '## Worked scenarios',
+    '',
+    'End-to-end traces. Notice that the lesson in each is the HONEST conclusion, not the tool',
+    'sequence: the failure they teach against is a confident wrong answer.',
+    '',
+    ...rendered,
+  ].join('\n').trimEnd()
+}
 
 // --- C. the capability areas -------------------------------------------------
 
@@ -800,10 +868,12 @@ const REFERENCES: ReferenceSpec[] = [
     requiresScope: 'kali:exec',
     title: 'Running a command at the target',
     intro:
-      'This is the one capability that reaches a live third-party target outside a scan. It exists ' +
-      'to CONFIRM what the graph already suggested, and it is gated three ways: the deployment must ' +
-      'enable it, the token must carry the permission, and a server-side guard admits or refuses ' +
-      'each command on its own merits.',
+      'This is the one capability that reaches a live third-party target outside a scan, and it is a ' +
+      'SHELL: `bash -c` with the sandbox\'s full toolset. Two switches gate whether you have it at ' +
+      'all (the deployment enables the feature, the token carries the permission), and after that ' +
+      'NOTHING checks what you aim at. There is no allowlist, no target check and no excluded-host ' +
+      'check on this path. Establish the scope yourself, from the project settings, before you run ' +
+      'anything.',
     areas: ['exec'],
     workflows: ['run-a-command'],
   },
@@ -909,7 +979,7 @@ export function renderOnboardingPack(
     '',
     REPORTING,
     '',
-    SCENARIOS,
+    renderScenarios(tools, ordered),
     '',
     renderConnecting(opts),
     '',

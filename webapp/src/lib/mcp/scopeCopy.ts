@@ -67,29 +67,27 @@ export const MCP_SCOPE_COPY: Record<McpScope, ScopeCopy> = {
     blurb: 'Send read-only Cypher directly instead of a natural-language question. Still tenant-scoped and still read-only.',
   },
   'kali:exec': {
-    label: 'Run sandbox commands at the target',
-    blurb: 'Run single commands from a fixed allowlist of read-only tools (curl, dig, nikto, testssl and similar) in the Kali sandbox. Every command is checked against the project\'s own scope and its excluded-hosts list before it runs, and it is not a shell: pipelines, redirection and any tool that can load or run code are refused. This is the only permission that reaches a live target outside a scan.',
+    label: 'Shell access to the Kali sandbox',
+    blurb: 'Give the agent a SHELL in the Kali sandbox: `bash -c` with the full toolset, pipelines and redirection, no allowlist and no per-command target check. This is the most powerful permission on this surface and the only one that reaches a live target outside a scan.',
     // Leads with the decision the operator is actually making, because "does my
     // agent bring its own tools or borrow RedAmon's" is the real question and
     // everything else follows from it.
     //
-    // It deliberately does NOT enumerate the permitted programs. The allowlist
-    // is maintained in agentic/kali_exec_guard.py and grows; a list copied into
-    // this string would be wrong within a release, and a copy that overstates it
-    // is wrong in the dangerous direction. The wiki link below is generated from
-    // the guard itself.
+    // It deliberately does NOT enumerate the toolset. That lives in the
+    // kali_shell TOOL_REGISTRY description, which kali_toolbox serves; a list
+    // copied into this string would be wrong within a release.
     detail:
       'Does your agent already have security tools installed where it runs, or should it borrow ' +
       'RedAmon\'s? With this on, your agent runs commands inside RedAmon\'s Kali sandbox instead of ' +
-      'on its own machine, so it needs nothing installed locally. It is a fixed allowlist of ' +
-      'read-only tools, not the sandbox\'s whole toolset and not a shell: anything that can load or ' +
-      'run code is refused by name. Every command is checked against this project\'s scope and its ' +
-      'excluded hosts before it runs. This is the only permission that reaches a live target ' +
-      'outside a scan, and ticking it is not sufficient on its own: the deployment must also enable ' +
-      'the feature, and a server-side guard admits or refuses each command.',
+      'on its own machine, so it needs nothing installed locally. It is the SAME access the in-app ' +
+      'agent has: a real shell, the sandbox\'s whole toolset, and no allowlist. Unlike the in-app ' +
+      'agent there is no human clicking a confirmation, and commands are NOT checked against this ' +
+      'project\'s scope, so an agent you grant this to can reach any host the sandbox can. Tick it ' +
+      'only for an agent you would trust with a terminal on that box. It is not sufficient on its ' +
+      'own: the deployment must enable the feature and the project must opt in.',
     learnMore: [
-      { text: 'What the sandbox carries', href: `${WIKI}/MCP-Server#kali_toolbox-what-is-installed-not-what-is-permitted` },
-      { text: 'What this can actually run', href: `${WIKI}/MCP-Server#kali_exec-one-command-at-your-target-from-a-fixed-list` },
+      { text: 'What the sandbox carries', href: `${WIKI}/MCP-Server#kali_toolbox-what-the-sandbox-carries` },
+      { text: 'What a shell here means', href: `${WIKI}/MCP-Server#kali_exec-a-shell-in-the-sandbox` },
     ],
     danger: true,
   },
@@ -144,8 +142,8 @@ export const SCOPE_GROUPS: ScopeGroup[] = [
   },
   {
     id: 'exec',
-    label: 'Run commands at the target',
-    hint: 'The only permission that reaches a live target outside a scan.',
+    label: 'Shell access to the sandbox',
+    hint: 'A real shell on a target-facing box. Nothing checks what it is aimed at.',
     tone: 'exec',
     scopes: ['kali:exec'],
   },

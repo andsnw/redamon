@@ -7,6 +7,9 @@
  *
  * @vitest-environment node
  */
+import { existsSync, readFileSync } from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { describe, test, expect } from 'vitest'
 
 import { MCP_SCOPES, type McpScope } from '@/lib/mcpAuth'
@@ -36,15 +39,26 @@ describe('the copy', () => {
     expect(MCP_SCOPE_COPY['kali:exec'].detail!.length).toBeGreaterThan(300)
   })
 
-  test('the exec copy does not enumerate the allowlist, which grows', () => {
-    // A list copied into this string goes stale silently, and a copy that
-    // overstates the allowlist is wrong in the dangerous direction. The wiki
-    // links carry the current list instead.
-    const detail = MCP_SCOPE_COPY['kali:exec'].detail!
-    expect(detail).toContain('fixed allowlist of read-only tools')
-    expect(detail).toContain('not a shell')
-    expect(detail).toContain('not sufficient on its own')
-    expect(MCP_SCOPE_COPY['kali:exec'].learnMore).toHaveLength(2)
+  test('the exec copy states what it really grants: a shell, unscoped', () => {
+    // This used to promise "a fixed allowlist of read-only tools" and "not a
+    // shell". kali_exec is now at parity with the in-app agent - bash -c, full
+    // toolset, no allowlist, no per-command scope check - so that copy was
+    // understating the permission an operator ticks, which is the dangerous
+    // direction for a consent screen.
+    const c = MCP_SCOPE_COPY['kali:exec']
+    expect(c.blurb).toContain('SHELL')
+    expect(c.blurb).toContain('no allowlist')
+    expect(c.detail!).toContain('no human clicking a confirmation')
+    expect(c.detail!).toContain('NOT checked against this')
+    expect(c.detail!).toContain('not sufficient on its own')
+    expect(c.detail!).not.toContain('read-only tools')
+    expect(c.learnMore).toHaveLength(2)
+  })
+
+  test('it is flagged as a danger scope', () => {
+    // It is the most powerful permission on the surface; the UI must style it
+    // as such rather than as one checkbox among many.
+    expect(MCP_SCOPE_COPY['kali:exec'].danger).toBe(true)
   })
 
   test('every learnMore link points at the wiki over https', () => {
@@ -109,5 +123,69 @@ describe('the grouping', () => {
     const flattened = SCOPE_GROUPS.flatMap(g => g.scopes)
     expect(flattened).not.toEqual([...MCP_SCOPES])
     expect([...flattened].sort()).toEqual([...MCP_SCOPES].sort() as McpScope[])
+  })
+})
+
+/**
+ * Every `learnMore` link points into the wiki by heading anchor, and NOTHING
+ * connects the two. Renaming a heading in MCP-Server.md silently 404s a link in
+ * the consent screen - the one place an operator goes to understand what they
+ * are granting.
+ *
+ * Found for real: `kali_toolbox`'s section was renamed from "what is installed,
+ * not what is permitted" to "what the sandbox carries" when the allowlist was
+ * removed, and the link kept pointing at the old slug. Nothing failed.
+ */
+describe('wiki anchors resolve', () => {
+  const WIKI_DIR =
+    process.env.MCP_DOCS_WIKI_DIR ||
+    fileURLToPath(new URL('../../../../redamon.wiki/', import.meta.url))
+
+  /**
+   * A real checkout, not merely the directory: the main repo records the wiki as
+   * a submodule pointer, so a fresh clone leaves redamon.wiki/ EMPTY and every
+   * anchor would read as broken.
+   */
+  const hasWiki = () => existsSync(path.join(WIKI_DIR, 'Home.md'))
+
+  /** GitHub's heading -> anchor rule: lowercase, drop punctuation, spaces to -. */
+  const slug = (heading: string) =>
+    heading
+      .replace(/^#+\s*/, '')
+      .trim()
+      .toLowerCase()
+      .replace(/`/g, '')
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+
+  const anchorsIn = (page: string) =>
+    new Set(
+      readFileSync(path.join(WIKI_DIR, page), 'utf8')
+        .split('\n')
+        .filter(l => l.startsWith('#'))
+        .map(slug)
+    )
+
+  test.skipIf(!hasWiki())('every scope learnMore anchor exists in its wiki page', () => {
+    const byPage = new Map<string, Set<string>>()
+    const broken: string[] = []
+
+    for (const scope of MCP_SCOPES) {
+      for (const link of MCP_SCOPE_COPY[scope].learnMore ?? []) {
+        const m = /\/wiki\/([A-Za-z0-9._-]+)#([^"'`\s]+)$/.exec(link.href)
+        if (!m) continue
+        const [, page, anchor] = m
+        const file = `${page}.md`
+        if (!existsSync(path.join(WIKI_DIR, file))) {
+          broken.push(`${scope}: ${file} does not exist`)
+          continue
+        }
+        if (!byPage.has(file)) byPage.set(file, anchorsIn(file))
+        if (!byPage.get(file)!.has(anchor)) {
+          broken.push(`${scope}: ${file}#${anchor} matches no heading`)
+        }
+      }
+    }
+    expect(broken, 'a consent-screen link points at a heading that no longer exists').toEqual([])
   })
 })

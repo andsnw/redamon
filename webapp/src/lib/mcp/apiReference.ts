@@ -123,9 +123,11 @@ function placeholderFor(name: string, schema: JsonSchema): unknown {
  */
 const EXAMPLE_EXTRA_ARGS: Record<string, Record<string, unknown>> = {
   query_graph: { question: 'Which subdomains expose an admin panel?' },
-  // The generated `YOUR_COMMAND` placeholder is not merely unhelpful here: it
-  // would be REFUSED if copied, because the command has a required shape (one
-  // allowlisted program, naming an in-scope target). The example has to show it.
+  // `YOUR_COMMAND` would be run verbatim by a shell and fail as "command not
+  // found". Nothing refuses it any more - there is no allowlist and no target
+  // check on this path - so the reason for a real example is now pedagogical
+  // rather than mechanical: the reader must see that this takes a SHELL command
+  // and that choosing an in-scope target is their own responsibility.
   kali_exec: { command: 'curl -sI https://YOUR_TARGET/' },
 }
 

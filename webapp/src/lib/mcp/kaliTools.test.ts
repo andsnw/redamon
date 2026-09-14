@@ -34,15 +34,15 @@ vi.mock('@/lib/mcp/kaliClient', () => ({
   kaliJobCancel: (...a: unknown[]) => h.cancel(...a),
 }))
 
-import { McpScopeError, McpAccessDenied, __resetRateLimiter } from '@/lib/mcpAuth'
+import { McpScopeError, McpAccessDenied, __resetRateLimiter, type McpScope } from '@/lib/mcpAuth'
 import { McpToolError } from './errors'
 import { cancelCommand, execCommand, kaliExecEnabled, readCommandOutput } from './kaliTools'
 import type { McpContext } from './tools'
 
-const ctx = (scopes: string[] = ['kali:exec']): McpContext => ({
+const ctx = (scopes: McpScope[] = ['kali:exec']): McpContext => ({
   token: {
     tokenId: 't1', userId: 'owner', tokenPrefix: 'rdmn_mcp_aaaaaaaa',
-    name: 'agent', scopes: scopes as never,
+    name: 'agent', scopes,
   },
 })
 

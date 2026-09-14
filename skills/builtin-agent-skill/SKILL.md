@@ -50,6 +50,17 @@ For per-skill tunable defaults, use `project-settings-cascade`.
   for a tool `TOOL_PHASE_MAP` blocks in that phase.
 - **NEVER assume existing projects inherit the new skill.** `builtIn` is a strict
   has-key check; existing projects need a jsonb update to `attackSkillConfig`.
+- **ALWAYS classify a per-skill tunable that became a `Project` column** in
+  [webapp/src/lib/reconSettingsAllowlist.generated.ts](../../webapp/src/lib/reconSettingsAllowlist.generated.ts).
+  Every attack-skill tunable belongs in the **DENY** table - follow the shipped
+  ones (`sqliLevel: 'attack'`, `ssrfOobCallbackEnabled: 'egress'`,
+  `ssrfOobProvider: 'egress'`, `rceAggressivePayloads: 'wordlist'`). These change
+  what the agent does to a live target, so they are not knobs an external MCP
+  token may reach. The inbound MCP server writes settings through a positive
+  allowlist and a coverage test walking `Prisma.ProjectScalarFieldEnum` is red
+  until every new column is classified. It announces itself, but in the **webapp**
+  suite rather than the agent one, which is why this layer gets missed. A skill
+  with no Prisma-backed tunables needs nothing here.
 - **Pick the snake_case id once and use that exact literal in all 9 layers.**
   `grep -rn "<skill_id>" webapp/src agentic` must show it everywhere before you
   rebuild (an existing id like `cve_exploit` spans ~38 files).

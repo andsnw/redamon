@@ -64,6 +64,14 @@ The tool works well via `kali_shell` / `execute_code`. No dedicated MCP tool or 
 2. `agentic/prompts/tool_registry.py` — Update `kali_shell` entry's `description` field to mention the new tool in the CLI tools list
 3. Rebuild kali-sandbox: `docker compose build kali-sandbox`
 
+> **This is not only the in-app agent's catalogue any more.** The INBOUND MCP
+> server's `kali_toolbox` tool serves `TOOL_REGISTRY["kali_shell"]["description"]`
+> **verbatim** (`agentic/api.py`, `GET /kali/toolbox`), and `kali_exec` is the only
+> way an external agent runs anything at all. A binary you install but leave out of
+> that description does not exist as far as every MCP client is concerned. Nothing
+> tests this, so step 2 is the whole safeguard. Rebuild the **agent** as well as
+> kali-sandbox, since the registry is baked into the agent image.
+
 **Examples:** searchsploit, john, smbclient, sqlmap
 
 ---

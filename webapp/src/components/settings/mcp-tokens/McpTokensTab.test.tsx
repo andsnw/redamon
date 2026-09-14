@@ -20,17 +20,31 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react'
 
-const h = vi.hoisted(() => ({ dangerConfirm: vi.fn(), alertError: vi.fn() }))
+const h = vi.hoisted(() => ({
+  dangerConfirm: vi.fn(), alertError: vi.fn(), confirm: vi.fn(),
+}))
 
 vi.mock('@/components/ui', () => ({
-  useAlertModal: () => ({ dangerConfirm: h.dangerConfirm, alertError: h.alertError }),
+  useAlertModal: () => ({
+    dangerConfirm: h.dangerConfirm, alertError: h.alertError, confirm: h.confirm,
+  }),
   WikiInfoButton: () => null,
+  // The Agent Onboarding modal renders through the shared Modal and links out
+  // with ExternalLink. Rendered as plain elements so this file keeps testing the
+  // TAB rather than the modal's own portal and focus behaviour.
+  Modal: ({ isOpen, title, children }: { isOpen: boolean; title?: string; children?: ReactNode }) =>
+    isOpen ? <div role="dialog" aria-label={title}>{children}</div> : null,
+  ExternalLink: ({ href, children }: { href: string; children?: ReactNode }) =>
+    <a href={href}>{children}</a>,
 }))
 vi.mock('@/hooks/useUnsavedChangesGuard', () => ({
   useUnsavedChangesGuard: () => ({ guardedNavigate: vi.fn() }),
 }))
 
+import type { ReactNode } from 'react'
 import McpTokensTab from './McpTokensTab'
+import type { McpScope } from '@/lib/mcpAuth'
+import { PROFILE_IDS, scopesForProfile, type ProfileId } from '@/lib/mcp/profiles'
 
 const TOKEN = {
   id: 't1',
@@ -470,5 +484,241 @@ describe('editing a token', () => {
     expect(screen.getByText(/only its name can change/)).toBeTruthy()
     expect(screen.getByText('recon:read', { selector: 'code' }).closest('fieldset')).toBeDisabled()
     expect(screen.getByLabelText('Expires')).toBeDisabled()
+  })
+})
+
+// --- Agent Profiles ---------------------------------------------------------
+//
+// The safety property the whole feature rests on: a profile ticks permissions
+// on the operator's behalf, and there are two it must NEVER tick. Command
+// execution at a live target and irreversible graph destruction have to be
+// deliberate acts, not side effects of choosing a job from a dropdown.
+
+describe('the Agent Profile drives the permissions', () => {
+  const openForm = async (fetchMock = mockFetch({})) => {
+    vi.stubGlobal('fetch', fetchMock)
+    render(<McpTokensTab userId="owner" />)
+    await waitFor(() => expect(screen.getByText('New token').closest('button')).not.toBeDisabled())
+    fireEvent.click(screen.getByText('New token'))
+    return fetchMock
+  }
+
+  const profileSelect = () => screen.getByLabelText('Agent Profile') as HTMLSelectElement
+  /**
+   * The scope code also appears in the opt-in footnote ("Pentest also suggests
+   * kali:exec"), so a bare code lookup is ambiguous for the three profiles that
+   * have one. Only a checkbox ROW is a label wrapping an input.
+   */
+  const box = (scope: McpScope) => {
+    const row = screen.getAllByText(scope, { selector: 'code' })
+      .map(el => el.closest('label'))
+      .find(l => l?.querySelector('input[type=checkbox]'))
+    return row!.querySelector('input') as HTMLInputElement
+  }
+
+  const pick = (id: ProfileId) => fireEvent.change(profileSelect(), { target: { value: id } })
+
+  test('defaults to Custom, which ticks only recon:read', async () => {
+    await openForm()
+    expect(profileSelect().value).toBe('custom')
+    expect(box('recon:read')).toBeChecked()
+    expect(box('recon:scan')).not.toBeChecked()
+  })
+
+  test('choosing a job re-ticks exactly that job permissions', async () => {
+    await openForm()
+    pick('asm')
+    await waitFor(() => expect(box('recon:queue')).toBeChecked())
+    for (const scope of scopesForProfile('asm')) {
+      expect(box(scope), `asm should tick ${scope}`).toBeChecked()
+    }
+    expect(box('graph:cypher')).not.toBeChecked()
+  })
+
+  test.each(PROFILE_IDS)('%s never auto-ticks kali:exec or recon:overwrite', async id => {
+    await openForm()
+    pick(id)
+    await waitFor(() => expect(profileSelect().value).toBe(id))
+    expect(box('kali:exec'), `${id} auto-ticked kali:exec`).not.toBeChecked()
+    expect(box('recon:overwrite'), `${id} auto-ticked recon:overwrite`).not.toBeChecked()
+  })
+
+  test('a profile that wants a dangerous scope says so, with the box still clear', async () => {
+    await openForm()
+    pick('research') // the only profile recommending BOTH
+    await waitFor(() => expect(box('recon:settings')).toBeChecked())
+    expect(screen.getAllByText('recommended, tick it yourself')).toHaveLength(2)
+    expect(screen.getByText(/never ticks those for you/)).toBeTruthy()
+  })
+
+  test('switching after a hand-edit asks before discarding the choice', async () => {
+    h.confirm.mockResolvedValue(true)
+    await openForm()
+    pick('soc')
+    await waitFor(() => expect(box('graph:cypher')).toBeChecked())
+    fireEvent.click(box('kali:exec'))
+    await waitFor(() => expect(box('kali:exec')).toBeChecked())
+
+    pick('triage')
+    await waitFor(() => expect(h.confirm).toHaveBeenCalled())
+    expect(String(h.confirm.mock.calls[0][0])).toContain('Triage assistance')
+  })
+
+  test('declining that prompt keeps the hand-picked permissions', async () => {
+    h.confirm.mockResolvedValue(false)
+    await openForm()
+    pick('soc')
+    await waitFor(() => expect(box('graph:cypher')).toBeChecked())
+    fireEvent.click(box('kali:exec'))
+    await waitFor(() => expect(box('kali:exec')).toBeChecked())
+
+    pick('triage')
+    // The label moves, the permissions do not: a profile is a label, never a grant.
+    await waitFor(() => expect(profileSelect().value).toBe('triage'))
+    expect(box('kali:exec')).toBeChecked()
+    expect(box('triage:write')).not.toBeChecked()
+  })
+
+  test('the mint sends the profile alongside the scopes', async () => {
+    const f = await openForm()
+    pick('asm')
+    await waitFor(() => expect(box('recon:queue')).toBeChecked())
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'nightly' } })
+    fireEvent.click(screen.getByText('Create token'))
+
+    await waitFor(() => expect(f.mock.calls.some(c => (c[1] as RequestInit)?.method === 'POST')).toBe(true))
+    const post = f.mock.calls.find(c => (c[1] as RequestInit)?.method === 'POST')!
+    const body = JSON.parse(String((post[1] as RequestInit).body))
+    expect(body.profile).toBe('asm')
+    expect(body.scopes).toEqual(scopesForProfile('asm'))
+  })
+
+  test('Custom is sent as null, so "no profile" and "chose Custom" stay one thing', async () => {
+    const f = await openForm()
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'manual' } })
+    fireEvent.click(screen.getByText('Create token'))
+
+    await waitFor(() => expect(f.mock.calls.some(c => (c[1] as RequestInit)?.method === 'POST')).toBe(true))
+    const post = f.mock.calls.find(c => (c[1] as RequestInit)?.method === 'POST')!
+    expect(JSON.parse(String((post[1] as RequestInit).body)).profile).toBeNull()
+  })
+})
+
+describe('the Agent Profile on an existing token', () => {
+  const PROFILED = { ...TOKEN, profile: 'asm', scopes: ['recon:read', 'triage:read'] }
+
+  const openEditOf = async (row: unknown) => {
+    const f = mockFetch({ tokens: { tokens: [row] } })
+    vi.stubGlobal('fetch', f)
+    render(<McpTokensTab userId="owner" />)
+    await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
+    await waitFor(() => expect(f.mock.calls.some(c => String(c[0]).includes('/api/auth/me'))).toBe(true))
+    fireEvent.click(screen.getByTitle('Edit'))
+    await waitFor(() => expect(screen.getByText('Edit token')).toBeTruthy())
+    return f
+  }
+
+  test('the stored profile is pre-selected', async () => {
+    await openEditOf(PROFILED)
+    expect((screen.getByLabelText('Agent Profile') as HTMLSelectElement).value).toBe('asm')
+  })
+
+  test('a token minted before profiles existed reads as Custom', async () => {
+    // Every pre-existing row has profile null; it must not render as blank or crash.
+    await openEditOf({ ...TOKEN, profile: null })
+    expect((screen.getByLabelText('Agent Profile') as HTMLSelectElement).value).toBe('custom')
+  })
+
+  test('changing only the profile saves it and asks for no password', async () => {
+    h.confirm.mockResolvedValue(true)
+    const f = await openEditOf(PROFILED)
+    fireEvent.change(screen.getByLabelText('Agent Profile'), { target: { value: 'compliance' } })
+    await waitFor(() => expect((screen.getByLabelText('Agent Profile') as HTMLSelectElement).value).toBe('compliance'))
+    fireEvent.click(screen.getByText('Save changes'))
+
+    await waitFor(() => expect(f.mock.calls.some(c => (c[1] as RequestInit)?.method === 'PATCH')).toBe(true))
+    const patch = f.mock.calls.find(c => (c[1] as RequestInit)?.method === 'PATCH')!
+    expect(JSON.parse(String((patch[1] as RequestInit).body)).profile).toBe('compliance')
+    expect(screen.queryByLabelText('Confirm your password')).toBeNull()
+  })
+
+  /**
+   * REGRESSION: changeEditProfile diffed against the STORED profile.
+   *
+   * It measured divergence from `editing.profile` instead of the profile
+   * currently selected in the panel, so the second consecutive switch compared
+   * the new profile's scopes against the ORIGINAL profile's recommendation and
+   * always looked hand-edited. The operator got a prompt accusing them of
+   * discarding permissions they had never touched. The mint form got this
+   * right; only the edit panel was wrong.
+   */
+  test('two consecutive profile switches do not raise a spurious prompt', async () => {
+    h.confirm.mockResolvedValue(true)
+    // Stored as custom with exactly custom's recommendation, so nothing is
+    // hand-edited at any point in this flow.
+    await openEditOf({ ...TOKEN, profile: null, scopes: ['recon:read'] })
+
+    fireEvent.change(screen.getByLabelText('Agent Profile'), { target: { value: 'soc' } })
+    await waitFor(() => expect((screen.getByLabelText('Agent Profile') as HTMLSelectElement).value).toBe('soc'))
+    expect(h.confirm).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('Agent Profile'), { target: { value: 'triage' } })
+    await waitFor(() => expect((screen.getByLabelText('Agent Profile') as HTMLSelectElement).value).toBe('triage'))
+    expect(h.confirm, 'switching soc -> triage is not a hand-edit').not.toHaveBeenCalled()
+  })
+
+  test('a genuine hand-edit in the panel still raises the prompt', async () => {
+    h.confirm.mockResolvedValue(true)
+    await openEditOf({ ...TOKEN, profile: null, scopes: ['recon:read'] })
+    fireEvent.change(screen.getByLabelText('Agent Profile'), { target: { value: 'soc' } })
+    await waitFor(() => expect((screen.getByLabelText('Agent Profile') as HTMLSelectElement).value).toBe('soc'))
+
+    const row = screen.getAllByText('triage:write', { selector: 'code' })
+      .map(e => e.closest('label')).find(l => l?.querySelector('input[type=checkbox]'))!
+    fireEvent.click(row.querySelector('input')!)
+
+    fireEvent.change(screen.getByLabelText('Agent Profile'), { target: { value: 'triage' } })
+    await waitFor(() => expect(h.confirm).toHaveBeenCalled())
+  })
+
+  test('hand-editing away from the profile says divergence is allowed', async () => {
+    await openEditOf(PROFILED)
+    fireEvent.click(
+      screen.getByText('graph:cypher', { selector: 'code' }).closest('label')!.querySelector('input')!
+    )
+    expect(await screen.findByText(/no longer match the/)).toBeTruthy()
+    expect(screen.getByText(/never a\s+permission/)).toBeTruthy()
+  })
+})
+
+describe('the Agent Onboarding entry points', () => {
+  test('the tab offers onboarding before any token exists', async () => {
+    vi.stubGlobal('fetch', mockFetch({}))
+    render(<McpTokensTab userId="owner" />)
+    await waitFor(() => expect(screen.getByText(/No MCP access tokens yet/)).toBeTruthy())
+    expect(screen.getByText('Agent Onboarding')).toBeTruthy()
+  })
+
+  test('a token row opens the modal pre-filled from that token', async () => {
+    vi.stubGlobal('fetch', mockFetch({ tokens: { tokens: [{ ...TOKEN, profile: 'asm' }] } }))
+    render(<McpTokensTab userId="owner" />)
+    await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
+    fireEvent.click(screen.getByText('Onboard'))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.getAttribute('aria-label')).toContain('ci agent')
+    expect((screen.getByLabelText('Agent Profile') as HTMLSelectElement).value).toBe('asm')
+  })
+
+  test('the modal says plainly that it grants nothing', async () => {
+    vi.stubGlobal('fetch', mockFetch({ tokens: { tokens: [TOKEN] } }))
+    render(<McpTokensTab userId="owner" />)
+    await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
+    fireEvent.click(screen.getByText('Onboard'))
+    // Without this a user ticking a permission in the modal believes they just
+    // widened their token.
+    expect(
+      await screen.findByText(/previews what the instructions would say, and grants nothing/)
+    ).toBeTruthy()
   })
 })

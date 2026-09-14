@@ -546,6 +546,12 @@
 
 /* --- the Agent Onboarding modal -------------------------------------------- */
 
+/* 20% wider than the shared modalLarge (768px). Doubled class so it beats
+   modalLarge regardless of which CSS module the bundler emits last. */
+.onboardModal.onboardModal {
+  max-width: min(922px, calc(100vw - var(--space-8)));
+}
+
 .onboardBody {
   display: flex;
   flex-direction: column;

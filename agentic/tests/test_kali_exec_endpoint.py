@@ -1,10 +1,11 @@
 """The three agent endpoints behind the inbound MCP kali_exec tools.
 
-Admission itself is covered by test_kali_exec_guard.py. What is pinned here is
-the wiring, where the failures are different in kind:
+kali_exec is at PARITY with the in-app agent: `bash -c`, no allowlist, no
+per-command target check. So nothing here tests admission - there is none. What
+is pinned is the wiring, where the failures are different in kind:
 
-  - a command must reach the sandbox ONLY through `admit`, and only re-quoted;
-  - an unresolvable scope must refuse, never fall through to "no scope";
+  - the command reaches the sandbox VERBATIM, because a caller is entitled to
+    write a pipeline and quoting it would break every one;
   - the log path must be derived from the tenant, NEVER read from the job's own
     metadata (see LogPathTrustTests - that was an arbitrary file read);
   - a tool that failed must not be published as exit 0.
@@ -19,9 +20,6 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import api  # noqa: E402
-from kali_exec_guard import KaliScope  # noqa: E402
-
-SCOPE = KaliScope(domains=("acme.tld",), ips=("10.0.0.5",), project_id="p1")
 JOB = "a" * 32          # a well-formed uuid4 hex
 OTHER_JOB = "b" * 32
 
@@ -119,7 +117,6 @@ class _Base(unittest.IsolatedAsyncioTestCase):
             mock.patch.dict(os.environ, {"WORKSPACE_ROOT": self.root}),
             mock.patch.object(api, "orchestrator", mock.Mock(tool_executor=self.executor)),
             mock.patch.object(api.job_runner, "get_registry", return_value=self.registry),
-            mock.patch.object(api, "_kali_scope", return_value=SCOPE),
         ]
         for p in patches:
             p.start()
@@ -207,28 +204,36 @@ class ExecTests(_Base):
         self.assertEqual(call["name"], "kali_shell")
         self.assertIn("'Mozilla 5.0'", call["args"]["command"])
 
-    async def test_the_command_actually_run_is_echoed_back(self):
-        body = _body(await self._exec("curl -I https://acme.tld"))
-        # Includes the injected safety bounds: the caller should see what ran.
-        self.assertIn("--max-filesize", body["command"])
+    async def test_a_pipeline_reaches_the_sandbox_verbatim(self):
+        """PARITY WITH THE DRAWER. kali_shell is `bash -c`, so a caller is
+        entitled to write a pipeline - and quoting or rewriting it would break
+        every one. Nothing between here and bash may touch the string."""
+        cmd = "subfinder -d acme.tld -silent | httpx -silent -sc | head -20"
+        await self._exec(cmd)
+        self.assertEqual(self.executor.calls[0]["args"]["command"], cmd)
 
-    async def test_a_refused_command_never_reaches_the_sandbox(self):
-        resp = await self._exec("curl https://victim.tld")
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(_body(resp)["code"], "refused")
-        self.assertEqual(self.executor.calls, [])
-        self.assertEqual(self.registry.spawned, [])
+    async def test_metacharacters_are_not_stripped_or_refused(self):
+        for cmd in (
+            "nmap -p80 acme.tld && echo done",
+            "curl -s https://acme.tld/ > /tmp/body.html",
+            "echo $(whoami)",
+            "for i in 1 2 3; do echo $i; done",
+        ):
+            self.executor.calls.clear()
+            resp = await self._exec(cmd)
+            self.assertNotEqual(getattr(resp, "status_code", 200), 400, cmd)
+            self.assertEqual(self.executor.calls[0]["args"]["command"], cmd)
 
-    async def test_a_shell_metacharacter_never_reaches_the_sandbox(self):
-        resp = await self._exec("curl https://acme.tld; id")
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(self.executor.calls, [])
+    async def test_the_command_is_echoed_back_exactly_as_given(self):
+        cmd = "curl -A 'Mozilla 5.0' https://acme.tld"
+        body = _body(await self._exec(cmd))
+        self.assertEqual(body["command"], cmd)
 
-    async def test_an_unresolvable_scope_refuses_rather_than_running_unchecked(self):
-        with mock.patch.object(api, "_kali_scope", side_effect=RuntimeError("webapp down")):
-            resp = await self._exec("curl https://acme.tld")
-        self.assertEqual(resp.status_code, 503)
-        self.assertEqual(self.executor.calls, [])
+    async def test_an_empty_command_is_still_refused(self):
+        # The one check that survives: there is nothing to run.
+        for cmd in ("", "   "):
+            resp = await api.kali_exec(api.KaliExecRequest(project_id="p1", command=cmd))
+            self.assertEqual(resp.status_code, 400)
 
     async def test_an_uninitialised_sandbox_is_unavailable_not_silent(self):
         with mock.patch.object(api, "orchestrator", None):
@@ -410,62 +415,3 @@ class FailedJobIsNotAMissingJobTests(_Base):
         self.assertEqual(resp.status_code, 404)
 
 
-class UnreadableScopeIsNotAnUnconfiguredProjectTests(unittest.IsolatedAsyncioTestCase):
-    """REGRESSION: an unreachable webapp read as "you have not set a target".
-
-    `load_project_settings` never raises - it logs and falls back to
-    DEFAULT_AGENT_SETTINGS, whose target scope is EMPTY. `_kali_scope` built a
-    KaliScope from that, `is_configured()` was False, and the guard refused with
-    "This project has no target domain or IPs configured. Configure the target
-    first." on a project that was configured correctly.
-
-    Seen for real while the webapp was restarting mid-run. The refusal was safe
-    only because the default happens to be empty; it sent the operator to fix
-    something that was not broken, and the same code fails OPEN the day that
-    default stops being empty.
-    """
-
-    def _settings(self, source):
-        from project_settings import SETTINGS_SOURCE_KEY
-
-        return {
-            SETTINGS_SOURCE_KEY: source,
-            "TARGET_DOMAIN": "acme.tld", "IP_MODE": False, "TARGET_IPS": [],
-            "ROE_ENABLED": False, "ROE_EXCLUDED_HOSTS": [],
-            "DOMAIN_BATCH_MODE": False, "DOMAIN_BATCH_GROUPS": [],
-        }
-
-    async def test_defaulted_settings_refuse_rather_than_read_as_no_target(self):
-        import project_settings
-
-        with mock.patch.object(project_settings, "load_project_settings",
-                               return_value=self._settings("default")):
-            with self.assertRaises(RuntimeError):
-                api._kali_scope("p1")
-
-    async def test_settings_read_from_the_api_build_a_real_scope(self):
-        import project_settings
-
-        with mock.patch.object(project_settings, "load_project_settings",
-                               return_value=self._settings("api")):
-            with mock.patch.object(project_settings, "get_setting",
-                                   side_effect=lambda k, d=None: self._settings("api").get(k, d)):
-                with mock.patch.object(project_settings, "target_scope_domains",
-                                       return_value=["acme.tld"]):
-                    scope = api._kali_scope("p1")
-        self.assertTrue(scope.is_configured())
-        self.assertIn("acme.tld", scope.domains)
-
-    async def test_the_endpoint_says_the_scope_was_unreadable_not_unconfigured(self):
-        """The two messages send an operator to different places."""
-        executor = _FakeExecutor()
-        with mock.patch.object(api, "orchestrator", mock.Mock(tool_executor=executor)):
-            with mock.patch.object(api, "_kali_scope", side_effect=RuntimeError("settings defaulted")):
-                resp = await api.kali_exec(
-                    api.KaliExecRequest(project_id="p1", command="curl https://acme.tld/")
-                )
-        self.assertEqual(resp.status_code, 503)
-        body = _body(resp)
-        self.assertIn("could not be read", body["error"])
-        self.assertNotIn("Configure the target", body["error"])
-        self.assertEqual(executor.calls, [], "a command ran with no scope to check it against")

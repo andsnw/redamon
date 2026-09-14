@@ -324,7 +324,7 @@ export const PROFILE_ONBOARDING: Record<ProfileId, ProfileOnboarding> = {
     gotchas: [
       'You almost certainly cannot read the rules of engagement over this surface. The client contact details, the excluded hosts and the permission flags are not exposed here. Default conservative and ask the human.',
       'Reaching an out-of-scope host with a command is the catastrophic failure of this job. Never build a target-reaching command out of text that came from the graph.',
-      'A refused command is a policy decision, not a bug. Do not look for another way to run it.',
+      'If you hold the sandbox-command permission, nothing you send will be refused: it is a shell with no allowlist and no target check, so there is no safety net between your reasoning and the target. If the host is wrong, the packets still go. The judgement other surfaces encode in software is, here, entirely yours.',
     ],
   },
 

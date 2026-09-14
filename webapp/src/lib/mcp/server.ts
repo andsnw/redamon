@@ -856,21 +856,20 @@ export function buildMcpServer(ctx: McpContext, instructions?: string): McpServe
     {
       title: 'List the Kali sandbox toolset',
       description:
-        'CALL THIS FIRST, before any kali_exec. It answers two different questions in two ' +
-        'labelled sections.\n\n' +
-        '"RUNNABLE VIA kali_exec" is the one you act on: every program kali_exec will admit ' +
-        'and the exact options each one accepts, generated from the admission rules ' +
-        'themselves. Build your command from this and it will be accepted; anything outside ' +
-        'it is refused by name, so guessing costs you a turn per wrong guess.\n\n' +
-        '"ALSO INSTALLED, NOT RUNNABLE HERE" is the rest of the Kali image - exploitation, ' +
-        'password cracking, Windows/AD, tunnelling, the wordlist paths, the post-exploitation ' +
-        'toolkits. RedAmon\'s own in-app agent can use those; you cannot. That section tells ' +
-        'you what the platform is capable of, so you can tell "RedAmon cannot do this" apart ' +
-        'from "this surface will not let me do it". Do not build commands from it.\n\n' +
+        'CALL THIS FIRST, before any kali_exec. It is the inventory of what the Kali sandbox ' +
+        'carries, by category: exploitation, password cracking, web and infrastructure ' +
+        'scanning, DNS, Windows/AD, API and GraphQL, secrets, tunnelling, the wordlist paths ' +
+        'with their sizes, and the pre-staged post-exploitation toolkits.\n\n' +
+        'ALL OF IT IS RUNNABLE through kali_exec, which is a real shell. Build commands ' +
+        'straight from this list. It is the same catalogue RedAmon\'s own in-app agent is ' +
+        'given, so it describes the actual image rather than what a stock Kali install ' +
+        'usually has - niche tools are frequently absent, and checking here first is cheaper ' +
+        'than a failed command.\n\n' +
         'This tool itself READS A LIST and runs nothing. Takes no arguments and reads no ' +
         'project data, so it answers even when the sandbox is down and when a scan is ' +
-        'mid-flight. Neither section reflects your Rules of Engagement or your project scope: ' +
-        'kali_exec checks those separately, per command.',
+        'mid-flight. It reflects the installed image, NOT your Rules of Engagement or your ' +
+        'project scope - neither of which kali_exec checks either. Staying in scope is your ' +
+        'responsibility.',
       annotations: READ_ONLY,
       _meta: scopesMeta({ required: ['recon:read'] }),
       inputSchema: {},
@@ -966,33 +965,31 @@ export function buildMcpServer(ctx: McpContext, instructions?: string): McpServe
   server.registerTool(
     'kali_exec',
     {
-      title: 'Run one sandbox command at the target',
+      title: 'Run a shell command in the Kali sandbox',
       description:
-        'Run a SINGLE command in RedAmon\'s Kali sandbox, against this project\'s own target.\n\n' +
-        'This is NOT a shell. One program with arguments, from a fixed allowlist of read-only ' +
-        'tools: curl, dig, host, nslookup, dnsrecon, whatweb, nikto, testssl, searchsploit. ' +
-        '(kali_toolbox lists the whole sandbox toolset; most of it is NOT available here.) ' +
-        'Pipelines, redirection, command substitution, chained commands, and any tool whose ' +
-        'flags can load or run code are refused.\n\n' +
-        'EVERY OPTION IS ALLOWLISTED PER TOOL. Write a flag\'s value as a separate argument or ' +
-        'with "=" (-o /tmp/f, --output=/tmp/f), never attached to a short option (-o/tmp/f). ' +
-        'Output paths must be absolute, under /tmp/ or this project\'s workspace. curl -L is ' +
-        'refused: read the Location header and request the next URL explicitly.\n\n' +
-        'EVERY host the command names must be inside this project\'s configured scope and off ' +
-        'its Rules of Engagement excluded list. A command aimed anywhere else is refused before ' +
-        'anything runs: this tool cannot be pointed at a target the project is not for. ' +
-        'Network tools must name their target as an argument. Files must be absolute paths ' +
-        'under /tmp/ or /workspace/.\n\n' +
-        'Refusals say exactly what was wrong, so read the message and fix the command rather ' +
-        'than retrying variations - repeated blind retries are indistinguishable from probing.\n\n' +
+        'Run a shell command in RedAmon\'s Kali sandbox. This is `bash -c` with the sandbox\'s ' +
+        'full toolset - the SAME access RedAmon\'s own in-app agent has.\n\n' +
+        'Pipelines, redirection, command substitution, chained commands and shell syntax all ' +
+        'work: `subfinder -d target -silent | httpx -silent -sc | tee /tmp/live.txt` is one ' +
+        'call. Every program in kali_toolbox is available. Call kali_toolbox first to see what ' +
+        'is installed rather than guessing.\n\n' +
+        'YOU ARE RESPONSIBLE FOR STAYING IN SCOPE. Nothing here checks the command against the ' +
+        'project\'s target, its Rules of Engagement, or its excluded hosts - that enforcement ' +
+        'does not exist on this path. Read the project\'s target with get_recon_settings and ' +
+        'aim only at what it names. Scanning or attacking a host you are not authorised for is ' +
+        'illegal in most jurisdictions, and this tool will not stop you doing it.\n\n' +
+        'Files persist in /tmp between calls, so you can stage multi-step work through them. ' +
+        'One command is capped at 300 seconds by the sandbox: split long scans (fewer nuclei ' +
+        '-tags, a smaller nmap port range, testssl --fast) rather than having them killed ' +
+        'mid-run.\n\n' +
         'It waits briefly and returns the output if the command finished. If it is still ' +
         'running you get a jobId: poll kali_output with it, and kali_cancel stops it.\n\n' +
         `${UNTRUSTED_DATA_NOTE}`,
       annotations: {
         readOnlyHint: false,
-        // The allowlist admits only read-only observers, so it does not change
-        // RedAmon's state. It is destructive in the spec's sense anyway: it
-        // sends real requests to a live third party, which cannot be undone.
+        // A full shell on a target-facing container: it can change RedAmon's
+        // sandbox state AND the target's. Unambiguously destructive, and
+        // clients use this flag to decide when to ask the user first.
         destructiveHint: true,
         idempotentHint: false,
         openWorldHint: true,

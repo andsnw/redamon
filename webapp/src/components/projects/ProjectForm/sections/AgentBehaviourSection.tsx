@@ -777,11 +777,14 @@ export function AgentBehaviourSection({ data, updateField, detectedHostIp }: Age
               <div>
                 <span className={styles.toggleLabel}>Allow MCP Sandbox Commands</span>
                 <p className={styles.toggleDescription}>
-                  Let an external agent connected over the MCP Server run single sandbox commands
-                  against THIS project&apos;s target. Not a shell: one program from a fixed allowlist
-                  of read-only tools, and every host it names is checked against this project&apos;s
-                  scope and excluded hosts first. The token also needs the &quot;Run sandbox
-                  commands&quot; permission, and an access token can never turn this on by itself.
+                  Give an external agent connected over the MCP Server a SHELL in RedAmon&apos;s
+                  Kali sandbox: <code>bash -c</code> with the full toolset, the same access the
+                  in-app agent has. There is no allowlist and, unlike a scan, <strong>no check
+                  on what it is aimed at</strong> &mdash; it can reach any host the sandbox can,
+                  not only this project&apos;s target, and no human confirms each command.
+                  The token also needs the &quot;Shell access to the Kali sandbox&quot; permission,
+                  and an access token can never turn this on by itself. Enable it only for an
+                  agent you would trust with a terminal on that box.
                 </p>
               </div>
               <Toggle

@@ -1,29 +1,29 @@
 /**
  * The MCP exec tools: kali_exec, kali_output, kali_cancel.
  *
- * These are the only tools on this surface that reach a live third-party target
- * outside a scan, so they carry containment the read tools do not need:
+ * kali_exec is a SHELL: it hands the command verbatim to `kali_shell`, which is
+ * `bash -c` on the sandbox. No allowlist, no per-command target check, at
+ * deliberate parity with RedAmon's in-app agent - which has no per-command
+ * admission either (its RoE gate matches tool NAMES and never reads a command).
  *
- *  - FOUR independent switches, all of which must be on, each owned by a
+ * So nothing in this file inspects or rewrites the command, and that is the
+ * whole point: what stands between a token and a shell is not a check on the
+ * command, it is WHO CAN REACH THIS AT ALL.
+ *
+ *  - THREE independent switches, all of which must be on, each owned by a
  *    different decision-maker so no single compromise turns this on:
  *      1. MCP_KALI_EXEC_ENABLED  - the operator, once per deployment.
  *      2. the `kali:exec` scope  - the user, password-confirmed at mint time.
  *      3. project.mcpKaliExecEnabled - a human in the project form, per
- *         engagement. DENIED to update_recon_settings by name, so a token can
- *         never grant itself this.
- *      4. a configured target    - an unconfigured project refuses rather than
- *         running unchecked, because there is nothing to check against.
- *  - ADMISSION IS SERVER-SIDE, in the agent (kali_exec_guard.py). Nothing here
- *    inspects or rewrites the command, deliberately: a check in this file would
- *    be a second copy of the rules, and the copy that drifts is the one that
- *    lets something through.
- *  - THE COMMAND IS AUDITED VERBATIM, on refusal too. A refused command is the
- *    signal that someone is probing the boundary, and it is the only record of
- *    what they tried.
+ *         engagement. DENIED to update_recon_settings by name (reason
+ *         'escalation'), so a token can never grant itself this.
+ *  - THE COMMAND IS AUDITED VERBATIM. With no refusal path left, the audit row
+ *    is the ONLY record of what an agent did with the shell, which makes it
+ *    more load-bearing than it was, not less.
  *
  * Inside the product `kali_shell` is gated by a human clicking through the
- * DANGEROUS_TOOLS confirmation. An MCP caller has no human, which is why the
- * allowlist exists and why the default token cannot do this at all.
+ * DANGEROUS_TOOLS confirmation. An MCP caller has no human and nothing replaces
+ * that, which is why all three switches default to off.
  */
 import prisma from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'

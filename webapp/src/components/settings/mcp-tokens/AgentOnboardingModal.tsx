@@ -88,6 +88,7 @@ export default function AgentOnboardingModal({
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [zipping, setZipping] = useState(false)
 
   // Re-seeded whenever the modal is opened against a different token, so it
   // never shows the previous token's shape.
@@ -126,6 +127,8 @@ export default function AgentOnboardingModal({
     }
   }, [userId, profile, scopes, serverUrl, style, layout])
 
+  const skillDir = profile === 'custom' ? 'redamon-mcp' : `redamon-${profile.replace(/_/g, '-')}`
+
   const copy = async () => {
     if (!files) return
     try {
@@ -138,31 +141,65 @@ export default function AgentOnboardingModal({
   }
 
   /**
-   * Downloaded one file at a time rather than as an archive.
+   * Hand a blob to the browser as a download.
    *
-   * The pack is at most five small markdown files, and a zip would pull in a
-   * bundler dependency and a binary blob for something the operator has to
-   * unpack into a directory anyway. The install hint below names the directory.
+   * The object URL is revoked on a LATER task, never synchronously after
+   * `click()`. Revoking immediately races the browser's read of the blob and
+   * the download silently produces nothing - which is most of why the old
+   * multi-file version appeared to save only the first file.
    */
-  const download = (file: GeneratedFile) => {
-    const blob = new Blob([file.content], { type: 'text/markdown;charset=utf-8' })
+  const saveBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = file.path.replace(/\//g, '-')
+    a.download = filename
     document.body.appendChild(a)
     a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 30_000)
   }
 
-  const skillDir = profile === 'custom' ? 'redamon-mcp' : `redamon-${profile.replace(/_/g, '-')}`
+  const download = (file: GeneratedFile) => {
+    // A single file keeps its basename; the folder it belongs in comes from the
+    // zip, not from a flattened name.
+    saveBlob(
+      new Blob([file.content], { type: 'text/markdown;charset=utf-8' }),
+      file.path.split('/').pop() || 'SKILL.md'
+    )
+  }
+
+  /**
+   * The whole pack as ONE zip, with its directory structure intact.
+   *
+   * It used to loop `download` over every file. That failed twice over: a
+   * browser refuses a burst of programmatic downloads from one gesture (Chrome
+   * prompts once and then drops the rest), and flattening `references/x.md` to
+   * `references-x.md` destroyed exactly the layout the install hint below tells
+   * the operator to create. One archive fixes both, and `jszip` is already a
+   * dependency - imported dynamically so it costs nothing until it is used.
+   */
+  const downloadAll = async () => {
+    if (!files) return
+    setZipping(true)
+    try {
+      const { default: JSZip } = await import('jszip')
+      const zip = new JSZip()
+      const root = zip.folder(skillDir) ?? zip
+      for (const f of files) root.file(f.path, f.content)
+      saveBlob(await zip.generateAsync({ type: 'blob' }), `${skillDir}.zip`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not build the archive')
+    } finally {
+      setZipping(false)
+    }
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       size="large"
+      className={styles.onboardModal}
       title={tokenName ? `Agent Onboarding - ${tokenName}` : 'Agent Onboarding'}
     >
       <div className={styles.onboardBody}>
@@ -290,18 +327,25 @@ export default function AgentOnboardingModal({
               <button className={styles.secondaryBtn} onClick={() => download(files[active])}>
                 <Download size={14} /> Download this file
               </button>
-              <button className={styles.secondaryBtn} onClick={() => files.forEach(download)}>
-                <Download size={14} /> Download all {files.length}
+              <button
+                className={styles.secondaryBtn}
+                onClick={() => void downloadAll()}
+                disabled={zipping}
+              >
+                {zipping ? <Loader2 className={styles.spin} size={14} /> : <Download size={14} />}
+                Download all {files.length} as .zip
               </button>
             </div>
 
             <div className={styles.onboardHint}>
               <p>
-                <strong>Where it goes.</strong> For Claude Code and Claude Desktop, put the pack in{' '}
-                <code className={styles.scopeCode}>~/.claude/skills/{skillDir}/</code>, keeping{' '}
-                <code className={styles.scopeCode}>SKILL.md</code> at its root and the reference
-                files under <code className={styles.scopeCode}>references/</code>. Other clients have
-                their own skill directory.
+                <strong>Where it goes.</strong> The archive already contains a{' '}
+                <code className={styles.scopeCode}>{skillDir}/</code> folder with{' '}
+                <code className={styles.scopeCode}>SKILL.md</code> at its root and the reference files
+                under <code className={styles.scopeCode}>references/</code>, so for Claude Code and
+                Claude Desktop just unzip it into{' '}
+                <code className={styles.scopeCode}>~/.claude/skills/</code>. Other clients have their
+                own skill directory.
               </p>
               <p>
                 <strong>This is a second install.</strong> The MCP server config (the token and the
