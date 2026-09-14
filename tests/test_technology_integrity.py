@@ -53,3 +53,20 @@ def test_technology_merge_preserves_relationships():
     assert "mergeRels: true" in session.query
     assert "produceSelfRel: false" in session.query
     assert "SET node.version = version" in session.query
+
+
+def test_package_and_direct_client_imports_share_integrity_wrapper():
+    from graph_db import Neo4jClient as package_client
+    from graph_db.neo4j_client import Neo4jClient as direct_client
+
+    assert direct_client is package_client
+    assert issubclass(direct_client, TechnologyIntegrityMixin)
+
+
+def test_close_does_not_return_from_finally():
+    import inspect
+
+    source = inspect.getsource(TechnologyIntegrityMixin.close)
+    assert "finally:" in source
+    assert "super().close()" in source
+    assert "return super().close()" not in source
