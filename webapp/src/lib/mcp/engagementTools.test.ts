@@ -25,6 +25,7 @@ const h = vi.hoisted(() => ({
   findUniqueAuthorization: vi.fn(),
   findManyAuthorization: vi.fn(),
   countAuthorization: vi.fn(),
+  findFirstScanJob: vi.fn(),
   transaction: vi.fn(),
   busy: vi.fn(),
   audit: vi.fn(),
@@ -45,6 +46,7 @@ vi.mock('@/lib/prisma', () => {
       findMany: (...a: unknown[]) => h.findManyAuthorization(...a),
       count: (...a: unknown[]) => h.countAuthorization(...a),
     },
+    scanJob: { findFirst: (...a: unknown[]) => h.findFirstScanJob(...a) },
     $transaction: (fn: (tx: unknown) => unknown) => h.transaction(fn, client),
   }
   return { default: client }
@@ -121,6 +123,7 @@ beforeEach(() => {
   h.findUniqueAuthorization.mockResolvedValue(null)
   h.findManyAuthorization.mockResolvedValue([])
   h.countAuthorization.mockResolvedValue(0)
+  h.findFirstScanJob.mockResolvedValue(null)
   h.updateProject.mockResolvedValue({})
   h.updateManyProject.mockResolvedValue({ count: 1 })
   h.transaction.mockImplementation((fn, client) => fn(client))
@@ -564,6 +567,45 @@ describe('preflight_scope_check reports RESOLVED values', () => {
     expect(serialised).not.toContain('ghp_secret')
     expect(serialised).not.toContain('client.example')
     expect(serialised).not.toContain('Bearer secret')
+  })
+
+  test('it reports the provenance of the last run', async () => {
+    // The middle of the chain an incident review walks: a graph node, the scan
+    // job that wrote it, the settings it ran with, the document that permitted
+    // looking. JobQueue.settingsHash is the only other settings fingerprint and
+    // it is deleted with the queue row at dispatch.
+    h.findFirstScanJob.mockResolvedValue({
+      id: 'job1', kind: 'full_recon', status: 'completed',
+      startedAt: new Date('2026-01-01T00:00:00.000Z'), versionId: 'v3',
+      settingsHash: 'f'.repeat(64), authorizationId: 'auth1',
+    })
+    const r = await preflightScopeCheck(ctx(), 'p1')
+    expect(r.lastRun?.scanJobId).toBe('job1')
+    expect(r.lastRun?.authorizationId).toBe('auth1')
+    expect(r.lastRun?.scanVersionId).toBe('v3')
+  })
+
+  test('it says when the settings changed since the last run', async () => {
+    // The graph you are looking at was produced by a DIFFERENT configuration
+    // than the one being reported.
+    h.findFirstScanJob.mockResolvedValue({
+      id: 'job1', kind: 'full_recon', status: 'completed', startedAt: new Date(),
+      versionId: null, settingsHash: 'f'.repeat(64), authorizationId: null,
+    })
+    expect((await preflightScopeCheck(ctx(), 'p1')).lastRun?.settingsChangedSince).toBe(true)
+  })
+
+  test('a run that predates provenance reports null, not false', async () => {
+    // "We do not know" is not "nothing changed".
+    h.findFirstScanJob.mockResolvedValue({
+      id: 'job0', kind: 'full_recon', status: 'completed', startedAt: new Date(),
+      versionId: null, settingsHash: null, authorizationId: null,
+    })
+    expect((await preflightScopeCheck(ctx(), 'p1')).lastRun?.settingsChangedSince).toBeNull()
+  })
+
+  test('a project that has never been scanned reports no last run', async () => {
+    expect((await preflightScopeCheck(ctx(), 'p1')).lastRun).toBeNull()
   })
 
   test('a missing project is refused, not reported as an empty one', async () => {

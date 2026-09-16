@@ -45,6 +45,7 @@ import { describeScanWriters } from '@/lib/graphWriters'
 import { assertMcpProjectAccess, requireScope } from '@/lib/mcpAuth'
 import { McpToolError } from '@/lib/mcp/errors'
 import { enforceRate, type McpContext } from '@/lib/mcp/tools'
+import { settingsFingerprint } from '@/lib/jobQueue'
 import { checkTighten, filterReconSettings, reconSettingsSelect } from '@/lib/reconSettings/filter'
 import { fieldsWhere, field, loadRegistry } from '@/lib/reconSettings/registry'
 import { checkHeader } from '@/lib/reconSettings/validators'
@@ -607,6 +608,21 @@ export async function preflightScopeCheck(ctx: McpContext, projectId: string) {
     }
   }
 
+  // The provenance of the LAST run, so the chain from a graph node back to the
+  // document that permitted looking at it can be walked from one call. Without
+  // it the chain breaks in the middle: JobQueue.settingsHash is the only other
+  // settings fingerprint and it is deleted with the queue row at dispatch.
+  const lastJob = await prisma.scanJob
+    .findFirst({
+      where: { projectId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, kind: true, status: true, startedAt: true,
+        settingsHash: true, authorizationId: true, versionId: true,
+      },
+    })
+    .catch(() => null)
+
   const scanModules = Array.isArray(row.scanModules) ? (row.scanModules as string[]) : []
   const enabledTools = fieldsWhere((f, key) => /Enabled$/.test(key) && row[key] === true)
     .map(f => ({ field: f.key, tool: f.tool, phase: f.phase, traffic: f.traffic }))
@@ -653,6 +669,23 @@ export async function preflightScopeCheck(ctx: McpContext, projectId: string) {
       maxSeverityPhase: row.roeMaxSeverityPhase ?? null,
     },
     identityHeader: row.engagementIdentityHeader ?? '',
+    lastRun: lastJob
+      ? {
+          scanJobId: lastJob.id,
+          kind: lastJob.kind,
+          status: lastJob.status,
+          startedAt: lastJob.startedAt,
+          scanVersionId: lastJob.versionId,
+          // The settings it ACTUALLY started with, and what permitted it. A
+          // null hash means the run predates provenance, not that it had none.
+          settingsHash: lastJob.settingsHash,
+          authorizationId: lastJob.authorizationId,
+          settingsChangedSince:
+            lastJob.settingsHash === null
+              ? null
+              : lastJob.settingsHash !== settingsFingerprint(lastJob.kind, row),
+        }
+      : null,
     startable: engagement.blockers.length === 0 && exceeds.length === 0,
     notes: [
       'Values here are RESOLVED, not written. get_recon_settings echoes what you wrote; this ' +
@@ -664,6 +697,10 @@ export async function preflightScopeCheck(ctx: McpContext, projectId: string) {
       'silentNoOps is the two-level model biting: a tool can be enabled inside a phase that ' +
         'is not running. The scan succeeds, nothing is scanned by that tool, and no result ' +
         'field says why.',
+      'lastRun.settingsChangedSince true means the graph you are looking at was produced by a ' +
+        'DIFFERENT configuration than the one above. That is the chain an incident review ' +
+        'walks: a graph node, the scan job that wrote it, the settings hash it ran with, and ' +
+        'the authorization that permitted looking.',
     ],
   }
 }
