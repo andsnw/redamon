@@ -989,6 +989,127 @@ FORM_SECTION: dict[str, str] = {
 }
 
 
+# The stealth profile, per runtime key.
+#
+# `apply_stealth_overrides` wrote 105 explicit assignments, which is a list of
+# tools kept in step with the pipeline by hand: a tool added without a stealth
+# entry is simply as loud in stealth mode as it is normally, and nothing says
+# so. Recorded here instead, seeded from those assignments.
+#
+# Two operations, and the difference matters. `set` FORCES a value. `ceiling`
+# lowers a value to at most N and leaves a quieter one alone, which is what the
+# six `min(settings.get(k), 100)` lines did.
+#
+# The nuclei exclude-tag MERGE stays hand-written: it unions the operator's own
+# excluded tags with the stealth set, and expressing a union as a value would
+# discard whatever the operator chose.
+STEALTH_PROFILE: dict[str, dict] = {
+    "AI_SURFACE_RECON_MAX_WORKERS": {"set": 2},
+    "AI_SURFACE_RECON_MCP_LIST_TOOLS_ENABLED": {"set": False},
+    "AI_SURFACE_RECON_VECTOR_DB_READ_ENABLED": {"set": False},
+    "AMASS_ACTIVE": {"set": False},
+    "AMASS_BRUTE": {"set": False},
+    "AMASS_MAX_RESULTS": {"ceiling": 100},
+    "ARJUN_PASSIVE": {"set": True},
+    "BADDNS_ENABLED": {"set": False},
+    "BANNER_GRAB_ENABLED": {"set": False},
+    "CENSYS_WORKERS": {"set": 1},
+    "CRIMINALIP_WORKERS": {"set": 1},
+    "CRTSH_MAX_RESULTS": {"ceiling": 100},
+    "DNS_MAX_WORKERS": {"set": 5},
+    "DNS_RECORD_PARALLELISM": {"set": False},
+    "FFUF_ENABLED": {"set": False},
+    "FOFA_WORKERS": {"set": 1},
+    "GAU_ENABLED": {"set": True},
+    "GAU_METHOD_DETECT_RATE_LIMIT": {"set": 2},
+    "GAU_METHOD_DETECT_THREADS": {"set": 1},
+    "GAU_VERIFY_RATE_LIMIT": {"set": 2},
+    "GAU_VERIFY_THREADS": {"set": 1},
+    "GAU_WORKERS": {"set": 1},
+    "GRAPHQL_CONCURRENCY": {"set": 1},
+    "GRAPHQL_COP_TEST_ALIAS_OVERLOADING": {"set": False},
+    "GRAPHQL_COP_TEST_BATCH_QUERY": {"set": False},
+    "GRAPHQL_COP_TEST_CIRCULAR_INTROSPECTION": {"set": False},
+    "GRAPHQL_COP_TEST_DIRECTIVE_OVERLOADING": {"set": False},
+    "GRAPHQL_INTROSPECTION_TEST": {"set": True},
+    "GRAPHQL_RATE_LIMIT": {"set": 2},
+    "GRAPHQL_SECURITY_ENABLED": {"set": True},
+    "GRAPHQL_TIMEOUT": {"set": 60},
+    "HACKERTARGET_MAX_RESULTS": {"ceiling": 100},
+    "HAKRAWLER_ENABLED": {"set": False},
+    "HTTPX_PROBE_FAVICON": {"set": False},
+    "HTTPX_PROBE_JARM": {"set": False},
+    "HTTPX_RATE_LIMIT": {"set": 2},
+    "HTTPX_THREADS": {"set": 1},
+    "JSLUICE_MAX_FILES": {"set": 20},
+    "JSLUICE_PARALLELISM": {"set": 1},
+    "JS_RECON_INCLUDE_CHUNKS": {"set": False},
+    "JS_RECON_INCLUDE_FRAMEWORK_JS": {"set": False},
+    "JS_RECON_MAX_FILES": {"set": 50},
+    "JS_RECON_VALIDATE_KEYS": {"set": False},
+    "KATANA_CONCURRENCY": {"set": 1},
+    "KATANA_DEPTH": {"set": 1},
+    "KATANA_JS_CRAWL": {"set": False},
+    "KATANA_MAX_URLS": {"set": 50},
+    "KATANA_PARALLELISM": {"set": 1},
+    "KATANA_RATE_LIMIT": {"set": 2},
+    "KITERUNNER_ENABLED": {"set": False},
+    "KNOCKPY_RECON_MAX_RESULTS": {"ceiling": 100},
+    "MASSCAN_ENABLED": {"set": False},
+    "NAABU_PASSIVE_MODE": {"set": True},
+    "NAABU_RATE_LIMIT": {"set": 10},
+    "NAABU_SCAN_TYPE": {"set": "c"},
+    "NAABU_SKIP_HOST_DISCOVERY": {"set": True},
+    "NAABU_THREADS": {"set": 1},
+    "NETLAS_WORKERS": {"set": 1},
+    "NMAP_PARALLELISM": {"set": 1},
+    "NMAP_SCRIPT_SCAN": {"set": False},
+    "NMAP_TIMING_TEMPLATE": {"set": "T2"},
+    "NUCLEI_BULK_SIZE": {"set": 5},
+    "NUCLEI_CONCURRENCY": {"set": 2},
+    "NUCLEI_DAST_MODE": {"set": False},
+    "NUCLEI_HEADLESS": {"set": False},
+    "NUCLEI_INTERACTSH": {"set": False},
+    "NUCLEI_RATE_LIMIT": {"set": 5},
+    "NUCLEI_TAKEOVERS_ENABLED": {"set": False},
+    "ORIGIN_DISCOVERY_RATE": {"set": 1},
+    "ORIGIN_DISCOVERY_SCANNERS": {"set": False},
+    "ORIGIN_DISCOVERY_WORKERS": {"set": 1},
+    "OTX_WORKERS": {"set": 1},
+    "PARAMSPIDER_ENABLED": {"set": True},
+    "PARAMSPIDER_WORKERS": {"set": 1},
+    "PUREDNS_ENABLED": {"set": False},
+    "SECURITY_CHECK_ADMIN_PORT_EXPOSED": {"set": False},
+    "SECURITY_CHECK_DATABASE_EXPOSED": {"set": False},
+    "SECURITY_CHECK_DIRECT_IP_HTTP": {"set": False},
+    "SECURITY_CHECK_DIRECT_IP_HTTPS": {"set": False},
+    "SECURITY_CHECK_KUBERNETES_API_EXPOSED": {"set": False},
+    "SECURITY_CHECK_NO_RATE_LIMITING": {"set": False},
+    "SECURITY_CHECK_REDIS_NO_AUTH": {"set": False},
+    "SECURITY_CHECK_SMTP_OPEN_RELAY": {"set": False},
+    "SECURITY_CHECK_WAF_BYPASS": {"set": False},
+    "SECURITY_CHECK_ZONE_TRANSFER": {"set": False},
+    "SHODAN_WORKERS": {"set": 1},
+    "SUBFINDER_MAX_RESULTS": {"ceiling": 100},
+    "SUBJACK_ALL": {"set": False},
+    "SUBJACK_CHECK_MAIL": {"set": True},
+    "SUBJACK_CHECK_NS": {"set": True},
+    "SUBJACK_THREADS": {"set": 3},
+    "TAKEOVER_RATE_LIMIT": {"set": 10},
+    "TLSX_CIPHER_ENUM": {"set": False},
+    "TLSX_CONCURRENCY": {"set": 5},
+    "TLSX_PROBE_JARM": {"set": False},
+    "TLSX_VERSION_ENUM": {"set": False},
+    "URLSCAN_MAX_RESULTS": {"ceiling": 100},
+    "USE_BRUTEFORCE_FOR_SUBDOMAINS": {"set": False},
+    "VHOST_SNI_ENABLED": {"set": False},
+    "VIRUSTOTAL_WORKERS": {"set": 1},
+    "WEB_CACHE_POISON_ALLOW_CPDOS": {"set": False},
+    "WEB_CACHE_POISON_ENABLED": {"set": False},
+    "ZAP_AJAX_SPIDER_ENABLED": {"set": False},
+    "ZOOMEYE_WORKERS": {"set": 1},
+}
+
 # --- source parsers ---------------------------------------------------------------
 
 def parse_governor_tables() -> dict[str, dict]:
@@ -1270,6 +1391,9 @@ def build() -> str:
         gov = governor.get(entry["runtime_key"] or "")
         if gov:
             entry["governor"] = gov
+        stealth = STEALTH_PROFILE.get(entry["runtime_key"] or "")
+        if stealth:
+            entry["stealth"] = stealth
         prior = previous.get(name, {})
         if prior.get("group"):
             entry["group"] = prior["group"]
@@ -1376,6 +1500,12 @@ def build() -> str:
             out.append(f"    bounds: {{ min: {f['bounds']['min']}, max: {f['bounds']['max']} }}")
         if "values" in f:
             out.append(f"    values: [{', '.join(yaml_scalar(v) for v in f['values'])}]")
+        if "stealth" in f:
+            s = f["stealth"]
+            if "ceiling" in s:
+                out.append(f"    stealth: {{ ceiling: {s['ceiling']} }}")
+            else:
+                out.append(f"    stealth: {{ set: {yaml_scalar(s['set'])} }}")
         if "governor" in f:
             g = f["governor"]
             parts = [f"model: {g['model']}"]
@@ -1405,6 +1535,12 @@ def build() -> str:
             out.append(f"    tool: {r['tool']}")
         out.append(f"    unit: {r['unit']}")
         out.append(f"    roe_capped: {yaml_scalar(r['roe_capped'])}")
+        rstealth = STEALTH_PROFILE.get(key)
+        if rstealth:
+            if "ceiling" in rstealth:
+                out.append(f"    stealth: {{ ceiling: {rstealth['ceiling']} }}")
+            else:
+                out.append(f"    stealth: {{ set: {yaml_scalar(rstealth['set'])} }}")
         rgov = governor.get(key)
         if rgov:
             parts = [f"model: {rgov['model']}"]

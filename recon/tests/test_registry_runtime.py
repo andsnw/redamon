@@ -212,3 +212,116 @@ def test_the_shipped_image_defaults_are_the_allowlist():
     """
     shipped = {DEFAULT_SETTINGS[k] for k in IMAGE_KEYS if DEFAULT_SETTINGS[k]}
     assert shipped == set(ALLOWED_TOOL_IMAGES)
+
+
+# --- surface 6: the stealth profile ------------------------------------------------------
+
+STEALTH_PROFILE = reg.stealth_profile()
+STEALTH_KEYS = sorted(k for k in STEALTH_PROFILE if k in DEFAULT_SETTINGS)
+
+
+def test_the_stealth_profile_is_not_empty():
+    """An empty profile would make stealth mode a no-op that reports success."""
+    assert len(STEALTH_KEYS) > 90, f"only {len(STEALTH_KEYS)} keys carry a stealth rule"
+
+
+def test_stealth_is_inert_when_it_is_off():
+    before = dict(DEFAULT_SETTINGS)
+    after = apply_stealth_overrides(dict(before))
+    assert after == before
+
+
+@pytest.mark.parametrize("key", STEALTH_KEYS)
+def test_every_set_rule_forces_its_value(key):
+    """`set` wins whatever the operator chose. That is the point of stealth."""
+    rule = STEALTH_PROFILE[key]
+    if "set" not in rule:
+        pytest.skip(f"{key} declares a ceiling, not a value")
+    settings = dict(DEFAULT_SETTINGS)
+    settings["STEALTH_MODE"] = True
+    resolved = apply_stealth_overrides(settings)[key]
+    assert resolved == rule["set"]
+
+
+@pytest.mark.parametrize("key", [k for k in STEALTH_KEYS if "ceiling" in STEALTH_PROFILE[k]])
+def test_a_ceiling_lowers_a_loud_value_and_leaves_a_quiet_one(key):
+    """
+    The distinction between `ceiling` and `set`, asserted rather than assumed.
+
+    An operator who asked for 50 results keeps 50; one who asked for 5000 is
+    brought down. Treating a ceiling as a value would RAISE the first case,
+    which is the opposite of what stealth is for.
+    """
+    ceiling = STEALTH_PROFILE[key]["ceiling"]
+
+    loud = dict(DEFAULT_SETTINGS)
+    loud.update(STEALTH_MODE=True, **{key: ceiling * 10})
+    assert apply_stealth_overrides(loud)[key] == ceiling
+
+    quiet = dict(DEFAULT_SETTINGS)
+    quiet.update(STEALTH_MODE=True, **{key: max(1, ceiling // 10)})
+    assert apply_stealth_overrides(quiet)[key] == max(1, ceiling // 10)
+
+
+def test_the_nuclei_exclude_tags_are_a_union_not_a_replacement():
+    """
+    The one override that is neither `set` nor `ceiling`.
+
+    Expressing it as a value would discard whatever the operator excluded, which
+    is a LOUDER scan than they asked for produced by a stealth pass.
+    """
+    settings = dict(DEFAULT_SETTINGS)
+    settings.update(STEALTH_MODE=True, NUCLEI_EXCLUDE_TAGS=["my-own-tag"])
+    resolved = apply_stealth_overrides(settings)["NUCLEI_EXCLUDE_TAGS"]
+    assert "my-own-tag" in resolved
+    for tag in ("dos", "fuzz", "intrusive", "sqli", "rce"):
+        assert tag in resolved
+    assert resolved == sorted(resolved), "the merge must be deterministic"
+
+
+def test_a_set_rule_can_RAISE_a_rate_the_operator_had_lowered():
+    """
+    A property of stealth mode worth knowing about, asserted rather than
+    assumed, because it is the opposite of what the name suggests.
+
+    `set` forces its value. So a project that had already lowered
+    NAABU_RATE_LIMIT to 1 gets 10 when stealth is switched on: LOUDER than it
+    was. Every rule in the profile was an unconditional assignment before this
+    became a registry query, so this is the shipped behaviour preserved exactly,
+    not something the conversion introduced - and the golden master is what
+    proves that.
+
+    Whether `set` should become a ceiling for the rate fields is a product
+    decision about what stealth means, not a refactor. Recording it here means
+    the next person meets it in a test rather than in a scan.
+    """
+    settings = dict(DEFAULT_SETTINGS)
+    settings.update(STEALTH_MODE=True, NAABU_RATE_LIMIT=1)
+    assert apply_stealth_overrides(settings)["NAABU_RATE_LIMIT"] == 10
+
+
+def test_stealth_lowers_far_more_than_it_raises():
+    """
+    The direction that matters in aggregate: from the shipped defaults, the
+    stealth pass must move the scan quieter overall. A profile that mostly
+    raised values would be misnamed whatever any single field does.
+    """
+    before = dict(DEFAULT_SETTINGS)
+    after = apply_stealth_overrides({**before, "STEALTH_MODE": True})
+    lowered = raised = 0
+    for key, rule in STEALTH_PROFILE.items():
+        if key not in before or "set" not in rule:
+            continue
+        old_value, new_value = before[key], after[key]
+        if isinstance(old_value, bool) or not isinstance(old_value, (int, float)):
+            continue
+        if new_value < old_value:
+            lowered += 1
+        elif new_value > old_value:
+            raised += 1
+    assert lowered > raised * 3, f"stealth lowered {lowered} values and raised {raised}"
+
+
+def test_every_stealth_key_is_a_real_setting():
+    unknown = sorted(k for k in STEALTH_PROFILE if k not in DEFAULT_SETTINGS)
+    assert unknown == [], f"stealth rules for settings no scan reads: {unknown}"

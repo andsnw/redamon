@@ -945,6 +945,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "AI_SURFACE_RECON_MAX_WORKERS",
+   "stealth": {
+    "set": 2
+   },
    "tool": "ai_surface_recon",
    "traffic": "active",
    "type": "int",
@@ -977,6 +980,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "AI_SURFACE_RECON_MCP_LIST_TOOLS_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "ai_surface_recon",
    "traffic": "active",
    "type": "boolean",
@@ -1095,6 +1101,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "AI_SURFACE_RECON_VECTOR_DB_READ_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "ai_surface_recon",
    "traffic": "active",
    "type": "boolean",
@@ -1111,6 +1120,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "AMASS_ACTIVE",
+   "stealth": {
+    "set": false
+   },
    "tool": "amass",
    "traffic": "passive",
    "type": "boolean",
@@ -1127,6 +1139,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "AMASS_BRUTE",
+   "stealth": {
+    "set": false
+   },
    "tool": "amass",
    "traffic": "passive",
    "type": "boolean",
@@ -1200,6 +1215,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "AMASS_MAX_RESULTS",
+   "stealth": {
+    "ceiling": 100
+   },
    "tool": "amass",
    "traffic": "passive",
    "type": "int",
@@ -1346,6 +1364,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "ARJUN_PASSIVE",
+   "stealth": {
+    "set": true
+   },
    "tool": "arjun",
    "traffic": "active",
    "type": "boolean",
@@ -1495,6 +1516,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "BADDNS_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "baddns",
    "traffic": "active",
    "type": "boolean",
@@ -1570,6 +1594,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "BANNER_GRAB_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "banner_grab",
    "traffic": "active",
    "type": "boolean",
@@ -1687,6 +1714,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "CENSYS_WORKERS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "censys",
    "traffic": "passive",
    "type": "int",
@@ -1761,6 +1791,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "CRIMINALIP_WORKERS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "criminalip",
    "traffic": "passive",
    "type": "int",
@@ -1800,6 +1833,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "CRTSH_MAX_RESULTS",
+   "stealth": {
+    "ceiling": 100
+   },
    "tool": "crtsh",
    "traffic": "passive",
    "type": "int",
@@ -2051,6 +2087,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "DNS_MAX_WORKERS",
+   "stealth": {
+    "set": 5
+   },
    "tool": "dns",
    "traffic": "active",
    "type": "int",
@@ -2067,6 +2106,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "DNS_RECORD_PARALLELISM",
+   "stealth": {
+    "set": false
+   },
    "tool": "dns",
    "traffic": "active",
    "type": "boolean",
@@ -2325,6 +2367,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "FFUF_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "ffuf",
    "traffic": "active",
    "type": "boolean",
@@ -2817,6 +2862,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "FOFA_WORKERS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "fofa",
    "traffic": "passive",
    "type": "int",
@@ -2882,6 +2930,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "GAU_ENABLED",
+   "stealth": {
+    "set": true
+   },
    "tool": "gau",
    "traffic": "passive",
    "type": "boolean",
@@ -2943,6 +2994,9 @@
    "prisma_type": "Int",
    "roe_capped": true,
    "runtime_key": "GAU_METHOD_DETECT_RATE_LIMIT",
+   "stealth": {
+    "set": 2
+   },
    "tool": "gau",
    "traffic": "active",
    "type": "int",
@@ -2967,6 +3021,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "GAU_METHOD_DETECT_THREADS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "gau",
    "traffic": "active",
    "type": "int",
@@ -3131,6 +3188,9 @@
    "prisma_type": "Int",
    "roe_capped": true,
    "runtime_key": "GAU_VERIFY_RATE_LIMIT",
+   "stealth": {
+    "set": 2
+   },
    "tool": "gau",
    "traffic": "active",
    "type": "int",
@@ -3154,6 +3214,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "GAU_VERIFY_THREADS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "gau",
    "traffic": "active",
    "type": "int",
@@ -3213,6 +3276,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "GAU_WORKERS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "gau",
    "traffic": "passive",
    "type": "int",
@@ -3423,6 +3489,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "GRAPHQL_CONCURRENCY",
+   "stealth": {
+    "set": 1
+   },
    "tool": "graphql",
    "traffic": "active",
    "type": "int",
@@ -3503,6 +3572,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "GRAPHQL_COP_TEST_ALIAS_OVERLOADING",
+   "stealth": {
+    "set": false
+   },
    "tool": "graphql_cop",
    "traffic": "active",
    "type": "boolean",
@@ -3519,6 +3591,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "GRAPHQL_COP_TEST_BATCH_QUERY",
+   "stealth": {
+    "set": false
+   },
    "tool": "graphql_cop",
    "traffic": "active",
    "type": "boolean",
@@ -3535,6 +3610,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "GRAPHQL_COP_TEST_CIRCULAR_INTROSPECTION",
+   "stealth": {
+    "set": false
+   },
    "tool": "graphql_cop",
    "traffic": "active",
    "type": "boolean",
@@ -3551,6 +3629,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "GRAPHQL_COP_TEST_DIRECTIVE_OVERLOADING",
+   "stealth": {
+    "set": false
+   },
    "tool": "graphql_cop",
    "traffic": "active",
    "type": "boolean",
@@ -3750,6 +3831,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "GRAPHQL_INTROSPECTION_TEST",
+   "stealth": {
+    "set": true
+   },
    "tool": "graphql",
    "traffic": "active",
    "type": "boolean",
@@ -3769,6 +3853,9 @@
    "prisma_type": "Int",
    "roe_capped": true,
    "runtime_key": "GRAPHQL_RATE_LIMIT",
+   "stealth": {
+    "set": 2
+   },
    "tool": "graphql",
    "traffic": "active",
    "type": "int",
@@ -3824,6 +3911,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "GRAPHQL_SECURITY_ENABLED",
+   "stealth": {
+    "set": true
+   },
    "tool": "graphql",
    "traffic": "active",
    "type": "boolean",
@@ -3843,6 +3933,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "GRAPHQL_TIMEOUT",
+   "stealth": {
+    "set": 60
+   },
    "tool": "graphql",
    "traffic": "active",
    "type": "int",
@@ -4005,6 +4098,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "HACKERTARGET_MAX_RESULTS",
+   "stealth": {
+    "ceiling": 100
+   },
    "tool": "hackertarget",
    "traffic": "passive",
    "type": "int",
@@ -4073,6 +4169,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "HAKRAWLER_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "hakrawler",
    "traffic": "active",
    "type": "boolean",
@@ -4522,6 +4621,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "HTTPX_PROBE_FAVICON",
+   "stealth": {
+    "set": false
+   },
    "tool": "httpx",
    "traffic": "active",
    "type": "boolean",
@@ -4571,6 +4673,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "HTTPX_PROBE_JARM",
+   "stealth": {
+    "set": false
+   },
    "tool": "httpx",
    "traffic": "active",
    "type": "boolean",
@@ -4735,6 +4840,9 @@
    "prisma_type": "Int",
    "roe_capped": true,
    "runtime_key": "HTTPX_RATE_LIMIT",
+   "stealth": {
+    "set": 2
+   },
    "tool": "httpx",
    "traffic": "active",
    "type": "int",
@@ -4777,6 +4885,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "HTTPX_THREADS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "httpx",
    "traffic": "active",
    "type": "int",
@@ -5307,6 +5418,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "JS_RECON_INCLUDE_CHUNKS",
+   "stealth": {
+    "set": false
+   },
    "tool": "js_recon",
    "traffic": "active",
    "type": "boolean",
@@ -5323,6 +5437,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "JS_RECON_INCLUDE_FRAMEWORK_JS",
+   "stealth": {
+    "set": false
+   },
    "tool": "js_recon",
    "traffic": "active",
    "type": "boolean",
@@ -5348,6 +5465,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "JS_RECON_MAX_FILES",
+   "stealth": {
+    "set": 50
+   },
    "tool": "js_recon",
    "traffic": "active",
    "type": "int",
@@ -5505,6 +5625,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "JS_RECON_VALIDATE_KEYS",
+   "stealth": {
+    "set": false
+   },
    "tool": "js_recon",
    "traffic": "active",
    "type": "boolean",
@@ -5637,6 +5760,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "JSLUICE_MAX_FILES",
+   "stealth": {
+    "set": 20
+   },
    "tool": "jsluice",
    "traffic": "active",
    "type": "int",
@@ -5661,6 +5787,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "JSLUICE_PARALLELISM",
+   "stealth": {
+    "set": 1
+   },
    "tool": "jsluice",
    "traffic": "active",
    "type": "int",
@@ -5825,6 +5954,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "KATANA_CONCURRENCY",
+   "stealth": {
+    "set": 1
+   },
    "tool": "katana",
    "traffic": "active",
    "type": "int",
@@ -5861,6 +5993,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "KATANA_DEPTH",
+   "stealth": {
+    "set": 1
+   },
    "tool": "katana",
    "traffic": "active",
    "type": "int",
@@ -5926,6 +6061,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "KATANA_JS_CRAWL",
+   "stealth": {
+    "set": false
+   },
    "tool": "katana",
    "traffic": "active",
    "type": "boolean",
@@ -5951,6 +6089,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "KATANA_MAX_URLS",
+   "stealth": {
+    "set": 50
+   },
    "tool": "katana",
    "traffic": "active",
    "type": "int",
@@ -5975,6 +6116,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "KATANA_PARALLELISM",
+   "stealth": {
+    "set": 1
+   },
    "tool": "katana",
    "traffic": "active",
    "type": "int",
@@ -6011,6 +6155,9 @@
    "prisma_type": "Int",
    "roe_capped": true,
    "runtime_key": "KATANA_RATE_LIMIT",
+   "stealth": {
+    "set": 2
+   },
    "tool": "katana",
    "traffic": "active",
    "type": "int",
@@ -6125,6 +6272,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "KITERUNNER_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "kiterunner",
    "traffic": "active",
    "type": "boolean",
@@ -6453,6 +6603,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "KNOCKPY_RECON_MAX_RESULTS",
+   "stealth": {
+    "ceiling": 100
+   },
    "tool": "knockpy",
    "traffic": "passive",
    "type": "int",
@@ -6517,6 +6670,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "MASSCAN_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "masscan",
    "traffic": "active",
    "type": "boolean",
@@ -6839,6 +6995,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "NAABU_PASSIVE_MODE",
+   "stealth": {
+    "set": true
+   },
    "tool": "naabu",
    "traffic": "active",
    "type": "boolean",
@@ -6859,6 +7018,9 @@
    "prisma_type": "Int",
    "roe_capped": true,
    "runtime_key": "NAABU_RATE_LIMIT",
+   "stealth": {
+    "set": 10
+   },
    "tool": "naabu",
    "traffic": "active",
    "type": "int",
@@ -6894,6 +7056,9 @@
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": "NAABU_SCAN_TYPE",
+   "stealth": {
+    "set": "c"
+   },
    "tool": "naabu",
    "traffic": "active",
    "type": "string",
@@ -6911,6 +7076,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "NAABU_SKIP_HOST_DISCOVERY",
+   "stealth": {
+    "set": true
+   },
    "tool": "naabu",
    "traffic": "active",
    "type": "boolean",
@@ -6934,6 +7102,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "NAABU_THREADS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "naabu",
    "traffic": "active",
    "type": "int",
@@ -7042,6 +7213,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "NETLAS_WORKERS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "netlas",
    "traffic": "passive",
    "type": "int",
@@ -7117,6 +7291,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "NMAP_PARALLELISM",
+   "stealth": {
+    "set": 1
+   },
    "tool": "nmap",
    "traffic": "active",
    "type": "int",
@@ -7133,6 +7310,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "NMAP_SCRIPT_SCAN",
+   "stealth": {
+    "set": false
+   },
    "tool": "nmap",
    "traffic": "active",
    "type": "boolean",
@@ -7169,6 +7349,9 @@
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": "NMAP_TIMING_TEMPLATE",
+   "stealth": {
+    "set": "T2"
+   },
    "tool": "nmap",
    "traffic": "active",
    "type": "string",
@@ -7258,6 +7441,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "NUCLEI_BULK_SIZE",
+   "stealth": {
+    "set": 5
+   },
    "tool": "nuclei",
    "traffic": "active",
    "type": "int",
@@ -7282,6 +7468,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "NUCLEI_CONCURRENCY",
+   "stealth": {
+    "set": 2
+   },
    "tool": "nuclei",
    "traffic": "active",
    "type": "int",
@@ -7315,6 +7504,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "NUCLEI_DAST_MODE",
+   "stealth": {
+    "set": false
+   },
    "tool": "nuclei",
    "traffic": "active",
    "type": "boolean",
@@ -7416,6 +7608,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "NUCLEI_HEADLESS",
+   "stealth": {
+    "set": false
+   },
    "tool": "nuclei",
    "traffic": "active",
    "type": "boolean",
@@ -7432,6 +7627,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "NUCLEI_INTERACTSH",
+   "stealth": {
+    "set": false
+   },
    "tool": "nuclei",
    "traffic": "active",
    "type": "boolean",
@@ -7487,6 +7685,9 @@
    "prisma_type": "Int",
    "roe_capped": true,
    "runtime_key": "NUCLEI_RATE_LIMIT",
+   "stealth": {
+    "set": 5
+   },
    "tool": "nuclei",
    "traffic": "active",
    "type": "int",
@@ -7645,6 +7846,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "NUCLEI_TAKEOVERS_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "nuclei",
    "traffic": "active",
    "type": "boolean",
@@ -7786,6 +7990,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "ORIGIN_DISCOVERY_SCANNERS",
+   "stealth": {
+    "set": false
+   },
    "tool": "origin_discovery",
    "traffic": "active",
    "type": "boolean",
@@ -7846,6 +8053,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "ORIGIN_DISCOVERY_WORKERS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "origin_discovery",
    "traffic": "active",
    "type": "int",
@@ -7899,6 +8109,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "OTX_WORKERS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "otx",
    "traffic": "passive",
    "type": "int",
@@ -7950,6 +8163,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "PARAMSPIDER_ENABLED",
+   "stealth": {
+    "set": true
+   },
    "tool": "paramspider",
    "traffic": "passive",
    "type": "boolean",
@@ -8010,6 +8226,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "PARAMSPIDER_WORKERS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "paramspider",
    "traffic": "passive",
    "type": "int",
@@ -8178,6 +8397,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "PUREDNS_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "puredns",
    "traffic": "active",
    "type": "boolean",
@@ -9205,6 +9427,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SECURITY_CHECK_ADMIN_PORT_EXPOSED",
+   "stealth": {
+    "set": false
+   },
    "tool": "security_check",
    "traffic": "active",
    "type": "boolean",
@@ -9269,6 +9494,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SECURITY_CHECK_DATABASE_EXPOSED",
+   "stealth": {
+    "set": false
+   },
    "tool": "security_check",
    "traffic": "active",
    "type": "boolean",
@@ -9285,6 +9513,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SECURITY_CHECK_DIRECT_IP_HTTP",
+   "stealth": {
+    "set": false
+   },
    "tool": "security_check",
    "traffic": "active",
    "type": "boolean",
@@ -9301,6 +9532,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SECURITY_CHECK_DIRECT_IP_HTTPS",
+   "stealth": {
+    "set": false
+   },
    "tool": "security_check",
    "traffic": "active",
    "type": "boolean",
@@ -9396,6 +9630,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SECURITY_CHECK_KUBERNETES_API_EXPOSED",
+   "stealth": {
+    "set": false
+   },
    "tool": "security_check",
    "traffic": "active",
    "type": "boolean",
@@ -9531,6 +9768,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SECURITY_CHECK_NO_RATE_LIMITING",
+   "stealth": {
+    "set": false
+   },
    "tool": "security_check",
    "traffic": "active",
    "type": "boolean",
@@ -9547,6 +9787,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SECURITY_CHECK_REDIS_NO_AUTH",
+   "stealth": {
+    "set": false
+   },
    "tool": "security_check",
    "traffic": "active",
    "type": "boolean",
@@ -9595,6 +9838,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SECURITY_CHECK_SMTP_OPEN_RELAY",
+   "stealth": {
+    "set": false
+   },
    "tool": "security_check",
    "traffic": "active",
    "type": "boolean",
@@ -9779,6 +10025,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SECURITY_CHECK_WAF_BYPASS",
+   "stealth": {
+    "set": false
+   },
    "tool": "security_check",
    "traffic": "active",
    "type": "boolean",
@@ -9795,6 +10044,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SECURITY_CHECK_ZONE_TRANSFER",
+   "stealth": {
+    "set": false
+   },
    "tool": "security_check",
    "traffic": "active",
    "type": "boolean",
@@ -9897,6 +10149,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "SHODAN_WORKERS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "shodan",
    "traffic": "passive",
    "type": "int",
@@ -10259,6 +10514,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "SUBFINDER_MAX_RESULTS",
+   "stealth": {
+    "ceiling": 100
+   },
    "tool": "subfinder",
    "traffic": "passive",
    "type": "int",
@@ -10275,6 +10533,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SUBJACK_ALL",
+   "stealth": {
+    "set": false
+   },
    "tool": "subjack",
    "traffic": "active",
    "type": "boolean",
@@ -10307,6 +10568,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SUBJACK_CHECK_MAIL",
+   "stealth": {
+    "set": true
+   },
    "tool": "subjack",
    "traffic": "active",
    "type": "boolean",
@@ -10323,6 +10587,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "SUBJACK_CHECK_NS",
+   "stealth": {
+    "set": true
+   },
    "tool": "subjack",
    "traffic": "active",
    "type": "boolean",
@@ -10397,6 +10664,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "SUBJACK_THREADS",
+   "stealth": {
+    "set": 3
+   },
    "tool": "subjack",
    "traffic": "active",
    "type": "int",
@@ -10785,6 +11055,9 @@
    "prisma_type": "Int",
    "roe_capped": true,
    "runtime_key": "TAKEOVER_RATE_LIMIT",
+   "stealth": {
+    "set": 10
+   },
    "tool": "takeover",
    "traffic": "active",
    "type": "int",
@@ -10901,6 +11174,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "TLSX_CIPHER_ENUM",
+   "stealth": {
+    "set": false
+   },
    "tool": "tlsx",
    "traffic": "active",
    "type": "boolean",
@@ -10920,6 +11196,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "TLSX_CONCURRENCY",
+   "stealth": {
+    "set": 5
+   },
    "tool": "tlsx",
    "traffic": "active",
    "type": "int",
@@ -11076,6 +11355,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "TLSX_PROBE_JARM",
+   "stealth": {
+    "set": false
+   },
    "tool": "tlsx",
    "traffic": "active",
    "type": "boolean",
@@ -11184,6 +11466,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "TLSX_VERSION_ENUM",
+   "stealth": {
+    "set": false
+   },
    "tool": "tlsx",
    "traffic": "active",
    "type": "boolean",
@@ -11628,6 +11913,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "URLSCAN_MAX_RESULTS",
+   "stealth": {
+    "ceiling": 100
+   },
    "tool": "urlscan",
    "traffic": "passive",
    "type": "int",
@@ -11644,6 +11932,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "USE_BRUTEFORCE_FOR_SUBDOMAINS",
+   "stealth": {
+    "set": false
+   },
    "tool": "pipeline",
    "traffic": "none",
    "type": "boolean",
@@ -11754,6 +12045,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "VHOST_SNI_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "vhost_sni",
    "traffic": "active",
    "type": "boolean",
@@ -11916,6 +12210,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "VIRUSTOTAL_WORKERS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "virustotal",
    "traffic": "passive",
    "type": "int",
@@ -12052,6 +12349,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "WEB_CACHE_POISON_ALLOW_CPDOS",
+   "stealth": {
+    "set": false
+   },
    "tool": "web_cache_poison",
    "traffic": "active",
    "type": "boolean",
@@ -12267,6 +12567,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "WEB_CACHE_POISON_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "web_cache_poison",
    "traffic": "active",
    "type": "boolean",
@@ -12513,6 +12816,9 @@
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "ZAP_AJAX_SPIDER_ENABLED",
+   "stealth": {
+    "set": false
+   },
    "tool": "zap",
    "traffic": "active",
    "type": "boolean",
@@ -12832,6 +13138,9 @@
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "ZOOMEYE_WORKERS",
+   "stealth": {
+    "set": 1
+   },
    "tool": "zoomeye",
    "traffic": "passive",
    "type": "int",
@@ -12911,6 +13220,9 @@
    "meaning": "Requests per second the origin-IP discovery active probe sends. ZERO MEANS UNLIMITED, so 0 is the most aggressive value available and not the safest. No Prisma column: it is internal to the pipeline, tuned by the stealth pass and capped by the engagement ceiling.",
    "roe_capped": true,
    "source": "internal",
+   "stealth": {
+    "set": 1
+   },
    "tool": "origin_discovery",
    "unit": "rps",
    "zero_means": "unlimited"

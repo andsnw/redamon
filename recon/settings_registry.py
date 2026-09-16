@@ -171,6 +171,27 @@ def governor_budget_keys() -> dict[str, tuple[str, int]]:
     }
 
 
+def stealth_profile() -> dict[str, dict[str, Any]]:
+    """
+    runtime_key -> the stealth operation, across columns and runtime-only keys.
+
+    Two operations, and the difference is load-bearing. `set` FORCES a value, so
+    stealth wins whatever the operator chose. `ceiling` lowers a value to at most
+    N and leaves an already-quieter one alone, which is what the six
+    `min(settings.get(k), 100)` lines did: an operator who asked for 50 results
+    keeps 50 rather than being raised to 100.
+    """
+    out: dict[str, dict[str, Any]] = {}
+    for entry in fields().values():
+        key, spec = entry.get("runtime_key"), entry.get("stealth")
+        if key and spec:
+            out[key] = spec
+    for key, entry in runtime_only().items():
+        if entry.get("stealth"):
+            out[key] = entry["stealth"]
+    return out
+
+
 def project_file_runtime_keys() -> list[str]:
     """Runtime keys holding an absolute filesystem path a scan container opens."""
     return sorted(

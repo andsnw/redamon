@@ -74,7 +74,8 @@
         "readable": { "type": "boolean" },
         "read_deny_reason": { "$ref": "#/definitions/read_deny_reason" },
         "group": { "type": "string" },
-        "governor": { "$ref": "#/definitions/governor" }
+        "governor": { "$ref": "#/definitions/governor" },
+        "stealth": { "$ref": "#/definitions/stealth" }
       }
     },
     "runtime_key": {
@@ -89,7 +90,18 @@
         "zero_means": { "enum": ["unlimited", "disabled", "auto", "literal"] },
         "secret": { "type": "boolean" },
         "governor": { "$ref": "#/definitions/governor" },
+        "stealth": { "$ref": "#/definitions/stealth" },
         "meaning": { "type": "string", "minLength": 1 }
+      }
+    },
+    "stealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "properties": {
+        "set": {},
+        "ceiling": { "type": "number" }
       }
     },
     "governor": {

@@ -2077,65 +2077,51 @@ def reload_settings() -> dict[str, Any]:
 
 def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     """
-    Apply stealth mode overrides to all recon tool settings.
+    Apply stealth mode overrides to every recon tool.
 
-    When STEALTH_MODE is True, forces all tools to use passive/low-noise
-    techniques. Noisy tools (Kiterunner, banner grabbing) are disabled entirely.
+    When STEALTH_MODE is on, tools are forced to passive, low-noise settings and
+    the noisiest ones are switched off entirely.
 
-    Args:
-        settings: The full settings dictionary
+    The profile is a REGISTRY QUERY. It used to be 105 explicit assignments in
+    this function, which is a list of tools kept in step with the pipeline by
+    hand: a tool added without a stealth entry is simply as loud in stealth mode
+    as it is normally, and nothing anywhere says so. Recording it beside every
+    other fact about a parameter is what makes that visible.
 
-    Returns:
-        Modified settings dictionary with stealth overrides applied
+    Two operations, and the difference is load-bearing:
+
+      set       force this value. Stealth wins whatever the operator chose.
+      ceiling   lower to at most N, leaving an already-quieter value alone. An
+                operator who asked for 50 results keeps 50 rather than being
+                raised to the stealth figure.
+
+    One override stays hand-written below, because it is neither: the nuclei
+    exclude-tag list is a UNION of the operator's own excluded tags with the
+    stealth set, and expressing a union as a value would discard their choice.
+
+    Applied BEFORE the RoE capper and the memory governor, so a low-resource
+    profile wins first and the later passes only tighten further.
     """
     if not settings.get('STEALTH_MODE', False):
         return settings
 
     logger.info("STEALTH MODE ENABLED — applying passive/low-noise overrides to all recon tools")
 
-    # --- Naabu Port Scanner: passive mode only ---
-    settings['NAABU_PASSIVE_MODE'] = True
-    settings['NAABU_RATE_LIMIT'] = 10
-    settings['NAABU_THREADS'] = 1
-    settings['NAABU_SCAN_TYPE'] = 'c'  # CONNECT scan (no raw SYN)
-    settings['NAABU_SKIP_HOST_DISCOVERY'] = True
+    for key, rule in _registry.stealth_profile().items():
+        if key not in settings:
+            continue
+        if 'set' in rule:
+            settings[key] = rule['set']
+            continue
+        ceiling = rule.get('ceiling')
+        current = settings.get(key)
+        if isinstance(current, (int, float)) and not isinstance(current, bool):
+            settings[key] = min(current, ceiling)
+        else:
+            # A non-numeric where a ceiling was declared: fall back to the
+            # ceiling rather than leaving a value stealth was meant to bound.
+            settings[key] = ceiling
 
-    # --- httpx HTTP Probing: low-rate, disable fingerprinting ---
-    settings['HTTPX_THREADS'] = 1
-    settings['HTTPX_RATE_LIMIT'] = 2
-    settings['HTTPX_PROBE_JARM'] = False      # JARM = 10 TLS connections per target
-    settings['HTTPX_PROBE_FAVICON'] = False    # Extra HTTP requests for hashing
-
-    # --- Katana Web Crawler: minimal crawl ---
-    settings['KATANA_DEPTH'] = 1
-    settings['KATANA_RATE_LIMIT'] = 2
-    settings['KATANA_MAX_URLS'] = 50
-    settings['KATANA_JS_CRAWL'] = False  # JS rendering = headless browser = noisy
-    settings['KATANA_PARALLELISM'] = 1
-    settings['KATANA_CONCURRENCY'] = 1
-
-    # --- ZAP Ajax Spider: DISABLED (browser-driven active crawling) ---
-    settings['ZAP_AJAX_SPIDER_ENABLED'] = False
-
-    # --- GAU: enable it (passive source) but throttle verification ---
-    settings['GAU_ENABLED'] = True
-    settings['GAU_VERIFY_RATE_LIMIT'] = 2
-    settings['GAU_VERIFY_THREADS'] = 1
-    settings['GAU_METHOD_DETECT_RATE_LIMIT'] = 2
-    settings['GAU_METHOD_DETECT_THREADS'] = 1
-    settings['GAU_WORKERS'] = 1
-
-    # --- ParamSpider: enable it (passive source) ---
-    settings['PARAMSPIDER_ENABLED'] = True
-    settings['PARAMSPIDER_WORKERS'] = 1
-
-    # --- Nuclei: passive-only scanning ---
-    settings['NUCLEI_DAST_MODE'] = False       # No active fuzzing
-    settings['NUCLEI_INTERACTSH'] = False      # No OOB callbacks
-    settings['NUCLEI_RATE_LIMIT'] = 5
-    settings['NUCLEI_CONCURRENCY'] = 2
-    settings['NUCLEI_BULK_SIZE'] = 5
-    settings['NUCLEI_HEADLESS'] = False
     # Exclude intrusive template tags
     existing_exclude = settings.get('NUCLEI_EXCLUDE_TAGS', [])
     stealth_exclude = ['dos', 'fuzz', 'intrusive', 'sqli', 'rce']
@@ -2144,151 +2130,6 @@ def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     # nuclei command line on every run. Order means nothing to nuclei and
     # everything to anyone comparing two runs.
     settings['NUCLEI_EXCLUDE_TAGS'] = sorted(set(existing_exclude + stealth_exclude))
-
-    # --- Subdomain Takeover: passive-only (subjack DNS, no nuclei HTTP fuzzing) ---
-    settings['NUCLEI_TAKEOVERS_ENABLED'] = False
-    settings['SUBJACK_ALL'] = False             # Don't probe non-CNAME hosts
-    settings['SUBJACK_CHECK_NS'] = True         # NS checks are safe DNS-only
-    settings['SUBJACK_CHECK_MAIL'] = True       # Mail checks are safe DNS-only
-    settings['SUBJACK_THREADS'] = 3
-    settings['TAKEOVER_RATE_LIMIT'] = 10
-    settings['BADDNS_ENABLED'] = False          # Keep isolated sidecar off in stealth
-
-    # --- VHost & SNI: disable entirely. The default 2,380-prefix wordlist plus
-    # L4 SNI brute would be both catastrophically slow over Tor AND noisy in
-    # exit-node logs. Users who really want stealth vhost discovery should
-    # build a custom preset (see red-team-operator) with graph-only candidates,
-    # L7-only, low concurrency. ---
-    settings['VHOST_SNI_ENABLED'] = False
-
-    # --- tlsx: KEEP it (a plain cert grab is one handshake per already-open port,
-    # far quieter than the vhost brute above), but force the loud dials off and
-    # throttle concurrency. JARM/JA3 add ~10 handshakes/target; version/cipher
-    # enum add extra connections per target. ---
-    settings['TLSX_PROBE_JARM'] = False
-    settings['TLSX_VERSION_ENUM'] = False
-    settings['TLSX_CIPHER_ENUM'] = False
-    settings['TLSX_CONCURRENCY'] = 5
-
-    # --- Origin Discovery: keep it (unmasking is the point of a stealth engagement)
-    # but throttle its active validation probes hard — 1 worker, ~1 rps — and drop
-    # the keyed internet-wide scanner searches (passive but credit-/fingerprint-heavy).
-    # The keyless + passive-DNS sources stay on; only the direct-IP probing is loud. ---
-    settings['ORIGIN_DISCOVERY_WORKERS'] = 1
-    settings['ORIGIN_DISCOVERY_RATE'] = 1
-    settings['ORIGIN_DISCOVERY_SCANNERS'] = False
-
-    # --- Web Cache Poisoning: disable entirely. Active poisoning probes (header
-    # mutation + repeated baseline/poison/clean fetches) are loud and send many
-    # requests per URL — incompatible with stealth/Tor. CPDoS stays force-off. ---
-    settings['WEB_CACHE_POISON_ENABLED'] = False
-    settings['WEB_CACHE_POISON_ALLOW_CPDOS'] = False
-
-    # --- Hakrawler: DISABLED (active crawler, no rate-limit control) ---
-    settings['HAKRAWLER_ENABLED'] = False
-
-    # --- jsluice: keep enabled but reduce file count ---
-    settings['JSLUICE_MAX_FILES'] = 20
-    settings['JSLUICE_PARALLELISM'] = 1
-
-    # --- FFuf: DISABLED (active directory brute-force) ---
-    settings['FFUF_ENABLED'] = False
-
-    # --- Kiterunner: DISABLED (active brute-force API discovery) ---
-    settings['KITERUNNER_ENABLED'] = False
-
-    # --- Arjun: force PASSIVE ONLY (no active probing in stealth) ---
-    settings['ARJUN_PASSIVE'] = True
-
-    # --- Banner Grabbing: DISABLED (direct socket connections) ---
-    settings['BANNER_GRAB_ENABLED'] = False
-
-    # --- Nmap: minimal parallelism ---
-    settings['NMAP_PARALLELISM'] = 1
-
-    # --- Shodan: reduce parallel workers ---
-    settings['SHODAN_WORKERS'] = 1
-
-    # --- OSINT enrichment: reduce parallel workers ---
-    settings['OTX_WORKERS'] = 1
-    settings['VIRUSTOTAL_WORKERS'] = 1
-    settings['CENSYS_WORKERS'] = 1
-    settings['CRIMINALIP_WORKERS'] = 1
-    settings['FOFA_WORKERS'] = 1
-    settings['NETLAS_WORKERS'] = 1
-    settings['ZOOMEYE_WORKERS'] = 1
-
-    # --- DNS: reduce parallel workers ---
-    settings['DNS_MAX_WORKERS'] = 5
-    settings['DNS_RECORD_PARALLELISM'] = False
-
-    # --- Subdomain Brute Force: DISABLED ---
-    settings['USE_BRUTEFORCE_FOR_SUBDOMAINS'] = False
-
-    # --- Passive sources: keep enabled but reduce results ---
-    settings['URLSCAN_MAX_RESULTS'] = min(settings.get('URLSCAN_MAX_RESULTS', 5000), 100)
-    settings['CRTSH_MAX_RESULTS'] = min(settings.get('CRTSH_MAX_RESULTS', 5000), 100)
-    settings['HACKERTARGET_MAX_RESULTS'] = min(settings.get('HACKERTARGET_MAX_RESULTS', 5000), 100)
-    settings['KNOCKPY_RECON_MAX_RESULTS'] = min(settings.get('KNOCKPY_RECON_MAX_RESULTS', 5000), 100)
-    settings['SUBFINDER_MAX_RESULTS'] = min(settings.get('SUBFINDER_MAX_RESULTS', 5000), 100)
-    settings['AMASS_ACTIVE'] = False
-    settings['AMASS_BRUTE'] = False
-    settings['AMASS_MAX_RESULTS'] = min(settings.get('AMASS_MAX_RESULTS', 5000), 100)
-
-    # --- Puredns: DISABLED (active DNS queries) ---
-    settings['PUREDNS_ENABLED'] = False
-
-    # --- Security Checks: disable active checks, keep passive ones ---
-    # Active checks (make network connections to target)
-    settings['SECURITY_CHECK_DIRECT_IP_HTTP'] = False
-    settings['SECURITY_CHECK_DIRECT_IP_HTTPS'] = False
-    settings['SECURITY_CHECK_WAF_BYPASS'] = False
-    settings['SECURITY_CHECK_ZONE_TRANSFER'] = False
-    settings['SECURITY_CHECK_ADMIN_PORT_EXPOSED'] = False
-    settings['SECURITY_CHECK_DATABASE_EXPOSED'] = False
-    settings['SECURITY_CHECK_REDIS_NO_AUTH'] = False
-    settings['SECURITY_CHECK_KUBERNETES_API_EXPOSED'] = False
-    settings['SECURITY_CHECK_SMTP_OPEN_RELAY'] = False
-    settings['SECURITY_CHECK_NO_RATE_LIMITING'] = False
-    # Passive checks remain enabled (SPF, DMARC, DNSSEC, TLS expiry, headers)
-
-    # --- Nmap: reduce aggressiveness ---
-    settings['NMAP_TIMING_TEMPLATE'] = 'T2'
-    settings['NMAP_SCRIPT_SCAN'] = False
-
-    # --- Masscan: DISABLED (active SYN scanning) ---
-    settings['MASSCAN_ENABLED'] = False
-
-    # --- JS Recon: disable validation (makes outbound API calls), reduce scope ---
-    settings['JS_RECON_MAX_FILES'] = 50
-    settings['JS_RECON_VALIDATE_KEYS'] = False
-    settings['JS_RECON_INCLUDE_CHUNKS'] = False
-    settings['JS_RECON_INCLUDE_FRAMEWORK_JS'] = False
-
-    # --- GraphQL Security: minimal introspection only ---
-    settings['GRAPHQL_SECURITY_ENABLED'] = True  # Can still do passive introspection
-    settings['GRAPHQL_INTROSPECTION_TEST'] = True
-    settings['GRAPHQL_RATE_LIMIT'] = 2            # Very low rate
-    settings['GRAPHQL_CONCURRENCY'] = 1           # Sequential only
-    settings['GRAPHQL_TIMEOUT'] = 60              # Longer timeout for slow responses
-
-    # --- GraphQL Cop: disable DoS probes in stealth mode ---
-    # (Info-leak + CSRF checks still run -- they're low-traffic.)
-    settings['GRAPHQL_COP_TEST_ALIAS_OVERLOADING'] = False
-    settings['GRAPHQL_COP_TEST_BATCH_QUERY'] = False
-    settings['GRAPHQL_COP_TEST_DIRECTIVE_OVERLOADING'] = False
-    settings['GRAPHQL_COP_TEST_CIRCULAR_INTROSPECTION'] = False
-
-    # --- AI Surface Recon: keep passive probes on, flip the marginally-active
-    # ones off, throttle concurrency. Stealth = quieter, not off. ---
-    settings['AI_SURFACE_RECON_MAX_WORKERS'] = 2
-    settings['AI_SURFACE_RECON_MCP_LIST_TOOLS_ENABLED'] = False  # extra JSON-RPC calls
-    settings['AI_SURFACE_RECON_VECTOR_DB_READ_ENABLED'] = False  # one GET per service
-
-    logger.info("Stealth overrides applied: Naabu=passive, Masscan=OFF, httpx=low-rate, Katana=minimal, "
-                "Nuclei=no-DAST, Kiterunner=OFF, BannerGrab=OFF, BruteForce=OFF, "
-                "ActiveSecurityChecks=OFF, JsRecon=reduced, GraphQL=introspection-only, "
-                "GraphQLCop=no-DoS, AISurfaceRecon=throttled")
 
     return settings
 
