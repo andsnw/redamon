@@ -288,6 +288,51 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
             </div>
           )}
 
+          {/* Engagement kind: who the target belongs to, and therefore what has
+              to be true before a scan may start. Create-time only, for the same
+              reason the target is: converting a project afterwards would either
+              claim an authority nobody granted or drop a ceiling a person set. */}
+          <div className={styles.subSection}>
+            <h3 className={styles.subSectionTitle}>Engagement</h3>
+            <div className={styles.fieldRow}>
+              <div className={styles.fieldGroup}>
+                <label className={styles.fieldLabel}>Whose estate is the target?</label>
+                <select
+                  className="select"
+                  value={(data.engagementKind as string) || 'internal'}
+                  disabled={readOnly}
+                  onChange={(e) => updateField('engagementKind', e.target.value)}
+                >
+                  <option value="internal">Internal - our own estate</option>
+                  <option value="third_party">Third party - somebody else&apos;s</option>
+                </select>
+                <span className={styles.fieldHint}>
+                  Fixed at creation. A third-party engagement cannot start without a non-zero
+                  request-rate ceiling AND a record of what authorized it.
+                </span>
+              </div>
+              <div className={styles.fieldGroup}>
+                <label className={styles.fieldLabel}>Identity Header</label>
+                <input
+                  className="textInput"
+                  value={(data.engagementIdentityHeader as string) || ''}
+                  placeholder="X-Bug-Bounty: your-handle"
+                  onChange={(e) => updateField('engagementIdentityHeader', e.target.value)}
+                />
+                <span className={styles.fieldHint}>
+                  Sent with every request so the target&apos;s operators can attribute the traffic
+                  to you. Many programs require one. Leave empty to send none.
+                </span>
+              </div>
+            </div>
+            {data.engagementKind === 'third_party' && !data.roeEnabled && (
+              <span className={styles.fieldHint} style={{ color: 'var(--color-danger, #d33)' }}>
+                A third-party engagement needs the Rules of Engagement switched on with a
+                request-rate ceiling, or its scans will be refused.
+              </span>
+            )}
+          </div>
+
           {/* Master Switch */}
           <div className={styles.subSection}>
             <div className={styles.fieldRow}>
@@ -301,6 +346,21 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                 <span className={styles.fieldHint}>When enabled, RoE constraints are enforced on both the agent and recon pipeline.</span>
               </div>
             </div>
+            {readOnly && (
+              // The human/agent divergence, stated rather than discovered. The
+              // Rules of Engagement are write-once in this form and always have
+              // been; an agent holding the engagement permission can TIGHTEN
+              // them on an existing project, in the safe direction only. Saying
+              // so here is the difference between a deliberate asymmetry and a
+              // support question nobody can answer.
+              <span className={styles.fieldHint}>
+                The Rules of Engagement are fixed when a project is created and cannot be
+                edited here. An agent holding the &ldquo;Create projects and set their
+                engagement scope&rdquo; permission may TIGHTEN them - lower the ceiling, add an
+                exclusion, withdraw a technique - but never loosen them. To widen an
+                engagement, create a new project.
+              </span>
+            )}
           </div>
 
           {data.roeEnabled && (

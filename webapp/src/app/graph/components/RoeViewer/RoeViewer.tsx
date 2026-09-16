@@ -1,6 +1,7 @@
 'use client'
 
-import { Download, Shield, Clock, Ban, FileText, Users, AlertTriangle, Lock, Globe } from 'lucide-react'
+import { Download, Shield, Clock, Ban, FileText, Users, AlertTriangle, Lock, Globe, FileCheck } from 'lucide-react'
+import { AuthorizationHistory } from './AuthorizationHistory'
 import styles from './RoeViewer.module.css'
 
 interface RoeViewerProps {
@@ -41,6 +42,8 @@ interface RoeViewerProps {
     roeComplianceFrameworks?: string[]
     roeNotes?: string
     roeDocumentName?: string
+    engagementKind?: string
+    engagementIdentityHeader?: string
     targetDomain?: string
     targetIps?: string[]
     [key: string]: unknown
@@ -87,6 +90,11 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 export function RoeViewer({ projectId, project }: RoeViewerProps) {
   if (!project.roeEnabled) {
+    // This is also where a project with NO REQUEST-RATE CEILING lands, and that
+    // is the thing worth saying out loud. roeEnabled defaults false and
+    // roeGlobalMaxRps defaults 0, so every project created before engagement
+    // kinds existed runs each tool at whatever rate its own setting says. The
+    // page used to describe only the missing document.
     return (
       <div className={styles.container}>
         <div className={styles.inner}>
@@ -94,6 +102,13 @@ export function RoeViewer({ projectId, project }: RoeViewerProps) {
             <Shield size={44} strokeWidth={1.5} />
             <h2>No Rules of Engagement</h2>
             <p>No RoE document has been configured for this project.</p>
+            <p className={styles.hint} style={{ color: 'var(--color-warning, #c80)' }}>
+              This project therefore has <strong>no request-rate ceiling</strong>: every tool
+              runs at whatever rate its own setting says, and nothing caps the total. If the
+              target is not your own estate, create a project with the engagement kind set to
+              third party, which cannot scan without a ceiling and a record of what authorized
+              it.
+            </p>
             <p className={styles.hint}>Upload a RoE document when creating a project to enable engagement constraints.</p>
           </div>
         </div>
@@ -169,6 +184,28 @@ export function RoeViewer({ projectId, project }: RoeViewerProps) {
       <div className={styles.grid}>
         {/* Engagement Info */}
         <Section title="Engagement" icon={<Users size={15} />}>
+          <div className={styles.row}>
+            <span>Kind</span>
+            <strong>
+              {project.engagementKind === 'third_party'
+                ? 'Third party - somebody else\u2019s estate'
+                : 'Internal - our own estate'}
+            </strong>
+          </div>
+          <div className={styles.row}>
+            <span>Rate ceiling</span>
+            <strong>
+              {/* Both switches have to agree. A number with the switch off caps
+                  nothing, and 0 means no ceiling rather than a slow one. */}
+              {project.roeGlobalMaxRps && project.roeGlobalMaxRps > 0
+                ? `${project.roeGlobalMaxRps} rps`
+                : 'none - every tool runs at its own rate'}
+            </strong>
+          </div>
+          <div className={styles.row}>
+            <span>Identity header</span>
+            <strong>{project.engagementIdentityHeader || 'none sent'}</strong>
+          </div>
           {project.roeClientName && <div className={styles.row}><span>Client</span><strong>{project.roeClientName}</strong></div>}
           {project.roeEngagementType && (
             <div className={styles.row}><span>Type</span><strong>{ENGAGEMENT_TYPE_LABELS[project.roeEngagementType] || project.roeEngagementType}</strong></div>
@@ -183,6 +220,16 @@ export function RoeViewer({ projectId, project }: RoeViewerProps) {
           {project.roeClientContactEmail && <div className={styles.row}><span>Email</span><strong>{project.roeClientContactEmail}</strong></div>}
           {project.roeClientContactPhone && <div className={styles.row}><span>Phone</span><strong>{project.roeClientContactPhone}</strong></div>}
           {project.roeEmergencyContact && <div className={styles.row}><span>Emergency</span><strong>{project.roeEmergencyContact}</strong></div>}
+        </Section>
+
+        {/* What authorized this engagement. Append-only, and deliberately its
+            own card rather than a line in Engagement: it is a history, not a
+            value, and an incident review reads it as one. */}
+        <Section title="Authorization" icon={<FileCheck size={15} />} fullWidth>
+          <AuthorizationHistory
+            projectId={projectId}
+            engagementKind={project.engagementKind}
+          />
         </Section>
 
         {/* Scope */}

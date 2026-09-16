@@ -18,10 +18,20 @@ const h = vi.hoisted(() => ({
   rollback: vi.fn(),
   createJob: vi.fn(),
   retention: vi.fn(),
+  countAuthorizations: vi.fn(),
+  findAuthorization: vi.fn(),
 }))
 
 vi.mock('@/lib/prisma', () => ({
-  default: { project: { findUnique: (...a: unknown[]) => h.findProject(...a) } },
+  default: {
+    project: { findUnique: (...a: unknown[]) => h.findProject(...a) },
+    // A third-party engagement must carry an authorization record before a scan
+    // starts, so the start path counts them.
+    engagementAuthorization: {
+      count: (...a: unknown[]) => h.countAuthorizations(...a),
+      findFirst: (...a: unknown[]) => h.findAuthorization(...a),
+    },
+  },
 }))
 vi.mock('@/lib/orchestrator', () => ({ orchestratorFetch: (...a: unknown[]) => h.orchestratorFetch(...a) }))
 vi.mock('@/lib/activationLock', () => ({ isActivationInProgress: (...a: unknown[]) => h.isActivating(...a) }))
@@ -43,7 +53,14 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.isActivating.mockResolvedValue(false)
   h.busy.mockResolvedValue(null)
-  h.findProject.mockResolvedValue({ id: 'p1', userId: 'owner', targetDomain: 'x.tld', ipMode: false, targetIps: [] })
+  // `internal` is what every project created before engagement kinds existed
+  // reads as, and it is the shape these tests are about.
+  h.findProject.mockResolvedValue({
+    id: 'p1', userId: 'owner', targetDomain: 'x.tld', ipMode: false, targetIps: [],
+    engagementKind: 'internal', roeEnabled: false, roeGlobalMaxRps: 0,
+  })
+  h.countAuthorizations.mockResolvedValue(0)
+  h.findAuthorization.mockResolvedValue(null)
   h.orchestratorFetch.mockResolvedValue({ ok: true, json: async () => ({ project_id: 'p1', status: 'starting' }) })
   h.prepare.mockResolvedValue({
     currentVersion: { id: 'v3', seq: 3, label: 'Scan 3' },
@@ -53,6 +70,104 @@ beforeEach(() => {
   h.rollback.mockResolvedValue(true)
   h.createJob.mockResolvedValue({ id: 'job1' })
   h.retention.mockResolvedValue(null)
+})
+
+describe('a third-party engagement cannot start without its ceiling and its authorization', () => {
+  // The rule lives HERE rather than in the MCP tool, because an agent-facing
+  // rule that only applies when an agent is present is not a control: the
+  // scheduler and the queue dispatcher reach this same function with nobody
+  // watching.
+  const thirdParty = (over: Record<string, unknown> = {}) => ({
+    id: 'p1', userId: 'owner', targetDomain: 'x.tld', ipMode: false, targetIps: [],
+    engagementKind: 'third_party', roeEnabled: true, roeGlobalMaxRps: 3,
+    ...over,
+  })
+
+  test('a ceiling and a record together are enough', async () => {
+    h.findProject.mockResolvedValue(thirdParty())
+    h.countAuthorizations.mockResolvedValue(1)
+    expect((await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })).ok).toBe(true)
+  })
+
+  test('no authorization record refuses the start', async () => {
+    h.findProject.mockResolvedValue(thirdParty())
+    h.countAuthorizations.mockResolvedValue(0)
+    const res = await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })
+    expect(res.ok).toBe(false)
+    if (res.ok) throw new Error('unreachable')
+    expect(res.error).toMatch(/authorization record/i)
+    expect(h.orchestratorFetch).not.toHaveBeenCalled()
+  })
+
+  test('a ceiling of 0 refuses the start, because 0 means NO ceiling', async () => {
+    h.findProject.mockResolvedValue(thirdParty({ roeGlobalMaxRps: 0 }))
+    h.countAuthorizations.mockResolvedValue(1)
+    const res = await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })
+    expect(res.ok).toBe(false)
+    if (res.ok) throw new Error('unreachable')
+    expect(res.error).toMatch(/NO ceiling/)
+  })
+
+  test('roeEnabled false refuses it even with a ceiling written', async () => {
+    // The number alone caps nothing: the capper is gated on the switch.
+    h.findProject.mockResolvedValue(thirdParty({ roeEnabled: false }))
+    h.countAuthorizations.mockResolvedValue(1)
+    const res = await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })
+    expect(res.ok).toBe(false)
+    if (res.ok) throw new Error('unreachable')
+    expect(res.error).toMatch(/switched off/)
+  })
+
+  test('an unreadable authorization set blocks rather than passes', async () => {
+    // "We could not check" is not "it is allowed".
+    h.findProject.mockResolvedValue(thirdParty())
+    h.countAuthorizations.mockRejectedValue(new Error('database down'))
+    expect((await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })).ok).toBe(false)
+  })
+
+  test('an internal project with no ceiling still starts', async () => {
+    // Every project that predates the column reads as internal. Turning them
+    // all red at once is not a fix; they are flagged instead.
+    h.countAuthorizations.mockResolvedValue(0)
+    expect((await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })).ok).toBe(true)
+  })
+
+  test('the refusal happens BEFORE the graph is frozen', async () => {
+    // A refused start must leave no version behind: a frozen graph for a scan
+    // that never ran consumes a retention slot and deletes the oldest unpinned
+    // version.
+    h.findProject.mockResolvedValue(thirdParty())
+    h.countAuthorizations.mockResolvedValue(0)
+    await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })
+    expect(h.prepare).not.toHaveBeenCalled()
+  })
+})
+
+describe('provenance is recorded on the job row', () => {
+  test('a started run carries its settings hash and its authorization', async () => {
+    // Without these the chain from a graph node back to the configuration that
+    // produced it breaks: JobQueue.settingsHash is the only other settings
+    // fingerprint and it is deleted with the queue row at dispatch.
+    h.findAuthorization.mockResolvedValue({ id: 'auth1' })
+    await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })
+    const data = h.createJob.mock.calls.at(-1)![0]
+    expect(typeof data.settingsHash).toBe('string')
+    expect(data.settingsHash).toHaveLength(64)
+    expect(data.authorizationId).toBe('auth1')
+  })
+
+  test('an internal project records no authorization, which is not an error', async () => {
+    await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })
+    expect(h.createJob.mock.calls.at(-1)![0].authorizationId).toBeNull()
+  })
+
+  test('a provenance failure does not fail the start', async () => {
+    // History is a side effect of starting a scan. A null hash reads as "not
+    // recorded", which is honest; a failed start would not be.
+    h.findAuthorization.mockRejectedValue(new Error('database down'))
+    expect((await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })).ok).toBe(true)
+    expect(h.createJob.mock.calls.at(-1)![0].authorizationId).toBeNull()
+  })
 })
 
 describe('activation lock (4A.3)', () => {

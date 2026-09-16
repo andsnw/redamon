@@ -238,6 +238,10 @@ export interface CreateScanJobInput {
   kind?: string
   /** Only for kinds that run several times per project at once. */
   runId?: string
+  /** The sha256 of the scan-steering settings this run started with. */
+  settingsHash?: string | null
+  /** Which authorization permitted it, from the project's current record. */
+  authorizationId?: string | null
 }
 
 export async function createScanJob(input: CreateScanJobInput): Promise<{ id: string }> {
@@ -254,6 +258,8 @@ export async function createScanJob(input: CreateScanJobInput): Promise<{ id: st
       initiatedByUserId: input.initiatedByUserId ?? null,
       scheduleId: input.scheduleId ?? null,
       ramReason: input.ramReason ?? null,
+      settingsHash: input.settingsHash ?? null,
+      authorizationId: input.authorizationId ?? null,
       startedAt: status === 'running' ? new Date() : null,
     },
     select: { id: true },

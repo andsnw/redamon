@@ -187,7 +187,16 @@ export async function loadEngagement(projectId: string): Promise<EngagementStatu
       warnings: [],
     }
   }
-  const count = await prisma.engagementAuthorization.count({ where: { projectId } })
+  let count = 0
+  try {
+    count = await prisma.engagementAuthorization.count({ where: { projectId } })
+  } catch (err) {
+    // An unreadable authorization set is treated as ABSENT, which blocks a
+    // third-party engagement and merely omits a note on an internal one. That
+    // is the fail-closed direction: "we could not check" is not "it is fine".
+    console.error(`[engagement] could not count authorizations for ${projectId}:`, err)
+    count = 0
+  }
   return describeEngagement(project as EngagementProjectRow, count)
 }
 

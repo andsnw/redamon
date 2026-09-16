@@ -79,6 +79,15 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       orderBy: { createdAt: 'asc' },
     })
 
+    // 2c-ter. The engagement authorizations. They travel with the project for the
+    // same reason its scan history does: an exported project that arrives
+    // somewhere else without the record of what authorized it is a project
+    // nobody can account for.
+    const engagementAuthorizations = await prisma.engagementAuthorization.findMany({
+      where: { projectId: id },
+      orderBy: { recordedAt: 'asc' },
+    })
+
     // 2d. Fetch user project presets
     const userPresets = await prisma.userProjectPreset.findMany({
       where: { userId: project.userId },
@@ -142,6 +151,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       exportDate: new Date().toISOString(),
       projectName: project.name,
       targetDomain: project.targetDomain,
+      // Carried in the manifest as well as the project JSON, so the import rule
+      // can be applied before anything is written.
+      engagementKind: project.engagementKind,
       stats: {
         conversations: conversations.length,
         chatMessages: messages.length,
@@ -153,6 +165,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         scanVersions: scanVersions.length,
         scanJobs: scanJobs.length,
         scanSchedules: scanSchedules.length,
+        engagementAuthorizations: engagementAuthorizations.length,
         artifacts: 0,
       },
     }
@@ -239,6 +252,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       { name: 'timeline/versions.json' }
     )
     archive.append(Buffer.from(JSON.stringify(scanJobs, null, 2)), { name: 'timeline/jobs.json' })
+    archive.append(
+      Buffer.from(JSON.stringify(engagementAuthorizations, null, 2)),
+      { name: 'engagement/authorizations.json' }
+    )
     archive.append(
       Buffer.from(JSON.stringify(
         scanSchedules.map(s => ({

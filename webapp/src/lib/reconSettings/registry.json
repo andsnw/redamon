@@ -13118,12 +13118,12 @@
   },
   "auth_profile": {
    "phase": "http_probe",
-   "title": "Auth Profile",
+   "title": "Authenticated session",
    "traffic": "active"
   },
   "baddns": {
    "phase": "vuln_scan",
-   "title": "Baddns",
+   "title": "BadDNS",
    "traffic": "active"
   },
   "banner_grab": {
@@ -13148,7 +13148,7 @@
   },
   "crtsh": {
    "phase": "domain_discovery",
-   "title": "Crtsh",
+   "title": "crt.sh",
    "traffic": "passive"
   },
   "cve_lookup": {
@@ -13158,12 +13158,12 @@
   },
   "cypherfix": {
    "phase": "standalone",
-   "title": "Cypherfix",
+   "title": "CypherFix",
    "traffic": "none"
   },
   "dns": {
    "phase": "domain_discovery",
-   "title": "Dns",
+   "title": "DNS",
    "traffic": "active"
   },
   "domain_recon_ai": {
@@ -13173,7 +13173,7 @@
   },
   "dos": {
    "phase": "standalone",
-   "title": "Dos",
+   "title": "Denial of service",
    "traffic": "active"
   },
   "engagement": {
@@ -13183,7 +13183,7 @@
   },
   "ffuf": {
    "phase": "resource_enum",
-   "title": "Ffuf",
+   "title": "ffuf",
    "traffic": "active"
   },
   "fireteam": {
@@ -13193,22 +13193,22 @@
   },
   "fofa": {
    "phase": "domain_discovery",
-   "title": "Fofa",
+   "title": "FOFA",
    "traffic": "passive"
   },
   "gau": {
    "phase": "resource_enum",
-   "title": "Gau",
+   "title": "gau",
    "traffic": "passive"
   },
   "github": {
    "phase": "standalone",
-   "title": "Github",
+   "title": "GitHub secret hunt",
    "traffic": "passive"
   },
   "graphql": {
    "phase": "vuln_scan",
-   "title": "Graphql",
+   "title": "GraphQL security",
    "traffic": "active"
   },
   "graphql_cop": {
@@ -13218,17 +13218,17 @@
   },
   "gvm": {
    "phase": "standalone",
-   "title": "Gvm",
+   "title": "GVM vulnerability scan",
    "traffic": "active"
   },
   "hackertarget": {
    "phase": "domain_discovery",
-   "title": "Hackertarget",
+   "title": "HackerTarget",
    "traffic": "passive"
   },
   "hakrawler": {
    "phase": "resource_enum",
-   "title": "Hakrawler",
+   "title": "hakrawler",
    "traffic": "active"
   },
   "http_probe_ai": {
@@ -13238,7 +13238,7 @@
   },
   "httpx": {
    "phase": "http_probe",
-   "title": "Httpx",
+   "title": "httpx",
    "traffic": "active"
   },
   "hydra": {
@@ -13253,7 +13253,7 @@
   },
   "jsluice": {
    "phase": "js_recon",
-   "title": "Jsluice",
+   "title": "jsluice",
    "traffic": "active"
   },
   "katana": {
@@ -13268,22 +13268,22 @@
   },
   "knockpy": {
    "phase": "domain_discovery",
-   "title": "Knockpy",
+   "title": "knockpy",
    "traffic": "passive"
   },
   "masscan": {
    "phase": "port_scan",
-   "title": "Masscan",
+   "title": "masscan",
    "traffic": "active"
   },
   "mitre": {
    "phase": "vuln_scan",
-   "title": "Mitre",
+   "title": "MITRE ATT&CK enrichment",
    "traffic": "none"
   },
   "naabu": {
    "phase": "port_scan",
-   "title": "Naabu",
+   "title": "naabu",
    "traffic": "active"
   },
   "netlas": {
@@ -13313,12 +13313,12 @@
   },
   "otx": {
    "phase": "domain_discovery",
-   "title": "Otx",
+   "title": "AlienVault OTX",
    "traffic": "passive"
   },
   "paramspider": {
    "phase": "resource_enum",
-   "title": "Paramspider",
+   "title": "ParamSpider",
    "traffic": "passive"
   },
   "path_traversal": {
@@ -13348,17 +13348,17 @@
   },
   "project": {
    "phase": "standalone",
-   "title": "Project",
+   "title": "Project identity",
    "traffic": "none"
   },
   "puredns": {
    "phase": "domain_discovery",
-   "title": "Puredns",
+   "title": "puredns",
    "traffic": "active"
   },
   "rce": {
    "phase": "standalone",
-   "title": "Rce",
+   "title": "Remote code execution",
    "traffic": "active"
   },
   "resource_enum_ai": {
@@ -13383,12 +13383,12 @@
   },
   "sqli": {
    "phase": "standalone",
-   "title": "Sqli",
+   "title": "SQL injection",
    "traffic": "active"
   },
   "ssrf": {
    "phase": "standalone",
-   "title": "Ssrf",
+   "title": "Server-side request forgery",
    "traffic": "active"
   },
   "subdomain_discovery": {
@@ -13398,12 +13398,12 @@
   },
   "subfinder": {
    "phase": "domain_discovery",
-   "title": "Subfinder",
+   "title": "subfinder",
    "traffic": "passive"
   },
   "subjack": {
    "phase": "vuln_scan",
-   "title": "Subjack",
+   "title": "subjack",
    "traffic": "active"
   },
   "supply_chain": {
@@ -13418,32 +13418,32 @@
   },
   "takeover": {
    "phase": "vuln_scan",
-   "title": "Takeover",
+   "title": "Subdomain takeover",
    "traffic": "active"
   },
   "targeting": {
    "phase": "standalone",
-   "title": "Targeting",
+   "title": "Targeting and scope",
    "traffic": "none"
   },
   "tlsx": {
    "phase": "http_probe",
-   "title": "Tlsx",
+   "title": "tlsx",
    "traffic": "active"
   },
   "trufflehog": {
    "phase": "standalone",
-   "title": "Trufflehog",
+   "title": "TruffleHog",
    "traffic": "passive"
   },
   "uncover": {
    "phase": "domain_discovery",
-   "title": "Uncover",
+   "title": "uncover",
    "traffic": "passive"
   },
   "urlscan": {
    "phase": "domain_discovery",
-   "title": "Urlscan",
+   "title": "urlscan.io",
    "traffic": "passive"
   },
   "vhost_sni": {
@@ -13453,12 +13453,12 @@
   },
   "virustotal": {
    "phase": "standalone",
-   "title": "Virustotal",
+   "title": "VirusTotal",
    "traffic": "none"
   },
   "waf": {
    "phase": "http_probe",
-   "title": "Waf",
+   "title": "WAF detection",
    "traffic": "none"
   },
   "wappalyzer": {
@@ -13473,12 +13473,12 @@
   },
   "whois": {
    "phase": "domain_discovery",
-   "title": "Whois",
+   "title": "WHOIS",
    "traffic": "passive"
   },
   "zap": {
    "phase": "resource_enum",
-   "title": "Zap",
+   "title": "ZAP Ajax Spider",
    "traffic": "active"
   },
   "zoomeye": {
