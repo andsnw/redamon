@@ -56,15 +56,23 @@ For the graph write, use `graph-db-writes`. For the settings, use
   the correct execution group in [recon/main.py](../../recon/main.py); never
   parallelize across a dependency boundary (a tool needing live URLs cannot run
   before GROUP 4).
-- **A new tool setting is NOT reachable over MCP until it is classified.** The
-  inbound MCP server writes settings through a positive, frozen allowlist
-  ([webapp/src/lib/reconSettingsAllowlist.generated.ts](../../webapp/src/lib/reconSettingsAllowlist.generated.ts)),
-  and a coverage test fails until every `Project` column appears in its ALLOW or
-  DENY table. Denying is the safe default; allowlist a field only if it is
-  genuine recon *tuning* AND has a ProjectForm min/max to mirror. Anything that
-  steers WHERE or HOW HARD a scan hits (targets, wordlists, headers, egress,
-  intrusiveness, docker images) stays denied - see
+- **A new tool setting FAILS THE BUILD until it is in the registry.** Every
+  parameter is described once in
+  [recon_settings/registry.yaml](../../recon_settings/registry.yaml),
+  and a test walking `Prisma.ProjectScalarFieldEnum` fails until every column
+  has an entry. Draft it with
+  `python3 tooling/scripts/extract_recon_registry.py`, EDIT IT, then
+  `python3 recon_settings/build.py`.
+- **Tuning is OPEN and controlled at the point of use, not by being refused.**
+  A rate is capped to the engagement ceiling at scan start; a container image
+  outside the shipped set is pinned back to the default; a wordlist path outside
+  the project's own directories is dropped. What stays closed is the engagement
+  SCOPE (`mcp: create_only`, set once by `create_project`) and the Rules of
+  Engagement (`mcp: tighten_only`) - see
   [README.MCP.SERVER.md](../../docs/readmes/README.MCP.SERVER.md).
+- **A new `rps` field with `traffic: active` and no `roe_capped: true` fails the
+  build.** That gap is how three rate limits shipped reachable over MCP and
+  outside the ceiling.
 
 ---
 

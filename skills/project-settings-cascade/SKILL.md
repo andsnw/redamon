@@ -53,14 +53,25 @@ here rather than restating it. For the surrounding tool wiring, see
   A mismatch means `fetch_*_settings` reads `None` and silently falls back to the default.
 - **ALWAYS give the frontend `onChange` a fallback** equal to the Python/Prisma
   default, so a project saved before the field existed does not write `undefined`.
-- **A new recon field is NOT reachable over MCP until it is classified.** The
-  inbound MCP server writes settings through a positive, frozen allowlist
-  ([webapp/src/lib/reconSettingsAllowlist.generated.ts](../../webapp/src/lib/reconSettingsAllowlist.generated.ts)),
-  and a coverage test fails until every `Project` column appears in its ALLOW or
-  DENY table. Denying is the safe default; allowlist a field only if it is
-  genuine recon *tuning* AND has a ProjectForm min/max to mirror. That staleness
-  is the correct fail-closed cost, not a bug - see
-  [README.MCP.SERVER.md](../../docs/readmes/README.MCP.SERVER.md).
+- **A new column FAILS THE BUILD until it has a registry entry.** Every
+  parameter is described once, in
+  [recon_settings/registry.yaml](../../recon_settings/registry.yaml), with its
+  unit, phase, traffic class, engagement-cap flag, MCP disposition, meaning, and
+  either a bound or a named validator. Add the column, run
+  `python3 tooling/scripts/extract_recon_registry.py` to draft the entry, EDIT
+  IT, then `python3 recon_settings/build.py`. The draft is a starting point: no
+  extraction can tell whether a `meaning` is true or a bound is right.
+- **NEVER hand-edit `registry.json`.** It is a build artifact, written to two
+  places (`recon_settings/` for Python, `webapp/src/lib/reconSettings/` for
+  TypeScript) by one build, and `build.py --check` fails the gate when either is
+  stale. Edit the YAML.
+- **NEVER add a rate field without `roe_capped: true`.** An `rps` field with
+  `traffic: active` and no cap fails the build, because that gap is how three
+  rate limits shipped reachable over MCP and outside the engagement ceiling.
+- **State what `0` means on any field that defaults to it.** Several rates treat
+  `0` as UNLIMITED, which makes it the FASTEST value rather than the safest. A
+  numeric defaulting to 0 without `zero_means` fails the build, and the `meaning`
+  has to repeat it in words.
 
 ---
 
@@ -71,8 +82,9 @@ here rather than restating it. For the surrounding tool wiring, see
 | DB / schema | [webapp/prisma/schema.prisma](../../webapp/prisma/schema.prisma) | `katanaTimeout Int @default(3600) @map("katana_timeout")` |
 | Python default | [recon/project_settings.py:21](../../recon/project_settings.py#L21) `DEFAULT_SETTINGS` (or [agentic/project_settings.py](../../agentic/project_settings.py) `DEFAULT_AGENT_SETTINGS`) | `'KATANA_TIMEOUT': 3600` |
 | Fetch mapping | [recon/project_settings.py:863](../../recon/project_settings.py#L863) `fetch_project_settings` (or `fetch_agent_settings` in the agent module) | `settings['KATANA_TIMEOUT'] = project.get('katanaTimeout', DEFAULT_SETTINGS['KATANA_TIMEOUT'])` |
-| Served defaults | [recon_orchestrator/api.py:576](../../recon_orchestrator/api.py#L576) `/defaults` + `RUNTIME_ONLY_KEYS` | include it, unless it is runtime-only (then add to `RUNTIME_ONLY_KEYS`) |
-| Frontend | the tool's `ProjectForm` section component | control with an `onChange` fallback equal to the default |
+| Registry | [recon_settings/registry.yaml](../../recon_settings/registry.yaml) | `katanaTimeout: { tool: katana, runtime_key: KATANA_TIMEOUT, unit: seconds, phase: resource_enum, traffic: active, roe_capped: false, mcp: settable, bounds: {...}, meaning: ... }` |
+| Served defaults | [recon_orchestrator/api.py](../../recon_orchestrator/api.py) `/defaults` | nothing to do: the payload and its exclusions are REGISTRY QUERIES now. A key with no column is excluded by `source: internal`, and the column name comes from the registry rather than a snake-to-camel guess (which could not recover an intercap, so nine settings never reached the form). |
+| Frontend | the tool's `ProjectForm` section component | control with an `onChange` fallback equal to the default. Its `min`/`max` must not be WIDER than the registry bounds, or the form accepts a value the save refuses. |
 
 Agent-only settings use `DEFAULT_AGENT_SETTINGS` + `fetch_agent_settings`; recon-only
 use `DEFAULT_SETTINGS` + `fetch_project_settings`. There is no shared module.
@@ -80,6 +92,9 @@ use `DEFAULT_SETTINGS` + `fetch_project_settings`. There is no shared module.
 ## Commands
 
 ```bash
+python3 tooling/scripts/extract_recon_registry.py             # draft the registry entry for a new column
+python3 recon_settings/build.py                               # rebuild both artifacts (--check in the gate)
+cd webapp && npm run docs:settings                            # regenerate the wiki settings registry
 docker compose exec webapp npx prisma db push                 # apply schema; NEVER prisma migrate
 docker compose build agent && docker compose up -d agent      # only if you changed agentic/ defaults
 docker compose restart recon-orchestrator                     # if you changed the /defaults endpoint
