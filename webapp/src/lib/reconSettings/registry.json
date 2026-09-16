@@ -11889,12 +11889,12 @@
    "mcp": "settable",
    "meaning": "Whether virustotal runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
    "optional": false,
-   "phase": "standalone",
+   "phase": "domain_discovery",
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "VIRUSTOTAL_ENABLED",
    "tool": "virustotal",
-   "traffic": "none",
+   "traffic": "passive",
    "type": "boolean",
    "unit": "none"
   },
@@ -11912,12 +11912,12 @@
    "mcp": "settable",
    "meaning": "How many virustotal operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
    "optional": false,
-   "phase": "standalone",
+   "phase": "domain_discovery",
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "VIRUSTOTAL_WORKERS",
    "tool": "virustotal",
-   "traffic": "none",
+   "traffic": "passive",
    "type": "int",
    "unit": "threads"
   },
@@ -13097,392 +13097,862 @@
  },
  "tools": {
   "agent": {
+   "form_section": "AgentBehaviourSection",
    "phase": "standalone",
+   "produces": [
+    "AttackChain",
+    "ChainStep",
+    "ChainFinding",
+    "ChainDecision",
+    "ChainFailure"
+   ],
    "title": "Agent",
    "traffic": "active"
   },
   "ai_surface_recon": {
+   "enabled_key": "AI_SURFACE_RECON_ENABLED",
+   "form_section": "AiSurfaceReconSection",
+   "module": "recon.main_recon_modules.ai_surface_recon",
+   "partial_recon_module": "ai_surface_recon",
    "phase": "http_probe",
    "title": "AI attack-surface recon",
    "traffic": "active"
   },
   "amass": {
+   "enabled_key": "AMASS_ENABLED",
+   "form_section": "SubdomainDiscoverySection",
+   "image": "caffix/amass:latest",
+   "module": "recon.main_recon_modules.domain_recon",
+   "partial_recon_module": "subdomain_discovery",
    "phase": "domain_discovery",
+   "produces": [
+    "Subdomain"
+   ],
    "title": "Amass",
    "traffic": "passive"
   },
   "arjun": {
+   "enabled_key": "ARJUN_ENABLED",
+   "form_section": "ArjunSection",
+   "module": "recon.main_recon_modules.resource_enum",
+   "partial_recon_module": "parameter_discovery",
    "phase": "resource_enum",
+   "produces": [
+    "Parameter"
+   ],
    "title": "Arjun",
    "traffic": "active"
   },
   "auth_profile": {
+   "form_section": "AuthenticationSection",
    "phase": "http_probe",
    "title": "Authenticated session",
-   "traffic": "active"
+   "traffic": "none"
   },
   "baddns": {
+   "enabled_key": "BADDNS_ENABLED",
+   "form_section": "TakeoverSection",
+   "image": "redamon-baddns:latest",
+   "module": "recon.main_recon_modules.subdomain_takeover",
+   "partial_recon_module": "vulnerability_scanning",
    "phase": "vuln_scan",
+   "produces": [
+    "Vulnerability"
+   ],
    "title": "BadDNS",
    "traffic": "active"
   },
   "banner_grab": {
+   "enabled_key": "BANNER_GRAB_ENABLED",
+   "form_section": "NaabuSection",
+   "module": "recon.main_recon_modules.port_scan",
+   "partial_recon_module": "port_scanning",
    "phase": "port_scan",
+   "produces": [
+    "Service"
+   ],
    "title": "Banner grab",
    "traffic": "active"
   },
   "capture_proxy": {
+   "enabled_key": "CAPTURE_PROXY_ENABLED",
+   "form_section": "ToolMatrixSection",
    "phase": "standalone",
    "title": "Capture proxy",
    "traffic": "active"
   },
   "censys": {
+   "enabled_key": "CENSYS_ENABLED",
+   "form_section": "OsintEnrichmentSection",
+   "graph_writer": "update_graph_from_censys",
+   "isolated_fn": "run_censys_enrichment_isolated",
+   "module": "recon.main_recon_modules.censys_enrich",
+   "partial_recon_module": "osint_enrichment",
    "phase": "domain_discovery",
+   "produces": [
+    "IP",
+    "Port",
+    "Certificate"
+   ],
    "title": "Censys",
    "traffic": "passive"
   },
   "criminalip": {
+   "enabled_key": "CRIMINALIP_ENABLED",
+   "form_section": "OsintEnrichmentSection",
+   "graph_writer": "update_graph_from_criminalip",
+   "isolated_fn": "run_criminalip_enrichment_isolated",
+   "module": "recon.main_recon_modules.criminalip_enrich",
+   "partial_recon_module": "osint_enrichment",
    "phase": "domain_discovery",
+   "produces": [
+    "IP",
+    "Port"
+   ],
    "title": "CriminalIP",
    "traffic": "passive"
   },
   "crtsh": {
+   "enabled_key": "CRTSH_ENABLED",
+   "form_section": "SubdomainDiscoverySection",
+   "module": "recon.main_recon_modules.domain_recon",
+   "partial_recon_module": "subdomain_discovery",
    "phase": "domain_discovery",
+   "produces": [
+    "Subdomain",
+    "Certificate"
+   ],
    "title": "crt.sh",
    "traffic": "passive"
   },
   "cve_lookup": {
+   "enabled_key": "CVE_LOOKUP_ENABLED",
+   "form_section": "CveLookupSection",
+   "partial_recon_module": "vulnerability_scanning",
    "phase": "vuln_scan",
+   "produces": [
+    "CVE"
+   ],
    "title": "CVE lookup",
    "traffic": "passive"
   },
   "cypherfix": {
+   "form_section": "CypherFixSettingsSection",
    "phase": "standalone",
    "title": "CypherFix",
    "traffic": "none"
   },
   "dns": {
+   "enabled_key": "DNS_ENABLED",
+   "form_section": "SubdomainDiscoverySection",
+   "module": "recon.main_recon_modules.domain_recon",
+   "partial_recon_module": "subdomain_discovery",
    "phase": "domain_discovery",
+   "produces": [
+    "DNSRecord",
+    "Subdomain",
+    "IP"
+   ],
    "title": "DNS",
    "traffic": "active"
   },
   "domain_recon_ai": {
+   "form_section": "SubdomainDiscoverySection",
    "phase": "domain_discovery",
    "title": "Domain recon AI hints",
    "traffic": "none"
   },
   "dos": {
+   "form_section": "DosSection",
    "phase": "standalone",
    "title": "Denial of service",
    "traffic": "active"
   },
   "engagement": {
+   "form_section": "RoeSection",
    "phase": "standalone",
    "title": "Engagement",
    "traffic": "none"
   },
   "ffuf": {
+   "enabled_key": "FFUF_ENABLED",
+   "form_section": "FfufSection",
+   "module": "recon.main_recon_modules.resource_enum",
+   "partial_recon_module": "web_crawling",
    "phase": "resource_enum",
+   "produces": [
+    "Endpoint"
+   ],
    "title": "ffuf",
    "traffic": "active"
   },
   "fireteam": {
+   "form_section": "AgentBehaviourSection",
    "phase": "standalone",
    "title": "Fireteam",
    "traffic": "active"
   },
   "fofa": {
+   "enabled_key": "FOFA_ENABLED",
+   "form_section": "OsintEnrichmentSection",
+   "graph_writer": "update_graph_from_fofa",
+   "isolated_fn": "run_fofa_enrichment_isolated",
+   "module": "recon.main_recon_modules.fofa_enrich",
+   "partial_recon_module": "osint_enrichment",
    "phase": "domain_discovery",
+   "produces": [
+    "IP",
+    "Port",
+    "Technology"
+   ],
    "title": "FOFA",
    "traffic": "passive"
   },
   "gau": {
+   "enabled_key": "GAU_ENABLED",
+   "form_section": "GauSection",
+   "image": "sxcurity/gau:latest",
+   "module": "recon.main_recon_modules.resource_enum",
+   "partial_recon_module": "web_crawling",
    "phase": "resource_enum",
+   "produces": [
+    "Endpoint",
+    "Parameter"
+   ],
    "title": "gau",
    "traffic": "passive"
   },
   "github": {
+   "form_section": "GithubSection",
    "phase": "standalone",
+   "produces": [
+    "GithubHunt",
+    "GithubRepository",
+    "GithubSecret",
+    "GithubSensitiveFile",
+    "GithubPath"
+   ],
    "title": "GitHub secret hunt",
    "traffic": "passive"
   },
   "graphql": {
+   "enabled_key": "GRAPHQL_SECURITY_ENABLED",
+   "form_section": "GraphqlScanSection",
+   "isolated_fn": "run_graphql_scan_isolated",
+   "module": "recon.graphql_scan",
+   "partial_recon_module": "graphql_scanning",
    "phase": "vuln_scan",
+   "produces": [
+    "Endpoint",
+    "Vulnerability"
+   ],
    "title": "GraphQL security",
    "traffic": "active"
   },
   "graphql_cop": {
+   "enabled_key": "GRAPHQL_COP_ENABLED",
+   "form_section": "GraphqlScanSection",
+   "image": "dolevf/graphql-cop:1.14",
+   "partial_recon_module": "graphql_scanning",
    "phase": "vuln_scan",
+   "produces": [
+    "Vulnerability"
+   ],
    "title": "GraphQL Cop",
    "traffic": "active"
   },
   "gvm": {
+   "form_section": "GvmScanSection",
    "phase": "standalone",
+   "produces": [
+    "ExploitGvm",
+    "Vulnerability"
+   ],
    "title": "GVM vulnerability scan",
    "traffic": "active"
   },
   "hackertarget": {
+   "enabled_key": "HACKERTARGET_ENABLED",
+   "form_section": "SubdomainDiscoverySection",
+   "module": "recon.main_recon_modules.domain_recon",
+   "partial_recon_module": "subdomain_discovery",
    "phase": "domain_discovery",
+   "produces": [
+    "Subdomain"
+   ],
    "title": "HackerTarget",
    "traffic": "passive"
   },
   "hakrawler": {
+   "enabled_key": "HAKRAWLER_ENABLED",
+   "form_section": "HakrawlerSection",
+   "image": "jauderho/hakrawler:latest",
+   "module": "recon.main_recon_modules.resource_enum",
+   "partial_recon_module": "web_crawling",
    "phase": "resource_enum",
+   "produces": [
+    "Endpoint"
+   ],
    "title": "hakrawler",
    "traffic": "active"
   },
   "http_probe_ai": {
+   "form_section": "HttpxSection",
    "phase": "http_probe",
    "title": "HTTP probe AI hints",
    "traffic": "none"
   },
   "httpx": {
+   "enabled_key": "HTTPX_ENABLED",
+   "form_section": "HttpxSection",
+   "image": "projectdiscovery/httpx:latest",
+   "module": "recon.main_recon_modules.http_probe",
+   "partial_recon_module": "http_probing",
    "phase": "http_probe",
+   "produces": [
+    "BaseURL",
+    "Technology",
+    "Header",
+    "Certificate"
+   ],
    "title": "httpx",
    "traffic": "active"
   },
   "hydra": {
+   "form_section": "BruteForceSection",
    "phase": "standalone",
    "title": "Hydra",
    "traffic": "active"
   },
   "js_recon": {
+   "enabled_key": "JS_RECON_ENABLED",
+   "form_section": "JsReconSection",
+   "module": "recon.main_recon_modules.js_recon",
+   "partial_recon_module": "js_analysis",
    "phase": "js_recon",
+   "produces": [
+    "JsReconFinding",
+    "Endpoint",
+    "Secret"
+   ],
    "title": "JS recon",
    "traffic": "active"
   },
   "jsluice": {
+   "enabled_key": "JSLUICE_ENABLED",
+   "form_section": "JsluiceSection",
+   "module": "recon.main_recon_modules.js_recon",
+   "partial_recon_module": "js_analysis",
    "phase": "js_recon",
+   "produces": [
+    "JsReconFinding",
+    "Endpoint",
+    "Secret"
+   ],
    "title": "jsluice",
    "traffic": "active"
   },
   "katana": {
+   "enabled_key": "KATANA_ENABLED",
+   "form_section": "KatanaSection",
+   "image": "projectdiscovery/katana:latest",
+   "module": "recon.main_recon_modules.resource_enum",
+   "partial_recon_module": "web_crawling",
    "phase": "resource_enum",
+   "produces": [
+    "Endpoint",
+    "Parameter"
+   ],
    "title": "Katana",
    "traffic": "active"
   },
   "kiterunner": {
+   "enabled_key": "KITERUNNER_ENABLED",
+   "form_section": "KiterunnerSection",
+   "module": "recon.main_recon_modules.resource_enum",
+   "partial_recon_module": "web_crawling",
    "phase": "resource_enum",
+   "produces": [
+    "Endpoint"
+   ],
    "title": "Kiterunner",
    "traffic": "active"
   },
   "knockpy": {
+   "enabled_key": "KNOCKPY_RECON_ENABLED",
+   "form_section": "SubdomainDiscoverySection",
+   "module": "recon.main_recon_modules.domain_recon",
+   "partial_recon_module": "subdomain_discovery",
    "phase": "domain_discovery",
+   "produces": [
+    "Subdomain"
+   ],
    "title": "knockpy",
    "traffic": "passive"
   },
   "masscan": {
+   "enabled_key": "MASSCAN_ENABLED",
+   "form_section": "MasscanSection",
+   "isolated_fn": "run_masscan_scan_isolated",
+   "module": "recon.main_recon_modules.masscan_scan",
+   "partial_recon_module": "port_scanning",
    "phase": "port_scan",
+   "produces": [
+    "Port",
+    "Service"
+   ],
    "title": "masscan",
    "traffic": "active"
   },
   "mitre": {
+   "enabled_key": "MITRE_ENABLED",
+   "form_section": "MitreSection",
+   "module": "recon.main_recon_modules.add_mitre",
+   "partial_recon_module": "vulnerability_scanning",
    "phase": "vuln_scan",
+   "produces": [
+    "MitreData",
+    "Capec"
+   ],
    "title": "MITRE ATT&CK enrichment",
    "traffic": "none"
   },
   "naabu": {
+   "enabled_key": "NAABU_ENABLED",
+   "form_section": "NaabuSection",
+   "image": "projectdiscovery/naabu:latest",
+   "isolated_fn": "run_port_scan_isolated",
+   "module": "recon.main_recon_modules.port_scan",
+   "partial_recon_module": "port_scanning",
    "phase": "port_scan",
+   "produces": [
+    "Port"
+   ],
    "title": "naabu",
    "traffic": "active"
   },
   "netlas": {
+   "enabled_key": "NETLAS_ENABLED",
+   "form_section": "OsintEnrichmentSection",
+   "graph_writer": "update_graph_from_netlas",
+   "isolated_fn": "run_netlas_enrichment_isolated",
+   "module": "recon.main_recon_modules.netlas_enrich",
+   "partial_recon_module": "osint_enrichment",
    "phase": "domain_discovery",
+   "produces": [
+    "IP",
+    "Port"
+   ],
    "title": "Netlas",
    "traffic": "passive"
   },
   "nmap": {
+   "enabled_key": "NMAP_ENABLED",
+   "form_section": "NmapSection",
+   "module": "recon.main_recon_modules.nmap_scan",
+   "partial_recon_module": "port_scanning",
    "phase": "port_scan",
+   "produces": [
+    "Service",
+    "Vulnerability"
+   ],
    "title": "Nmap",
    "traffic": "active"
   },
   "nuclei": {
+   "enabled_key": "NUCLEI_ENABLED",
+   "form_section": "NucleiSection",
+   "image": "projectdiscovery/nuclei:latest",
+   "module": "recon.main_recon_modules.vuln_scan",
+   "partial_recon_module": "vulnerability_scanning",
    "phase": "vuln_scan",
+   "produces": [
+    "Vulnerability"
+   ],
    "title": "Nuclei",
    "traffic": "active"
   },
   "origin_discovery": {
+   "enabled_key": "ORIGIN_DISCOVERY_ENABLED",
+   "form_section": "OriginDiscoverySection",
+   "isolated_fn": "run_origin_discovery_enrichment_isolated",
+   "module": "recon.main_recon_modules.origin_discovery",
+   "partial_recon_module": "origin_enrichment",
    "phase": "http_probe",
+   "produces": [
+    "IP"
+   ],
    "title": "Origin discovery",
    "traffic": "active"
   },
   "osint_enrichment": {
+   "enabled_key": "OSINT_ENRICHMENT_ENABLED",
+   "form_section": "OsintEnrichmentSection",
+   "partial_recon_module": "osint_enrichment",
    "phase": "domain_discovery",
    "title": "OSINT enrichment",
    "traffic": "passive"
   },
   "otx": {
+   "enabled_key": "OTX_ENABLED",
+   "form_section": "OsintEnrichmentSection",
+   "graph_writer": "update_graph_from_otx",
+   "isolated_fn": "run_otx_enrichment_isolated",
+   "module": "recon.main_recon_modules.otx_enrich",
+   "partial_recon_module": "osint_enrichment",
    "phase": "domain_discovery",
+   "produces": [
+    "ThreatPulse",
+    "Malware"
+   ],
    "title": "AlienVault OTX",
    "traffic": "passive"
   },
   "paramspider": {
+   "enabled_key": "PARAMSPIDER_ENABLED",
+   "form_section": "ParamSpiderSection",
+   "module": "recon.main_recon_modules.resource_enum",
+   "partial_recon_module": "parameter_discovery",
    "phase": "resource_enum",
+   "produces": [
+    "Parameter"
+   ],
    "title": "ParamSpider",
    "traffic": "passive"
   },
   "path_traversal": {
+   "form_section": "PathTraversalSection",
    "phase": "standalone",
    "title": "Path traversal",
    "traffic": "active"
   },
   "phishing": {
+   "form_section": "PhishingSection",
    "phase": "standalone",
    "title": "Phishing",
    "traffic": "active"
   },
   "pipeline": {
+   "form_section": "ScanModulesSection",
    "phase": "standalone",
    "title": "Pipeline",
    "traffic": "none"
   },
   "pipeline_ai": {
+   "form_section": "ScanModulesSection",
    "phase": "standalone",
    "title": "Pipeline AI master switch",
    "traffic": "none"
   },
   "port_scan_ai": {
+   "form_section": "NaabuSection",
    "phase": "port_scan",
    "title": "Port scan AI catalog",
    "traffic": "none"
   },
   "project": {
+   "form_section": "TargetSection",
    "phase": "standalone",
    "title": "Project identity",
    "traffic": "none"
   },
   "puredns": {
+   "enabled_key": "PUREDNS_ENABLED",
+   "form_section": "SubdomainDiscoverySection",
+   "image": "frost19k/puredns:latest",
+   "module": "recon.main_recon_modules.domain_recon",
+   "partial_recon_module": "subdomain_discovery",
    "phase": "domain_discovery",
+   "produces": [
+    "Subdomain",
+    "IP"
+   ],
    "title": "puredns",
    "traffic": "active"
   },
   "rce": {
+   "form_section": "RceSection",
    "phase": "standalone",
    "title": "Remote code execution",
    "traffic": "active"
   },
   "resource_enum_ai": {
+   "form_section": "ResourceEnumAiSection",
    "phase": "resource_enum",
    "title": "Resource enum AI hints",
    "traffic": "none"
   },
   "roe": {
+   "enabled_key": "ROE_ENABLED",
+   "form_section": "RoeSection",
    "phase": "standalone",
    "title": "Rules of Engagement",
    "traffic": "none"
   },
   "security_check": {
+   "enabled_key": "SECURITY_CHECK_ENABLED",
+   "form_section": "SecurityChecksSection",
+   "partial_recon_module": "http_probing",
    "phase": "http_probe",
+   "produces": [
+    "Vulnerability"
+   ],
    "title": "Security checks",
    "traffic": "active"
   },
   "shodan": {
+   "enabled_key": "SHODAN_ENABLED",
+   "form_section": "ShodanSection",
+   "isolated_fn": "run_shodan_enrichment_isolated",
+   "module": "recon.main_recon_modules.shodan_enrich",
+   "partial_recon_module": "osint_enrichment",
    "phase": "domain_discovery",
+   "produces": [
+    "IP",
+    "Port",
+    "Service",
+    "CVE"
+   ],
    "title": "Shodan",
    "traffic": "passive"
   },
   "sqli": {
+   "form_section": "SqliSection",
    "phase": "standalone",
    "title": "SQL injection",
    "traffic": "active"
   },
   "ssrf": {
+   "form_section": "SsrfSection",
    "phase": "standalone",
    "title": "Server-side request forgery",
    "traffic": "active"
   },
   "subdomain_discovery": {
+   "enabled_key": "SUBDOMAIN_DISCOVERY_ENABLED",
+   "form_section": "SubdomainDiscoverySection",
+   "partial_recon_module": "subdomain_discovery",
    "phase": "domain_discovery",
    "title": "Subdomain discovery",
    "traffic": "passive"
   },
   "subfinder": {
+   "enabled_key": "SUBFINDER_ENABLED",
+   "form_section": "SubdomainDiscoverySection",
+   "image": "projectdiscovery/subfinder:latest",
+   "module": "recon.main_recon_modules.domain_recon",
+   "partial_recon_module": "subdomain_discovery",
    "phase": "domain_discovery",
+   "produces": [
+    "Subdomain"
+   ],
    "title": "subfinder",
    "traffic": "passive"
   },
   "subjack": {
+   "enabled_key": "SUBJACK_ENABLED",
+   "form_section": "TakeoverSection",
+   "isolated_fn": "run_subdomain_takeover_isolated",
+   "module": "recon.main_recon_modules.subdomain_takeover",
+   "partial_recon_module": "vulnerability_scanning",
    "phase": "vuln_scan",
+   "produces": [
+    "Vulnerability"
+   ],
    "title": "subjack",
    "traffic": "active"
   },
   "supply_chain": {
+   "form_section": "SupplyChainScanSection",
    "phase": "standalone",
+   "produces": [
+    "Package",
+    "MalPackageFinding"
+   ],
    "title": "Supply chain scan",
    "traffic": "passive"
   },
   "supply_chain_recon": {
+   "enabled_key": "SUPPLY_CHAIN_RECON_ENABLED",
+   "form_section": "SupplyChainReconSection",
+   "partial_recon_module": "supply_chain",
    "phase": "standalone",
+   "produces": [
+    "Package",
+    "MalPackageFinding"
+   ],
    "title": "Supply chain recon",
    "traffic": "passive"
   },
   "takeover": {
+   "enabled_key": "SUBDOMAIN_TAKEOVER_ENABLED",
+   "form_section": "TakeoverSection",
+   "isolated_fn": "run_subdomain_takeover_isolated",
+   "module": "recon.main_recon_modules.subdomain_takeover",
+   "partial_recon_module": "vulnerability_scanning",
    "phase": "vuln_scan",
+   "produces": [
+    "Vulnerability"
+   ],
    "title": "Subdomain takeover",
    "traffic": "active"
   },
   "targeting": {
+   "form_section": "TargetSection",
    "phase": "standalone",
    "title": "Targeting and scope",
    "traffic": "none"
   },
   "tlsx": {
+   "enabled_key": "TLSX_ENABLED",
+   "form_section": "TlsxSection",
+   "image": "projectdiscovery/tlsx:latest",
+   "module": "recon.main_recon_modules.tls_scan",
+   "partial_recon_module": "tlsx_scanning",
    "phase": "http_probe",
+   "produces": [
+    "Certificate",
+    "Service"
+   ],
    "title": "tlsx",
    "traffic": "active"
   },
   "trufflehog": {
+   "form_section": "TrufflehogSection",
    "phase": "standalone",
+   "produces": [
+    "MultiscannerScan",
+    "MultiscannerFinding",
+    "Secret"
+   ],
    "title": "TruffleHog",
    "traffic": "passive"
   },
   "uncover": {
+   "enabled_key": "UNCOVER_ENABLED",
+   "form_section": "OsintEnrichmentSection",
+   "image": "projectdiscovery/uncover:latest",
+   "isolated_fn": "run_uncover_expansion_isolated",
+   "module": "recon.main_recon_modules.uncover_enrich",
+   "partial_recon_module": "osint_enrichment",
    "phase": "domain_discovery",
+   "produces": [
+    "IP",
+    "Port"
+   ],
    "title": "uncover",
    "traffic": "passive"
   },
   "urlscan": {
+   "enabled_key": "URLSCAN_ENABLED",
+   "form_section": "UrlscanSection",
+   "module": "recon.main_recon_modules.urlscan_enrich",
+   "partial_recon_module": "osint_enrichment",
    "phase": "domain_discovery",
+   "produces": [
+    "Endpoint",
+    "ExternalDomain"
+   ],
    "title": "urlscan.io",
    "traffic": "passive"
   },
   "vhost_sni": {
+   "enabled_key": "VHOST_SNI_ENABLED",
+   "form_section": "VhostSniSection",
+   "isolated_fn": "run_vhost_sni_enrichment_isolated",
+   "module": "recon.main_recon_modules.vhost_sni_enum",
+   "partial_recon_module": "http_probing",
    "phase": "http_probe",
+   "produces": [
+    "Subdomain",
+    "Certificate"
+   ],
    "title": "Vhost / SNI enumeration",
    "traffic": "active"
   },
   "virustotal": {
-   "phase": "standalone",
+   "enabled_key": "VIRUSTOTAL_ENABLED",
+   "form_section": "OsintEnrichmentSection",
+   "graph_writer": "update_graph_from_virustotal",
+   "isolated_fn": "run_virustotal_enrichment_isolated",
+   "module": "recon.main_recon_modules.virustotal_enrich",
+   "partial_recon_module": "osint_enrichment",
+   "phase": "domain_discovery",
+   "produces": [
+    "Malware",
+    "ExternalDomain"
+   ],
    "title": "VirusTotal",
-   "traffic": "none"
+   "traffic": "passive"
   },
   "waf": {
+   "form_section": "HttpxSection",
    "phase": "http_probe",
    "title": "WAF detection",
    "traffic": "none"
   },
   "wappalyzer": {
+   "enabled_key": "WAPPALYZER_ENABLED",
+   "form_section": "HttpxSection",
+   "module": "recon.main_recon_modules.http_probe",
+   "partial_recon_module": "http_probing",
    "phase": "http_probe",
+   "produces": [
+    "Technology"
+   ],
    "title": "Wappalyzer",
    "traffic": "active"
   },
   "web_cache_poison": {
+   "enabled_key": "WEB_CACHE_POISON_ENABLED",
+   "form_section": "ToolMatrixSection",
+   "image": "redamon-wcvs:latest",
+   "partial_recon_module": "cache_scanning",
    "phase": "standalone",
+   "produces": [
+    "Vulnerability"
+   ],
    "title": "Web cache poisoning",
    "traffic": "active"
   },
   "whois": {
+   "enabled_key": "WHOIS_ENABLED",
+   "form_section": "SubdomainDiscoverySection",
+   "module": "recon.main_recon_modules.domain_recon",
+   "partial_recon_module": "subdomain_discovery",
    "phase": "domain_discovery",
+   "produces": [
+    "Domain"
+   ],
    "title": "WHOIS",
    "traffic": "passive"
   },
   "zap": {
+   "enabled_key": "ZAP_AJAX_SPIDER_ENABLED",
+   "form_section": "KatanaSection",
+   "image": "ghcr.io/zaproxy/zaproxy:stable",
+   "module": "recon.main_recon_modules.resource_enum",
+   "partial_recon_module": "web_crawling",
    "phase": "resource_enum",
+   "produces": [
+    "Endpoint",
+    "Parameter"
+   ],
    "title": "ZAP Ajax Spider",
    "traffic": "active"
   },
   "zoomeye": {
+   "enabled_key": "ZOOMEYE_ENABLED",
+   "form_section": "OsintEnrichmentSection",
+   "graph_writer": "update_graph_from_zoomeye",
+   "isolated_fn": "run_zoomeye_enrichment_isolated",
+   "module": "recon.main_recon_modules.zoomeye_enrich",
+   "partial_recon_module": "osint_enrichment",
    "phase": "domain_discovery",
+   "produces": [
+    "IP",
+    "Port"
+   ],
    "title": "ZoomEye",
    "traffic": "passive"
   }

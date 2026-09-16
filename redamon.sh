@@ -4510,13 +4510,13 @@ cmd_help() {
 # The root `tests/` dir is a grab-bag: most files exercise the agent image, but a
 # set of them import recon enrichment modules (recon/main_recon_modules/*) and so
 # must run in the recon image, not the agent image. We route them explicitly.
-_ROOT_RECON_TESTS="test_censys_enrich.py,test_criminalip_enrich.py,test_fofa_enrich.py,test_netlas_enrich.py,test_otx_enrich.py,test_uncover_enrich.py,test_virustotal_enrich.py,test_zoomeye_enrich.py,test_gau_parallel.py,test_gau_urlscan_api_key.py,test_recon_mixin_split.py,test_custom_templates_integration.py,test_masscan_integration.py"
+_ROOT_RECON_TESTS="test_censys_enrich.py,test_criminalip_enrich.py,test_fofa_enrich.py,test_netlas_enrich.py,test_otx_enrich.py,test_uncover_enrich.py,test_virustotal_enrich.py,test_zoomeye_enrich.py,test_gau_parallel.py,test_gau_urlscan_api_key.py,test_recon_mixin_split.py,test_custom_templates_integration.py,test_masscan_integration.py,test_registry_tool_wiring.py"
 
 # Section spec: name|image|workdir|PYTHONPATH|testpaths|covpkg|exclude
 _TEST_SECTIONS=(
     "agent|redamon-agent|/repo/agentic|/repo/agentic:/repo:/repo/mcp/servers:/repo/recon_orchestrator:/repo/services|tests|.|"
     "root-agent|redamon-agent|/repo|/repo:/repo/agentic:/repo/mcp/servers:/repo/services:/repo/scanners|tests scanners/supply_chain_common scanners/supply_chain_analyzer scanners/supply_chain_scan graph_db services/knowledge_base mcp|supply_chain_common|${_ROOT_RECON_TESTS}"
-    "root-recon|redamon-recon|/repo|/repo:/repo/recon:/repo/recon/main_recon_modules|tests|.|"
+    "root-recon|redamon-recon|/repo|/repo:/repo/recon:/repo/recon/main_recon_modules:/repo/scanners|tests|.|"
     "recon|redamon-recon|/repo/recon|/repo/recon:/repo|tests|.|"
     "recon_orchestrator|redamon-recon-orchestrator|/repo/recon_orchestrator|/repo/recon_orchestrator:/repo|.|.|"
     "ai_attack_surface|redamon-ai-attack-surface|/repo/scanners/ai_attack_surface_scan|/repo/scanners/ai_attack_surface_scan:/repo|tests adapters|.|"

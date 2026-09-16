@@ -156,7 +156,10 @@ TOOL_PHASE_TRAFFIC: dict[str, tuple[str, str]] = {
     "ai_surface_recon": ("http_probe", "active"),
     "amass": ("domain_discovery", "passive"),
     "arjun": ("resource_enum", "active"),
-    "auth_profile": ("http_probe", "active"),
+    # The authenticated session itself sends nothing; httpx and the crawlers do,
+    # carrying it. Classifying it as active would make it a pipeline tool with
+    # no module and no way to re-run it.
+    "auth_profile": ("http_probe", "none"),
     "baddns": ("vuln_scan", "active"),
     "banner_grab": ("port_scan", "active"),
     "capture_proxy": ("standalone", "active"),
@@ -225,6 +228,7 @@ TOOL_PHASE_TRAFFIC: dict[str, tuple[str, str]] = {
     "trufflehog": ("standalone", "passive"),
     "uncover": ("domain_discovery", "passive"),
     "urlscan": ("domain_discovery", "passive"),
+    "virustotal": ("domain_discovery", "passive"),
     "vhost_sni": ("http_probe", "active"),
     "waf": ("http_probe", "none"),
     "wappalyzer": ("http_probe", "active"),
@@ -604,6 +608,361 @@ def unit_for(column: str, col: Column) -> str:
     return "ratio" if col.kind == "float" else "count"
 
 
+# The cross-surface identifiers that are not derivable from a name. Each is a
+# link a `tools:` entry claims and a test resolves, so "adding a tool" fails the
+# build until its module, its isolated wrapper and its graph writer all exist.
+#
+# A tool with no entry here is a GROUP rather than a pipeline tool: the Rules of
+# Engagement, the agent, project identity. Those legitimately have no module.
+TOOL_WIRING: dict[str, dict[str, str]] = {
+    "amass": {"module": "recon.main_recon_modules.domain_recon"},
+    "arjun": {"module": "recon.main_recon_modules.resource_enum"},
+    "baddns": {"module": "recon.main_recon_modules.subdomain_takeover"},
+    "banner_grab": {"module": "recon.main_recon_modules.port_scan"},
+    "censys": {
+        "module": "recon.main_recon_modules.censys_enrich",
+        "isolated_fn": "run_censys_enrichment_isolated",
+        "graph_writer": "update_graph_from_censys",
+    },
+    "criminalip": {
+        "module": "recon.main_recon_modules.criminalip_enrich",
+        "isolated_fn": "run_criminalip_enrichment_isolated",
+        "graph_writer": "update_graph_from_criminalip",
+    },
+    "crtsh": {"module": "recon.main_recon_modules.domain_recon"},
+    "dns": {"module": "recon.main_recon_modules.domain_recon"},
+    "ffuf": {"module": "recon.main_recon_modules.resource_enum"},
+    "fofa": {
+        "module": "recon.main_recon_modules.fofa_enrich",
+        "isolated_fn": "run_fofa_enrichment_isolated",
+        "graph_writer": "update_graph_from_fofa",
+    },
+    "gau": {"module": "recon.main_recon_modules.resource_enum"},
+    "graphql": {"module": "recon.graphql_scan", "isolated_fn": "run_graphql_scan_isolated"},
+    "hackertarget": {"module": "recon.main_recon_modules.domain_recon"},
+    "hakrawler": {"module": "recon.main_recon_modules.resource_enum"},
+    "httpx": {"module": "recon.main_recon_modules.http_probe"},
+    "js_recon": {"module": "recon.main_recon_modules.js_recon"},
+    "jsluice": {"module": "recon.main_recon_modules.js_recon"},
+    "katana": {"module": "recon.main_recon_modules.resource_enum"},
+    "kiterunner": {"module": "recon.main_recon_modules.resource_enum"},
+    "knockpy": {"module": "recon.main_recon_modules.domain_recon"},
+    "masscan": {
+        "module": "recon.main_recon_modules.masscan_scan",
+        "isolated_fn": "run_masscan_scan_isolated",
+    },
+    "mitre": {"module": "recon.main_recon_modules.add_mitre"},
+    "naabu": {
+        "module": "recon.main_recon_modules.port_scan",
+        "isolated_fn": "run_port_scan_isolated",
+    },
+    "netlas": {
+        "module": "recon.main_recon_modules.netlas_enrich",
+        "isolated_fn": "run_netlas_enrichment_isolated",
+        "graph_writer": "update_graph_from_netlas",
+    },
+    "nmap": {"module": "recon.main_recon_modules.nmap_scan"},
+    "nuclei": {"module": "recon.main_recon_modules.vuln_scan"},
+    "origin_discovery": {
+        "module": "recon.main_recon_modules.origin_discovery",
+        "isolated_fn": "run_origin_discovery_enrichment_isolated",
+    },
+    "otx": {
+        "module": "recon.main_recon_modules.otx_enrich",
+        "isolated_fn": "run_otx_enrichment_isolated",
+        "graph_writer": "update_graph_from_otx",
+    },
+    "paramspider": {"module": "recon.main_recon_modules.resource_enum"},
+    "puredns": {"module": "recon.main_recon_modules.domain_recon"},
+    "shodan": {
+        "module": "recon.main_recon_modules.shodan_enrich",
+        "isolated_fn": "run_shodan_enrichment_isolated",
+    },
+    "subfinder": {"module": "recon.main_recon_modules.domain_recon"},
+    "subjack": {
+        "module": "recon.main_recon_modules.subdomain_takeover",
+        "isolated_fn": "run_subdomain_takeover_isolated",
+    },
+    # supply_chain_recon imports `supply_chain_common`, which is mounted at
+    # /app/supply_chain_common in a spawned scan container and is not on the
+    # path in the root-recon test section. The module is real; naming it here
+    # would make the wiring test assert something about the TEST environment.
+
+    "takeover": {
+        "module": "recon.main_recon_modules.subdomain_takeover",
+        "isolated_fn": "run_subdomain_takeover_isolated",
+    },
+    "tlsx": {"module": "recon.main_recon_modules.tls_scan"},
+    "uncover": {
+        "module": "recon.main_recon_modules.uncover_enrich",
+        "isolated_fn": "run_uncover_expansion_isolated",
+    },
+    # urlscan has no isolated wrapper: it runs inside the OSINT pass rather than
+    # as its own fan-out branch. Claiming one that does not exist would be the
+    # exact defect the wiring test is for.
+    "urlscan": {"module": "recon.main_recon_modules.urlscan_enrich"},
+    "vhost_sni": {
+        "module": "recon.main_recon_modules.vhost_sni_enum",
+        "isolated_fn": "run_vhost_sni_enrichment_isolated",
+    },
+    "virustotal": {
+        "module": "recon.main_recon_modules.virustotal_enrich",
+        "isolated_fn": "run_virustotal_enrichment_isolated",
+        "graph_writer": "update_graph_from_virustotal",
+    },
+    "wappalyzer": {"module": "recon.main_recon_modules.http_probe"},
+    "whois": {"module": "recon.main_recon_modules.domain_recon"},
+    "zap": {"module": "recon.main_recon_modules.resource_enum"},
+    "zoomeye": {
+        "module": "recon.main_recon_modules.zoomeye_enrich",
+        "isolated_fn": "run_zoomeye_enrichment_isolated",
+        "graph_writer": "update_graph_from_zoomeye",
+    },
+    "ai_surface_recon": {"module": "recon.main_recon_modules.ai_surface_recon"},
+}
+
+# tool -> the node labels its output becomes in the graph.
+#
+# Stated so the reverse question can be answered: "which tool has to run before
+# this label appears". A label with no producer is one nothing populates, and a
+# tool that produces nothing is a tool whose output the graph never sees.
+TOOL_PRODUCES: dict[str, list[str]] = {
+    "amass": ["Subdomain"],
+    "arjun": ["Parameter"],
+    "baddns": ["Vulnerability"],
+    "banner_grab": ["Service"],
+    "censys": ["IP", "Port", "Certificate"],
+    "criminalip": ["IP", "Port"],
+    "crtsh": ["Subdomain", "Certificate"],
+    "cve_lookup": ["CVE"],
+    "dns": ["DNSRecord", "Subdomain", "IP"],
+    "ffuf": ["Endpoint"],
+    "fofa": ["IP", "Port", "Technology"],
+    "gau": ["Endpoint", "Parameter"],
+    "github": ["GithubHunt", "GithubRepository", "GithubSecret", "GithubSensitiveFile", "GithubPath"],
+    "graphql": ["Endpoint", "Vulnerability"],
+    "graphql_cop": ["Vulnerability"],
+    "gvm": ["ExploitGvm", "Vulnerability"],
+    "hackertarget": ["Subdomain"],
+    "hakrawler": ["Endpoint"],
+    "httpx": ["BaseURL", "Technology", "Header", "Certificate"],
+    "js_recon": ["JsReconFinding", "Endpoint", "Secret"],
+    "jsluice": ["JsReconFinding", "Endpoint", "Secret"],
+    "katana": ["Endpoint", "Parameter"],
+    "kiterunner": ["Endpoint"],
+    "knockpy": ["Subdomain"],
+    "masscan": ["Port", "Service"],
+    "mitre": ["MitreData", "Capec"],
+    "naabu": ["Port"],
+    "netlas": ["IP", "Port"],
+    "nmap": ["Service", "Vulnerability"],
+    "nuclei": ["Vulnerability"],
+    "origin_discovery": ["IP"],
+    "otx": ["ThreatPulse", "Malware"],
+    "paramspider": ["Parameter"],
+    "puredns": ["Subdomain", "IP"],
+    "security_check": ["Vulnerability"],
+    "shodan": ["IP", "Port", "Service", "CVE"],
+    "subfinder": ["Subdomain"],
+    "subjack": ["Vulnerability"],
+    "supply_chain": ["Package", "MalPackageFinding"],
+    "supply_chain_recon": ["Package", "MalPackageFinding"],
+    "takeover": ["Vulnerability"],
+    "tlsx": ["Certificate", "Service"],
+    "trufflehog": ["MultiscannerScan", "MultiscannerFinding", "Secret"],
+    "uncover": ["IP", "Port"],
+    "urlscan": ["Endpoint", "ExternalDomain"],
+    "vhost_sni": ["Subdomain", "Certificate"],
+    "virustotal": ["Malware", "ExternalDomain"],
+    "wappalyzer": ["Technology"],
+    "web_cache_poison": ["Vulnerability"],
+    "whois": ["Domain"],
+    "zap": ["Endpoint", "Parameter"],
+    "zoomeye": ["IP", "Port"],
+    "agent": ["AttackChain", "ChainStep", "ChainFinding", "ChainDecision", "ChainFailure"],
+}
+
+# tool -> the partial-recon module that re-runs it on demand. A tool with none
+# cannot be re-run from the workflow graph, which is a real product gap rather
+# than an oversight, so null is a legitimate value here.
+PARTIAL_RECON_MODULE: dict[str, str] = {
+    "ai_surface_recon": "ai_surface_recon",
+    "amass": "subdomain_discovery",
+    "arjun": "parameter_discovery",
+    # baddns runs inside the subdomain-takeover pass, which is what the
+    # vulnerability_scanning partial module re-runs.
+    "baddns": "vulnerability_scanning",
+    # Banner grabbing runs inside the port-scan pass rather than on its own.
+    "banner_grab": "port_scanning",
+    "nuclei": "vulnerability_scanning",
+    "security_check": "http_probing",
+    "cve_lookup": "vulnerability_scanning",
+    "mitre": "vulnerability_scanning",
+    "censys": "osint_enrichment",
+    "criminalip": "osint_enrichment",
+    "crtsh": "subdomain_discovery",
+    "fofa": "osint_enrichment",
+    "graphql_cop": "graphql_scanning",
+    "netlas": "osint_enrichment",
+    "osint_enrichment": "osint_enrichment",
+    "otx": "osint_enrichment",
+    "shodan": "osint_enrichment",
+    "subdomain_discovery": "subdomain_discovery",
+    "uncover": "osint_enrichment",
+    "urlscan": "osint_enrichment",
+    "virustotal": "osint_enrichment",
+    "zoomeye": "osint_enrichment",
+    "dns": "subdomain_discovery",
+    "ffuf": "web_crawling",
+    "gau": "web_crawling",
+    "graphql": "graphql_scanning",
+    "hackertarget": "subdomain_discovery",
+    "hakrawler": "web_crawling",
+    "httpx": "http_probing",
+    "js_recon": "js_analysis",
+    "jsluice": "js_analysis",
+    "katana": "web_crawling",
+    "kiterunner": "web_crawling",
+    "knockpy": "subdomain_discovery",
+    "masscan": "port_scanning",
+    "naabu": "port_scanning",
+    "nmap": "port_scanning",
+    "nuclei": "vulnerability_scanning",
+    "origin_discovery": "origin_enrichment",
+    "paramspider": "parameter_discovery",
+    "puredns": "subdomain_discovery",
+    "subfinder": "subdomain_discovery",
+    "subjack": "vulnerability_scanning",
+    "supply_chain_recon": "supply_chain",
+    "takeover": "vulnerability_scanning",
+    "tlsx": "tlsx_scanning",
+    "vhost_sni": "http_probing",
+    "wappalyzer": "http_probing",
+    "web_cache_poison": "cache_scanning",
+    "whois": "subdomain_discovery",
+    "zap": "web_crawling",
+}
+
+# tool -> the ProjectForm section file that configures it, without the .tsx.
+# Several tools share one section, which is why this is not derived from the
+# filename: a section is a UI grouping and a tool is a pipeline unit.
+# A tool whose enable flag or image column is not named `<tool>Enabled` /
+# `<tool>DockerImage`. Each was found by the alignment test, which is the point
+# of having one: a tool with no enable flag runs whenever its phase does, which
+# is a different product decision from "on by default".
+ENABLED_FIELD_OVERRIDE: dict[str, str] = {
+    "graphql": "graphqlSecurityEnabled",
+    "knockpy": "knockpyReconEnabled",
+    "takeover": "subdomainTakeoverEnabled",
+    "zap": "zapAjaxSpiderEnabled",
+    "supply_chain_recon": "supplyChainReconEnabled",
+    "web_cache_poison": "webCachePoisonEnabled",
+    "ai_surface_recon": "aiSurfaceReconEnabled",
+    "origin_discovery": "originDiscoveryEnabled",
+    "vhost_sni": "vhostSniEnabled",
+    "js_recon": "jsReconEnabled",
+    "banner_grab": "bannerGrabEnabled",
+    "cve_lookup": "cveLookupEnabled",
+    "security_check": "securityCheckEnabled",
+    "capture_proxy": "captureProxyEnabled",
+    "osint_enrichment": "osintEnrichmentEnabled",
+    "subdomain_discovery": "subdomainDiscoveryEnabled",
+    "graphql_cop": "graphqlCopEnabled",
+}
+
+IMAGE_FIELD_OVERRIDE: dict[str, str] = {
+    "zap": "zapAjaxSpiderDockerImage",
+    "graphql_cop": "graphqlCopDockerImage",
+    "web_cache_poison": "webCachePoisonDockerImage",
+    # gau spawns TWO images: its own, and httpx for the verification pass. The
+    # tool's `image` is its primary one; every image column is still checked
+    # against the runtime allowlist by the alignment test.
+    "gau": "gauDockerImage",
+}
+
+
+FORM_SECTION: dict[str, str] = {
+    "agent": "AgentBehaviourSection",
+    "ai_surface_recon": "AiSurfaceReconSection",
+    "amass": "SubdomainDiscoverySection",
+    "arjun": "ArjunSection",
+    "auth_profile": "AuthenticationSection",
+    "baddns": "TakeoverSection",
+    "banner_grab": "NaabuSection",
+    "censys": "OsintEnrichmentSection",
+    "criminalip": "OsintEnrichmentSection",
+    "crtsh": "SubdomainDiscoverySection",
+    "cve_lookup": "CveLookupSection",
+    "cypherfix": "CypherFixSettingsSection",
+    "dns": "SubdomainDiscoverySection",
+    "domain_recon_ai": "SubdomainDiscoverySection",
+    "dos": "DosSection",
+    "engagement": "RoeSection",
+    "ffuf": "FfufSection",
+    "fireteam": "AgentBehaviourSection",
+    "fofa": "OsintEnrichmentSection",
+    "gau": "GauSection",
+    "github": "GithubSection",
+    "graphql": "GraphqlScanSection",
+    "graphql_cop": "GraphqlScanSection",
+    "gvm": "GvmScanSection",
+    "hackertarget": "SubdomainDiscoverySection",
+    "hakrawler": "HakrawlerSection",
+    "http_probe_ai": "HttpxSection",
+    "httpx": "HttpxSection",
+    "hydra": "BruteForceSection",
+    "js_recon": "JsReconSection",
+    "jsluice": "JsluiceSection",
+    "katana": "KatanaSection",
+    "kiterunner": "KiterunnerSection",
+    "knockpy": "SubdomainDiscoverySection",
+    "masscan": "MasscanSection",
+    "mitre": "MitreSection",
+    "naabu": "NaabuSection",
+    "netlas": "OsintEnrichmentSection",
+    "nmap": "NmapSection",
+    "nuclei": "NucleiSection",
+    "origin_discovery": "OriginDiscoverySection",
+    "osint_enrichment": "OsintEnrichmentSection",
+    "otx": "OsintEnrichmentSection",
+    "paramspider": "ParamSpiderSection",
+    "path_traversal": "PathTraversalSection",
+    "phishing": "PhishingSection",
+    "pipeline": "ScanModulesSection",
+    "pipeline_ai": "ScanModulesSection",
+    "port_scan_ai": "NaabuSection",
+    "project": "TargetSection",
+    "puredns": "SubdomainDiscoverySection",
+    "rce": "RceSection",
+    "resource_enum_ai": "ResourceEnumAiSection",
+    "roe": "RoeSection",
+    "security_check": "SecurityChecksSection",
+    "shodan": "ShodanSection",
+    "sqli": "SqliSection",
+    "ssrf": "SsrfSection",
+    "subdomain_discovery": "SubdomainDiscoverySection",
+    "subfinder": "SubdomainDiscoverySection",
+    "subjack": "TakeoverSection",
+    "supply_chain": "SupplyChainScanSection",
+    "supply_chain_recon": "SupplyChainReconSection",
+    "takeover": "TakeoverSection",
+    "targeting": "TargetSection",
+    "tlsx": "TlsxSection",
+    "trufflehog": "TrufflehogSection",
+    "uncover": "OsintEnrichmentSection",
+    "urlscan": "UrlscanSection",
+    "vhost_sni": "VhostSniSection",
+    "virustotal": "OsintEnrichmentSection",
+    "waf": "HttpxSection",
+    "wappalyzer": "HttpxSection",
+    "web_cache_poison": "ToolMatrixSection",
+    "whois": "SubdomainDiscoverySection",
+    "zap": "KatanaSection",
+    "zoomeye": "OsintEnrichmentSection",
+    "capture_proxy": "ToolMatrixSection",
+}
+
+
 # --- source parsers ---------------------------------------------------------------
 
 def parse_governor_tables() -> dict[str, dict]:
@@ -880,14 +1239,55 @@ def build() -> str:
         {f["tool"] for f in fields.values()}
         | {r["tool"] for r in RUNTIME_ONLY.values() if r.get("tool")}
     )
+    # The enable flag and the container image are DERIVED from the fields, not
+    # listed again: `<tool>Enabled`'s runtime key is the enable flag, and
+    # `<tool>DockerImage`'s Prisma default is the image. A second copy of either
+    # is a second thing to keep in step.
+    def _field_for(tool: str, suffix: str) -> dict | None:
+        for name, entry in fields.items():
+            if entry["tool"] == tool and name.endswith(suffix):
+                # `<tool>Enabled` exactly, not `nucleiTakeoversEnabled`.
+                if name[: -len(suffix)].lower().replace("_", "") == tool.replace("_", ""):
+                    return {"name": name, **entry}
+        return None
+
     tools: dict[str, dict] = {}
     for tool in used_tools:
         phase, traffic = TOOL_PHASE_TRAFFIC.get(tool, ("standalone", "none"))
-        tools[tool] = {
+        entry: dict = {
             "title": TOOL_TITLES.get(tool, tool.replace("_", " ").title()),
             "phase": phase,
             "traffic": traffic,
         }
+        enabled_name = ENABLED_FIELD_OVERRIDE.get(tool)
+        enabled = (
+            {"name": enabled_name, **fields[enabled_name]}
+            if enabled_name and enabled_name in fields
+            else _field_for(tool, "Enabled")
+        )
+        if enabled and enabled.get("runtime_key"):
+            entry["enabled_key"] = enabled["runtime_key"]
+        image_name = IMAGE_FIELD_OVERRIDE.get(tool)
+        image_field = (
+            {"name": image_name, **fields[image_name]}
+            if image_name and image_name in fields
+            else _field_for(tool, "DockerImage")
+        )
+        if image_field:
+            default = columns[image_field["name"]].default_value
+            if isinstance(default, str) and default:
+                entry["image"] = default
+        wiring = TOOL_WIRING.get(tool, {})
+        for key in ("module", "isolated_fn", "graph_writer"):
+            if key in wiring:
+                entry[key] = wiring[key]
+        if tool in PARTIAL_RECON_MODULE:
+            entry["partial_recon_module"] = PARTIAL_RECON_MODULE[tool]
+        if tool in FORM_SECTION:
+            entry["form_section"] = FORM_SECTION[tool]
+        if tool in TOOL_PRODUCES:
+            entry["produces"] = TOOL_PRODUCES[tool]
+        tools[tool] = entry
 
     out: list[str] = []
     out.append("# RedAmon recon settings registry.")
@@ -901,11 +1301,17 @@ def build() -> str:
     out.append("")
     out.append("tools:")
     for tool in sorted(tools):
-        t = tools[tool]
+        spec = tools[tool]
         out.append(f"  {tool}:")
-        out.append(f"    title: {yaml_scalar(t['title'])}")
-        out.append(f"    phase: {t['phase']}")
-        out.append(f"    traffic: {t['traffic']}")
+        out.append(f"    title: {yaml_scalar(spec['title'])}")
+        out.append(f"    phase: {spec['phase']}")
+        out.append(f"    traffic: {spec['traffic']}")
+        for key in ("enabled_key", "image", "module", "isolated_fn", "graph_writer",
+                    "partial_recon_module", "form_section"):
+            if key in spec:
+                out.append(f"    {key}: {yaml_scalar(spec[key])}")
+        if "produces" in spec:
+            out.append(f"    produces: [{', '.join(yaml_scalar(v) for v in spec['produces'])}]")
     out.append("")
     out.append("fields:")
     for name in sorted(fields):

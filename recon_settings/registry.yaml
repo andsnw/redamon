@@ -12,314 +12,631 @@ tools:
     title: "Agent"
     phase: standalone
     traffic: active
+    form_section: "AgentBehaviourSection"
+    produces: ["AttackChain", "ChainStep", "ChainFinding", "ChainDecision", "ChainFailure"]
   ai_surface_recon:
     title: "AI attack-surface recon"
     phase: http_probe
     traffic: active
+    enabled_key: "AI_SURFACE_RECON_ENABLED"
+    module: "recon.main_recon_modules.ai_surface_recon"
+    partial_recon_module: "ai_surface_recon"
+    form_section: "AiSurfaceReconSection"
   amass:
     title: "Amass"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "AMASS_ENABLED"
+    image: "caffix/amass:latest"
+    module: "recon.main_recon_modules.domain_recon"
+    partial_recon_module: "subdomain_discovery"
+    form_section: "SubdomainDiscoverySection"
+    produces: ["Subdomain"]
   arjun:
     title: "Arjun"
     phase: resource_enum
     traffic: active
+    enabled_key: "ARJUN_ENABLED"
+    module: "recon.main_recon_modules.resource_enum"
+    partial_recon_module: "parameter_discovery"
+    form_section: "ArjunSection"
+    produces: ["Parameter"]
   auth_profile:
     title: "Authenticated session"
     phase: http_probe
-    traffic: active
+    traffic: none
+    form_section: "AuthenticationSection"
   baddns:
     title: "BadDNS"
     phase: vuln_scan
     traffic: active
+    enabled_key: "BADDNS_ENABLED"
+    image: "redamon-baddns:latest"
+    module: "recon.main_recon_modules.subdomain_takeover"
+    partial_recon_module: "vulnerability_scanning"
+    form_section: "TakeoverSection"
+    produces: ["Vulnerability"]
   banner_grab:
     title: "Banner grab"
     phase: port_scan
     traffic: active
+    enabled_key: "BANNER_GRAB_ENABLED"
+    module: "recon.main_recon_modules.port_scan"
+    partial_recon_module: "port_scanning"
+    form_section: "NaabuSection"
+    produces: ["Service"]
   capture_proxy:
     title: "Capture proxy"
     phase: standalone
     traffic: active
+    enabled_key: "CAPTURE_PROXY_ENABLED"
+    form_section: "ToolMatrixSection"
   censys:
     title: "Censys"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "CENSYS_ENABLED"
+    module: "recon.main_recon_modules.censys_enrich"
+    isolated_fn: "run_censys_enrichment_isolated"
+    graph_writer: "update_graph_from_censys"
+    partial_recon_module: "osint_enrichment"
+    form_section: "OsintEnrichmentSection"
+    produces: ["IP", "Port", "Certificate"]
   criminalip:
     title: "CriminalIP"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "CRIMINALIP_ENABLED"
+    module: "recon.main_recon_modules.criminalip_enrich"
+    isolated_fn: "run_criminalip_enrichment_isolated"
+    graph_writer: "update_graph_from_criminalip"
+    partial_recon_module: "osint_enrichment"
+    form_section: "OsintEnrichmentSection"
+    produces: ["IP", "Port"]
   crtsh:
     title: "crt.sh"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "CRTSH_ENABLED"
+    module: "recon.main_recon_modules.domain_recon"
+    partial_recon_module: "subdomain_discovery"
+    form_section: "SubdomainDiscoverySection"
+    produces: ["Subdomain", "Certificate"]
   cve_lookup:
     title: "CVE lookup"
     phase: vuln_scan
     traffic: passive
+    enabled_key: "CVE_LOOKUP_ENABLED"
+    partial_recon_module: "vulnerability_scanning"
+    form_section: "CveLookupSection"
+    produces: ["CVE"]
   cypherfix:
     title: "CypherFix"
     phase: standalone
     traffic: none
+    form_section: "CypherFixSettingsSection"
   dns:
     title: "DNS"
     phase: domain_discovery
     traffic: active
+    enabled_key: "DNS_ENABLED"
+    module: "recon.main_recon_modules.domain_recon"
+    partial_recon_module: "subdomain_discovery"
+    form_section: "SubdomainDiscoverySection"
+    produces: ["DNSRecord", "Subdomain", "IP"]
   domain_recon_ai:
     title: "Domain recon AI hints"
     phase: domain_discovery
     traffic: none
+    form_section: "SubdomainDiscoverySection"
   dos:
     title: "Denial of service"
     phase: standalone
     traffic: active
+    form_section: "DosSection"
   engagement:
     title: "Engagement"
     phase: standalone
     traffic: none
+    form_section: "RoeSection"
   ffuf:
     title: "ffuf"
     phase: resource_enum
     traffic: active
+    enabled_key: "FFUF_ENABLED"
+    module: "recon.main_recon_modules.resource_enum"
+    partial_recon_module: "web_crawling"
+    form_section: "FfufSection"
+    produces: ["Endpoint"]
   fireteam:
     title: "Fireteam"
     phase: standalone
     traffic: active
+    form_section: "AgentBehaviourSection"
   fofa:
     title: "FOFA"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "FOFA_ENABLED"
+    module: "recon.main_recon_modules.fofa_enrich"
+    isolated_fn: "run_fofa_enrichment_isolated"
+    graph_writer: "update_graph_from_fofa"
+    partial_recon_module: "osint_enrichment"
+    form_section: "OsintEnrichmentSection"
+    produces: ["IP", "Port", "Technology"]
   gau:
     title: "gau"
     phase: resource_enum
     traffic: passive
+    enabled_key: "GAU_ENABLED"
+    image: "sxcurity/gau:latest"
+    module: "recon.main_recon_modules.resource_enum"
+    partial_recon_module: "web_crawling"
+    form_section: "GauSection"
+    produces: ["Endpoint", "Parameter"]
   github:
     title: "GitHub secret hunt"
     phase: standalone
     traffic: passive
+    form_section: "GithubSection"
+    produces: ["GithubHunt", "GithubRepository", "GithubSecret", "GithubSensitiveFile", "GithubPath"]
   graphql:
     title: "GraphQL security"
     phase: vuln_scan
     traffic: active
+    enabled_key: "GRAPHQL_SECURITY_ENABLED"
+    module: "recon.graphql_scan"
+    isolated_fn: "run_graphql_scan_isolated"
+    partial_recon_module: "graphql_scanning"
+    form_section: "GraphqlScanSection"
+    produces: ["Endpoint", "Vulnerability"]
   graphql_cop:
     title: "GraphQL Cop"
     phase: vuln_scan
     traffic: active
+    enabled_key: "GRAPHQL_COP_ENABLED"
+    image: "dolevf/graphql-cop:1.14"
+    partial_recon_module: "graphql_scanning"
+    form_section: "GraphqlScanSection"
+    produces: ["Vulnerability"]
   gvm:
     title: "GVM vulnerability scan"
     phase: standalone
     traffic: active
+    form_section: "GvmScanSection"
+    produces: ["ExploitGvm", "Vulnerability"]
   hackertarget:
     title: "HackerTarget"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "HACKERTARGET_ENABLED"
+    module: "recon.main_recon_modules.domain_recon"
+    partial_recon_module: "subdomain_discovery"
+    form_section: "SubdomainDiscoverySection"
+    produces: ["Subdomain"]
   hakrawler:
     title: "hakrawler"
     phase: resource_enum
     traffic: active
+    enabled_key: "HAKRAWLER_ENABLED"
+    image: "jauderho/hakrawler:latest"
+    module: "recon.main_recon_modules.resource_enum"
+    partial_recon_module: "web_crawling"
+    form_section: "HakrawlerSection"
+    produces: ["Endpoint"]
   http_probe_ai:
     title: "HTTP probe AI hints"
     phase: http_probe
     traffic: none
+    form_section: "HttpxSection"
   httpx:
     title: "httpx"
     phase: http_probe
     traffic: active
+    enabled_key: "HTTPX_ENABLED"
+    image: "projectdiscovery/httpx:latest"
+    module: "recon.main_recon_modules.http_probe"
+    partial_recon_module: "http_probing"
+    form_section: "HttpxSection"
+    produces: ["BaseURL", "Technology", "Header", "Certificate"]
   hydra:
     title: "Hydra"
     phase: standalone
     traffic: active
+    form_section: "BruteForceSection"
   js_recon:
     title: "JS recon"
     phase: js_recon
     traffic: active
+    enabled_key: "JS_RECON_ENABLED"
+    module: "recon.main_recon_modules.js_recon"
+    partial_recon_module: "js_analysis"
+    form_section: "JsReconSection"
+    produces: ["JsReconFinding", "Endpoint", "Secret"]
   jsluice:
     title: "jsluice"
     phase: js_recon
     traffic: active
+    enabled_key: "JSLUICE_ENABLED"
+    module: "recon.main_recon_modules.js_recon"
+    partial_recon_module: "js_analysis"
+    form_section: "JsluiceSection"
+    produces: ["JsReconFinding", "Endpoint", "Secret"]
   katana:
     title: "Katana"
     phase: resource_enum
     traffic: active
+    enabled_key: "KATANA_ENABLED"
+    image: "projectdiscovery/katana:latest"
+    module: "recon.main_recon_modules.resource_enum"
+    partial_recon_module: "web_crawling"
+    form_section: "KatanaSection"
+    produces: ["Endpoint", "Parameter"]
   kiterunner:
     title: "Kiterunner"
     phase: resource_enum
     traffic: active
+    enabled_key: "KITERUNNER_ENABLED"
+    module: "recon.main_recon_modules.resource_enum"
+    partial_recon_module: "web_crawling"
+    form_section: "KiterunnerSection"
+    produces: ["Endpoint"]
   knockpy:
     title: "knockpy"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "KNOCKPY_RECON_ENABLED"
+    module: "recon.main_recon_modules.domain_recon"
+    partial_recon_module: "subdomain_discovery"
+    form_section: "SubdomainDiscoverySection"
+    produces: ["Subdomain"]
   masscan:
     title: "masscan"
     phase: port_scan
     traffic: active
+    enabled_key: "MASSCAN_ENABLED"
+    module: "recon.main_recon_modules.masscan_scan"
+    isolated_fn: "run_masscan_scan_isolated"
+    partial_recon_module: "port_scanning"
+    form_section: "MasscanSection"
+    produces: ["Port", "Service"]
   mitre:
     title: "MITRE ATT&CK enrichment"
     phase: vuln_scan
     traffic: none
+    enabled_key: "MITRE_ENABLED"
+    module: "recon.main_recon_modules.add_mitre"
+    partial_recon_module: "vulnerability_scanning"
+    form_section: "MitreSection"
+    produces: ["MitreData", "Capec"]
   naabu:
     title: "naabu"
     phase: port_scan
     traffic: active
+    enabled_key: "NAABU_ENABLED"
+    image: "projectdiscovery/naabu:latest"
+    module: "recon.main_recon_modules.port_scan"
+    isolated_fn: "run_port_scan_isolated"
+    partial_recon_module: "port_scanning"
+    form_section: "NaabuSection"
+    produces: ["Port"]
   netlas:
     title: "Netlas"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "NETLAS_ENABLED"
+    module: "recon.main_recon_modules.netlas_enrich"
+    isolated_fn: "run_netlas_enrichment_isolated"
+    graph_writer: "update_graph_from_netlas"
+    partial_recon_module: "osint_enrichment"
+    form_section: "OsintEnrichmentSection"
+    produces: ["IP", "Port"]
   nmap:
     title: "Nmap"
     phase: port_scan
     traffic: active
+    enabled_key: "NMAP_ENABLED"
+    module: "recon.main_recon_modules.nmap_scan"
+    partial_recon_module: "port_scanning"
+    form_section: "NmapSection"
+    produces: ["Service", "Vulnerability"]
   nuclei:
     title: "Nuclei"
     phase: vuln_scan
     traffic: active
+    enabled_key: "NUCLEI_ENABLED"
+    image: "projectdiscovery/nuclei:latest"
+    module: "recon.main_recon_modules.vuln_scan"
+    partial_recon_module: "vulnerability_scanning"
+    form_section: "NucleiSection"
+    produces: ["Vulnerability"]
   origin_discovery:
     title: "Origin discovery"
     phase: http_probe
     traffic: active
+    enabled_key: "ORIGIN_DISCOVERY_ENABLED"
+    module: "recon.main_recon_modules.origin_discovery"
+    isolated_fn: "run_origin_discovery_enrichment_isolated"
+    partial_recon_module: "origin_enrichment"
+    form_section: "OriginDiscoverySection"
+    produces: ["IP"]
   osint_enrichment:
     title: "OSINT enrichment"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "OSINT_ENRICHMENT_ENABLED"
+    partial_recon_module: "osint_enrichment"
+    form_section: "OsintEnrichmentSection"
   otx:
     title: "AlienVault OTX"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "OTX_ENABLED"
+    module: "recon.main_recon_modules.otx_enrich"
+    isolated_fn: "run_otx_enrichment_isolated"
+    graph_writer: "update_graph_from_otx"
+    partial_recon_module: "osint_enrichment"
+    form_section: "OsintEnrichmentSection"
+    produces: ["ThreatPulse", "Malware"]
   paramspider:
     title: "ParamSpider"
     phase: resource_enum
     traffic: passive
+    enabled_key: "PARAMSPIDER_ENABLED"
+    module: "recon.main_recon_modules.resource_enum"
+    partial_recon_module: "parameter_discovery"
+    form_section: "ParamSpiderSection"
+    produces: ["Parameter"]
   path_traversal:
     title: "Path traversal"
     phase: standalone
     traffic: active
+    form_section: "PathTraversalSection"
   phishing:
     title: "Phishing"
     phase: standalone
     traffic: active
+    form_section: "PhishingSection"
   pipeline:
     title: "Pipeline"
     phase: standalone
     traffic: none
+    form_section: "ScanModulesSection"
   pipeline_ai:
     title: "Pipeline AI master switch"
     phase: standalone
     traffic: none
+    form_section: "ScanModulesSection"
   port_scan_ai:
     title: "Port scan AI catalog"
     phase: port_scan
     traffic: none
+    form_section: "NaabuSection"
   project:
     title: "Project identity"
     phase: standalone
     traffic: none
+    form_section: "TargetSection"
   puredns:
     title: "puredns"
     phase: domain_discovery
     traffic: active
+    enabled_key: "PUREDNS_ENABLED"
+    image: "frost19k/puredns:latest"
+    module: "recon.main_recon_modules.domain_recon"
+    partial_recon_module: "subdomain_discovery"
+    form_section: "SubdomainDiscoverySection"
+    produces: ["Subdomain", "IP"]
   rce:
     title: "Remote code execution"
     phase: standalone
     traffic: active
+    form_section: "RceSection"
   resource_enum_ai:
     title: "Resource enum AI hints"
     phase: resource_enum
     traffic: none
+    form_section: "ResourceEnumAiSection"
   roe:
     title: "Rules of Engagement"
     phase: standalone
     traffic: none
+    enabled_key: "ROE_ENABLED"
+    form_section: "RoeSection"
   security_check:
     title: "Security checks"
     phase: http_probe
     traffic: active
+    enabled_key: "SECURITY_CHECK_ENABLED"
+    partial_recon_module: "http_probing"
+    form_section: "SecurityChecksSection"
+    produces: ["Vulnerability"]
   shodan:
     title: "Shodan"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "SHODAN_ENABLED"
+    module: "recon.main_recon_modules.shodan_enrich"
+    isolated_fn: "run_shodan_enrichment_isolated"
+    partial_recon_module: "osint_enrichment"
+    form_section: "ShodanSection"
+    produces: ["IP", "Port", "Service", "CVE"]
   sqli:
     title: "SQL injection"
     phase: standalone
     traffic: active
+    form_section: "SqliSection"
   ssrf:
     title: "Server-side request forgery"
     phase: standalone
     traffic: active
+    form_section: "SsrfSection"
   subdomain_discovery:
     title: "Subdomain discovery"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "SUBDOMAIN_DISCOVERY_ENABLED"
+    partial_recon_module: "subdomain_discovery"
+    form_section: "SubdomainDiscoverySection"
   subfinder:
     title: "subfinder"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "SUBFINDER_ENABLED"
+    image: "projectdiscovery/subfinder:latest"
+    module: "recon.main_recon_modules.domain_recon"
+    partial_recon_module: "subdomain_discovery"
+    form_section: "SubdomainDiscoverySection"
+    produces: ["Subdomain"]
   subjack:
     title: "subjack"
     phase: vuln_scan
     traffic: active
+    enabled_key: "SUBJACK_ENABLED"
+    module: "recon.main_recon_modules.subdomain_takeover"
+    isolated_fn: "run_subdomain_takeover_isolated"
+    partial_recon_module: "vulnerability_scanning"
+    form_section: "TakeoverSection"
+    produces: ["Vulnerability"]
   supply_chain:
     title: "Supply chain scan"
     phase: standalone
     traffic: passive
+    form_section: "SupplyChainScanSection"
+    produces: ["Package", "MalPackageFinding"]
   supply_chain_recon:
     title: "Supply chain recon"
     phase: standalone
     traffic: passive
+    enabled_key: "SUPPLY_CHAIN_RECON_ENABLED"
+    partial_recon_module: "supply_chain"
+    form_section: "SupplyChainReconSection"
+    produces: ["Package", "MalPackageFinding"]
   takeover:
     title: "Subdomain takeover"
     phase: vuln_scan
     traffic: active
+    enabled_key: "SUBDOMAIN_TAKEOVER_ENABLED"
+    module: "recon.main_recon_modules.subdomain_takeover"
+    isolated_fn: "run_subdomain_takeover_isolated"
+    partial_recon_module: "vulnerability_scanning"
+    form_section: "TakeoverSection"
+    produces: ["Vulnerability"]
   targeting:
     title: "Targeting and scope"
     phase: standalone
     traffic: none
+    form_section: "TargetSection"
   tlsx:
     title: "tlsx"
     phase: http_probe
     traffic: active
+    enabled_key: "TLSX_ENABLED"
+    image: "projectdiscovery/tlsx:latest"
+    module: "recon.main_recon_modules.tls_scan"
+    partial_recon_module: "tlsx_scanning"
+    form_section: "TlsxSection"
+    produces: ["Certificate", "Service"]
   trufflehog:
     title: "TruffleHog"
     phase: standalone
     traffic: passive
+    form_section: "TrufflehogSection"
+    produces: ["MultiscannerScan", "MultiscannerFinding", "Secret"]
   uncover:
     title: "uncover"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "UNCOVER_ENABLED"
+    image: "projectdiscovery/uncover:latest"
+    module: "recon.main_recon_modules.uncover_enrich"
+    isolated_fn: "run_uncover_expansion_isolated"
+    partial_recon_module: "osint_enrichment"
+    form_section: "OsintEnrichmentSection"
+    produces: ["IP", "Port"]
   urlscan:
     title: "urlscan.io"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "URLSCAN_ENABLED"
+    module: "recon.main_recon_modules.urlscan_enrich"
+    partial_recon_module: "osint_enrichment"
+    form_section: "UrlscanSection"
+    produces: ["Endpoint", "ExternalDomain"]
   vhost_sni:
     title: "Vhost / SNI enumeration"
     phase: http_probe
     traffic: active
+    enabled_key: "VHOST_SNI_ENABLED"
+    module: "recon.main_recon_modules.vhost_sni_enum"
+    isolated_fn: "run_vhost_sni_enrichment_isolated"
+    partial_recon_module: "http_probing"
+    form_section: "VhostSniSection"
+    produces: ["Subdomain", "Certificate"]
   virustotal:
     title: "VirusTotal"
-    phase: standalone
-    traffic: none
+    phase: domain_discovery
+    traffic: passive
+    enabled_key: "VIRUSTOTAL_ENABLED"
+    module: "recon.main_recon_modules.virustotal_enrich"
+    isolated_fn: "run_virustotal_enrichment_isolated"
+    graph_writer: "update_graph_from_virustotal"
+    partial_recon_module: "osint_enrichment"
+    form_section: "OsintEnrichmentSection"
+    produces: ["Malware", "ExternalDomain"]
   waf:
     title: "WAF detection"
     phase: http_probe
     traffic: none
+    form_section: "HttpxSection"
   wappalyzer:
     title: "Wappalyzer"
     phase: http_probe
     traffic: active
+    enabled_key: "WAPPALYZER_ENABLED"
+    module: "recon.main_recon_modules.http_probe"
+    partial_recon_module: "http_probing"
+    form_section: "HttpxSection"
+    produces: ["Technology"]
   web_cache_poison:
     title: "Web cache poisoning"
     phase: standalone
     traffic: active
+    enabled_key: "WEB_CACHE_POISON_ENABLED"
+    image: "redamon-wcvs:latest"
+    partial_recon_module: "cache_scanning"
+    form_section: "ToolMatrixSection"
+    produces: ["Vulnerability"]
   whois:
     title: "WHOIS"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "WHOIS_ENABLED"
+    module: "recon.main_recon_modules.domain_recon"
+    partial_recon_module: "subdomain_discovery"
+    form_section: "SubdomainDiscoverySection"
+    produces: ["Domain"]
   zap:
     title: "ZAP Ajax Spider"
     phase: resource_enum
     traffic: active
+    enabled_key: "ZAP_AJAX_SPIDER_ENABLED"
+    image: "ghcr.io/zaproxy/zaproxy:stable"
+    module: "recon.main_recon_modules.resource_enum"
+    partial_recon_module: "web_crawling"
+    form_section: "KatanaSection"
+    produces: ["Endpoint", "Parameter"]
   zoomeye:
     title: "ZoomEye"
     phase: domain_discovery
     traffic: passive
+    enabled_key: "ZOOMEYE_ENABLED"
+    module: "recon.main_recon_modules.zoomeye_enrich"
+    isolated_fn: "run_zoomeye_enrichment_isolated"
+    graph_writer: "update_graph_from_zoomeye"
+    partial_recon_module: "osint_enrichment"
+    form_section: "OsintEnrichmentSection"
+    produces: ["IP", "Port"]
 
 fields:
   activationStartedAt:
@@ -8818,8 +9135,8 @@ fields:
     tool: virustotal
     runtime_key: "VIRUSTOTAL_ENABLED"
     unit: none
-    phase: standalone
-    traffic: none
+    phase: domain_discovery
+    traffic: passive
     roe_capped: false
     mcp: settable
     meaning: >-
@@ -8830,8 +9147,8 @@ fields:
     tool: virustotal
     runtime_key: "VIRUSTOTAL_WORKERS"
     unit: threads
-    phase: standalone
-    traffic: none
+    phase: domain_discovery
+    traffic: passive
     roe_capped: false
     mcp: settable
     bounds: { min: 1, max: 10 }
