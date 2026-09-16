@@ -33,6 +33,24 @@ import pytest  # noqa: E402
 from recon import settings_registry as reg  # noqa: E402
 from recon.project_settings import DEFAULT_SETTINGS  # noqa: E402
 
+sys.path.insert(0, str(REPO / "tooling" / "scripts"))
+from parse_settings_mappings import parse_default_settings  # noqa: E402
+
+
+def agent_default_settings() -> set[str]:
+    """
+    The agent's own settings keys.
+
+    The registry spans both loaders. A few runtime-only keys - the user's
+    imported attack skills and outbound MCP servers - exist only on the agent
+    side, so checking an exclusion against the recon defaults alone would call
+    them stale.
+    """
+    source = REPO / "agentic" / "project_settings.py"
+    if not source.is_file():
+        return set()
+    return set(parse_default_settings(source, "DEFAULT_AGENT_SETTINGS"))
+
 
 def derived_exclusions() -> set[str]:
     """The same query `/defaults` runs, so the two cannot disagree."""
@@ -120,10 +138,8 @@ def test_the_exclusion_list_names_nothing_that_no_longer_exists():
     `FOFA_EMAIL` sat in the hand-written list after the setting was removed. A
     stale name is harmless in itself and is the tell that nobody is checking.
     """
-    stale = sorted(
-        k for k in derived_exclusions()
-        if k not in DEFAULT_SETTINGS and k != "USER_ID"
-    )
+    known = set(DEFAULT_SETTINGS) | agent_default_settings()
+    stale = sorted(k for k in derived_exclusions() if k not in known and k != "USER_ID")
     assert stale == [], f"exclusions for settings that do not exist: {stale}"
 
 
