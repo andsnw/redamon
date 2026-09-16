@@ -81,6 +81,16 @@ function meaningCell(f: NamedField): string {
   if (f.readable === false) {
     notes.push('Withheld from every read on the MCP surface.')
   }
+  // What stealth mode does to this field. An operator choosing a value wants to
+  // know it will be overwritten before they spend time on it, and a `ceiling`
+  // behaves differently from a `set`: it leaves an already-quieter value alone.
+  if (f.stealth) {
+    notes.push(
+      'ceiling' in f.stealth
+        ? `In stealth mode this is lowered to at most ${f.stealth.ceiling}; a quieter value is kept.`
+        : `In stealth mode this is forced to \`${JSON.stringify(f.stealth.set)}\`.`
+    )
+  }
   return cell([f.meaning, ...notes].join(' '))
 }
 

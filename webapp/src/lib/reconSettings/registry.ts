@@ -34,9 +34,9 @@ export type Unit =
   | 'rps' | 'seconds' | 'minutes' | 'milliseconds' | 'threads' | 'count'
   | 'bytes' | 'depth' | 'percent' | 'ratio' | 'port' | 'none'
 export type Validator =
-  | 'docker_image' | 'http_header' | 'project_file' | 'status_codes' | 'severity'
-  | 'scan_modules' | 'hostname' | 'url' | 'port_spec' | 'free_text' | 'identifier'
-  | 'json_object'
+  | 'docker_image' | 'http_header' | 'project_file' | 'project_file_name'
+  | 'status_codes' | 'severity' | 'scan_modules' | 'hostname' | 'url'
+  | 'port_spec' | 'free_text' | 'identifier' | 'json_object'
 export type TightenDirection =
   | 'decrease' | 'increase' | 'superset' | 'true_to_false' | 'false_to_true' | 'narrow'
 export type DenyReason = 'identity' | 'internal' | 'escalation' | 'secret' | 'upload-managed'
@@ -67,6 +67,11 @@ export interface RegistryField {
   written_by?: string
   /** Absent means readable. Only an explicit false withholds a column. */
   readable?: boolean
+  /**
+   * What stealth mode does to this field. `set` forces a value; `ceiling`
+   * lowers it to at most N and leaves an already-quieter value alone.
+   */
+  stealth?: { set?: unknown; ceiling?: number }
   read_deny_reason?: ReadDenyReason
   group?: string
   // joined from Prisma at build time
