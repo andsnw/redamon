@@ -193,3 +193,46 @@ def test_python_and_typescript_read_the_same_bytes():
     assert a.read_text(encoding="utf-8") == b.read_text(encoding="utf-8"), (
         "the two registry artifacts differ; run python3 recon_settings/build.py"
     )
+
+
+def test_a_scan_refuses_to_START_without_a_readable_registry(tmp_path, monkeypatch):
+    """
+    The fail-closed rule, end to end rather than at the loader.
+
+    `registry.json` is a hard dependency of every scan, read inside a container
+    spawned per scan, and `recon/` is volume-mounted - so a missing or
+    unparseable registry fails at SCAN TIME, not at build time. It has to fail
+    LOUDLY there: a scan that silently ran on fallback defaults would be a scan
+    running with no engagement ceiling, which is the one failure this whole
+    layer exists to prevent.
+    """
+    from unittest.mock import patch as _patch
+
+    from recon import project_settings as ps
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"userId": "u1", "roeEnabled": True, "roeGlobalMaxRps": 3}
+
+    reg.load_registry.cache_clear()
+    monkeypatch.setenv("RECON_SETTINGS_REGISTRY", str(tmp_path / "gone.json"))
+    with _patch("requests.get", return_value=_FakeResponse()):
+        with pytest.raises(reg.RegistryUnavailable):
+            ps.fetch_project_settings("p1", "http://mocked")
+
+
+def test_the_failure_message_says_why_a_scan_cannot_continue(tmp_path, monkeypatch):
+    """
+    An operator meeting this needs to know it is not a transient error and not
+    something to retry past.
+    """
+    reg.load_registry.cache_clear()
+    monkeypatch.setenv("RECON_SETTINGS_REGISTRY", str(tmp_path / "gone.json"))
+    with pytest.raises(reg.RegistryUnavailable) as exc:
+        reg.load_registry()
+    message = str(exc.value)
+    assert "not a readable file" in message
+    assert "RECON_SETTINGS_REGISTRY" in message
