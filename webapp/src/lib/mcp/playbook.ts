@@ -96,12 +96,28 @@ export const CAPABILITY_AREAS: CapabilityArea[] = [
     tools: ['start_recon', 'stop_recon', 'queue_recon', 'cancel_queued_scan'],
   },
   {
+    id: 'engagement',
+    title: 'Open and prove an engagement',
+    purpose:
+      'Everything that happens BEFORE a scan is allowed to run. Create a project with its scope ' +
+      'fixed at creation, record the document that authorized it, tighten the agreement as you ' +
+      'learn more, and prove that the configuration fits before you start. The preflight is the ' +
+      'one that earns its place: without it "the pipeline respects the scope" is an assertion, ' +
+      'and with it it is a diff a person checks in ten seconds.',
+    tools: [
+      'create_project', 'tighten_engagement_roe', 'attach_engagement_authorization',
+      'list_engagement_authorizations', 'preflight_scope_check',
+    ],
+  },
+  {
     id: 'settings',
     title: 'Configure',
     purpose:
-      'Read the tuning this token may change, read the reference manual that explains every field ' +
-      'and its bounds, write an allowlisted change, and browse the engagement-type presets. Tuning ' +
-      'changes HOW the pipeline runs and never WHAT it points at.',
+      'Read the current tuning, read the reference manual that explains every field and its ' +
+      'bounds, write a change, and browse the engagement-type presets. Every parameter of the ' +
+      'pipeline is reachable and each is bounded, validated or corrected at scan start rather ' +
+      'than blocked. Tuning changes HOW the pipeline runs and never WHAT it points at: the scope ' +
+      'and the Rules of Engagement belong to the engagement tools.',
     tools: ['get_recon_settings', 'describe_recon_settings', 'update_recon_settings', 'list_recon_presets'],
   },
   {
@@ -389,10 +405,72 @@ export const ONBOARDING_PLAYBOOK: Record<string, PlaybookEntry> = {
       'Read the current tuning before changing any of it, so you can diff your change and say what ' +
       'you actually altered.',
     gotchas: [
-      'It shows only the narrow set this token may change. The engagement target and scope, the rules of engagement, credentials and agent settings are neither readable nor writable here, by design.',
-      'Absent from this list does not mean absent from the product. It means not yours to change.',
+      'It shows the values, not what they mean or what they may be. describe_recon_settings is the reference manual.',
+      'It echoes what was WRITTEN. Where the runtime corrects a value at scan start - a rate above the engagement ceiling, a non-allowlisted container image, a wordlist path outside the project directory - this reports the written one and preflight_scope_check reports the resolved one.',
+      'The client\'s identity, the engagement document and every stored credential are withheld from this and every other read on the surface.',
     ],
     workflowRefs: ['change-tuning'],
+  },
+  create_project: {
+    whenToUse:
+      'When a human hands you a scope document and asks for an engagement. It is the ONLY way ' +
+      'to point RedAmon at something new: every other route refuses a targeting change by name.',
+    gotchas: [
+      'Scope is fixed HERE and immutable afterwards. Get the targeting mode right on the first call, because the fix for a wrong one is a different project, not a different value.',
+      'Exactly one targeting mode. targetDomain, targetIps and domainBatchHosts are mutually exclusive, and passing two is refused rather than resolved.',
+      'roeGlobalMaxRps 0 means NO ceiling, not a slow one. And roeEnabled must be true or the ceiling is never applied at all, whatever number is stored.',
+      'A third_party engagement without a ceiling and an authorization record is created and then REFUSED at start_recon. Supply both here.',
+      'Pass an idempotencyKey. A retried run is normal and a retry without one opens a second engagement against the same scope.',
+      'The domain-batch grouping is re-derived server-side from your raw host list; anything you supply for it is discarded. The grouping decides the run order, so it is a control, not a formatting preference.',
+    ],
+    workflowRefs: ['open-an-engagement'],
+  },
+  tighten_engagement_roe: {
+    whenToUse:
+      'When you learn something that NARROWS an engagement mid-run: a newly excluded host, a rate ' +
+      'the target cannot take, a technique that turned out to be out of bounds. Apply it ' +
+      'immediately rather than finishing the run first.',
+    gotchas: [
+      'One direction only. A ceiling falls and never rises, an exclusion list grows and never shrinks, a permission is withdrawn and never granted. If you need more room, ask a person; no tool here can give it to you.',
+      'The ceiling may never go back to 0 once set, because 0 means no ceiling rather than an unlimited-but-declared one.',
+      'Refused while a scan is writing the graph. The running scan read its Rules of Engagement at start and will not see this, so a tightening accepted mid-scan would be one that silently did not apply.',
+      'It needs the project:create permission, not recon:settings. Changing the engagement agreement is a different act from tuning the pipeline.',
+    ],
+    workflowRefs: ['tighten-mid-engagement'],
+  },
+  attach_engagement_authorization: {
+    whenToUse:
+      'When a program re-issues its scope and the engagement continues under a new authority, or ' +
+      'when an existing project needs the record it never had.',
+    gotchas: [
+      'APPEND-ONLY. Nothing overwrites an earlier record and no tool edits or deletes one. Treat writing it as a durable claim you are making, in an audit, that this document authorized this work.',
+      'Only the digest is stored, never the document. Pass documentText and it is hashed here and discarded.',
+      'The record carries the id of the token that wrote it, so it stays attributable after the credential is revoked.',
+      'Attaching a DIFFERENT program\'s scope does not re-point the project. Its scope is still the one it was created with.',
+    ],
+    workflowRefs: ['open-an-engagement'],
+  },
+  list_engagement_authorizations: {
+    whenToUse:
+      'To answer "what said we could scan this", or to check whether a project has any ' +
+      'authorization at all before starting a third-party run.',
+    gotchas: [
+      'An internal engagement legitimately has none. An empty list is not the same as a missing record.',
+      'Newest first, and later records do not replace earlier ones: together they are the history of what was authorized when.',
+    ],
+    workflowRefs: ['open-an-engagement'],
+  },
+  preflight_scope_check: {
+    whenToUse:
+      'Before EVERY start_recon, and after any change that touches a rate, a container image or a ' +
+      'wordlist path. Report what it says rather than summarising it.',
+    gotchas: [
+      'It reports RESOLVED values. get_recon_settings echoes what you wrote; this reports what the scan will run with, and they differ wherever the runtime corrects a value.',
+      'rewrittenAtScanStart is not an error. A non-allowlisted container image and an out-of-directory wordlist path are both corrected rather than refused, and each is logged during the scan.',
+      'silentNoOps is the two-level model biting: a tool enabled inside a phase that is not running. The scan succeeds, that tool never runs, and no result field says why.',
+      'startable false is exactly what start_recon will refuse on. Do not start and hope.',
+    ],
+    workflowRefs: ['open-an-engagement', 'tighten-mid-engagement'],
   },
   describe_recon_settings: {
     whenToUse:
@@ -410,7 +488,10 @@ export const ONBOARDING_PLAYBOOK: Record<string, PlaybookEntry> = {
       'Change tuning when the human asked for a different scan, having first read the current values ' +
       'and the reference manual. Change one thing at a time so the effect is attributable.',
     gotchas: [
-      'It can NEVER change what RedAmon points at. The target, the address list, the subdomain seeds, the batch configuration and the safety guardrail are all outside the allowlist. This is the product\'s legal boundary, not an oversight.',
+      'It can NEVER change what RedAmon points at. The target, the address list, the subdomain seeds, the batch configuration and the safety guardrail are fixed at creation and refused here BY NAME. This is the product\'s legal boundary, not an oversight; a different target means create_project, not a different value.',
+      'It does not touch the Rules of Engagement either. Those are tighten-only and belong to tighten_engagement_roe, under a different permission.',
+      'A value is bounded or validated, never silently clamped, and one bad key refuses the WHOLE call. Read describe_recon_settings for the bound rather than probing for it.',
+      'Some values are CORRECTED at scan start rather than refused here: a rate above the engagement ceiling, a container image outside the shipped set, a wordlist path outside the project directory. get_recon_settings echoes what you wrote; preflight_scope_check reports what will run.',
       'A conflict means someone else changed the settings underneath you. Re-read them rather than forcing your write.',
       'Settings take effect on the NEXT scan. Changing them does nothing to the graph you already have.',
     ],
@@ -422,7 +503,8 @@ export const ONBOARDING_PLAYBOOK: Record<string, PlaybookEntry> = {
       'recon, quick or deep bug bounty, red-team, internal network, API security, compliance audit, ' +
       'supply chain, OSINT, full passive. Recommend one by name.',
     gotchas: [
-      'You CANNOT apply a preset over this surface. Name the one that fits and let the human apply it in the app.',
+      'This tool READS presets; it does not apply one. Write the fields you want with update_recon_settings, which validates each.',
+      'appliedCount is how much of a preset this surface could write. What stays refused is the engagement scope and the Rules of Engagement, which a preset has no business setting.',
       'Like the settings reference, it is built from constants and answers when nothing else does.',
     ],
     workflowRefs: ['change-tuning'],
@@ -534,6 +616,53 @@ export const WORKFLOWS: Workflow[] = [
     ],
   },
   {
+    id: 'open-an-engagement',
+    title: 'Open an engagement from a scope document',
+    requiredTools: ['create_project', 'preflight_scope_check'],
+    body: [
+      'This is the whole point of the engagement tools: go from a scope document to a project ' +
+      'that provably cannot violate it, without a human in the loop.',
+      '',
+      '1. Digest the scope document. Pass `documentText` and it is hashed here, or hash it ' +
+        'yourself and pass `documentSha256`. The document itself is never stored.',
+      '2. Decide `engagementKind`. If the target is not your own estate it is `third_party`, and ' +
+        'then a non-zero `roeGlobalMaxRps` and an `authorization` record are both required.',
+      '3. `create_project` with exactly ONE targeting mode, the RoE block, and an ' +
+        '`idempotencyKey` derived from the digest and the program handle. Scope is fixed here ' +
+        'and nowhere else.',
+      '4. `update_recon_settings` for the tuning the engagement calls for. Every pipeline ' +
+        'parameter is reachable; read `describe_recon_settings` for the bounds first.',
+      '5. `preflight_scope_check`, and READ it. It reports resolved values, every rate after ' +
+        'capping, every value a validator will rewrite, and every enabled tool whose phase is ' +
+        'not running.',
+      '6. Hard-stop on any mismatch. Do not start a scan whose preflight you have not read, and ' +
+        'do not start one where `startable` is false.',
+      '',
+      'A retry is the normal failure path for an unattended run, which is why the idempotency ' +
+      'key matters: a second call with the same key returns the FIRST project instead of ' +
+      'opening a second engagement against the same scope.',
+    ],
+  },
+  {
+    id: 'tighten-mid-engagement',
+    title: 'Tighten an engagement you are already running',
+    requiredTools: ['tighten_engagement_roe', 'preflight_scope_check'],
+    body: [
+      'You learned something that narrows the engagement: a host the program excluded after the ' +
+      'fact, a rate the target cannot take, a technique that turned out to be out of bounds.',
+      '',
+      '1. `tighten_engagement_roe` with only the fields that narrow. It moves one direction: a ' +
+        'ceiling falls, an exclusion list grows, a permission is withdrawn.',
+      '2. `preflight_scope_check` to see the new resolved rates.',
+      '3. If a scan is running, stop it. The tightening applies to the NEXT scan; the running ' +
+        'one read its Rules of Engagement when it started and will not see the change, which is ' +
+        'why the tool refuses while the graph is being written.',
+      '',
+      'If what you learned WIDENS the engagement, this tool cannot do it, and that is ' +
+      'deliberate. Ask a person.',
+    ],
+  },
+  {
     id: 'change-tuning',
     title: 'Change tuning safely',
     requiredTools: ['update_recon_settings', 'get_recon_settings'],
@@ -543,7 +672,8 @@ export const WORKFLOWS: Workflow[] = [
       '3. Change ONE thing, so its effect is attributable.',
       '4. Re-read and report the before and after values.',
       '',
-      'Remember what tuning is: it changes HOW the pipeline runs, never WHAT it points at. The target, the address list and the safety guardrail are outside the allowlist by design.',
+      'Remember what tuning is: it changes HOW the pipeline runs, never WHAT it points at. The target, the address list and the safety guardrail are fixed at creation and refused here by name.',
+      'Some values are corrected rather than refused. Run `preflight_scope_check` after a change that touches a rate, a container image or a wordlist path, and report the RESOLVED value rather than the one you wrote.',
       'A conflict means a human changed something underneath you. Re-read; do not force the write.',
     ],
   },

@@ -8,10 +8,13 @@ quietly update the file it was supposed to fail against.
 
 Run it only when a settings change is intended, and read the diff:
 
-    docker run --rm -v "$PWD:/repo" -w /repo/recon \\
-      -e PYTHONPATH=/repo:/repo/recon redamon-recon \\
-      python /repo/recon/tests/regen_golden_settings.py
+    docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo/recon \\
+      -e PYTHONPATH=/repo:/repo/recon -e HOME=/tmp --entrypoint sh redamon-recon \\
+      -c 'python /repo/recon/tests/regen_golden_settings.py'
     git diff recon/tests/fixtures/golden_settings/
+
+`-u` is not optional. Without it the container writes the baselines as root and
+the host cannot rewrite or even `git checkout` them afterwards.
 
 Every line of that diff is a value some scan will now run with.
 """

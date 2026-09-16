@@ -659,15 +659,31 @@ function renderTokenPowers(tools: Tool[], scopes: readonly McpScope[]): string {
     '',
     '### Never possible, whatever the permissions',
     '',
-    '**You can never change what RedAmon points at.** The target domain, the address list and mode,',
+    '**You can never re-point an EXISTING project.** The target domain, the address list and mode,',
     'the subdomain seeds, the domain-batch configuration, the ownership-verification fields and the',
-    'LLM target guardrail are outside every allowlist.',
+    'target guardrail are fixed when the project is created and are refused by name afterwards.',
+    'Scope moves with a new project, never with a new value on an old one.',
     '',
-    '**You can never read or change the rules of engagement**, including the client name and contact',
-    'details, the emergency contact and the engagement document itself.',
+    '**You can never loosen the rules of engagement.** Every RoE field may move in the safe',
+    'direction only: a rate ceiling may fall and never rise, an exclusion list may grow and never',
+    'shrink, a permitted technique may be withdrawn and never granted. You can READ the parts you',
+    'are judged against - the ceiling, the exclusions, the forbidden tools and categories, the time',
+    'window - because a ceiling you cannot see is one you cannot check yourself against.',
     '',
-    '**You can never touch credentials, agent settings, the LLM model choice, or which container',
-    'images are spawned.**',
+    '**You can never read the client\'s identity or the engagement document.** The client name, the',
+    'contact details, the emergency contact, the raw document and its parsed form are withheld from',
+    'every read on this surface.',
+    '',
+    '**You can never read a stored credential.** The CypherFix GitHub token and the GraphQL auth',
+    'value are write-only or closed entirely, and no read tool returns either.',
+    '',
+    'What you CAN do, which a previous version of this pack denied: every parameter of the recon',
+    'pipeline is settable, including every per-tool rate limit, the container image for each tool,',
+    'custom headers, wordlists and templates. None of that is blocked; each is bounded, validated,',
+    'or corrected at scan start. A container image outside the shipped set is pinned back to the',
+    'default. A rate above the engagement ceiling is rewritten to the ceiling. A wordlist path',
+    'outside this project\'s directory is dropped. `get_recon_settings` echoes what you wrote;',
+    'read the resolved values before you rely on them.',
     '',
     'And these are simply not on this surface, each one deliberately, so stop looking for them:',
     '',
@@ -826,10 +842,10 @@ const REFERENCES: ReferenceSpec[] = [
     path: 'references/lifecycle-and-scans.md',
     title: 'Lifecycle and scans',
     intro:
-      'A project is the unit of work and everything hangs off it. A human creates it and scopes it; ' +
-      'its targeting mode is locked at creation and you can neither create a project nor change what ' +
-      'it points at. What you can do is run the pipeline over it, watch that run, and read the ' +
-      'versions it leaves behind.',
+      'A project is the unit of work and everything hangs off it. Its targeting mode is locked at ' +
+      'creation: you can never change what an existing project points at, whatever permissions you ' +
+      'hold. What you can do is run the pipeline over it, watch that run, and read the versions it ' +
+      'leaves behind.',
     areas: ['orient', 'scans', 'timeline'],
     workflows: ['find-the-project', 'run-a-full-scan', 'queue-when-busy', 'what-changed', 'nightly-rescan', 'overwrite-mode', 'observe-other-scanners'],
   },
@@ -854,12 +870,27 @@ const REFERENCES: ReferenceSpec[] = [
     workflows: ['answer-a-question', 'raw-cypher'],
   },
   {
+    path: 'references/engagements.md',
+    title: 'Opening and proving an engagement',
+    intro:
+      'Everything that has to be true BEFORE a scan is allowed to run. A project\'s scope is ' +
+      'fixed when it is created and immutable afterwards, so this is the only place it is ' +
+      'decided; the engagement agreement may be tightened later and never loosened; and what ' +
+      'authorized the work is recorded append-only, so it survives the token that claimed it. ' +
+      'The preflight is what turns "the pipeline respects the scope" from an assertion into a ' +
+      'diff you can check.',
+    areas: ['engagement'],
+    workflows: ['open-an-engagement', 'tighten-mid-engagement'],
+  },
+  {
     path: 'references/settings.md',
     title: 'Settings and presets',
     intro:
-      'Tuning changes HOW the pipeline runs. It can never change WHAT it points at. Read before you ' +
-      'write, change one thing at a time, and remember that a setting takes effect on the next scan ' +
-      'rather than on the graph you already have.',
+      'Tuning changes HOW the pipeline runs. It can never change WHAT it points at. Every parameter ' +
+      'is reachable and each is bounded, validated or corrected at scan start rather than blocked, ' +
+      'so read describe_recon_settings for the bound before you write and do not probe for it: one ' +
+      'bad key refuses the whole call. A setting takes effect on the NEXT scan, not on the graph ' +
+      'you already have.',
     areas: ['settings'],
     workflows: ['change-tuning'],
   },

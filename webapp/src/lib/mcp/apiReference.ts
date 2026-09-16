@@ -129,6 +129,31 @@ const EXAMPLE_EXTRA_ARGS: Record<string, Record<string, unknown>> = {
   // rather than mechanical: the reader must see that this takes a SHELL command
   // and that choosing an in-scope target is their own responsibility.
   kali_exec: { command: 'curl -sI https://YOUR_TARGET/' },
+  // Exactly one targeting mode is required, and the rule lives in the tool body
+  // rather than the schema because "one of these three" is not expressible
+  // there. A required-only example would be refused for naming none of them.
+  create_project: {
+    targetDomain: 'YOUR_TARGET_DOMAIN',
+    engagementKind: 'third_party',
+    roe: { roeEnabled: true, roeGlobalMaxRps: 3 },
+    authorization: {
+      documentSha256: '0'.repeat(64),
+      documentKind: 'hackerone_program',
+      programHandle: 'YOUR_PROGRAM_HANDLE',
+      issuedAt: '2026-01-01T00:00:00.000Z',
+      summary: '428 in-scope, 28 excluded, 3 rps ceiling',
+    },
+    idempotencyKey: 'YOUR_PROGRAM_HANDLE-0000000000000000',
+  },
+  // The digest must be 64 hex and issuedAt a real timestamp, neither of which a
+  // YOUR_* placeholder satisfies.
+  attach_engagement_authorization: {
+    documentSha256: '0'.repeat(64),
+    documentKind: 'hackerone_program',
+    issuedAt: '2026-01-01T00:00:00.000Z',
+  },
+  // A tightening, so the example has to move the ceiling DOWN to be accepted.
+  tighten_engagement_roe: { roe: { roeGlobalMaxRps: 1 } },
 }
 
 /** The example `arguments` for a tool. apiReference.test.ts calls every one of these. */

@@ -71,6 +71,8 @@
         "tighten": { "$ref": "#/definitions/tighten" },
         "deny_reason": { "$ref": "#/definitions/deny_reason" },
         "written_by": { "type": "string" },
+        "readable": { "type": "boolean" },
+        "read_deny_reason": { "$ref": "#/definitions/read_deny_reason" },
         "group": { "type": "string" },
         "governor": { "$ref": "#/definitions/governor" }
       }
@@ -133,6 +135,7 @@
         "docker_image",
         "http_header",
         "project_file",
+        "project_file_name",
         "status_codes",
         "severity",
         "scan_modules",
@@ -146,6 +149,9 @@
     },
     "tighten": {
       "enum": ["decrease", "increase", "superset", "true_to_false", "false_to_true", "narrow"]
+    },
+    "read_deny_reason": {
+      "enum": ["credential", "third_party_pii", "document_blob", "other_user"]
     },
     "deny_reason": {
       "enum": ["identity", "internal", "escalation", "secret", "upload-managed"]

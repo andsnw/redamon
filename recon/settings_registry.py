@@ -172,11 +172,26 @@ def governor_budget_keys() -> dict[str, tuple[str, int]]:
 
 
 def project_file_runtime_keys() -> list[str]:
-    """Runtime keys holding a filesystem path a scan container opens."""
+    """Runtime keys holding an absolute filesystem path a scan container opens."""
     return sorted(
         entry["runtime_key"]
         for entry in fields().values()
         if entry.get("validator") == "project_file" and entry.get("runtime_key")
+    )
+
+
+def project_file_name_runtime_keys() -> list[str]:
+    """
+    Runtime keys holding a BASENAME the scan joins onto a mounted directory.
+
+    Separate from `project_file` because the dangerous input is different: here
+    the value never carries a root at all, and `../../etc/passwd` joined onto
+    /custom-templates escapes it.
+    """
+    return sorted(
+        entry["runtime_key"]
+        for entry in fields().values()
+        if entry.get("validator") == "project_file_name" and entry.get("runtime_key")
     )
 
 

@@ -1213,7 +1213,7 @@
    "default": 10,
    "has_default": true,
    "mcp": "settable",
-   "meaning": "How long amass may spend before it is abandoned, in seconds. A run that hits it contributes whatever it found so far rather than failing the scan.",
+   "meaning": "How long amass may run, in MINUTES rather than seconds. The name reads like every other timeout in the model and the unit does not match it.",
    "optional": false,
    "phase": "domain_discovery",
    "prisma_type": "Int",
@@ -1222,7 +1222,7 @@
    "tool": "amass",
    "traffic": "passive",
    "type": "int",
-   "unit": "seconds"
+   "unit": "minutes"
   },
   "arjunChunkSize": {
    "bounds": {
@@ -1939,6 +1939,8 @@
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
+   "read_deny_reason": "credential",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": null,
    "tool": "cypherfix",
@@ -2217,7 +2219,7 @@
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
-   "meaning": "Max seconds per individual availability test. Caps hping3, MSF modules, slowhttptest.",
+   "meaning": "The longest one denial-of-service attempt may run, in seconds. It is only reachable at all when roeAllowDos permits the technique.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Int",
@@ -2227,6 +2229,42 @@
    "traffic": "active",
    "type": "int",
    "unit": "seconds"
+  },
+  "engagementIdentityHeader": {
+   "default": "",
+   "has_default": true,
+   "mcp": "settable",
+   "meaning": "A header every request carries so the target's operators can attribute the traffic to this engagement, for example 'X-Bug-Bounty: your-handle'. Empty sends none. Many programs require one, and it is the difference between a scan that gets a question and one that gets a block. Validated like any other header: no CR or LF, and not Host, Authorization, Cookie or Proxy-*.",
+   "optional": false,
+   "phase": "standalone",
+   "prisma_type": "String",
+   "roe_capped": false,
+   "runtime_key": null,
+   "tool": "engagement",
+   "traffic": "none",
+   "type": "string",
+   "unit": "none",
+   "validator": "http_header"
+  },
+  "engagementKind": {
+   "default": "internal",
+   "has_default": true,
+   "mcp": "create_only",
+   "meaning": "Who the target belongs to, and therefore what has to be true before a scan may start. 'internal' is your own estate. 'third_party' is somebody else's, and such a project MUST carry a non-zero rate ceiling and an authorization record or start_recon refuses it. Set at creation and immutable afterwards: converting a project after the fact would either claim an authority nobody granted or drop a ceiling a human put there. Every project created before this field existed reads as 'internal', so an old project with no ceiling is flagged rather than blocked.",
+   "optional": false,
+   "phase": "standalone",
+   "prisma_type": "String",
+   "roe_capped": false,
+   "runtime_key": null,
+   "tool": "engagement",
+   "traffic": "none",
+   "type": "string",
+   "unit": "none",
+   "validator": "identifier",
+   "values": [
+    "internal",
+    "third_party"
+   ]
   },
   "ffufAiExtensions": {
    "default": false,
@@ -3357,6 +3395,8 @@
    "optional": false,
    "phase": "vuln_scan",
    "prisma_type": "String",
+   "read_deny_reason": "credential",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": "GRAPHQL_AUTH_VALUE",
    "tool": "graphql",
@@ -6908,7 +6948,7 @@
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
-   "meaning": "How long naabu may spend before it is abandoned, in milliseconds. A run that hits it contributes whatever it found so far rather than failing the scan.",
+   "meaning": "How long naabu waits for a port to answer, in MILLISECONDS. At the default of 10000 a full sweep of an unresponsive host is slow; below about 1000 a distant host starts reading as closed.",
    "optional": false,
    "phase": "port_scan",
    "prisma_type": "Int",
@@ -7502,7 +7542,7 @@
    "traffic": "active",
    "type": "string-list",
    "unit": "none",
-   "validator": "project_file"
+   "validator": "project_file_name"
   },
   "nucleiSeverity": {
    "default": [
@@ -7873,6 +7913,8 @@
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
+   "read_deny_reason": "credential",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": "OWNERSHIP_TOKEN",
    "tool": "targeting",
@@ -8083,6 +8125,8 @@
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
+   "read_deny_reason": "credential",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": null,
    "tool": "phishing",
@@ -8474,6 +8518,8 @@
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
+   "read_deny_reason": "third_party_pii",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": null,
    "tighten": "narrow",
@@ -8492,6 +8538,8 @@
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
+   "read_deny_reason": "third_party_pii",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": null,
    "tighten": "narrow",
@@ -8510,6 +8558,8 @@
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
+   "read_deny_reason": "third_party_pii",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": null,
    "tighten": "narrow",
@@ -8528,6 +8578,8 @@
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
+   "read_deny_reason": "third_party_pii",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": null,
    "tighten": "narrow",
@@ -8602,6 +8654,8 @@
    "optional": true,
    "phase": "standalone",
    "prisma_type": "Bytes",
+   "read_deny_reason": "document_blob",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": null,
    "tighten": "narrow",
@@ -8638,6 +8692,8 @@
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
+   "read_deny_reason": "document_blob",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": null,
    "tighten": "narrow",
@@ -8656,6 +8712,8 @@
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
+   "read_deny_reason": "third_party_pii",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": null,
    "tighten": "narrow",
@@ -8893,6 +8951,8 @@
    "optional": true,
    "phase": "standalone",
    "prisma_type": "Json",
+   "read_deny_reason": "document_blob",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": null,
    "tighten": "narrow",
@@ -8911,6 +8971,8 @@
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
+   "read_deny_reason": "document_blob",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": null,
    "tighten": "narrow",
@@ -11597,6 +11659,8 @@
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
+   "read_deny_reason": "other_user",
+   "readable": false,
    "roe_capped": false,
    "runtime_key": "USER_ID",
    "tool": "project",
@@ -12457,13 +12521,13 @@
   "zapAjaxSpiderEventWait": {
    "bounds": {
     "min": 0,
-    "max": 86400
+    "max": 3600000
    },
    "default": 1000,
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
-   "meaning": "Event wait time in milliseconds",
+   "meaning": "How long the Ajax Spider waits after firing a DOM event, in MILLISECONDS. Too low and a single-page app has not rendered its new state before the crawler reads it.",
    "optional": false,
    "phase": "resource_enum",
    "prisma_type": "Int",
@@ -12472,7 +12536,7 @@
    "tool": "zap",
    "traffic": "active",
    "type": "int",
-   "unit": "seconds"
+   "unit": "milliseconds"
   },
   "zapAjaxSpiderExcludePatterns": {
    "default": [],
@@ -12551,13 +12615,13 @@
   "zapAjaxSpiderMaxDuration": {
    "bounds": {
     "min": 1,
-    "max": 86400
+    "max": 1440
    },
    "default": 10,
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
-   "meaning": "Max Ajax Spider duration per seed in minutes",
+   "meaning": "How long the ZAP Ajax Spider may crawl one seed, in MINUTES rather than seconds.",
    "optional": false,
    "phase": "resource_enum",
    "prisma_type": "Int",
@@ -12566,7 +12630,7 @@
    "tool": "zap",
    "traffic": "active",
    "type": "int",
-   "unit": "seconds"
+   "unit": "minutes"
   },
   "zapAjaxSpiderMaxUrls": {
    "bounds": {
@@ -12660,13 +12724,13 @@
   "zapAjaxSpiderReloadWait": {
    "bounds": {
     "min": 0,
-    "max": 86400
+    "max": 3600000
    },
    "default": 1000,
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
-   "meaning": "Reload wait time in milliseconds",
+   "meaning": "How long the Ajax Spider waits after a page reload, in MILLISECONDS.",
    "optional": false,
    "phase": "resource_enum",
    "prisma_type": "Int",
@@ -12675,7 +12739,7 @@
    "tool": "zap",
    "traffic": "active",
    "type": "int",
-   "unit": "seconds"
+   "unit": "milliseconds"
   },
   "zapAjaxSpiderScopeCheck": {
    "default": "Strict",
@@ -13052,6 +13116,11 @@
    "title": "Arjun",
    "traffic": "active"
   },
+  "auth_profile": {
+   "phase": "http_probe",
+   "title": "Auth Profile",
+   "traffic": "active"
+  },
   "baddns": {
    "phase": "vuln_scan",
    "title": "Baddns",
@@ -13106,6 +13175,11 @@
    "phase": "standalone",
    "title": "Dos",
    "traffic": "active"
+  },
+  "engagement": {
+   "phase": "standalone",
+   "title": "Engagement",
+   "traffic": "none"
   },
   "ffuf": {
    "phase": "resource_enum",

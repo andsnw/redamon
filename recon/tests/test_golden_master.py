@@ -87,6 +87,9 @@ RESOLVES_TO_DEFAULTS = {
     # shipped default, so a hostile row resolves to the default row. That
     # identity IS the assertion, and it is checked by name below.
     "hostile_docker_image",
+    # Same shape: sanitize_project_file_settings drops a path that escapes its
+    # allowed roots back to the shipped default.
+    "escaping_wordlist",
 }
 
 
@@ -118,6 +121,23 @@ def test_a_hostile_docker_image_is_pinned_to_the_shipped_default():
     assert resolved["NUCLEI_DOCKER_IMAGE"] == "projectdiscovery/nuclei:latest"
     assert resolved["NAABU_DOCKER_IMAGE"] == "projectdiscovery/naabu:latest"
     assert "attacker/evil" not in json.dumps(resolved)
+
+
+def test_an_escaping_wordlist_path_is_dropped_to_the_shipped_default():
+    """
+    The second case whose success looks like a no-op.
+
+    ffuf sends each wordlist LINE as a URL path and records which ones
+    responded, so a wordlist pointed at a file inside the scan container gets
+    its contents reflected into the graph and the scan output. That is
+    exfiltration, not just disclosure, and the deny list used to be the only
+    thing standing in front of it.
+    """
+    resolved = _baseline("escaping_wordlist")
+    assert resolved["FFUF_WORDLIST"] == "/usr/share/seclists/Discovery/Web-Content/common.txt"
+    assert resolved["VHOST_SNI_CUSTOM_WORDLIST"] == ""
+    assert "/etc/shadow" not in json.dumps(resolved)
+    assert "etc/passwd" not in json.dumps(resolved)
 
 
 def test_the_exclude_tag_merge_is_deterministic():

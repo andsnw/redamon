@@ -49,6 +49,17 @@ export const MCP_SCOPES = [
   // future AI review of that finding, and it is not reversible from here.
   'triage:write',
   'graph:cypher',
+  // The act that binds the platform to a target. It gets its own checkbox so an
+  // operator can mint a token that tunes existing engagements without being able
+  // to open new ones. It also governs tightening an engagement afterwards, since
+  // both write the engagement agreement.
+  'project:create',
+  // Split from project:create for the same reason triage:write is split from
+  // recon:read: it is a DURABLE, NON-REVERSIBLE claim. Anyone holding it can
+  // assert that a given document authorized a given engagement, and that
+  // assertion outlives the token and appears in an audit. Writing the audit
+  // trail is a different act from configuring the work.
+  'engagement:authorize',
   'kali:exec',
 ] as const
 

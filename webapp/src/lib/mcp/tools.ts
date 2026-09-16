@@ -28,7 +28,7 @@ import {
   requireScope,
   type ResolvedMcpToken,
 } from '@/lib/mcpAuth'
-import { projectReconSettings, reconSettingsSelect } from '@/lib/reconSettingsAllowlist'
+import { projectReconSettings, reconSettingsSelect } from '@/lib/reconSettings/filter'
 import { assertReadableSelect } from '@/lib/mcpReadableFields'
 import { McpToolError } from '@/lib/mcp/errors'
 import { assertTenantScoped, TenantViolation } from '@/lib/mcp/graphGuard'

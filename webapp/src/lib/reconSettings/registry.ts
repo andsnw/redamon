@@ -40,6 +40,7 @@ export type Validator =
 export type TightenDirection =
   | 'decrease' | 'increase' | 'superset' | 'true_to_false' | 'false_to_true' | 'narrow'
 export type DenyReason = 'identity' | 'internal' | 'escalation' | 'secret' | 'upload-managed'
+export type ReadDenyReason = 'credential' | 'third_party_pii' | 'document_blob' | 'other_user'
 
 /** The coarse shape a value is validated against, joined from Prisma. */
 export type FieldType =
@@ -64,6 +65,9 @@ export interface RegistryField {
   tighten?: TightenDirection
   deny_reason?: DenyReason
   written_by?: string
+  /** Absent means readable. Only an explicit false withholds a column. */
+  readable?: boolean
+  read_deny_reason?: ReadDenyReason
   group?: string
   // joined from Prisma at build time
   type: FieldType
@@ -91,7 +95,7 @@ export interface RegistryTool {
 }
 
 export interface RuntimeOnlyKey {
-  source: 'internal' | 'env' | 'user_account'
+  source: 'internal' | 'env' | 'user_account' | 'project_relation'
   tool?: string
   unit: Unit
   roe_capped: boolean
@@ -209,6 +213,31 @@ export function neverFields(): NamedField[] {
 }
 
 /**
+ * Columns an MCP tool may RETURN.
+ *
+ * The read boundary is not the write boundary, and conflating them is how an
+ * external agent ends up holding a client's phone number. `targetDomain` is
+ * write-once and freely readable, because reading it is how a caller confirms
+ * which engagement it is looking at. The Rules of Engagement go the other way:
+ * an agent may know its rate ceiling and its exclusions, and has no business
+ * with the client's emergency contact or the scanned signed document.
+ *
+ * Positive by construction: `readable: false` is explicit in the registry and
+ * everything else is readable, so a NEW column is readable the day it is added.
+ * That is the opposite of the write side's default on purpose - a column nobody
+ * classified is far more likely to be ordinary tuning than a credential, and
+ * the credentials are named.
+ */
+export function mcpReadableFields(): NamedField[] {
+  return fieldsWhere(f => f.readable !== false)
+}
+
+/** Columns withheld from every MCP read, with the reason. */
+export function readDeniedFields(): NamedField[] {
+  return fieldsWhere(f => f.readable === false)
+}
+
+/**
  * Every runtime key the engagement rate ceiling applies to, columns and
  * runtime-only keys together.
  *
@@ -241,15 +270,58 @@ export function governorBudgetKeys(): string[] {
 }
 
 /**
+ * Which scan kind a registry tool belongs to, for the queued-job fingerprint.
+ *
+ * A kind that is not here is a pipeline kind, covered by its phase instead. Only
+ * the standalone scanners need naming, because `phase: standalone` is where
+ * everything that is not a pipeline phase ends up.
+ */
+const KIND_TOOLS: Record<string, readonly string[]> = {
+  gvm: ['gvm'],
+  github_hunt: ['github'],
+  trufflehog: ['trufflehog'],
+  supply_chain: ['supply_chain', 'supply_chain_recon'],
+  supply_chain_repo: ['supply_chain', 'supply_chain_recon'],
+  ai_attack: ['ai_surface_recon'],
+}
+
+const PIPELINE_KINDS = new Set(['full_recon', 'partial_recon'])
+
+/**
  * Fields whose change between enqueue and dispatch must re-confirm a queued job.
  *
- * Anything that steers WHERE or HOW HARD a job scans: every field that sends
- * traffic, the whole RoE block, and the scope columns. Once most of the model is
- * mutable, a narrower list means a scope-compliant configuration can become a
- * non-compliant run with nothing failing.
+ * Anything that steers WHERE or HOW HARD a job scans: every field of the job's
+ * own tools that sends traffic, plus the whole RoE block and the scope columns,
+ * which steer every kind.
+ *
+ * The hand-written list this replaced named six fields for `full_recon` and no
+ * `roe*` field at all. Queued work outlives the token that created it, so with
+ * most of the model mutable that is the path where a scope-compliant
+ * configuration becomes a non-compliant run with nothing failing: enqueue under
+ * a 3 rps ceiling, raise the ceiling, dispatch.
  */
-export function fingerprintFields(): string[] {
-  return fieldsWhere(
-    f => f.traffic !== 'none' || f.mcp === 'tighten_only' || f.mcp === 'create_only'
-  ).map(f => f.key)
+export function fingerprintFields(kind: string): string[] {
+  // The engagement agreement and the project's OWN targeting steer every kind,
+  // whatever it scans. The other create_only columns point a specific scanner at
+  // a specific third party (githubTargetOrg, gvmScanTargets, supplyChainRepoUrl),
+  // so they belong to that scanner's tool and are picked up per kind below
+  // rather than made to re-confirm every unrelated job.
+  const always = (f: RegistryField) =>
+    f.mcp === 'tighten_only' || (f.mcp === 'create_only' && f.tool === 'targeting')
+
+  if (PIPELINE_KINDS.has(kind)) {
+    return fieldsWhere(
+      f => always(f) || (f.traffic !== 'none' && f.phase !== 'standalone') || f.tool === 'pipeline'
+    ).map(f => f.key)
+  }
+
+  const tools = KIND_TOOLS[kind]
+  if (!tools) return []
+  const owned = new Set(tools)
+  return fieldsWhere(f => always(f) || (owned.has(f.tool) && f.traffic !== 'none')).map(f => f.key)
+}
+
+/** Every scan kind the fingerprint knows how to derive a field set for. */
+export function fingerprintKinds(): string[] {
+  return [...PIPELINE_KINDS, ...Object.keys(KIND_TOOLS)].sort()
 }

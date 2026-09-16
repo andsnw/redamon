@@ -939,6 +939,128 @@ def apply_roe_rate_cap(settings: dict[str, Any]) -> dict[str, Any]:
     return settings
 
 
+# Roots a path-valued setting may resolve inside. Everything else is dropped to
+# the shipped default at scan start.
+#
+# Why this matters more than a file read: ffuf sends each wordlist LINE as a URL
+# path and records which ones responded, so a wordlist pointed at a file inside
+# the scan container gets its contents reflected into the graph and the scan
+# output. That is exfiltration, not just disclosure. The same shape applies to
+# any tool that reads a list and reports what matched.
+#
+# Until the registry work these columns were simply refused by name on the MCP
+# surface, and there was no check at all on the recon side. The deny list WAS the
+# control; this is what replaces it.
+_PROJECT_FILE_ROOTS = (
+    "/app/recon/wordlists",      # shipped lists + the per-project upload dir
+    "/app/custom_templates",     # operator-supplied nuclei templates
+    "/custom-templates",         # the same directory as the scan container sees it
+    "/usr/share/seclists",       # shipped system wordlists (the ffuf default)
+    "/usr/share/wordlists",
+    "/usr/share/dirb",
+    "/usr/share/dirbuster",
+)
+
+
+def _inside_allowed_root(raw: Any) -> bool:
+    """True when `raw` is an absolute path resolving inside an allowed root.
+
+    Fail closed: a value that is not a string, is empty, or cannot be resolved
+    counts as escaping. `os.path.realpath` is used rather than `abspath` so a
+    symlink planted inside an allowed root cannot point out of it.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return False
+    try:
+        resolved = os.path.realpath(raw.strip())
+    except (OSError, ValueError):
+        return False
+    for root in _PROJECT_FILE_ROOTS:
+        real_root = os.path.realpath(root)
+        if resolved == real_root or resolved.startswith(real_root + os.sep):
+            return True
+    return False
+
+
+def _is_safe_basename(raw: Any) -> bool:
+    """True when `raw` is a plain filename the scan can join onto a directory."""
+    if not isinstance(raw, str) or not raw.strip():
+        return False
+    name = raw.strip()
+    if "\0" in name or "/" in name or "\\" in name:
+        return False
+    if name in (".", "..") or name.startswith("."):
+        return False
+    return os.path.basename(name) == name
+
+
+def sanitize_project_file_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    """Drop every path-valued setting that escapes its allowed directory.
+
+    Mirrors `sanitize_image_settings`: the column is OPEN and the runtime is the
+    control, so an escaping value is replaced with the shipped default and a
+    `[guardrail]` line records it rather than the scan failing. The MCP write
+    path rejects the same values outright; this is the authoritative half,
+    because a row can also be written through the webapp, an import, or a
+    restore.
+
+    Both validators come from the registry, so a new path-valued column is
+    covered the moment it declares one.
+    """
+    for key in _registry.project_file_runtime_keys():
+        if key not in settings:
+            continue
+        value = settings[key]
+        shipped = DEFAULT_SETTINGS.get(key)
+        if isinstance(value, list):
+            kept = [v for v in value if _inside_allowed_root(v)]
+            if len(kept) != len(value):
+                dropped = [v for v in value if v not in kept]
+                logger.warning(
+                    f"[guardrail] Rejected path(s) outside the allowed directories for "
+                    f"{key}: {dropped} -> dropped"
+                )
+                print(
+                    f"[guardrail] Rejected path(s) outside the allowed directories for "
+                    f"{key}: {dropped} -> dropped",
+                    flush=True,
+                )
+                settings[key] = kept
+            continue
+        # An empty string is "not set", which every consumer already handles.
+        if value in (None, "") or _inside_allowed_root(value):
+            continue
+        logger.warning(
+            f"[guardrail] Rejected path outside the allowed directories for {key}: "
+            f"{value!r} -> pinned to {shipped!r}"
+        )
+        print(
+            f"[guardrail] Rejected path outside the allowed directories for {key}: "
+            f"{value!r} -> pinned to {shipped!r}",
+            flush=True,
+        )
+        settings[key] = shipped
+
+    for key in _registry.project_file_name_runtime_keys():
+        if key not in settings:
+            continue
+        value = settings[key]
+        if not isinstance(value, list):
+            continue
+        kept = [v for v in value if _is_safe_basename(v)]
+        if len(kept) != len(value):
+            dropped = [v for v in value if v not in kept]
+            logger.warning(
+                f"[guardrail] Rejected non-filename entr(ies) for {key}: {dropped} -> dropped"
+            )
+            print(
+                f"[guardrail] Rejected non-filename entr(ies) for {key}: {dropped} -> dropped",
+                flush=True,
+            )
+            settings[key] = kept
+    return settings
+
+
 def _fetch_user_api_key(user_id: str, webapp_url: str, key_name: str) -> str:
     """Fetch an unmasked API key from user's global settings."""
     import requests as _req
@@ -1806,6 +1928,10 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     # V3: reject any attacker-influenced tool Docker image before it can reach
     # `docker run` on the host daemon.
     sanitize_image_settings(settings)
+
+    # The same shape for path-valued settings, which reach a tool that reads the
+    # file and reports what matched.
+    sanitize_project_file_settings(settings)
 
     logger.info(f"Loaded {len(settings)} settings for project {project_id}")
     return settings

@@ -46,7 +46,35 @@ export const MCP_SCOPE_COPY: Record<McpScope, ScopeCopy> = {
   },
   'recon:settings': {
     label: 'Change recon tuning settings',
-    blurb: 'Change a narrow allowlist of recon tuning values. It can never change the target, scope, Rules of Engagement or any credential.',
+    // Two of the four claims this blurb used to make became FALSE when the
+    // recon settings registry replaced the allowlist, and one broke in the
+    // direction that made the permission sound SAFER than it is. It said "a
+    // narrow allowlist" (it is now most of the model) and "never any
+    // credential" (graphqlAuthHeader and graphqlAuthValue are open, because
+    // scanning an authenticated GraphQL endpoint needs them).
+    blurb: 'Change any recon tuning value: per-tool enable flags, rate limits, threads, timeouts, depths, wordlists, templates, severity lists and which phases run. Values are validated and capped at scan start rather than blocked, so an engagement rate ceiling still wins over anything written here. It cannot point the project at a different target, loosen the Rules of Engagement, or read a stored credential.',
+    detail:
+      'Every parameter of the recon pipeline is reachable, and each is controlled ' +
+      'by a bound or a validator rather than by being refused by name.\n\n' +
+      'Four dispositions decide what a token may write. Most fields are settable ' +
+      'at any time. The engagement scope (the target domain, the IP list, the ' +
+      'domain batch and the target guardrail) is fixed at creation and is refused ' +
+      'here by name. The Rules of Engagement may only be tightened, and only ' +
+      'through the engagement permission. A short named set is refused entirely: ' +
+      'row identity, the version-activation lock, the Kali-exec flag and the ' +
+      'stored CypherFix token.\n\n' +
+      'Three validators are worth knowing about. A container image outside the ' +
+      'shipped allowlist is accepted and then pinned back to the default at scan ' +
+      'start, so get_recon_settings echoes what was written while the scan runs ' +
+      'the safe one. A custom header may not carry CR, LF, Host, Authorization, ' +
+      'Cookie or Proxy-*, each of which would change where the request goes ' +
+      'rather than annotate it. A wordlist or template path must resolve inside ' +
+      'this project\'s own upload directory; anything else is dropped to the ' +
+      'shipped default at scan start with a guardrail line recording it.\n\n' +
+      'One credential pair is open on purpose: graphqlAuthHeader and ' +
+      'graphqlAuthValue are what an operator supplies to scan an authenticated ' +
+      'GraphQL endpoint, so they are pipeline configuration. They are WRITE ONLY ' +
+      'on this surface - no read tool returns the value.',
   },
   'triage:read': {
     label: 'Read suppressed findings and remediations',
@@ -65,6 +93,43 @@ export const MCP_SCOPE_COPY: Record<McpScope, ScopeCopy> = {
   'graph:cypher': {
     label: 'Run raw Cypher',
     blurb: 'Send read-only Cypher directly instead of a natural-language question. Still tenant-scoped and still read-only.',
+  },
+  'project:create': {
+    label: 'Create projects and set their engagement scope',
+    blurb: 'Create a new project and fix what it points at: its target list, its excluded hosts, its Rules of Engagement and its request-rate ceiling. Scope is written ONCE at creation and is immutable afterwards through every route on this surface, so this opens new engagements rather than re-pointing existing ones. It also permits TIGHTENING an engagement later, never loosening it.',
+    detail:
+      'This is the act that binds RedAmon to a target, which is why it is its own ' +
+      'checkbox rather than part of changing settings. A token with recon:settings ' +
+      'can tune the engagements you already have; a token with this one can open ' +
+      'new ones.\n\n' +
+      'What it can never do is re-point an existing project. The target domain, the ' +
+      'address list, the domain batch and the target guardrail are refused by name on ' +
+      'a project that already exists, whatever permissions the token holds.\n\n' +
+      'It also governs tightening an engagement afterwards, in one direction only: a ' +
+      'rate ceiling may fall and never rise, an exclusion list may grow and never ' +
+      'shrink, a permitted technique may be withdrawn and never granted. An agent ' +
+      'that discovers a stricter rule mid-engagement applies it immediately; one that ' +
+      'wants more room asks a person.\n\n' +
+      'Note that a human cannot currently change the Rules of Engagement on an ' +
+      'existing project through the UI at all, so an agent holding this has a ' +
+      'narrow capability the form does not offer.',
+    danger: true,
+  },
+  'engagement:authorize': {
+    label: 'Record what authorized an engagement',
+    blurb: 'Attach the scope document that permits an engagement: its digest, its source and the program it came from. The record is APPEND-ONLY and outlives the token that wrote it, so anyone holding this can make a durable claim, in an audit, that a given document authorized a given scan. Separate from creating projects on purpose: writing the audit trail is a different act from configuring the work.',
+    detail:
+      'Only a DIGEST of the scope document is stored, never the document, so ' +
+      'RedAmon never parses somebody\'s scope prose and the record works the same ' +
+      'for a HackerOne policy, a Bugcrowd brief, a signed PDF or an internal ' +
+      'ticket.\n\n' +
+      'The record cannot be edited or deleted through any path, including this one. ' +
+      'When a program changes its scope, a NEW record says the engagement continued ' +
+      'under a new authority from that moment, which is what an incident review ' +
+      'needs; a row that can be rewritten is not evidence.\n\n' +
+      'It carries the id of the token that wrote it, so a revoked credential is ' +
+      'still attributable afterwards.',
+    danger: true,
   },
   'kali:exec': {
     label: 'Shell access to the Kali sandbox',
@@ -139,6 +204,13 @@ export const SCOPE_GROUPS: ScopeGroup[] = [
     hint: 'Writes that are not scans.',
     tone: 'action',
     scopes: ['recon:settings', 'triage:write'],
+  },
+  {
+    id: 'engagement',
+    label: 'Open and authorize engagements',
+    hint: 'Binds RedAmon to a target, and records who said it could.',
+    tone: 'action',
+    scopes: ['project:create', 'engagement:authorize'],
   },
   {
     id: 'exec',

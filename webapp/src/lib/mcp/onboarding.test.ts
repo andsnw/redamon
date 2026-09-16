@@ -432,13 +432,29 @@ describe('nothing user-specific ever reaches the output', () => {
     }
   })
 
-  test('no project data, and no rules-of-engagement values', () => {
+  test('no project data, and nothing withheld from every read', () => {
     const text = packText(ALL, 'pentest')
-    // The field NAMES may be discussed as "never exposed"; VALUES never appear.
-    for (const leaked of ['roeClientName', 'roeDocumentData', 'ownershipToken', 'targetDomain']) {
+    // The control is that no VALUE leaks and that nothing withheld from every
+    // read on the surface is even named as reachable.
+    //
+    // `targetDomain` used to be on this list, when it was unreachable from
+    // every route. It is now a required argument of create_project, so the pack
+    // has to name it or an agent cannot open an engagement at all. Naming a
+    // field an agent must pass is not a leak; naming a client's phone number
+    // would be.
+    for (const leaked of ['roeClientName', 'roeClientContactEmail', 'roeDocumentData', 'ownershipToken', 'cypherfixGithubToken']) {
       expect(text, `${leaked} should not be quoted as a field name`).not.toContain(leaked)
     }
     expect(text).not.toMatch(/\bproj_[a-z0-9]+/)
+  })
+
+  test('the pack names the engagement fields an agent must actually pass', () => {
+    // The other direction: a pack that withheld these would describe a
+    // capability the agent cannot use.
+    const text = packText(ALL, 'pentest')
+    for (const needed of ['targetDomain', 'engagementKind', 'roeGlobalMaxRps', 'idempotencyKey']) {
+      expect(text, `${needed} is never mentioned`).toContain(needed)
+    }
   })
 
   test('the server URL is the only thing the caller can inject, and it is bounded', () => {

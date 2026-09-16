@@ -67,6 +67,13 @@ import {
   listExploitPaths,
 } from '@/lib/mcp/analyticsTools'
 import { describeReconSettings, listReconPresets } from '@/lib/mcp/catalogTools'
+import {
+  attachEngagementAuthorization,
+  createProject,
+  listEngagementAuthorizations,
+  preflightScopeCheck,
+  tightenEngagementRoe,
+} from '@/lib/mcp/engagementTools'
 import { cancelQueuedScan, queueRecon } from '@/lib/mcp/queueTools'
 import { SCANNER_NAMES, getScanStatus } from '@/lib/mcp/scannerTools'
 import { VERDICT_STATUSES, setFindingVerdict } from '@/lib/mcp/verdictTools'
@@ -1057,6 +1064,213 @@ export function buildMcpServer(ctx: McpContext, instructions?: string): McpServe
       },
     },
     handler(ctx, 'kali_cancel', a => cancelCommand(ctx, a.projectId, a.jobId), a => a.projectId)
+  )
+
+  // --- the engagement -------------------------------------------------------
+
+  server.registerTool(
+    'create_project',
+    {
+      title: 'Create a project and fix its scope',
+      description:
+        'Open a NEW engagement: a project with its targeting mode, its Rules of Engagement and ' +
+        'the record of what authorized it, written atomically.\n\n' +
+        'Scope is fixed HERE and nowhere else. Exactly one targeting mode - targetDomain, ' +
+        'targetIps, or domainBatchHosts - and it is immutable afterwards through every route on ' +
+        'this surface. A different target means a different project, which is why this tool ' +
+        'exists rather than a way to re-point an existing one.\n\n' +
+        'engagementKind is the decision that matters. "internal" is your own estate. ' +
+        '"third_party" is somebody else\'s, and then a non-zero roeGlobalMaxRps and an ' +
+        '`authorization` record are both REQUIRED - start_recon refuses the project otherwise. ' +
+        'Note that roeGlobalMaxRps 0 means NO ceiling rather than a slow one, and that ' +
+        'roeEnabled must be true or the ceiling is never applied.\n\n' +
+        'Only a DIGEST of the scope document is stored, never the document. Pass documentSha256, ' +
+        'or pass documentText and it is digested here.\n\n' +
+        'Pass idempotencyKey, derived from the authorization digest and the program handle. A ' +
+        'second call with the same key returns the FIRST project instead of creating another, ' +
+        'which is what makes a retried run safe.\n\n' +
+        'Call preflight_scope_check before start_recon, and report what it says.',
+      annotations: {
+        readOnlyHint: false,
+        // It creates state rather than destroying any, and binds the platform to
+        // a target it has never been pointed at before.
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+      _meta: scopesMeta({ required: ['project:create'] }),
+      inputSchema: {
+        name: z.string().min(1).max(200).describe('What to call the engagement.'),
+        description: z.string().max(2000).optional(),
+        engagementKind: z.enum(['internal', 'third_party'])
+          .describe('Whose estate the target is. third_party requires a ceiling and an authorization.'),
+        targetDomain: z.string().max(253).optional()
+          .describe('Single-domain mode. Mutually exclusive with the other two.'),
+        targetIps: z.array(z.string().max(64)).max(1000).optional()
+          .describe('IP / CIDR mode. Mutually exclusive with the other two.'),
+        domainBatchHosts: z.array(z.string().max(253)).max(500).optional()
+          .describe('Domain-batch mode: the raw host list. The server derives the grouping.'),
+        subdomainList: z.array(z.string().max(253)).max(5000).optional()
+          .describe('Hosts seeded in addition to whatever discovery finds.'),
+        engagementIdentityHeader: z.string().max(400).optional()
+          .describe('"Name: value", sent with every request so the target can attribute it to you.'),
+        roe: z.record(z.string(), z.unknown()).optional()
+          .describe('The Rules of Engagement block. Fully writable here, tighten-only afterwards.'),
+        settings: z.record(z.string(), z.unknown()).optional()
+          .describe('Ordinary recon tuning, so the first scan runs configured. See describe_recon_settings.'),
+        authorization: z.object({
+          documentSha256: z.string().max(64).optional().describe('64 lower-case hex.'),
+          documentText: z.string().max(200000).optional().describe('The document, digested here and discarded.'),
+          documentKind: z.enum(['hackerone_program', 'bugcrowd_program', 'roe_document', 'internal_ticket', 'other']),
+          sourceUrl: z.string().max(2000).optional().describe('Where the scope came from.'),
+          programHandle: z.string().max(200).optional().describe('e.g. "nba-public".'),
+          issuedAt: z.string().describe('ISO 8601: when the scope document was issued.'),
+          summary: z.string().max(500).optional()
+            .describe('One line, e.g. "428 in-scope, 28 excluded, 3 rps ceiling".'),
+        }).optional(),
+        idempotencyKey: z.string().min(8).max(200).optional()
+          .describe('A retry with the same key returns the first project rather than creating a second.'),
+      },
+    },
+    handler(ctx, 'create_project', a => createProject(ctx, a as never))
+  )
+
+  server.registerTool(
+    'tighten_engagement_roe',
+    {
+      title: 'Tighten an engagement',
+      description:
+        'Narrow the Rules of Engagement on an existing project. ONE DIRECTION ONLY: a rate ' +
+        'ceiling may fall and never rise, an exclusion list may grow and never shrink, a ' +
+        'permitted technique may be withdrawn and never granted, and the ceiling may never go ' +
+        'back to 0 once set because 0 means no ceiling at all.\n\n' +
+        'That asymmetry is the point. An agent that discovers a stricter rule mid-engagement ' +
+        'applies it immediately; one that wants more room asks a person.\n\n' +
+        'Refused while a scan is writing the graph: the running scan read its Rules of ' +
+        'Engagement when it started and will not see the change, so accepting it would report ' +
+        'success for a tightening that does not apply.\n\n' +
+        'Pass expectedUpdatedAt from get_recon_settings to refuse writing over a change you ' +
+        'have not seen.',
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      _meta: scopesMeta({ required: ['project:create'] }),
+      inputSchema: {
+        projectId: projectIdSchema,
+        roe: z.record(z.string(), z.unknown())
+          .describe('The RoE fields to tighten. Anything else is refused by name.'),
+        expectedUpdatedAt: z.string().optional()
+          .describe('Optimistic concurrency: from get_recon_settings.'),
+      },
+    },
+    handler(
+      ctx,
+      'tighten_engagement_roe',
+      a => tightenEngagementRoe(ctx, a.projectId, a.roe as Record<string, unknown>, a.expectedUpdatedAt),
+      a => a.projectId
+    )
+  )
+
+  server.registerTool(
+    'attach_engagement_authorization',
+    {
+      title: 'Record what authorized an engagement',
+      description:
+        'Attach the scope document that permits this engagement: its digest, its kind, where it ' +
+        'came from and when it was issued. Only the DIGEST is stored, never the document.\n\n' +
+        'APPEND-ONLY, and that is the whole value. When a program re-issues its scope, a new ' +
+        'record says the engagement continued under a new authority from that moment; nothing ' +
+        'is overwritten, because a record that can be rewritten is not evidence. There is no ' +
+        'tool here that edits or deletes one.\n\n' +
+        'The record carries the id of the token that wrote it, so a revoked credential is still ' +
+        'attributable afterwards. Treat writing one as a durable claim you are making.',
+      annotations: {
+        readOnlyHint: false,
+        // Nothing is destroyed: it is strictly an append. But it is permanent
+        // and it is a claim, so it is not idempotent either.
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+      _meta: scopesMeta({ required: ['engagement:authorize'] }),
+      inputSchema: {
+        projectId: projectIdSchema,
+        documentSha256: z.string().max(64).optional().describe('64 lower-case hex.'),
+        documentText: z.string().max(200000).optional().describe('The document, digested here and discarded.'),
+        documentKind: z.enum(['hackerone_program', 'bugcrowd_program', 'roe_document', 'internal_ticket', 'other']),
+        sourceUrl: z.string().max(2000).optional(),
+        programHandle: z.string().max(200).optional(),
+        issuedAt: z.string().describe('ISO 8601: when the scope document was issued.'),
+        summary: z.string().max(500).optional(),
+      },
+    },
+    handler(
+      ctx,
+      'attach_engagement_authorization',
+      a => attachEngagementAuthorization(ctx, a.projectId, {
+        documentSha256: a.documentSha256,
+        documentText: a.documentText,
+        documentKind: a.documentKind,
+        sourceUrl: a.sourceUrl,
+        programHandle: a.programHandle,
+        issuedAt: a.issuedAt,
+        summary: a.summary,
+      }),
+      a => a.projectId
+    )
+  )
+
+  server.registerTool(
+    'list_engagement_authorizations',
+    {
+      title: 'List what authorized an engagement',
+      description:
+        'Every authorization ever recorded for a project, newest first. Append-only, so a later ' +
+        'record does not replace an earlier one: together they are the history of what was ' +
+        'authorized when.\n\n' +
+        'An internal engagement legitimately has none.',
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read'] }),
+      inputSchema: { projectId: projectIdSchema },
+    },
+    handler(
+      ctx,
+      'list_engagement_authorizations',
+      a => listEngagementAuthorizations(ctx, a.projectId),
+      a => a.projectId
+    )
+  )
+
+  server.registerTool(
+    'preflight_scope_check',
+    {
+      title: 'Check the configuration against the scope',
+      description:
+        'Read-only proof that the configured pipeline fits the engagement. Call it before ' +
+        'start_recon and report what it says.\n\n' +
+        'It reports RESOLVED values, not written ones, and that distinction is why it exists. ' +
+        'get_recon_settings echoes what you wrote; this reports what the scan will actually run ' +
+        'with. They differ wherever the runtime corrects a value: a rate above the engagement ' +
+        'ceiling comes down to the ceiling, a container image outside the shipped set is pinned ' +
+        'back to the default, a wordlist path outside this project\'s directory is dropped. An ' +
+        'agent that only read the first would believe a rejected value was accepted.\n\n' +
+        'It also names every enabled tool whose PHASE is not in scanModules. Those are the ' +
+        'silent no-ops: the scan succeeds, that tool never runs, and no result field says why.\n\n' +
+        '`startable` is false when a third-party engagement is missing its ceiling or its ' +
+        'authorization record, which is exactly what start_recon will refuse on.',
+      annotations: READ_ONLY,
+      _meta: scopesMeta({ required: ['recon:read'] }),
+      inputSchema: { projectId: projectIdSchema },
+    },
+    handler(
+      ctx,
+      'preflight_scope_check',
+      a => preflightScopeCheck(ctx, a.projectId),
+      a => a.projectId
+    )
   )
 
   return server

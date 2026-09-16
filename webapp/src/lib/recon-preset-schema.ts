@@ -234,6 +234,14 @@ export const reconPresetSchema = z.object({
   supplyChainReconEnabled: bool,
   supplyChainReconEcosystems: str,
   supplyChainReconDeepAnalysisEnabled: bool,
+  // Six fields the catalog already documented but the schema would strip, so a
+  // preset the model wrote naming them applied nothing and said nothing.
+  supplyChainDeepAnalysisEnabled: bool,
+  supplyChainOrgDeepAnalysisEnabled: bool,
+  supplyChainTyposquatEnabled: bool,
+  trufflehogEnabled: bool,
+  githubMaxCommits: int,
+  gauVerifyThreads: int,
 
   // -- JS Analysis: JS Recon --
   jsReconEnabled: bool,

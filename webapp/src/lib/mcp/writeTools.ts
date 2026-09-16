@@ -30,7 +30,7 @@ import {
   filterReconSettings,
   projectReconSettings,
   reconSettingsSelect,
-} from '@/lib/reconSettingsAllowlist'
+} from '@/lib/reconSettings/filter'
 import { enforceRate, type McpContext } from '@/lib/mcp/tools'
 
 const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'

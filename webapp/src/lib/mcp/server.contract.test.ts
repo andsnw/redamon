@@ -51,6 +51,14 @@ async function listTools() {
 
 let tools: Awaited<ReturnType<typeof listTools>>['tools']
 
+/**
+ * The advertised tool count.
+ *
+ * Kept as ONE number rather than repeated at each call site, so adding a tool
+ * fails in one place with a clear message instead of in three with three.
+ */
+const EXPECTED_TOOL_COUNT = 35
+
 beforeEach(async () => {
   vi.clearAllMocks()
   tools = (await listTools()).tools
@@ -71,10 +79,12 @@ describe('tools/list satisfies the MCP contract', () => {
     }
   })
 
-  test('all thirty tools are advertised', () => {
+  test('every tool is advertised', () => {
     expect(tools.map(t => t.name).sort()).toEqual([
+      'attach_engagement_authorization',
       'cancel_queued_scan',
       'compare_scan_versions',
+      'create_project',
       'describe_recon_settings',
       'get_attack_surface_overview',
       'get_blast_radius',
@@ -88,6 +98,7 @@ describe('tools/list satisfies the MCP contract', () => {
       'kali_exec',
       'kali_output',
       'kali_toolbox',
+      'list_engagement_authorizations',
       'list_exploit_paths',
       'list_findings',
       'list_graph_views',
@@ -96,12 +107,14 @@ describe('tools/list satisfies the MCP contract', () => {
       'list_recon_presets',
       'list_remediations',
       'list_scan_versions',
+      'preflight_scope_check',
       'query_graph',
       'queue_recon',
       'run_graph_view',
       'set_finding_verdict',
       'start_recon',
       'stop_recon',
+      'tighten_engagement_roe',
       'update_recon_settings',
     ])
   })
@@ -217,7 +230,7 @@ describe('MCP_DISABLED_TOOLS withdraws a tool from the surface', () => {
   afterEach(() => { vi.unstubAllEnvs() })
 
   test('an unset value changes nothing', async () => {
-    expect((await listTools()).tools).toHaveLength(30)
+    expect((await listTools()).tools).toHaveLength(EXPECTED_TOOL_COUNT)
   })
 
   test('a named tool is ABSENT from tools/list, not advertised and refusing', async () => {
@@ -228,7 +241,7 @@ describe('MCP_DISABLED_TOOLS withdraws a tool from the surface', () => {
     expect(names).not.toContain('kali_exec')
     expect(names).not.toContain('queue_recon')
     expect(names).toContain('list_findings')
-    expect(names).toHaveLength(28)
+    expect(names).toHaveLength(EXPECTED_TOOL_COUNT - 2)
   })
 
   test('whitespace and empty entries are tolerated', async () => {
@@ -240,7 +253,7 @@ describe('MCP_DISABLED_TOOLS withdraws a tool from the surface', () => {
     // This is an operator's emergency lever; a typo must not stop the server
     // starting, which would turn a narrow withdrawal into a total outage.
     vi.stubEnv('MCP_DISABLED_TOOLS', 'no_such_tool')
-    expect((await listTools()).tools).toHaveLength(30)
+    expect((await listTools()).tools).toHaveLength(EXPECTED_TOOL_COUNT)
   })
 })
 

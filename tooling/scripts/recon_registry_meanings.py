@@ -417,6 +417,48 @@ OVERRIDES: dict[str, str] = {
     "trufflehogArchiveTimeout": "Seconds one archive extraction may take before it is abandoned.",
     "trufflehogDetectorTimeout": "Seconds one detector may spend verifying a candidate before it is abandoned.",
     "trufflehogConcurrency": "How many sources trufflehog scans at once.",
+    "engagementKind": (
+        "Who the target belongs to, and therefore what has to be true before a scan may "
+        "start. 'internal' is your own estate. 'third_party' is somebody else's, and such a "
+        "project MUST carry a non-zero rate ceiling and an authorization record or "
+        "start_recon refuses it. Set at creation and immutable afterwards: converting a "
+        "project after the fact would either claim an authority nobody granted or drop a "
+        "ceiling a human put there. Every project created before this field existed reads "
+        "as 'internal', so an old project with no ceiling is flagged rather than blocked."
+    ),
+    "engagementIdentityHeader": (
+        "A header every request carries so the target's operators can attribute the traffic "
+        "to this engagement, for example 'X-Bug-Bounty: your-handle'. Empty sends none. "
+        "Many programs require one, and it is the difference between a scan that gets a "
+        "question and one that gets a block. Validated like any other header: no CR or LF, "
+        "and not Host, Authorization, Cookie or Proxy-*."
+    ),
+    # The five timeouts whose unit is not seconds. Spelled out in words as well
+    # as declared, because the name says "Timeout" and a reader who assumes
+    # seconds writes a value off by 60 or 1000.
+    "amassTimeout": (
+        "How long amass may run, in MINUTES rather than seconds. The name reads like every "
+        "other timeout in the model and the unit does not match it."
+    ),
+    "zapAjaxSpiderMaxDuration": (
+        "How long the ZAP Ajax Spider may crawl one seed, in MINUTES rather than seconds."
+    ),
+    "zapAjaxSpiderEventWait": (
+        "How long the Ajax Spider waits after firing a DOM event, in MILLISECONDS. Too low "
+        "and a single-page app has not rendered its new state before the crawler reads it."
+    ),
+    "zapAjaxSpiderReloadWait": (
+        "How long the Ajax Spider waits after a page reload, in MILLISECONDS."
+    ),
+    "naabuTimeout": (
+        "How long naabu waits for a port to answer, in MILLISECONDS. At the default of 10000 "
+        "a full sweep of an unresponsive host is slow; below about 1000 a distant host starts "
+        "reading as closed."
+    ),
+    "dosMaxDuration": (
+        "The longest one denial-of-service attempt may run, in seconds. It is only reachable "
+        "at all when roeAllowDos permits the technique."
+    ),
     "agentLogMaxMb": "The size at which the agent's log file rolls, in megabytes.",
     "nucleiFollowRedirects": (
         "Follows a redirect while running a template rather than matching on the redirect "

@@ -5,7 +5,7 @@
 /// <reference types="vite/client" />
 import { describe, test, expect } from 'vitest'
 import { reconPresetSchema, extractJson, RECON_PARAMETER_CATALOG } from './recon-preset-schema'
-import { ALLOWED_SETTING_KEYS } from './reconSettingsAllowlist'
+import { permittedKeys } from './reconSettings/filter'
 
 // ============================================================
 // extractJson
@@ -527,16 +527,30 @@ describe('RECON_PARAMETER_CATALOG', () => {
     expect(missing).toEqual([])
   })
 
-  // The existing drift control above is keyed on `reconPresetSchema`, which is
-  // why six MCP-settable fields could sit undocumented without failing it.
-  // `describe_recon_settings` serves this catalog as the reference manual for
-  // `update_recon_settings`, so a field that is settable over MCP and has no
-  // catalog line is a field no unattended caller can use correctly.
-  test('every MCP-settable field is mentioned in the catalog', () => {
-    const missing = ALLOWED_SETTING_KEYS.filter(
+  // `describe_recon_settings` no longer reads this catalog: it serves
+  // `recon_settings/registry.yaml`, which carries a meaning for every one of
+  // the 712 columns rather than prose for 474 of them. This catalog now has one
+  // consumer, the AI preset generator, so the control that matters is the
+  // narrower one: every field the generator may EMIT must be documented for it.
+  test('every field the preset schema accepts is mentioned in the catalog', () => {
+    const missing = Object.keys(reconPresetSchema.shape).filter(
       key => !new RegExp(`^-\\s+${key}:`, 'm').test(RECON_PARAMETER_CATALOG),
     )
     expect(missing).toEqual([])
+  })
+
+  test('every catalog line names a field the schema accepts', () => {
+    // The reverse direction, so a renamed field leaves no orphan prose behind.
+    const named = [...RECON_PARAMETER_CATALOG.matchAll(/^-\s+([A-Za-z0-9_]+):/gm)].map(m => m[1])
+    const known = new Set(Object.keys(reconPresetSchema.shape))
+    expect(named.filter(k => !known.has(k))).toEqual([])
+  })
+
+  test('the MCP reference manual is the registry, not this catalog', () => {
+    // Guards the split: if describe_recon_settings starts reading this file
+    // again there are two answers to "what does this field mean".
+    const settable = permittedKeys('update')
+    expect(settable.length).toBeGreaterThan(600)
   })
 
   test('all parameter lines have a type annotation', () => {

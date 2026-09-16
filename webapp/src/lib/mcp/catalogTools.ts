@@ -1,7 +1,7 @@
 /**
  * The two tools that explain the recon pipeline rather than reading a project.
  *
- * `update_recon_settings` is a 126-field API whose only reference manual was
+ * `update_recon_settings` was a 126-field API whose only reference manual was
  * `get_recon_settings`, which returns key names and current values: no meaning,
  * no type, no bounds, no enum domains, no grouping. An agent learned a bound by
  * being refused, one field at a time, and because one bad key refuses the WHOLE
@@ -11,22 +11,22 @@
  * tenant data. They are derived from constants in this build, so they still
  * answer when Neo4j and Postgres are down.
  *
- * Neither is new data. `RECON_SETTINGS_ALLOWLIST` already carries `kind`, `min`
- * and `max` for all 126 settable fields, and `RECON_PARAMETER_CATALOG` already
- * documents them in prose written for a model (it feeds the AI preset
- * generator). This is the join, filtered to what a token may actually set.
+ * Both are now served from `recon_settings/registry.yaml`, which carries the
+ * unit, the phase, the traffic class, the engagement-cap flag, the bounds or
+ * the validator, and a meaning for every one of the 712 Project columns. The
+ * reference manual and the thing it describes are therefore the same file, so
+ * an agent that trusts `describe_recon_settings` cannot be surprised by
+ * `update_recon_settings`.
  */
-import { RECON_PARAMETER_CATALOG } from '@/lib/recon-preset-schema'
+import { DENY_REASON_DOC, permittedKeys, settableFieldCount } from '@/lib/reconSettings/filter'
 import {
-  ALLOWED_SETTING_KEYS,
-  RECON_SETTINGS_ALLOWLIST,
-  RECON_SETTINGS_DENYLIST,
-  DENY_REASON_DOC,
-  SCAN_MODULE_VALUES,
-  SEVERITY_VALUES,
-  settingValues,
-  type DenyReason,
-} from '@/lib/reconSettingsAllowlist'
+  field,
+  fieldsWhere,
+  loadRegistry,
+  settableFields,
+  type RegistryField,
+} from '@/lib/reconSettings/registry'
+import { SCAN_MODULE_VALUES, SEVERITY_VALUES } from '@/lib/reconSettings/validators'
 import { RECON_PRESETS, getPresetById, type ReconPreset } from '@/lib/recon-presets'
 import { requireScope } from '@/lib/mcpAuth'
 import { McpToolError } from '@/lib/mcp/errors'
@@ -36,12 +36,23 @@ import { enforceRate, type McpContext } from '@/lib/mcp/tools'
 
 export interface SettingDoc {
   key: string
+  /** The value shape, joined from Prisma at registry build time. */
   kind: string
   min?: number
   max?: number
-  /** The closed set of values a list field accepts, when it has one. */
+  /** The closed set of values a list or enum field accepts, when it has one. */
   values?: readonly string[]
-  meaning?: string
+  /** The named validator a free-form value is checked against. */
+  validator?: string
+  unit: string
+  phase: string
+  /** none | passive | active: whether writing this sends traffic at the target. */
+  traffic: string
+  /** True when the engagement rate ceiling rewrites this value at scan start. */
+  roeCapped?: boolean
+  /** 'unlimited' when 0 is the FASTEST value, not the slowest. */
+  zeroMeans?: string
+  meaning: string
 }
 
 export interface SettingGroup {
@@ -49,68 +60,53 @@ export interface SettingGroup {
   settings: SettingDoc[]
 }
 
-interface CatalogEntry {
-  section: string
-  meaning: string
+let cachedGroups: SettingGroup[] | null = null
+
+/** One tool's title, for the group heading. */
+function groupName(tool: string): string {
+  return loadRegistry().tools[tool]?.title ?? tool
+}
+
+function toDoc(key: string, spec: RegistryField): SettingDoc {
+  return {
+    key,
+    kind: spec.type,
+    ...(spec.bounds ? { min: spec.bounds.min, max: spec.bounds.max } : {}),
+    ...(spec.values ? { values: spec.values } : {}),
+    ...(spec.validator ? { validator: spec.validator } : {}),
+    unit: spec.unit,
+    phase: spec.phase,
+    traffic: spec.traffic,
+    ...(spec.roe_capped ? { roeCapped: true } : {}),
+    ...(spec.zero_means ? { zeroMeans: spec.zero_means } : {}),
+    meaning: spec.meaning,
+  }
 }
 
 /**
- * Parse `RECON_PARAMETER_CATALOG` into key -> {section, meaning}.
+ * Every settable field, grouped by the tool it configures.
  *
- * The catalog is `## Section` headings over `- key: type - meaning` lines, with
- * the meaning genuinely optional (`- gauMaxUrls: integer`). Parsed rather than
- * re-authored because a second copy of 474 descriptions is a second copy to
- * drift.
+ * Driven by the REGISTRY, which is also what `update_recon_settings` validates
+ * against, so the two cannot disagree. Grouping by tool rather than by an
+ * arbitrary documentation section means the group an agent reads is the thing
+ * it is configuring.
  */
-function parseCatalog(): Map<string, CatalogEntry> {
-  const out = new Map<string, CatalogEntry>()
-  let section = 'Other'
-  for (const raw of RECON_PARAMETER_CATALOG.split('\n')) {
-    const line = raw.trim()
-    if (line.startsWith('## ')) {
-      section = line.slice(3).trim()
-      continue
-    }
-    const m = /^-\s+([A-Za-z0-9_]+):\s*[^-]*?(?:\s+-\s+(.*))?$/.exec(line)
-    if (m) out.set(m[1], { section, meaning: (m[2] ?? '').trim() })
-  }
-  return out
-}
-
-let cachedGroups: SettingGroup[] | null = null
-
-/** Every settable field, joined to its documentation, grouped by catalog section. */
 export function settingGroups(): SettingGroup[] {
   if (cachedGroups) return cachedGroups
-  const catalog = parseCatalog()
-  const bySection = new Map<string, SettingDoc[]>()
-
-  // Driven by the ALLOWLIST, never by the catalog. The catalog is a superset
-  // covering 474 parameters, most of which this surface denies; returning those
-  // would advertise settings the caller cannot set and hand it a map of the
-  // denied surface at the same time.
-  for (const key of ALLOWED_SETTING_KEYS) {
-    const spec = RECON_SETTINGS_ALLOWLIST[key]
-    const doc = catalog.get(key)
-    const values = settingValues(key, spec)
-    const entry: SettingDoc = {
-      key,
-      kind: spec.kind,
-      ...(spec.kind === 'number' ? { min: spec.min, max: spec.max } : {}),
-      ...(values ? { values } : {}),
-      ...(doc?.meaning ? { meaning: doc.meaning } : {}),
-    }
-    const section = doc?.section ?? 'Other'
-    const list = bySection.get(section)
-    if (list) list.push(entry)
-    else bySection.set(section, [entry])
+  const byTool = new Map<string, SettingDoc[]>()
+  for (const f of settableFields()) {
+    const list = byTool.get(f.tool)
+    const doc = toDoc(f.key, f)
+    if (list) list.push(doc)
+    else byTool.set(f.tool, [doc])
   }
-
-  cachedGroups = [...bySection.entries()].map(([group, settings]) => ({ group, settings }))
+  cachedGroups = [...byTool.entries()]
+    .map(([tool, settings]) => ({ group: groupName(tool), settings }))
+    .sort((a, b) => a.group.localeCompare(b.group))
   return cachedGroups
 }
 
-/** Test seam: the parse is cached because the catalog is constant per build. */
+/** Test seam: the grouping is cached because the registry is constant per build. */
 export function __resetCatalogCache(): void {
   cachedGroups = null
 }
@@ -134,8 +130,19 @@ const NOTES = [
   'A phase that is not in scanModules does not run whatever its tools are set to.',
   'Sections listed as standalone scanners are not pipeline phases and are not gated by ' +
     'scanModules at all; they are separate jobs.',
-  'These are the fields THIS surface may write. The product has many more settings; anything ' +
-    'absent here is refused by name, never silently ignored.',
+  'These are the fields THIS surface may write. A key absent from them is refused BY NAME, ' +
+    'never silently ignored, and one bad key refuses the whole call - so read the bounds ' +
+    'rather than probing for them.',
+  'Two more field sets exist and are not listed here. The engagement scope is fixed at ' +
+    'creation and is set through create_project; the Rules of Engagement may only be ' +
+    'tightened, through tighten_engagement_roe. Writing either through update_recon_settings ' +
+    'is refused with a pointer to the right tool.',
+  'A value is VALIDATED and then CAPPED, not blocked. A rate above the engagement ceiling is ' +
+    'rewritten to the ceiling at scan start, and a container image outside the shipped ' +
+    'allowlist is pinned back to the default. get_recon_settings echoes what you wrote; ' +
+    'preflight_scope_check reports what will actually run.',
+  'Where zeroMeans is "unlimited", 0 is the FASTEST value the field accepts and not the ' +
+    'safest. Under an engagement ceiling a 0 there is rewritten to the ceiling.',
   'Settings apply to the NEXT scan. A scan already running read its settings when it started.',
 ]
 
@@ -168,7 +175,13 @@ export async function describeReconSettings(ctx: McpContext, args: { group?: str
     phases: SCAN_MODULE_VALUES.map(module => ({ module, what: PHASE_NOTES[module] ?? '' })),
     enums: { scanModules: SCAN_MODULE_VALUES, severity: SEVERITY_VALUES },
     groups,
-    settableFieldCount: ALLOWED_SETTING_KEYS.length,
+    settableFieldCount: settableFieldCount(),
+    dispositions: {
+      settable: 'write any time through update_recon_settings',
+      create_only: 'the engagement scope: set once by create_project, immutable after',
+      tighten_only: 'the Rules of Engagement: tighten_engagement_roe, safe direction only',
+      never: 'not a pipeline parameter; refused with its class',
+    },
     notes: NOTES,
   }
 }
@@ -190,12 +203,19 @@ export interface PresetApplicability {
 }
 
 /**
- * Fields whose denial changes the engagement RISK of a preset rather than just
- * its thoroughness: the intrusiveness switches and the volume/rate caps.
- * `unbounded` covers the rate limits and max-* caps, `intrusive` the aggression
- * toggles.
+ * How much of a preset this surface could actually apply.
+ *
+ * Far more than it used to. A preset sets fields across the whole project form,
+ * and while 126 of 712 columns were settable, between a third and 60% of every
+ * preset was refused; for the stealth presets the refused part WAS the stealth,
+ * because the rate limits and the passive-mode switches were all in the denied
+ * classes.
+ *
+ * What is still refused is the engagement scope and the Rules of Engagement,
+ * and those are refused because a preset has no business setting them, not
+ * because they are dangerous to tune.
  */
-const STEALTH_REASONS: ReadonlySet<DenyReason> = new Set<DenyReason>(['intrusive', 'unbounded'])
+const SETTABLE = new Set(permittedKeys('update'))
 
 export function presetApplicability(preset: ReconPreset): PresetApplicability {
   const keys = Object.keys(preset.parameters ?? {})
@@ -204,13 +224,21 @@ export function presetApplicability(preset: ReconPreset): PresetApplicability {
   const stealthCriticalFields: string[] = []
 
   for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(RECON_SETTINGS_ALLOWLIST, key)) {
+    if (SETTABLE.has(key)) {
       applied += 1
       continue
     }
-    const reason = (RECON_SETTINGS_DENYLIST[key] as DenyReason | undefined) ?? 'not-tuning'
+    const spec = field(key)
+    const reason = spec ? spec.mcp : 'not-a-column'
     deniedByReason[reason] = (deniedByReason[reason] ?? 0) + 1
-    if (STEALTH_REASONS.has(reason)) stealthCriticalFields.push(key)
+    // A refusal only changes the ENGAGEMENT RISK when the refused field is one
+    // that would have made the scan quieter. With the scope and the RoE the
+    // only refusals left, a half-applied preset can no longer be louder than
+    // the preset asked for; it can only be pointed somewhere else, which
+    // create_project owns.
+    if (spec?.traffic === 'active' && spec.mcp !== 'settable') {
+      stealthCriticalFields.push(key)
+    }
   }
 
   return {
@@ -268,15 +296,18 @@ export async function listReconPresets(ctx: McpContext, args: { presetId?: strin
     presets: RECON_PRESETS.map(presetRow),
     deniedReasons: DENY_REASON_DOC,
     notes: [
-      'These cannot be applied from here, by design. A preset sets fields across the whole ' +
-        'project form, and this surface may only write recon tuning, so applying one would ' +
-        'produce a configuration that is neither the preset nor the prior state.',
-      'Where stealthCritical is true the denied fields are the ones that make the scan quieter ' +
-        '(rate limits, passive mode, brute-force and aggression toggles). Half-applying such a ' +
-        'preset would be LOUDER than asking for it. Recommend it to the operator to apply in ' +
-        'the UI instead.',
-      'update_recon_settings can still set the applicable tuning fields individually; use ' +
-        'describe_recon_settings for what those are.',
+      'These are read-only here: this tool describes presets, it does not apply them. Write ' +
+        'the fields you want with update_recon_settings, which validates each one.',
+      'appliedCount is how much of a preset this surface could write. It is most of every ' +
+        'preset now that the tuning surface is the whole pipeline; what stays refused is the ' +
+        'engagement scope (create_project) and the Rules of Engagement ' +
+        '(tighten_engagement_roe), which a preset has no business setting.',
+      'stealthCritical means the refused part of a preset includes something that sends ' +
+        'traffic, so writing the rest would not reproduce the preset\'s posture. It is false ' +
+        'for every shipped preset today; treat a true as a reason to hand the preset to an ' +
+        'operator rather than half-applying it.',
+      'A preset is a starting point, not a scope decision. Read describe_recon_settings for ' +
+        'what each field it names actually does before writing it.',
     ],
   }
 }

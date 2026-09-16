@@ -1,22 +1,27 @@
 """
-Build the first `recon_settings/registry.yaml` from the sources that already
-describe the recon pipeline.
+Top up `recon_settings/registry.yaml` from the sources that describe the recon
+pipeline.
 
-This runs ONCE to seed the registry, and then again whenever a re-seed is
-cheaper than a hand edit. It is not part of the gate: `recon_settings/build.py`
-is. Everything it emits is a starting point a human then reads, because no
-extraction can tell whether a `meaning` is TRUE or whether a bound is right.
+It SEEDED the registry once, and it stays runnable so that adding a Prisma column
+does not mean hand-writing a whole entry. It is idempotent: anything the existing
+registry already carries is preserved, and only what is missing is filled in. Run
+it after adding a column, then edit the YAML.
+
+It is not part of the gate. `recon_settings/build.py` is, and it is what fails
+when the artifacts are stale.
 
 Sources, and what each one is authoritative for:
 
+  recon_settings/registry.yaml         everything already curated (wins)
   webapp/prisma/schema.prisma          existence, type, @default(), /// docs
   recon/project_settings.py            runtime_key, fallback/coerce shape
-  reconSettingsAllowlist.generated.ts  today's bounds and deny classification
   ProjectForm/sections/*.tsx           min/max and the operator-facing hint
   recon-preset-schema.ts catalog       474 prose descriptions
+  recon_registry_meanings.py           the authored descriptions
 
-Nothing here invents a default or a type: those stay in Prisma and are joined
-at build time.
+Nothing here invents a default or a type: those stay in Prisma and are joined at
+build time. And nothing it emits is finished, because no extraction can tell
+whether a `meaning` is TRUE or whether a bound is right.
 """
 from __future__ import annotations
 
@@ -34,7 +39,6 @@ from recon_registry_meanings import meaning_for as authored_meaning  # noqa: E40
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SECTIONS_DIR = REPO_ROOT / "webapp" / "src" / "components" / "projects" / "ProjectForm" / "sections"
-ALLOWLIST_TS = REPO_ROOT / "webapp" / "src" / "lib" / "reconSettingsAllowlist.generated.ts"
 PRESET_SCHEMA_TS = REPO_ROOT / "webapp" / "src" / "lib" / "recon-preset-schema.ts"
 RECON_SETTINGS_PY = REPO_ROOT / "recon" / "project_settings.py"
 OUT_YAML = REPO_ROOT / "recon_settings" / "registry.yaml"
@@ -93,6 +97,8 @@ TOOL_PREFIXES: list[tuple[str, str]] = [
     ("targetIps", "targeting"),
     ("ipMode", "targeting"),
     ("activation", "project"),
+    ("engagementKind", "engagement"),
+    ("engagementIdentityHeader", "engagement"),
     # single-word prefixes
     ("amass", "amass"),
     ("arjun", "arjun"),
@@ -160,6 +166,9 @@ TOOL_PHASE_TRAFFIC: dict[str, tuple[str, str]] = {
     "cve_lookup": ("vuln_scan", "passive"),
     "cypherfix": ("standalone", "none"),
     "dns": ("domain_discovery", "active"),
+    # The engagement agreement itself: no traffic of its own, but it decides
+    # whether any of the rest may run at all.
+    "engagement": ("standalone", "none"),
     "domain_recon_ai": ("domain_discovery", "none"),
     "domain_discovery": ("domain_discovery", "active"),
     "dos": ("standalone", "active"),
@@ -226,6 +235,7 @@ TOOL_PHASE_TRAFFIC: dict[str, tuple[str, str]] = {
 }
 
 TOOL_TITLES: dict[str, str] = {
+    "engagement": "Engagement",
     "ai_surface_recon": "AI attack-surface recon",
     "banner_grab": "Banner grab",
     "capture_proxy": "Capture proxy",
@@ -269,6 +279,31 @@ NEVER: dict[str, tuple[str, str]] = {
     "cypherfixGithubToken": ("secret", "a stored credential"),
 }
 
+# Columns no MCP read tool may return, and why.
+#
+# The read boundary is NOT the write boundary, and conflating them is how an
+# external agent ends up holding a client's phone number. `targetDomain` is
+# write-once and freely readable, because reading it is how a caller confirms
+# which engagement it is looking at. The RoE block is the other direction: an
+# agent may know its rate ceiling and its exclusions, and has no business with
+# the client's emergency contact or the scanned copy of the signed document.
+READ_DENIED: dict[str, str] = {
+    "userId": "other_user",
+    "cypherfixGithubToken": "credential",
+    "graphqlAuthValue": "credential",
+    "ownershipToken": "credential",
+    "phishingSmtpConfig": "credential",
+    "roeClientContactName": "third_party_pii",
+    "roeClientContactEmail": "third_party_pii",
+    "roeClientContactPhone": "third_party_pii",
+    "roeEmergencyContact": "third_party_pii",
+    "roeClientName": "third_party_pii",
+    "roeDocumentData": "document_blob",
+    "roeDocumentName": "document_blob",
+    "roeRawText": "document_blob",
+    "roeParsedJson": "document_blob",
+}
+
 UPLOAD_MANAGED: dict[str, str] = {
     "jsReconUploadedFiles": "/api/js-recon/[projectId]/upload",
     "jsReconCustomPatterns": "/api/js-recon/[projectId]/custom-files",
@@ -287,6 +322,7 @@ CREATE_ONLY = {
     "domainBatchMode", "domainBatchHosts", "domainBatchGroups",
     "verifyDomainOwnership", "ownershipToken", "ownershipTxtPrefix",
     "targetGuardrailEnabled",
+    "engagementKind",
     "githubTargetOrg", "githubTargetRepos", "gvmScanTargets",
     "supplyChainOrgName", "supplyChainRepoRef", "supplyChainRepoScope",
     "supplyChainRepoUrl", "scaIntelCorrelationEnabled",
@@ -300,14 +336,21 @@ TIGHTEN_DIRECTION: dict[str, str] = {
 
 # Columns holding a filesystem path a scan container opens. The deny class was
 # the only control on these; `project_file` replaces it.
+# An absolute path a scan container opens. Validated against a root allowlist.
 PROJECT_FILE_FIELDS = {
     "ffufWordlist",
     "vhostSniCustomWordlist",
     "nucleiCustomTemplates",
+}
+
+# A BASENAME the scan joins onto a mounted directory (`-t /custom-templates/<x>`).
+# A different validator, because the dangerous input here is a separator rather
+# than a wrong root: "../../etc/passwd" joined onto /custom-templates escapes it.
+PROJECT_FILE_NAME_FIELDS = {
     "nucleiSelectedCustomTemplates",
 }
 
-HEADER_FIELDS_RE = re.compile(r"(CustomHeaders|^kiterunnerHeaders$|Headers$)")
+HEADER_FIELDS_RE = re.compile(r"(CustomHeaders|^kiterunnerHeaders$|Headers$|^engagementIdentityHeader$)")
 
 # A field whose traffic differs from its tool's. gau itself only reads public
 # archives, but its verify and method-detect passes dial the target, which is
@@ -334,6 +377,15 @@ ROE_CAPPED_EXTRA = {"hakrawlerThreads"}
 # like a percentage.
 UNIT_OVERRIDE: dict[str, str] = {
     "webCachePoisonMinConfidence": "ratio",
+    # A `*Timeout` is seconds by the naming rule, and these five are not. Each
+    # was found by the unit-coherence check against the prose that already
+    # existed: "Amass timeout in MINUTES", "Event wait time in milliseconds".
+    # A wrong unit here is worse than a missing one, because an agent that
+    # reads "seconds" and writes 600 for ten minutes gets ten HOURS of amass.
+    "amassTimeout": "minutes",
+    "zapAjaxSpiderMaxDuration": "minutes",
+    "zapAjaxSpiderEventWait": "milliseconds",
+    "zapAjaxSpiderReloadWait": "milliseconds",
 }
 
 # Where the extracted bound is wrong rather than merely wide: a UI max that was
@@ -530,20 +582,22 @@ def parse_governor_tables() -> dict[str, dict]:
     return out
 
 
-def parse_allowlist() -> tuple[dict[str, dict], dict[str, str]]:
-    text = ALLOWLIST_TS.read_text(encoding="utf-8")
-    allow: dict[str, dict] = {}
-    allow_block = text[text.index("RECON_SETTINGS_ALLOWLIST"): text.index("RECON_SETTINGS_DENYLIST")]
-    for m in re.finditer(r"^\s+([A-Za-z0-9_]+): \{ kind: '([a-z-]+)'(?:, min: (-?\d+), max: (-?\d+))? \},", allow_block, re.M):
-        key, kind, mn, mx = m.groups()
-        entry: dict = {"kind": kind}
-        if mn is not None:
-            entry["min"] = int(mn)
-            entry["max"] = int(mx)
-        allow[key] = entry
-    deny_block = text[text.index("RECON_SETTINGS_DENYLIST"):]
-    deny = {m.group(1): m.group(2) for m in re.finditer(r"^\s+([A-Za-z0-9_]+): '([a-z-]+)',", deny_block, re.M)}
-    return allow, deny
+def previous_registry() -> dict[str, dict]:
+    """
+    column -> its existing registry entry.
+
+    Everything curated by hand lives here - the bounds somebody narrowed, the
+    unit somebody corrected, the meaning somebody rewrote - so it WINS over
+    anything this script would otherwise derive. Without that, running the
+    top-up after a hand edit would quietly revert it, which is the behaviour
+    that makes a generator something people stop running.
+    """
+    if not OUT_YAML.exists():
+        return {}
+    import yaml  # noqa: PLC0415
+
+    current = yaml.safe_load(OUT_YAML.read_text(encoding="utf-8")) or {}
+    return current.get("fields") or {}
 
 
 def parse_catalog() -> dict[str, str]:
@@ -635,7 +689,7 @@ def yaml_block(text: str, indent: str) -> str:
 
 def build() -> str:
     columns = project_columns()
-    allow, deny = parse_allowlist()
+    previous = previous_registry()
     catalog = parse_catalog()
     form_bounds, form_hints = parse_form_sections()
     rkeys = runtime_keys()
@@ -647,7 +701,8 @@ def build() -> str:
         tool = tool_for(name)
         phase, traffic = TOOL_PHASE_TRAFFIC.get(tool, ("standalone", "none"))
         traffic = TRAFFIC_OVERRIDE.get(name, traffic)
-        unit = UNIT_OVERRIDE.get(name) or unit_for(name, col)
+        prior_entry = previous.get(name, {})
+        unit = prior_entry.get("unit") or UNIT_OVERRIDE.get(name) or unit_for(name, col)
 
         entry: dict = {
             "tool": tool,
@@ -691,7 +746,7 @@ def build() -> str:
 
         # bounds / values / validator
         if col.kind in ("int", "float"):
-            src = allow.get(name, {})
+            src = previous.get(name, {}).get("bounds") or {}
             b = {}
             if "min" in src:
                 b = {"min": src["min"], "max": src["max"]}
@@ -715,10 +770,15 @@ def build() -> str:
             pass
         elif name in PROJECT_FILE_FIELDS:
             entry["validator"] = "project_file"
+        elif name in PROJECT_FILE_NAME_FIELDS:
+            entry["validator"] = "project_file_name"
         elif name.endswith("DockerImage"):
             entry["validator"] = "docker_image"
         elif HEADER_FIELDS_RE.search(name):
             entry["validator"] = "http_header"
+        elif name == "engagementKind":
+            entry["values"] = ["internal", "third_party"]
+            entry["validator"] = "identifier"
         elif name == "scanModules":
             entry["values"] = list(SCAN_MODULE_VALUES)
             entry["validator"] = "scan_modules"
@@ -737,7 +797,7 @@ def build() -> str:
         # sentence ("Seconds", "Enable OTX"). Nothing about a field that would
         # surprise a reader may come from a template.
         title = TOOL_TITLES.get(tool, tool.replace("_", " "))
-        meaning = authored_meaning(name, title, unit)
+        meaning = prior_entry.get("meaning") or authored_meaning(name, title, unit)
         if not meaning:
             meaning = catalog.get(name) or form_hints.get(name) or col.doc
         if not meaning or len(meaning.strip()) < 20:
@@ -746,14 +806,25 @@ def build() -> str:
         if not meaning:
             meaning = f"TODO: describe {name}."
         entry["meaning"] = meaning
+        if name in READ_DENIED:
+            entry["readable"] = False
+            entry["read_deny_reason"] = READ_DENIED[name]
         gov = governor.get(entry["runtime_key"] or "")
         if gov:
             entry["governor"] = gov
-        if name in deny:
-            entry["group"] = deny[name]
+        prior = previous.get(name, {})
+        if prior.get("group"):
+            entry["group"] = prior["group"]
         fields[name] = entry
 
-    used_tools = sorted({f["tool"] for f in fields.values()})
+    # A tool named ONLY by a runtime-only key still has to exist: AUTH_PROFILE is
+    # a project RELATION rather than a column, so no field claims its tool, and
+    # leaving it out would make the registry describe a key whose tool it does
+    # not have.
+    used_tools = sorted(
+        {f["tool"] for f in fields.values()}
+        | {r["tool"] for r in RUNTIME_ONLY.values() if r.get("tool")}
+    )
     tools: dict[str, dict] = {}
     for tool in used_tools:
         phase, traffic = TOOL_PHASE_TRAFFIC.get(tool, ("standalone", "none"))
@@ -786,7 +857,16 @@ def build() -> str:
         f = fields[name]
         out.append(f"  {name}:")
         for key in ("tool", "runtime_key", "unit", "phase", "traffic", "roe_capped", "mcp"):
-            out.append(f"    {key}: {yaml_scalar(f[key]) if f[key] is not None else 'null'}")
+            value = f[key]
+            if value is None:
+                rendered = "null"
+            elif isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_]*", value):
+                # A constrained enum value needs no quoting, and quoting it only
+                # makes the diff of a re-run noisy.
+                rendered = value
+            else:
+                rendered = yaml_scalar(value)
+            out.append(f"    {key}: {rendered}")
         if "bounds" in f:
             out.append(f"    bounds: {{ min: {f['bounds']['min']}, max: {f['bounds']['max']} }}")
         if "values" in f:
@@ -798,9 +878,15 @@ def build() -> str:
                 parts.append(f"family: {g['family']}")
             parts.append(f"floor: {g['floor']}")
             out.append(f"    governor: {{ {', '.join(parts)} }}")
-        for key in ("validator", "zero_means", "fallback", "coerce", "tighten", "deny_reason", "written_by", "group"):
+        if "readable" in f:
+            out.append(f"    readable: {yaml_scalar(f['readable'])}")
+        for key in ("validator", "zero_means", "fallback", "coerce", "tighten", "deny_reason", "read_deny_reason", "group"):
             if key in f:
-                out.append(f"    {key}: {yaml_scalar(f[key])}")
+                value = f[key]
+                bare = isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_-]*", value)
+                out.append(f"    {key}: {value if bare else yaml_scalar(value)}")
+        if "written_by" in f:
+            out.append(f"    written_by: {yaml_scalar(f['written_by'])}")
         out.append(f"    meaning: {yaml_block(f['meaning'], '    ')}")
     out.append("")
     out.append("# Runtime keys with no Prisma column. Not MCP-reachable, but the derived")

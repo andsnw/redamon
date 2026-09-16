@@ -349,11 +349,57 @@ describe('update_recon_settings refuses what would redirect the platform', () =>
     expect(h.updateProject).not.toHaveBeenCalled()
   })
 
+  // Still refused, and each for a DIFFERENT reason, which is the point of the
+  // four dispositions replacing one allowlist.
   test.each([
-    'roeEnabled', 'stealthMode', 'nucleiDockerImage', 'nucleiCustomTemplates',
-    'httpxCustomHeaders', 'cypherfixGithubToken', 'agentModel', 'activationState',
-  ])('%s is refused', async field => {
-    await expect(updateReconSettings(ctx(), 'p1', { [field]: 'x' })).rejects.toThrow()
+    ['roeEnabled', /Rules of Engagement/, 'the engagement agreement: tighten_engagement_roe owns it'],
+    ['targetDomain', /create_project/, 'scope: fixed at creation'],
+    ['cypherfixGithubToken', /credential/, 'a stored credential'],
+    ['activationState', /not a pipeline parameter/, 'an application-written lock flag'],
+    ['jsReconUploadedFiles', /upload/, 'written by the endpoint that places the file on disk'],
+    ['agentModel', /not a recon setting/, 'not a column at all'],
+  ])('%s is refused (%s)', async (field, pattern) => {
+    await expect(updateReconSettings(ctx(), 'p1', { [field]: 'x' })).rejects.toThrow(pattern)
+    expect(h.updateProject).not.toHaveBeenCalled()
+  })
+
+  test('a wrong-typed value is refused whatever the disposition', async () => {
+    // nucleiCustomTemplates and httpxCustomHeaders are String[] columns, so a
+    // bare string is refused on type before any policy question arises.
+    for (const field of ['nucleiCustomTemplates', 'httpxCustomHeaders']) {
+      await expect(updateReconSettings(ctx(), 'p1', { [field]: 'x' }))
+        .rejects.toThrow(/must be an array/)
+    }
+  })
+
+  test('a docker image is now ACCEPTED, because the runtime is the control', async () => {
+    // The headline change. Blocking the field by name was a crude proxy for
+    // "this value could be dangerous"; sanitize_image_settings() already pins a
+    // non-allowlisted image back to the shipped default at scan start, with a
+    // [guardrail] line recording it. The field is open; the VALUE is controlled.
+    //
+    // Second-order effect, stated rather than hidden: get_recon_settings will
+    // echo back what was written, not what the scan will run.
+    const r = await updateReconSettings(ctx(), 'p1', { nucleiDockerImage: 'attacker/evil:latest' })
+    expect(r.projectId).toBe('p1')
+    expect(h.updateProject).toHaveBeenCalled()
+  })
+
+  test('a path outside the project directory is still refused at the write', async () => {
+    // The scan side drops it to the default anyway, but refusing here names the
+    // problem while the caller is still there to fix it.
+    await expect(updateReconSettings(ctx(), 'p1', { ffufWordlist: '/etc/shadow' }))
+      .rejects.toThrow(/absolute path inside/)
+  })
+
+  test('a header that would re-point or authenticate the request is refused', async () => {
+    for (const bad of ['Host: victim.com', 'Authorization: Bearer x', 'X-A: b\r\nX-C: d']) {
+      await expect(updateReconSettings(ctx(), 'p1', { httpxCustomHeaders: [bad] }))
+        .rejects.toThrow()
+    }
+    // An ordinary annotating header is fine.
+    await expect(updateReconSettings(ctx(), 'p1', { httpxCustomHeaders: ['X-Scan-Id: abc'] }))
+      .resolves.toBeTruthy()
   })
 
   test('an out-of-range value is refused, not clamped', async () => {

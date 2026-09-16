@@ -401,8 +401,14 @@ describe('T4 fields and tools agree', () => {
     expect(problems).toEqual([])
   })
 
-  test('every tool has at least one field', () => {
+  test('every tool has at least one field or one runtime-only key', () => {
+    // A tool with nothing attached is a row nobody reaches. `auth_profile` is
+    // the one that is legitimately field-less: the authenticated session is a
+    // project RELATION rather than a column, because GET /api/projects/[id]
+    // spreads every Project scalar to the browser and a credential stored as a
+    // column would leak.
     const used = new Set(keys.map(k => fields[k].tool))
+    for (const r of Object.values(registry.runtime_only)) if (r.tool) used.add(r.tool)
     expect(toolIds().filter(t => !used.has(t))).toEqual([])
   })
 
