@@ -71,7 +71,8 @@
         "tighten": { "$ref": "#/definitions/tighten" },
         "deny_reason": { "$ref": "#/definitions/deny_reason" },
         "written_by": { "type": "string" },
-        "group": { "type": "string" }
+        "group": { "type": "string" },
+        "governor": { "$ref": "#/definitions/governor" }
       }
     },
     "runtime_key": {
@@ -79,13 +80,24 @@
       "required": ["source", "unit", "roe_capped", "meaning"],
       "additionalProperties": false,
       "properties": {
-        "source": { "enum": ["internal", "env", "user_account"] },
+        "source": { "enum": ["internal", "env", "user_account", "project_relation"] },
         "tool": { "type": "string" },
         "unit": { "$ref": "#/definitions/unit" },
         "roe_capped": { "type": "boolean" },
         "zero_means": { "enum": ["unlimited", "disabled", "auto", "literal"] },
         "secret": { "type": "boolean" },
+        "governor": { "$ref": "#/definitions/governor" },
         "meaning": { "type": "string", "minLength": 1 }
+      }
+    },
+    "governor": {
+      "type": "object",
+      "required": ["model", "floor"],
+      "additionalProperties": false,
+      "properties": {
+        "model": { "enum": ["ratio", "budget"] },
+        "family": { "enum": ["url", "js_file", "osint_result", "vhost_candidate", "byte"] },
+        "floor": { "type": "number", "minimum": 0 }
       }
     },
     "phase": {

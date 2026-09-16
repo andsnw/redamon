@@ -468,6 +468,13 @@ services:
       # with "cannot import name 'Neo4jClient' from 'graph_db' (unknown location)".
       # With this mount the path is read from Docker's own mount table instead.
       - ./graph_db:/app/graph_db:ro
+      # The recon settings registry, mounted for the same two reasons as
+      # graph_db: the orchestrator binds it into every spawned scan container, and
+      # it can only do that if it can read its own HOST path out of Docker's
+      # mount table rather than deriving it by string surgery. A scan refuses to
+      # start without a readable registry, so a wrong path here is a failed scan
+      # and not a silently different one.
+      - ./recon_settings:/app/recon_settings:ro
       - ./scanners/gvm_scan:/app/gvm_scan:ro
       - ./scanners/gvm_scan/output:/app/gvm_scan/output:rw
       - ./scanners/github_secret_hunt:/app/github_secret_hunt:ro

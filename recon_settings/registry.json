@@ -932,6 +932,10 @@
     "max": 500
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -1183,6 +1187,11 @@
     "max": 50000
    },
    "default": 50000,
+   "governor": {
+    "model": "budget",
+    "family": "osint_result",
+    "floor": 100
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "Maximum subdomains taken from an amass run.",
@@ -1288,6 +1297,11 @@
     "max": 50000
    },
    "default": 50000,
+   "governor": {
+    "model": "budget",
+    "family": "url",
+    "floor": 100
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "The most results arjun accumulates in one pass. The memory governor budgets it against available RAM, so the effective value can be below what is written here.",
@@ -1400,6 +1414,10 @@
     "max": 20
    },
    "default": 2,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many arjun operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -1582,6 +1600,10 @@
     "max": 500
    },
    "default": 20,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -1653,6 +1675,10 @@
     "max": 20
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many censys operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -1723,6 +1749,10 @@
     "max": 20
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many CriminalIP operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -1757,6 +1787,11 @@
     "max": 50000
    },
    "default": 5000,
+   "governor": {
+    "model": "budget",
+    "family": "osint_result",
+    "floor": 100
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "Maximum certificate-transparency records read from crt.sh in one pass.",
@@ -2002,6 +2037,10 @@
     "max": 200
    },
    "default": 80,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many dns operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -2374,6 +2413,10 @@
     "max": 50
    },
    "default": 20,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2466,6 +2509,10 @@
     "max": 200
    },
    "default": 40,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many ffuf operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -2696,6 +2743,11 @@
    "coerce": "int",
    "default": 1000,
    "fallback": "falsy",
+   "governor": {
+    "model": "budget",
+    "family": "osint_result",
+    "floor": 100
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "The most results fofa accumulates in one pass. The memory governor budgets it against available RAM, so the effective value can be below what is written here.",
@@ -2715,6 +2767,10 @@
     "max": 20
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many fofa operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -2815,6 +2871,11 @@
     "max": 10000000
    },
    "default": 50000,
+   "governor": {
+    "model": "budget",
+    "family": "url",
+    "floor": 1000
+   },
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -2855,6 +2916,10 @@
     "max": 500
    },
    "default": 25,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -2917,6 +2982,10 @@
     "max": 20
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many gau operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -3035,6 +3104,10 @@
     "max": 100
    },
    "default": 50,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many gau operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -3090,6 +3163,10 @@
     "max": 20
    },
    "default": 10,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many gau operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -3294,6 +3371,10 @@
     "max": 20
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many graphql operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -3871,6 +3952,11 @@
     "max": 50000
    },
    "default": 5000,
+   "governor": {
+    "model": "budget",
+    "family": "osint_result",
+    "floor": 100
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "Maximum subdomains taken from the HackerTarget API in one pass.",
@@ -3990,6 +4076,11 @@
     "max": 10000000
    },
    "default": 50000,
+   "governor": {
+    "model": "budget",
+    "family": "url",
+    "floor": 1000
+   },
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -4010,6 +4101,10 @@
     "max": 10
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4030,6 +4125,10 @@
     "max": 20
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many hakrawler operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -4626,6 +4725,10 @@
     "max": 200
    },
    "default": 50,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many httpx operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -4861,6 +4964,10 @@
     "max": 30
    },
    "default": 10,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many JS recon operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -5067,6 +5174,10 @@
     "max": 20
    },
    "default": 10,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many JS recon operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -5183,6 +5294,11 @@
     "max": 10000
    },
    "default": 10000,
+   "governor": {
+    "model": "budget",
+    "family": "js_file",
+    "floor": 50
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5379,6 +5495,10 @@
     "max": 20
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many jsluice operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -5463,6 +5583,11 @@
     "max": 10000
    },
    "default": 10000,
+   "governor": {
+    "model": "budget",
+    "family": "js_file",
+    "floor": 50
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5483,6 +5608,10 @@
     "max": 10
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5586,6 +5715,10 @@
     "max": 500
    },
    "default": 50,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many jsluice operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -5640,6 +5773,10 @@
     "max": 50
    },
    "default": 15,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many katana operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -5760,6 +5897,11 @@
     "max": 10000000
    },
    "default": 300000,
+   "governor": {
+    "model": "budget",
+    "family": "url",
+    "floor": 1000
+   },
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -5780,6 +5922,10 @@
     "max": 50
    },
    "default": 8,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5895,6 +6041,10 @@
     "max": 500
    },
    "default": 100,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6026,6 +6176,10 @@
     "max": 500
    },
    "default": 25,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -6104,6 +6258,10 @@
     "max": 5
    },
    "default": 3,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6164,6 +6322,10 @@
     "max": 500
    },
    "default": 50,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -6238,6 +6400,11 @@
     "max": 50000
    },
    "default": 5000,
+   "governor": {
+    "model": "budget",
+    "family": "osint_result",
+    "floor": 100
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "Maximum subdomains taken from a knockpy run.",
@@ -6715,6 +6882,10 @@
     "max": 100
    },
    "default": 25,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many naabu operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -6819,6 +6990,10 @@
     "max": 20
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many netlas operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -6889,6 +7064,10 @@
     "max": 10
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7026,6 +7205,10 @@
     "max": 500
    },
    "default": 25,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7046,6 +7229,10 @@
     "max": 500
    },
    "default": 25,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -7660,6 +7847,10 @@
     "max": 20
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many otx operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -7765,6 +7956,10 @@
     "max": 10
    },
    "default": 8,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many paramspider operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -9166,6 +9361,10 @@
     "max": 50
    },
    "default": 10,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many security checks run concurrently.",
@@ -9624,6 +9823,10 @@
     "max": 20
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many shodan operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -9981,6 +10184,11 @@
     "max": 50000
    },
    "default": 5000,
+   "governor": {
+    "model": "budget",
+    "family": "osint_result",
+    "floor": 100
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "Maximum subdomains taken from a subfinder run.",
@@ -10115,6 +10323,10 @@
     "max": 100
    },
    "default": 10,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many subjack operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -11250,6 +11462,11 @@
    "coerce": "int",
    "default": 50000,
    "fallback": "falsy",
+   "governor": {
+    "model": "budget",
+    "family": "osint_result",
+    "floor": 100
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "The most results uncover accumulates in one pass. The memory governor budgets it against available RAM, so the effective value can be below what is written here.",
@@ -11336,6 +11553,11 @@
     "max": 50000
    },
    "default": 50000,
+   "governor": {
+    "model": "budget",
+    "family": "osint_result",
+    "floor": 100
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "The most results urlscan accumulates in one pass. The memory governor budgets it against available RAM, so the effective value can be below what is written here.",
@@ -11424,6 +11646,10 @@
     "max": 100
    },
    "default": 20,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many Vhost / SNI enumeration operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -11491,6 +11717,11 @@
     "max": 50000
    },
    "default": 2000,
+   "governor": {
+    "model": "budget",
+    "family": "vhost_candidate",
+    "floor": 50
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11609,6 +11840,10 @@
     "max": 10
    },
    "default": 3,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many virustotal operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -11866,6 +12101,10 @@
     "max": 50
    },
    "default": 10,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -11886,6 +12125,10 @@
     "max": 16
    },
    "default": 6,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12331,6 +12574,11 @@
     "max": 10000000
    },
    "default": 1000,
+   "governor": {
+    "model": "budget",
+    "family": "url",
+    "floor": 100
+   },
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -12351,6 +12599,10 @@
     "max": 10
    },
    "default": 1,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12371,6 +12623,10 @@
     "max": 10
    },
    "default": 3,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12476,6 +12732,11 @@
     "max": 10000
    },
    "default": 1000,
+   "governor": {
+    "model": "budget",
+    "family": "osint_result",
+    "floor": 100
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "The most results ZoomEye accumulates in one pass. The memory governor budgets it against available RAM, so the effective value can be below what is written here.",
@@ -12495,6 +12756,10 @@
     "max": 20
    },
    "default": 5,
+   "governor": {
+    "model": "ratio",
+    "floor": 1
+   },
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many ZoomEye operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -12510,6 +12775,14 @@
   }
  },
  "runtime_only": {
+  "AUTH_PROFILE": {
+   "meaning": "The authenticated session the scan replays: cookies, headers and the login steps that produced them. Deliberately a RELATION rather than a Project column, because GET /api/projects/[id] spreads every Project scalar to the browser and a credential stored as a column would leak. It arrives in the same API payload the settings load reads, so the pipeline sees it as a runtime key with no column behind it.",
+   "roe_capped": false,
+   "secret": true,
+   "source": "project_relation",
+   "tool": "auth_profile",
+   "unit": "none"
+  },
   "CENSYS_API_TOKEN": {
    "meaning": "The user's own API credential for this data source, fetched per scan from the user account. Never a project column, so it is not reachable from any project-scoped surface.",
    "roe_capped": false,
@@ -12551,6 +12824,11 @@
    "unit": "none"
   },
   "NETLAS_MAX_RESULTS": {
+   "governor": {
+    "model": "budget",
+    "family": "osint_result",
+    "floor": 100
+   },
    "meaning": "Maximum results pulled from the Netlas API. No Prisma column; the memory governor still budgets it.",
    "roe_capped": false,
    "source": "internal",
@@ -12604,6 +12882,11 @@
    "unit": "none"
   },
   "SUPPLY_CHAIN_IMPORT_MAX_BYTES": {
+   "governor": {
+    "model": "budget",
+    "family": "byte",
+    "floor": 4194304
+   },
    "meaning": "Byte budget for the import miner. Read from the environment, not from the project row.",
    "roe_capped": false,
    "source": "env",
@@ -12611,6 +12894,11 @@
    "unit": "bytes"
   },
   "SUPPLY_CHAIN_IMPORT_MAX_FILES": {
+   "governor": {
+    "model": "budget",
+    "family": "js_file",
+    "floor": 20
+   },
    "meaning": "Maximum files the import miner reads. Read from the environment, not from the project row.",
    "roe_capped": false,
    "source": "env",

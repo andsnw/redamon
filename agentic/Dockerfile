@@ -171,6 +171,9 @@ RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/
 # - agentic/ : the agent itself (orchestrator, tools, prompts, skills, ...)
 COPY graph_db/ ./graph_db/    
 COPY services/knowledge_base/ ./knowledge_base/
+# - recon_settings/ : the recon settings registry (bounds, units, meanings). The
+#   agent serves it to describe_recon_settings and reads it to validate a write.
+COPY recon_settings/ ./recon_settings/
 COPY agentic/ ./
 
 # Make knowledge_base and graph_db importable as top-level packages

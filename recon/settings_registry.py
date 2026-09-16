@@ -136,20 +136,39 @@ def unlimited_zero_runtime_keys() -> set[str]:
     return keys
 
 
-def governor_ratio_keys() -> list[str]:
-    return sorted(
-        entry["runtime_key"]
-        for entry in fields().values()
-        if entry.get("unit") == "threads" and entry.get("runtime_key")
-    )
+def _governed(model: str) -> dict[str, dict[str, Any]]:
+    """runtime_key -> governor block, for one model, across columns and runtime keys."""
+    out: dict[str, dict[str, Any]] = {}
+    for entry in fields().values():
+        gov = entry.get("governor")
+        key = entry.get("runtime_key")
+        if gov and key and gov.get("model") == model:
+            out[key] = gov
+    for key, entry in runtime_only().items():
+        gov = entry.get("governor")
+        if gov and gov.get("model") == model:
+            out[key] = gov
+    return out
 
 
-def governor_budget_keys() -> list[str]:
-    return sorted(
-        entry["runtime_key"]
-        for entry in fields().values()
-        if entry.get("unit") in ("count", "bytes") and entry.get("runtime_key")
-    )
+def governor_ratio_keys() -> dict[str, int]:
+    """
+    Concurrency knobs the memory governor scales by ratio -> their floor.
+
+    Not derived from `unit`: half the model's thread-shaped fields are not
+    governed, and inferring "every threads field is scaled" would start capping
+    values the governor has never touched. The registry records the table and
+    the runtime reads it.
+    """
+    return {key: int(gov["floor"]) for key, gov in _governed("ratio").items()}
+
+
+def governor_budget_keys() -> dict[str, tuple[str, int]]:
+    """In-memory accumulators the governor budgets -> (bytes-per-unit family, floor)."""
+    return {
+        key: (str(gov["family"]), int(gov["floor"]))
+        for key, gov in _governed("budget").items()
+    }
 
 
 def project_file_runtime_keys() -> list[str]:

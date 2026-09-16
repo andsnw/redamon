@@ -151,6 +151,23 @@ except RuntimeError:
         "volumes and recreate the container (or set GRAPH_DB_PATH) so spawned scans "
         "bind the real graph_db on every platform."
     )
+# The recon settings registry, bound into every spawned scan container for the
+# same reason graph_db is: it is baked into the scan images, and a mount of the
+# host copy is what lets a registry edit reach a scan without a rebuild. Unlike
+# graph_db, a missing registry is not a silent degradation - the loader refuses
+# to start the scan - so the baked copy is the safety net and this mount is the
+# freshness one.
+try:
+    RECON_SETTINGS_PATH = _get_host_path(_host_mounts, "/app/recon_settings", "RECON_SETTINGS_PATH")
+except RuntimeError:
+    RECON_SETTINGS_PATH = ""
+    logger.warning(
+        "recon_settings is not mounted into the orchestrator, so its host path cannot be "
+        "auto-detected. Spawned scans will use the registry baked into their image, which "
+        "means a registry edit needs a rebuild to take effect. Add "
+        "'./recon_settings:/app/recon_settings:ro' to the recon-orchestrator volumes and "
+        "recreate the container (or set RECON_SETTINGS_PATH)."
+    )
 try:
     AI_ATTACK_SURFACE_PATH = _get_host_path(_host_mounts, "/app/ai_attack_surface_scan", "AI_ATTACK_SURFACE_PATH")
 except RuntimeError:
@@ -572,6 +589,10 @@ async def lifespan(app: FastAPI):
     # /app/graph_db bind. Empty => container_manager falls back to the legacy
     # sibling-derivation guess (and refuses to shadow a baked-in copy with it).
     container_manager.graph_db_host_path = GRAPH_DB_PATH
+    # Auto-detected recon_settings host path. Empty => the spawned scan uses the
+    # registry baked into its image rather than the host's, which is stale rather
+    # than absent, so the scan still starts.
+    container_manager.recon_settings_host_path = RECON_SETTINGS_PATH
     # Host path of the recon dir, used by the sca-intel refresh sidecar to derive
     # supply_chain_common's host path (it runs off the scan-spawn path and so has
     # no recon_path argument of its own).

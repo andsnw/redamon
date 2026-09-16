@@ -975,6 +975,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 500 }
+    governor: { model: ratio, floor: 1 }
     group: "llm"
     meaning: >-
       How many AI attack-surface recon operations run at once. The memory governor
@@ -1173,6 +1174,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50000 }
+    governor: { model: budget, family: osint_result, floor: 100 }
     meaning: >-
       Maximum subdomains taken from an amass run.
   amassTimeout:
@@ -1242,6 +1244,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50000 }
+    governor: { model: budget, family: url, floor: 100 }
     meaning: >-
       The most results arjun accumulates in one pass. The memory governor budgets
       it against available RAM, so the effective value can be below what is
@@ -1318,6 +1321,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many arjun operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -1448,6 +1452,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 500 }
+    governor: { model: ratio, floor: 1 }
     group: "unbounded"
     meaning: >-
       How many Banner grab operations run at once. The memory governor scales it
@@ -1500,6 +1505,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many censys operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -1552,6 +1558,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many CriminalIP operations run at once. The memory governor scales it
       down when the host is short of RAM, so the effective value can be below what
@@ -1577,6 +1584,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50000 }
+    governor: { model: budget, family: osint_result, floor: 100 }
     meaning: >-
       Maximum certificate-transparency records read from crt.sh in one pass.
   cveLookupEnabled:
@@ -1747,6 +1755,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 200 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many dns operations run at once. The memory governor scales it down when
       the host is short of RAM, so the effective value can be below what is
@@ -2013,6 +2022,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50 }
+    governor: { model: ratio, floor: 1 }
     group: "not-tuning"
     meaning: >-
       How many ffuf operations run at once. The memory governor scales it down
@@ -2078,6 +2088,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 200 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many ffuf operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -2226,6 +2237,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10000 }
+    governor: { model: budget, family: osint_result, floor: 100 }
     fallback: "falsy"
     coerce: "int"
     meaning: >-
@@ -2241,6 +2253,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many fofa operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -2315,6 +2328,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10000000 }
+    governor: { model: budget, family: url, floor: 1000 }
     group: "unbounded"
     meaning: >-
       The most results gau accumulates in one pass. The memory governor budgets it
@@ -2343,6 +2357,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 500 }
+    governor: { model: ratio, floor: 1 }
     group: "unbounded"
     meaning: >-
       How many gau operations run at once. The memory governor scales it down when
@@ -2382,6 +2397,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many gau operations run at once. The memory governor scales it down when
       the host is short of RAM, so the effective value can be below what is
@@ -2460,6 +2476,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 100 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many gau operations run at once. The memory governor scales it down when
       the host is short of RAM, so the effective value can be below what is
@@ -2497,6 +2514,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many gau operations run at once. The memory governor scales it down when
       the host is short of RAM, so the effective value can be below what is
@@ -2642,6 +2660,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many graphql operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -3044,6 +3063,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50000 }
+    governor: { model: budget, family: osint_result, floor: 100 }
     meaning: >-
       Maximum subdomains taken from the HackerTarget API in one pass.
   hakrawlerCustomHeaders:
@@ -3127,6 +3147,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10000000 }
+    governor: { model: budget, family: url, floor: 1000 }
     group: "unbounded"
     meaning: >-
       The most results hakrawler accumulates in one pass. The memory governor
@@ -3141,6 +3162,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10 }
+    governor: { model: ratio, floor: 1 }
     group: "not-tuning"
     meaning: >-
       How many hakrawler operations run at once. The memory governor scales it
@@ -3155,6 +3177,7 @@ fields:
     roe_capped: true
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many hakrawler operations run at once. The memory governor scales it
       down when the host is short of RAM, so the effective value can be below what
@@ -3618,6 +3641,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 200 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many httpx operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -3783,6 +3807,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 30 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many JS recon operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -3928,6 +3953,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many JS recon operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -4013,6 +4039,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 10, max: 10000 }
+    governor: { model: budget, family: js_file, floor: 50 }
     group: "not-tuning"
     meaning: >-
       The most results JS recon accumulates in one pass. The memory governor
@@ -4151,6 +4178,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many jsluice operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -4214,6 +4242,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10000 }
+    governor: { model: budget, family: js_file, floor: 50 }
     group: "not-tuning"
     meaning: >-
       The most results jsluice accumulates in one pass. The memory governor
@@ -4228,6 +4257,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10 }
+    governor: { model: ratio, floor: 1 }
     group: "not-tuning"
     meaning: >-
       How many jsluice operations run at once. The memory governor scales it down
@@ -4295,6 +4325,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 500 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many jsluice operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -4333,6 +4364,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many katana operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -4420,6 +4452,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10000000 }
+    governor: { model: budget, family: url, floor: 1000 }
     group: "unbounded"
     meaning: >-
       The crawl stops after this many URLs, which is what bounds a crawl on a
@@ -4433,6 +4466,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50 }
+    governor: { model: ratio, floor: 1 }
     group: "not-tuning"
     meaning: >-
       How many katana operations run at once. The memory governor scales it down
@@ -4508,6 +4542,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 500 }
+    governor: { model: ratio, floor: 1 }
     group: "not-tuning"
     meaning: >-
       How many kiterunner operations run at once. The memory governor scales it
@@ -4596,6 +4631,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 500 }
+    governor: { model: ratio, floor: 1 }
     group: "unbounded"
     meaning: >-
       How many kiterunner operations run at once. The memory governor scales it
@@ -4648,6 +4684,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 5 }
+    governor: { model: ratio, floor: 1 }
     group: "not-tuning"
     meaning: >-
       How many kiterunner operations run at once. The memory governor scales it
@@ -4688,6 +4725,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 500 }
+    governor: { model: ratio, floor: 1 }
     group: "unbounded"
     meaning: >-
       How many kiterunner operations run at once. The memory governor scales it
@@ -4739,6 +4777,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50000 }
+    governor: { model: budget, family: osint_result, floor: 100 }
     meaning: >-
       Maximum subdomains taken from a knockpy run.
   masscanAiPortCatalogEnabled:
@@ -5079,6 +5118,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 100 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many naabu operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -5154,6 +5194,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many netlas operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -5205,6 +5246,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10 }
+    governor: { model: ratio, floor: 1 }
     group: "not-tuning"
     meaning: >-
       How many nmap operations run at once. The memory governor scales it down
@@ -5307,6 +5349,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 500 }
+    governor: { model: ratio, floor: 1 }
     group: "not-tuning"
     meaning: >-
       Number of hosts to process in parallel
@@ -5319,6 +5362,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 500 }
+    governor: { model: ratio, floor: 1 }
     group: "unbounded"
     meaning: >-
       How many nuclei operations run at once. The memory governor scales it down
@@ -5740,6 +5784,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many otx operations run at once. The memory governor scales it down when
       the host is short of RAM, so the effective value can be below what is
@@ -5817,6 +5862,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many paramspider operations run at once. The memory governor scales it
       down when the host is short of RAM, so the effective value can be below what
@@ -6895,6 +6941,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many security checks run concurrently.
   securityCheckMissingCoep:
@@ -7250,6 +7297,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many shodan operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -7522,6 +7570,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50000 }
+    governor: { model: budget, family: osint_result, floor: 100 }
     meaning: >-
       Maximum subdomains taken from a subfinder run.
   subjackAll:
@@ -7613,6 +7662,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 100 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many subjack operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -8444,6 +8494,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50000 }
+    governor: { model: budget, family: osint_result, floor: 100 }
     fallback: "falsy"
     coerce: "int"
     meaning: >-
@@ -8509,6 +8560,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50000 }
+    governor: { model: budget, family: osint_result, floor: 100 }
     meaning: >-
       The most results urlscan accumulates in one pass. The memory governor
       budgets it against available RAM, so the effective value can be below what
@@ -8571,6 +8623,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 100 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many Vhost / SNI enumeration operations run at once. The memory governor
       scales it down when the host is short of RAM, so the effective value can be
@@ -8623,6 +8676,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 10, max: 50000 }
+    governor: { model: budget, family: vhost_candidate, floor: 50 }
     group: "not-tuning"
     meaning: >-
       Hard cap on candidates per IP to bound run time. Default 2000.
@@ -8710,6 +8764,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many virustotal operations run at once. The memory governor scales it
       down when the host is short of RAM, so the effective value can be below what
@@ -8899,6 +8954,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 50 }
+    governor: { model: ratio, floor: 1 }
     group: "attack"
     meaning: >-
       How many Web cache poisoning operations run at once. The memory governor
@@ -8913,6 +8969,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 16 }
+    governor: { model: ratio, floor: 1 }
     group: "attack"
     meaning: >-
       How many Web cache poisoning operations run at once. The memory governor
@@ -9232,6 +9289,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10000000 }
+    governor: { model: budget, family: url, floor: 100 }
     group: "unbounded"
     meaning: >-
       The most results zap accumulates in one pass. The memory governor budgets it
@@ -9246,6 +9304,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10 }
+    governor: { model: ratio, floor: 1 }
     group: "not-tuning"
     meaning: >-
       Browser instances used by Ajax Spider
@@ -9258,6 +9317,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10 }
+    governor: { model: ratio, floor: 1 }
     group: "not-tuning"
     meaning: >-
       How many zap operations run at once. The memory governor scales it down when
@@ -9331,6 +9391,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 10000 }
+    governor: { model: budget, family: osint_result, floor: 100 }
     meaning: >-
       The most results ZoomEye accumulates in one pass. The memory governor
       budgets it against available RAM, so the effective value can be below what
@@ -9344,6 +9405,7 @@ fields:
     roe_capped: false
     mcp: "settable"
     bounds: { min: 1, max: 20 }
+    governor: { model: ratio, floor: 1 }
     meaning: >-
       How many ZoomEye operations run at once. The memory governor scales it down
       when the host is short of RAM, so the effective value can be below what is
@@ -9352,6 +9414,19 @@ fields:
 # Runtime keys with no Prisma column. Not MCP-reachable, but the derived
 # cap list is a query over this file, so a rate that lives only here is in it.
 runtime_only:
+  AUTH_PROFILE:
+    source: project_relation
+    tool: auth_profile
+    unit: none
+    roe_capped: false
+    secret: true
+    meaning: >-
+      The authenticated session the scan replays: cookies, headers and the login
+      steps that produced them. Deliberately a RELATION rather than a Project
+      column, because GET /api/projects/[id] spreads every Project scalar to the
+      browser and a credential stored as a column would leak. It arrives in the
+      same API payload the settings load reads, so the pipeline sees it as a
+      runtime key with no column behind it.
   CENSYS_API_TOKEN:
     source: user_account
     tool: censys
@@ -9407,6 +9482,7 @@ runtime_only:
     tool: netlas
     unit: count
     roe_capped: false
+    governor: { model: budget, family: osint_result, floor: 100 }
     meaning: >-
       Maximum results pulled from the Netlas API. No Prisma column; the memory
       governor still budgets it.
@@ -9473,6 +9549,7 @@ runtime_only:
     tool: supply_chain
     unit: bytes
     roe_capped: false
+    governor: { model: budget, family: byte, floor: 4194304 }
     meaning: >-
       Byte budget for the import miner. Read from the environment, not from the
       project row.
@@ -9481,6 +9558,7 @@ runtime_only:
     tool: supply_chain
     unit: count
     roe_capped: false
+    governor: { model: budget, family: js_file, floor: 20 }
     meaning: >-
       Maximum files the import miner reads. Read from the environment, not from
       the project row.

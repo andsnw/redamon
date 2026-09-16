@@ -10,6 +10,17 @@ import logging
 import re
 from typing import Any, Optional
 
+# The settings registry: every parameter's bound, unit, and engagement cap.
+# Imported two ways because this module is loaded both as `recon.project_settings`
+# (tests, the agent) and as `project_settings` with /app/recon on the path (a
+# spawned scan container). It is deliberately NOT wrapped in a try/except that
+# falls back: a scan with no registry has no engagement ceiling, so the import
+# failing must stop the scan rather than quietly widen it.
+try:
+    from recon import settings_registry as _registry
+except ImportError:  # pragma: no cover - the container's own layout
+    import settings_registry as _registry
+
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -890,6 +901,44 @@ def sanitize_image_settings(settings: dict[str, Any]) -> dict[str, Any]:
     return settings
 
 
+def apply_roe_rate_cap(settings: dict[str, Any]) -> dict[str, Any]:
+    """Cap every rate the engagement ceiling applies to. Mutates and returns.
+
+    The key list and the zero-handling set are both REGISTRY QUERIES. They used
+    to be two hardcoded lists in this function, and the gap between them was a
+    live control failure in three directions at once:
+
+      * `TAKEOVER_RATE_LIMIT` and `JSLUICE_VERIFY_RATE_LIMIT` were settable over
+        MCP and in neither list, so a token holding only `recon:settings` could
+        run 500 and 1000 rps against a project whose operator had set 3.
+      * `PUREDNS_RATE_LIMIT` WAS in the cap list, which made it look covered.
+        Its default is 0, 0 means unlimited, and `0 > 3` is False, so it ran
+        unlimited. Being in the list is not the same as being capped.
+      * `WEB_CACHE_POISON_MAX_RPS_PER_HOST` has the same 0-means-unlimited
+        default and was in neither list.
+
+    Deriving both from `roe_capped` and `zero_means` closes all three, and the
+    registry's own tests make it impossible to add a fourth: an active `rps`
+    field that is not `roe_capped` fails the build.
+    """
+    roe_max_rps = settings.get('ROE_GLOBAL_MAX_RPS', 0)
+    if not settings.get('ROE_ENABLED', False) or not roe_max_rps or roe_max_rps <= 0:
+        return settings
+
+    unlimited_at_zero = _registry.unlimited_zero_runtime_keys()
+    for key in _registry.roe_capped_runtime_keys():
+        value = settings.get(key)
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        if value == 0 and key in unlimited_at_zero:
+            logger.info(f"RoE: capping {key} from unlimited (0) to {roe_max_rps} rps")
+            settings[key] = roe_max_rps
+        elif value > roe_max_rps:
+            logger.info(f"RoE: capping {key} from {value} to {roe_max_rps} rps")
+            settings[key] = roe_max_rps
+    return settings
+
+
 def _fetch_user_api_key(user_id: str, webapp_url: str, key_name: str) -> str:
     """Fetch an unmasked API key from user's global settings."""
     import requests as _req
@@ -1751,29 +1800,8 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['WEB_CACHE_POISON_BEHAVIORAL_DELAY'] = project.get('webCachePoisonBehavioralDelay', DEFAULT_SETTINGS['WEB_CACHE_POISON_BEHAVIORAL_DELAY'])
     settings['WEB_CACHE_POISON_DIFFERENTIAL'] = project.get('webCachePoisonDifferential', DEFAULT_SETTINGS['WEB_CACHE_POISON_DIFFERENTIAL'])
 
-    # RoE: cap all rate limits to the global max if set
-    roe_max_rps = settings['ROE_GLOBAL_MAX_RPS']
-    if settings.get('ROE_ENABLED', False) and roe_max_rps > 0:
-        RATE_LIMIT_KEYS = [
-            'NAABU_RATE_LIMIT', 'MASSCAN_RATE', 'HTTPX_RATE_LIMIT', 'NUCLEI_RATE_LIMIT',
-            'KATANA_RATE_LIMIT', 'GAU_VERIFY_RATE_LIMIT', 'GAU_METHOD_DETECT_RATE_LIMIT',
-            'KITERUNNER_RATE_LIMIT', 'KITERUNNER_METHOD_DETECT_RATE_LIMIT',
-            'FFUF_RATE', 'ARJUN_RATE_LIMIT',
-            'PUREDNS_RATE_LIMIT',
-            'HAKRAWLER_THREADS',
-            'GRAPHQL_RATE_LIMIT',
-            'ORIGIN_DISCOVERY_RATE',
-        ]
-        for key in RATE_LIMIT_KEYS:
-            if key not in settings:
-                continue
-            # These use 0 to mean "unlimited" — must be capped under RoE
-            if settings[key] == 0 and key in ('FFUF_RATE', 'ARJUN_RATE_LIMIT', 'ORIGIN_DISCOVERY_RATE'):
-                logger.info(f"RoE: capping {key} from unlimited (0) to {roe_max_rps} rps")
-                settings[key] = roe_max_rps
-            elif settings[key] > roe_max_rps:
-                logger.info(f"RoE: capping {key} from {settings[key]} to {roe_max_rps} rps")
-                settings[key] = roe_max_rps
+    # RoE: cap every rate the engagement ceiling applies to.
+    apply_roe_rate_cap(settings)
 
     # V3: reject any attacker-influenced tool Docker image before it can reach
     # `docker run` on the host daemon.
@@ -1792,46 +1820,20 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
 # governor tightens further under live memory pressure. Fail-open on any error.
 # =============================================================================
 
-# Concurrency / thread / worker / parallelism keys -> RATIO model, floor.
-_GOV_RATIO_KEYS = {
-    'DNS_MAX_WORKERS': 1, 'NAABU_THREADS': 1, 'NMAP_PARALLELISM': 1,
-    'HTTPX_THREADS': 1, 'BANNER_GRAB_THREADS': 1, 'NUCLEI_CONCURRENCY': 1,
-    'NUCLEI_BULK_SIZE': 1, 'SECURITY_CHECK_MAX_WORKERS': 1, 'SUBJACK_THREADS': 1,
-    'VHOST_SNI_CONCURRENCY': 1, 'AI_SURFACE_RECON_MAX_WORKERS': 1,
-    'KATANA_PARALLELISM': 1, 'KATANA_CONCURRENCY': 1, 'ZAP_AJAX_SPIDER_PARALLELISM': 1,
-    'ZAP_AJAX_SPIDER_NUMBER_OF_BROWSERS': 1,  # each = a headless Firefox (~300-500MB)
-    'GAU_WORKERS': 1, 'GAU_THREADS': 1, 'GAU_VERIFY_THREADS': 1,
-    'GAU_METHOD_DETECT_THREADS': 1, 'HAKRAWLER_PARALLELISM': 1, 'HAKRAWLER_THREADS': 1,
-    'JSLUICE_PARALLELISM': 1, 'JSLUICE_CONCURRENCY': 1, 'JSLUICE_VERIFY_THREADS': 1,
-    'JS_RECON_CONCURRENCY': 1, 'JS_RECON_ENDPOINT_CONCURRENCY': 1,
-    'FFUF_THREADS': 1, 'FFUF_PARALLELISM': 1, 'ARJUN_THREADS': 1,
-    'PARAMSPIDER_WORKERS': 1, 'KITERUNNER_THREADS': 1, 'KITERUNNER_PARALLELISM': 1,
-    'KITERUNNER_METHOD_DETECT_THREADS': 1, 'KITERUNNER_CONNECTIONS': 1,
-    'GRAPHQL_CONCURRENCY': 1,
-    'WEB_CACHE_POISON_CONCURRENCY': 1, 'WEB_CACHE_POISON_CONFIRM_WORKERS': 1,
-    'SHODAN_WORKERS': 1, 'OTX_WORKERS': 1, 'VIRUSTOTAL_WORKERS': 1,
-    'CENSYS_WORKERS': 1, 'CRIMINALIP_WORKERS': 1, 'FOFA_WORKERS': 1,
-    'NETLAS_WORKERS': 1, 'ZOOMEYE_WORKERS': 1,
-}
+# The two governor tables are REGISTRY QUERIES. Neither is derivable from a
+# field's unit: only 45 of the model's thread-shaped fields are ratio-scaled and
+# only 20 of its count-shaped ones are byte-budgeted, and a budgeted key also
+# carries a bytes-per-unit FAMILY and a floor that were chosen per key. So the
+# registry records the tables and this reads them, which keeps the lists in the
+# same place as every other fact about a parameter.
 
-# In-memory accumulators -> BYTE-BUDGET model: key -> (bytes-per-unit family, floor).
-_GOV_BUDGET_KEYS = {
-    'KATANA_MAX_URLS': ('url', 1000), 'GAU_MAX_URLS': ('url', 1000),
-    'HAKRAWLER_MAX_URLS': ('url', 1000), 'ZAP_AJAX_SPIDER_MAX_URLS': ('url', 100),
-    'ARJUN_MAX_ENDPOINTS': ('url', 100),
-    'JS_RECON_MAX_FILES': ('js_file', 50), 'JSLUICE_MAX_FILES': ('js_file', 50),
-    'SUPPLY_CHAIN_IMPORT_MAX_FILES': ('js_file', 20),
-    # A byte cap, not a count: per-unit 1 makes scaled_cap treat the value as
-    # bytes directly. Floor 4 MB so import mining still sees a useful sample on
-    # a starved host instead of being throttled to nothing.
-    'SUPPLY_CHAIN_IMPORT_MAX_BYTES': ('byte', 4 * 1024 * 1024),
-    'VHOST_SNI_MAX_CANDIDATES_PER_IP': ('vhost_candidate', 50),
-    'URLSCAN_MAX_RESULTS': ('osint_result', 100), 'FOFA_MAX_RESULTS': ('osint_result', 100),
-    'NETLAS_MAX_RESULTS': ('osint_result', 100), 'ZOOMEYE_MAX_RESULTS': ('osint_result', 100),
-    'UNCOVER_MAX_RESULTS': ('osint_result', 100), 'CRTSH_MAX_RESULTS': ('osint_result', 100),
-    'HACKERTARGET_MAX_RESULTS': ('osint_result', 100), 'KNOCKPY_RECON_MAX_RESULTS': ('osint_result', 100),
-    'SUBFINDER_MAX_RESULTS': ('osint_result', 100), 'AMASS_MAX_RESULTS': ('osint_result', 100),
-}
+
+def _gov_ratio_keys() -> dict[str, int]:
+    return _registry.governor_ratio_keys()
+
+
+def _gov_budget_keys() -> dict[str, tuple[str, int]]:
+    return _registry.governor_budget_keys()
 
 
 def apply_memory_governor(settings: dict[str, Any]) -> dict[str, Any]:
@@ -1849,7 +1851,7 @@ def apply_memory_governor(settings: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         return settings
 
-    for key, floor in _GOV_RATIO_KEYS.items():
+    for key, floor in _gov_ratio_keys().items():
         val = settings.get(key)
         if isinstance(val, int) and not isinstance(val, bool) and val > 0:
             try:
@@ -1861,7 +1863,7 @@ def apply_memory_governor(settings: dict[str, Any]) -> dict[str, Any]:
                 rg.log_cap(tool, key, val, eff, 'ratio')
                 settings[key] = eff
 
-    for key, (family, floor) in _GOV_BUDGET_KEYS.items():
+    for key, (family, floor) in _gov_budget_keys().items():
         val = settings.get(key)
         if isinstance(val, int) and not isinstance(val, bool) and val > 0:
             try:
@@ -2011,7 +2013,11 @@ def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     # Exclude intrusive template tags
     existing_exclude = settings.get('NUCLEI_EXCLUDE_TAGS', [])
     stealth_exclude = ['dos', 'fuzz', 'intrusive', 'sqli', 'rce']
-    settings['NUCLEI_EXCLUDE_TAGS'] = list(set(existing_exclude + stealth_exclude))
+    # Sorted, not just de-duplicated: `list(set(...))` over strings orders by
+    # hash, which varies per process, so the same project produced a different
+    # nuclei command line on every run. Order means nothing to nuclei and
+    # everything to anyone comparing two runs.
+    settings['NUCLEI_EXCLUDE_TAGS'] = sorted(set(existing_exclude + stealth_exclude))
 
     # --- Subdomain Takeover: passive-only (subjack DNS, no nuclei HTTP fuzzing) ---
     settings['NUCLEI_TAKEOVERS_ENABLED'] = False

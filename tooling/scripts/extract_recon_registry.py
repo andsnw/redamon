@@ -31,6 +31,7 @@ from parse_settings_mappings import parse_mappings  # noqa: E402
 from prisma_project_columns import Column, project_columns  # noqa: E402
 from recon_registry_meanings import meaning_for as authored_meaning  # noqa: E402
 
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SECTIONS_DIR = REPO_ROOT / "webapp" / "src" / "components" / "projects" / "ProjectForm" / "sections"
 ALLOWLIST_TS = REPO_ROOT / "webapp" / "src" / "lib" / "reconSettingsAllowlist.generated.ts"
@@ -415,6 +416,18 @@ RUNTIME_ONLY: dict[str, dict] = {
         "source": "internal", "tool": "virustotal", "unit": "count", "roe_capped": False,
         "meaning": "Maximum hosts submitted to the VirusTotal API in one pass. No Prisma column.",
     },
+    "AUTH_PROFILE": {
+        "source": "project_relation", "tool": "auth_profile", "unit": "none", "roe_capped": False,
+        "secret": True,
+        "meaning": (
+            "The authenticated session the scan replays: cookies, headers and the login "
+            "steps that produced them. Deliberately a RELATION rather than a Project column, "
+            "because GET /api/projects/[id] spreads every Project scalar to the browser and a "
+            "credential stored as a column would leak. It arrives in the same API payload the "
+            "settings load reads, so the pipeline sees it as a runtime key with no column "
+            "behind it."
+        ),
+    },
     "NETLAS_MAX_RESULTS": {
         "source": "internal", "tool": "netlas", "unit": "count", "roe_capped": False,
         "meaning": "Maximum results pulled from the Netlas API. No Prisma column; the memory governor still budgets it.",
@@ -485,6 +498,37 @@ def unit_for(column: str, col: Column) -> str:
 
 
 # --- source parsers ---------------------------------------------------------------
+
+def parse_governor_tables() -> dict[str, dict]:
+    """
+    runtime_key -> the governor block, read from the shipped tables.
+
+    The memory governor's two models are not derivable from `unit`. A ratio key
+    scales with available RAM; a budget key is an in-memory accumulator whose
+    bytes-per-unit FAMILY and floor were chosen per key. Half the `count` fields
+    in the model are not governed at all, so deriving "every count is budgeted"
+    would start scaling things the governor has never touched.
+
+    So the registry RECORDS the tables rather than inferring them. They were
+    seeded from `_GOV_RATIO_KEYS` and `_GOV_BUDGET_KEYS` in `project_settings.py`;
+    those are gone now that the runtime reads the registry, so a re-seed reads
+    the registry's own blocks back and a governor change is an edit to the YAML.
+    """
+    import yaml  # noqa: PLC0415
+
+    if not OUT_YAML.exists():
+        return {}
+    current = yaml.safe_load(OUT_YAML.read_text(encoding="utf-8")) or {}
+    out: dict[str, dict] = {}
+    for entry in (current.get("fields") or {}).values():
+        gov, key = entry.get("governor"), entry.get("runtime_key")
+        if gov and key:
+            out[key] = gov
+    for key, entry in (current.get("runtime_only") or {}).items():
+        if entry.get("governor"):
+            out[key] = entry["governor"]
+    return out
+
 
 def parse_allowlist() -> tuple[dict[str, dict], dict[str, str]]:
     text = ALLOWLIST_TS.read_text(encoding="utf-8")
@@ -595,6 +639,7 @@ def build() -> str:
     catalog = parse_catalog()
     form_bounds, form_hints = parse_form_sections()
     rkeys = runtime_keys()
+    governor = parse_governor_tables()
 
     fields: dict[str, dict] = {}
     for name in sorted(columns):
@@ -701,6 +746,9 @@ def build() -> str:
         if not meaning:
             meaning = f"TODO: describe {name}."
         entry["meaning"] = meaning
+        gov = governor.get(entry["runtime_key"] or "")
+        if gov:
+            entry["governor"] = gov
         if name in deny:
             entry["group"] = deny[name]
         fields[name] = entry
@@ -743,6 +791,13 @@ def build() -> str:
             out.append(f"    bounds: {{ min: {f['bounds']['min']}, max: {f['bounds']['max']} }}")
         if "values" in f:
             out.append(f"    values: [{', '.join(yaml_scalar(v) for v in f['values'])}]")
+        if "governor" in f:
+            g = f["governor"]
+            parts = [f"model: {g['model']}"]
+            if "family" in g:
+                parts.append(f"family: {g['family']}")
+            parts.append(f"floor: {g['floor']}")
+            out.append(f"    governor: {{ {', '.join(parts)} }}")
         for key in ("validator", "zero_means", "fallback", "coerce", "tighten", "deny_reason", "written_by", "group"):
             if key in f:
                 out.append(f"    {key}: {yaml_scalar(f[key])}")
@@ -759,6 +814,13 @@ def build() -> str:
             out.append(f"    tool: {r['tool']}")
         out.append(f"    unit: {r['unit']}")
         out.append(f"    roe_capped: {yaml_scalar(r['roe_capped'])}")
+        rgov = governor.get(key)
+        if rgov:
+            parts = [f"model: {rgov['model']}"]
+            if "family" in rgov:
+                parts.append(f"family: {rgov['family']}")
+            parts.append(f"floor: {rgov['floor']}")
+            out.append(f"    governor: {{ {', '.join(parts)} }}")
         if "zero_means" in r:
             out.append(f"    zero_means: {r['zero_means']}")
         if r.get("secret"):
