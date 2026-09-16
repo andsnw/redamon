@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RedAmon recon settings registry",
+  "type": "object",
+  "required": ["version", "tools", "fields", "runtime_only"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "tools": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/tool" }
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/field" }
+    },
+    "runtime_only": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/runtime_key" }
+    }
+  },
+  "definitions": {
+    "tool": {
+      "type": "object",
+      "required": ["title", "phase", "traffic"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "vendor": { "type": ["string", "null"] },
+        "phase": { "$ref": "#/definitions/phase" },
+        "traffic": { "$ref": "#/definitions/traffic" },
+        "image": { "type": ["string", "null"] },
+        "enabled_key": { "type": ["string", "null"] },
+        "module": { "type": ["string", "null"] },
+        "isolated_fn": { "type": ["string", "null"] },
+        "graph_writer": { "type": ["string", "null"] },
+        "partial_recon_module": { "type": ["string", "null"] },
+        "form_section": { "type": ["string", "null"] },
+        "produces": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string" },
+        "footguns": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "field": {
+      "type": "object",
+      "required": ["tool", "runtime_key", "unit", "phase", "traffic", "roe_capped", "mcp", "meaning"],
+      "additionalProperties": false,
+      "properties": {
+        "tool": { "type": "string", "minLength": 1 },
+        "runtime_key": { "type": ["string", "null"] },
+        "unit": { "$ref": "#/definitions/unit" },
+        "phase": { "$ref": "#/definitions/phase" },
+        "traffic": { "$ref": "#/definitions/traffic" },
+        "roe_capped": { "type": "boolean" },
+        "mcp": { "enum": ["settable", "create_only", "tighten_only", "never"] },
+        "meaning": { "type": "string", "minLength": 1 },
+        "bounds": {
+          "type": "object",
+          "required": ["min", "max"],
+          "additionalProperties": false,
+          "properties": {
+            "min": { "type": "number" },
+            "max": { "type": "number" }
+          }
+        },
+        "values": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "validator": { "$ref": "#/definitions/validator" },
+        "zero_means": { "enum": ["unlimited", "disabled", "auto", "literal"] },
+        "fallback": { "enum": ["missing", "falsy"] },
+        "coerce": { "enum": ["int", "strip", "strip_list"] },
+        "tighten": { "$ref": "#/definitions/tighten" },
+        "deny_reason": { "$ref": "#/definitions/deny_reason" },
+        "written_by": { "type": "string" },
+        "group": { "type": "string" }
+      }
+    },
+    "runtime_key": {
+      "type": "object",
+      "required": ["source", "unit", "roe_capped", "meaning"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "enum": ["internal", "env", "user_account"] },
+        "tool": { "type": "string" },
+        "unit": { "$ref": "#/definitions/unit" },
+        "roe_capped": { "type": "boolean" },
+        "zero_means": { "enum": ["unlimited", "disabled", "auto", "literal"] },
+        "secret": { "type": "boolean" },
+        "meaning": { "type": "string", "minLength": 1 }
+      }
+    },
+    "phase": {
+      "enum": [
+        "domain_discovery",
+        "port_scan",
+        "http_probe",
+        "resource_enum",
+        "vuln_scan",
+        "js_recon",
+        "standalone"
+      ]
+    },
+    "traffic": { "enum": ["none", "passive", "active"] },
+    "unit": {
+      "enum": [
+        "rps",
+        "seconds",
+        "minutes",
+        "milliseconds",
+        "threads",
+        "count",
+        "bytes",
+        "depth",
+        "percent",
+        "ratio",
+        "port",
+        "none"
+      ]
+    },
+    "validator": {
+      "enum": [
+        "docker_image",
+        "http_header",
+        "project_file",
+        "status_codes",
+        "severity",
+        "scan_modules",
+        "hostname",
+        "url",
+        "port_spec",
+        "free_text",
+        "identifier",
+        "json_object"
+      ]
+    },
+    "tighten": {
+      "enum": ["decrease", "increase", "superset", "true_to_false", "false_to_true", "narrow"]
+    },
+    "deny_reason": {
+      "enum": ["identity", "internal", "escalation", "secret", "upload-managed"]
+    }
+  }
+}
