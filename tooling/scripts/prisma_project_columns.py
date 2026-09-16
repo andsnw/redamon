@@ -11,6 +11,7 @@ host, in the recon image and in the agent image, none of which has node.
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field as dc_field
 from pathlib import Path
@@ -58,7 +59,13 @@ class Column:
 
     @property
     def default_value(self):
-        """The `@default()` argument as a Python value, or None when there is none."""
+        """
+        The `@default()` argument as a Python value, or None when there is none.
+
+        A quoted default is a Prisma STRING LITERAL, so its backslash escapes
+        have to be undone: a Json column's default is a quoted JSON document and
+        keeping the escapes would produce a value that only looks right.
+        """
         raw = self.default_raw
         if raw is None:
             return None
@@ -67,12 +74,19 @@ class Column:
         if raw == "[]":
             return []
         if raw.startswith('"') and raw.endswith('"'):
-            return raw[1:-1]
+            return json.loads(raw)
         if raw.startswith("[") and raw.endswith("]"):
             inner = raw[1:-1].strip()
             if not inner:
                 return []
-            return [p.strip().strip('"') for p in inner.split(",")]
+            parts = [p.strip() for p in inner.split(",")]
+            # A list default is typed by the column, not by the literal: Int[]
+            # carries numbers and String[] carries strings.
+            if self.type in ("Int", "BigInt"):
+                return [int(p) for p in parts]
+            if self.type in ("Float", "Decimal"):
+                return [float(p) for p in parts]
+            return [json.loads(p) if p.startswith('"') else p for p in parts]
         try:
             return int(raw)
         except ValueError:

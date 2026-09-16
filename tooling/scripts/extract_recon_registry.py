@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from parse_settings_mappings import parse_mappings  # noqa: E402
 from prisma_project_columns import Column, project_columns  # noqa: E402
+from recon_registry_meanings import meaning_for as authored_meaning  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SECTIONS_DIR = REPO_ROOT / "webapp" / "src" / "components" / "projects" / "ProjectForm" / "sections"
@@ -327,6 +328,24 @@ TRAFFIC_OVERRIDE: dict[str, str] = {
 # shipped cap list already carries it.
 ROE_CAPPED_EXTRA = {"hakrawlerThreads"}
 
+# Where a name-based heuristic gets a field wrong. Each is a fractional
+# coefficient whose name reads like a count, or a 0-1 fraction whose name reads
+# like a percentage.
+UNIT_OVERRIDE: dict[str, str] = {
+    "webCachePoisonMinConfidence": "ratio",
+}
+
+# Where the extracted bound is wrong rather than merely wide: a UI max that was
+# never meant as a semantic bound, or a coefficient whose range a form never
+# stated.
+BOUNDS_OVERRIDE: dict[str, tuple[float, float]] = {
+    "agentLatsPruneFloor": (0.0, 1.0),
+    "agentLatsUctC": (0.0, 10.0),
+    "graphqlRetryBackoff": (1.0, 60.0),
+    "webCachePoisonMinConfidence": (0.0, 1.0),
+    "cveLookupMinCvss": (0.0, 10.0),
+}
+
 # --- unit inference -------------------------------------------------------------
 # T32 asserts these same rules, so the inference and the test agree by
 # construction. The heuristic exists because it catches the mistake a human
@@ -360,7 +379,7 @@ UNIT_BOUNDS: dict[str, tuple[int, int]] = {
     "bytes": (0, 1073741824),
     "depth": (0, 50),
     "percent": (0, 100),
-    "ratio": (0, 10),
+    "ratio": (0, 100),
     "port": (1, 65535),
     "none": (0, 10000000),
 }
@@ -460,7 +479,9 @@ def unit_for(column: str, col: Column) -> str:
     for pattern, unit in UNIT_RULES:
         if pattern.search(column):
             return unit
-    return "count"
+    # A Float that no rule claimed is a coefficient, not a countable quantity.
+    # `count` on a fractional value is the mistake this catches.
+    return "ratio" if col.kind == "float" else "count"
 
 
 # --- source parsers ---------------------------------------------------------------
@@ -581,7 +602,7 @@ def build() -> str:
         tool = tool_for(name)
         phase, traffic = TOOL_PHASE_TRAFFIC.get(tool, ("standalone", "none"))
         traffic = TRAFFIC_OVERRIDE.get(name, traffic)
-        unit = unit_for(name, col)
+        unit = UNIT_OVERRIDE.get(name) or unit_for(name, col)
 
         entry: dict = {
             "tool": tool,
@@ -639,6 +660,9 @@ def build() -> str:
             if isinstance(dv, (int, float)) and not isinstance(dv, bool):
                 b["min"] = min(b["min"], dv)
                 b["max"] = max(b["max"], dv)
+            if name in BOUNDS_OVERRIDE:
+                lo, hi = BOUNDS_OVERRIDE[name]
+                b = {"min": lo, "max": hi}
             entry["bounds"] = b
             if dv == 0:
                 entry["zero_means"] = "unlimited" if unit == "rps" else "literal"
@@ -663,7 +687,17 @@ def build() -> str:
         else:
             entry["validator"] = "free_text"
 
-        meaning = catalog.get(name) or form_hints.get(name) or col.doc
+        # An authored description always wins: the catalog and the UI hints are
+        # written for a different reader, and several are a label rather than a
+        # sentence ("Seconds", "Enable OTX"). Nothing about a field that would
+        # surprise a reader may come from a template.
+        title = TOOL_TITLES.get(tool, tool.replace("_", " "))
+        meaning = authored_meaning(name, title, unit)
+        if not meaning:
+            meaning = catalog.get(name) or form_hints.get(name) or col.doc
+        if not meaning or len(meaning.strip()) < 20:
+            longer = catalog.get(name) or form_hints.get(name) or col.doc or ""
+            meaning = longer if len(longer.strip()) >= 20 else (meaning or "")
         if not meaning:
             meaning = f"TODO: describe {name}."
         entry["meaning"] = meaning
