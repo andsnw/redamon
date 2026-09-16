@@ -549,6 +549,22 @@ RUNTIME_ONLY: dict[str, dict] = {
             "behind it."
         ),
     },
+    "USER_ATTACK_SKILLS": {
+        "source": "user_account", "tool": "agent", "unit": "none", "roe_capped": False,
+        "meaning": (
+            "The user's own imported attack skills, fetched per run from the user account "
+            "rather than the project. Shared across every project that user owns, which is "
+            "why deleting one rewrites attackSkillConfig on all of them."
+        ),
+    },
+    "USER_MCP_SERVERS": {
+        "source": "user_account", "tool": "agent", "unit": "none", "roe_capped": False,
+        "meaning": (
+            "The OUTBOUND MCP servers the agent may connect to, configured on the user "
+            "account rather than the project. Not to be confused with RedAmon's own inbound "
+            "MCP server, which external agents connect to."
+        ),
+    },
     "NETLAS_MAX_RESULTS": {
         "source": "internal", "tool": "netlas", "unit": "count", "roe_capped": False,
         "meaning": "Maximum results pulled from the Netlas API. No Prisma column; the memory governor still budgets it.",

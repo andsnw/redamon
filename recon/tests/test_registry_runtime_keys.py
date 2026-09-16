@@ -53,11 +53,31 @@ def test_every_default_settings_key_is_in_the_registry():
     )
 
 
+def _agent_default_settings() -> set[str]:
+    """
+    The agent's own settings keys.
+
+    The registry spans BOTH loaders: the recon pipeline and the agent read the
+    same project row through two modules, and a few keys - the user's own attack
+    skills and outbound MCP servers - exist only on the agent side.
+    """
+    import sys  # noqa: PLC0415
+
+    repo = Path(__file__).resolve().parents[2]
+    source = repo / "agentic" / "project_settings.py"
+    if not source.is_file():
+        return set()
+    sys.path.insert(0, str(repo / "tooling" / "scripts"))
+    from parse_settings_mappings import parse_default_settings  # noqa: PLC0415
+
+    return set(parse_default_settings(source, "DEFAULT_AGENT_SETTINGS"))
+
+
 def test_no_registry_runtime_key_is_unknown_to_the_pipeline():
     """A runtime key the registry describes but nothing reads is documentation for nothing."""
-    known = set(DEFAULT_SETTINGS)
+    known = set(DEFAULT_SETTINGS) | _agent_default_settings()
     ghosts = sorted(k for k in reg.runtime_only() if k not in known)
-    assert ghosts == [], f"runtime_only keys that DEFAULT_SETTINGS does not have: {ghosts}"
+    assert ghosts == [], f"runtime_only keys no settings module has: {ghosts}"
 
 
 def test_every_mapped_runtime_key_has_a_default():

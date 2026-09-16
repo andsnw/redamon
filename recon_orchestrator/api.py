@@ -932,50 +932,67 @@ async def get_defaults():
         # Import DEFAULT_SETTINGS from project_settings.py
         from project_settings import DEFAULT_SETTINGS
 
-        # Runtime-only settings that should NOT be sent to frontend/database
-        # These are used by recon module at runtime, not stored in PostgreSQL
-        RUNTIME_ONLY_KEYS = {
-            'PROJECT_ID',
-            'USER_ID',
-            'TARGET_DOMAIN',   # Provided by user, not a default
-            # Same reasoning: a per-project target list, never a global default.
-            'DOMAIN_BATCH_MODE',
-            'DOMAIN_BATCH_GROUPS',
-            # API keys fetched at runtime from user's global settings (not stored per-project)
-            'SHODAN_API_KEY',
-            'URLSCAN_API_KEY',
-            'CENSYS_API_TOKEN',
-            'CENSYS_ORG_ID',
-            'OTX_API_KEY',
-            'NETLAS_API_KEY',
-            'VIRUSTOTAL_API_KEY',
-            'ZOOMEYE_API_KEY',
-            'CRIMINALIP_API_KEY',
-            'FOFA_EMAIL',
-            'FOFA_API_KEY',
-            'UNCOVER_QUAKE_API_KEY',
-            'UNCOVER_HUNTER_API_KEY',
-            'UNCOVER_PUBLICWWW_API_KEY',
-            'UNCOVER_HUNTERHOW_API_KEY',
-            'UNCOVER_GOOGLE_API_KEY',
-            'UNCOVER_GOOGLE_API_CX',
-            'UNCOVER_ONYPHE_API_KEY',
-            'UNCOVER_DRIFTNET_API_KEY',
-            # Origin-IP Discovery passive-DNS credentials (per-user, never a default)
-            'SECURITYTRAILS_API_KEY',
-            'VIEWDNS_API_KEY',
-            # Authenticated-session profile: a per-project secret, never a
-            # default and never in the frontend defaults payload.
-            'AUTH_PROFILE',
-        }
+        # Runtime-only settings that must NOT reach the frontend or the database.
+        #
+        # DERIVED from the recon settings registry rather than hand-listed. The
+        # list this replaced had drifted in both directions: it named FOFA_EMAIL,
+        # which no longer exists, while a key added to DEFAULT_SETTINGS without
+        # being added here would be sent to the browser as a project default and
+        # then rejected by Prisma as an unknown column on save.
+        #
+        # Three classes, all of which the registry already records:
+        #   source: user_account   an API credential fetched per scan
+        #   source: internal       a value the pipeline computes, not a setting
+        #   source: project_relation  the authenticated session, deliberately a
+        #                          relation so it never reaches the browser
+        #
+        # Deriving it also fixes a documented workaround: the ProjectForm's
+        # preset-apply path skips any /defaults key that is not already in the
+        # form, because this payload carried settings that are NOT Project
+        # columns (takeoverCnameValidationEnabled among them) and writing one
+        # back made the save fail with a Prisma "Unknown argument" error. Those
+        # keys are exactly `source: internal`, so they are gone from the payload
+        # now rather than filtered out downstream.
+        try:
+            from settings_registry import runtime_only as _registry_runtime_only
+        except ImportError:  # pragma: no cover - the repo layout
+            from recon.settings_registry import runtime_only as _registry_runtime_only
 
-        # Convert snake_case keys to camelCase for frontend
+        RUNTIME_ONLY_KEYS = set(_registry_runtime_only())
+        # Plus the four the registry cannot infer. Each is a Project COLUMN, so
+        # it is not runtime-only in the registry's sense; it is simply not a
+        # global default. The rest of the targeting block legitimately has one:
+        # an empty subdomain list, and the shipped `_redamon-verify` TXT prefix.
+        RUNTIME_ONLY_KEYS.update({
+            "USER_ID",          # the owner, set by the loader from the API response
+            "TARGET_DOMAIN",    # per-project, provided by the operator
+            "DOMAIN_BATCH_MODE",
+            "DOMAIN_BATCH_GROUPS",
+        })
+
+        # The column name for each runtime key, from the registry rather than
+        # from a snake-to-camel conversion.
+        #
+        # The conversion cannot recover an intercap, and nine settings have one:
+        # CRIMINALIP_ENABLED is the column `criminalIpEnabled`, not
+        # `criminalipEnabled`. Those nine have therefore NEVER reached a new
+        # project form, because the ProjectForm only applies a /defaults key it
+        # already has - which is also why nobody noticed. The registry knows the
+        # real mapping, so it answers.
+        try:
+            from settings_registry import by_runtime_key as _registry_by_runtime_key
+        except ImportError:  # pragma: no cover - the repo layout
+            from recon.settings_registry import by_runtime_key as _registry_by_runtime_key
+
+        _column_for = {k: v["column"] for k, v in _registry_by_runtime_key().items()}
+
         def to_camel_case(snake_str: str) -> str:
+            """Fallback for a key the registry has never heard of."""
             components = snake_str.lower().split('_')
             return components[0] + ''.join(x.title() for x in components[1:])
 
         camel_case_defaults = {
-            to_camel_case(k): v
+            _column_for.get(k) or to_camel_case(k): v
             for k, v in DEFAULT_SETTINGS.items()
             if k not in RUNTIME_ONLY_KEYS
         }

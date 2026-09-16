@@ -10051,6 +10051,24 @@ runtime_only:
       The user's own API credential for this data source, fetched per scan from
       the user account. Never a project column, so it is not reachable from any
       project-scoped surface.
+  USER_ATTACK_SKILLS:
+    source: user_account
+    tool: agent
+    unit: none
+    roe_capped: false
+    meaning: >-
+      The user's own imported attack skills, fetched per run from the user account
+      rather than the project. Shared across every project that user owns, which
+      is why deleting one rewrites attackSkillConfig on all of them.
+  USER_MCP_SERVERS:
+    source: user_account
+    tool: agent
+    unit: none
+    roe_capped: false
+    meaning: >-
+      The OUTBOUND MCP servers the agent may connect to, configured on the user
+      account rather than the project. Not to be confused with RedAmon's own
+      inbound MCP server, which external agents connect to.
   VIEWDNS_API_KEY:
     source: user_account
     tool: osint_enrichment

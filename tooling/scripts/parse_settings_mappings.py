@@ -78,10 +78,16 @@ def parse_mappings(path: Path) -> dict[str, Mapping]:
     return out
 
 
-def parse_default_settings(path: Path) -> dict[str, object]:
-    """The DEFAULT_SETTINGS dict, evaluated in an empty namespace."""
+def parse_default_settings(path: Path, name: str = "DEFAULT_SETTINGS") -> dict[str, object]:
+    """
+    A settings-defaults dict, evaluated in an empty namespace.
+
+    Parameterised because there are two: the recon pipeline's `DEFAULT_SETTINGS`
+    and the agent's `DEFAULT_AGENT_SETTINGS`. They read the same project row
+    through two modules, and a few keys exist only on one side.
+    """
     text = path.read_text(encoding="utf-8")
-    start = text.index("DEFAULT_SETTINGS: dict[str, Any] = {")
+    start = text.index(f"{name}: dict[str, Any] = {{")
     open_brace = text.index("{", start)
     depth = 0
     i = open_brace
