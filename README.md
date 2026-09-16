@@ -43,7 +43,7 @@
 
 > **LEGAL DISCLAIMER**: This tool is intended for **authorized security testing**, **educational purposes**, and **research only**. Never use this system to scan, probe, or attack any system you do not own or have explicit written permission to test. Unauthorized access is **illegal** and punishable by law. By using this tool, you accept **full responsibility** for your actions. **[Read Full Disclaimer](DISCLAIMER.md)**
 
-> 🏆 **Flagship result:** RedAmon solves **101 / 104 (97.1%)** of the XBOW web-security benchmark **fully black-box**, the leading open-source black-box score on the corpus. Every solve ships a complete, unedited raw agent session **and** a reproducible, step-by-step walkthrough, a standard none of the higher-scoring claims meet: open any row and read exactly how the flag fell, tool call by tool call. Auditable, line by line. See the **[XBOW Validation Benchmark scorecard](https://github.com/samugit83/redamon/wiki/XBOW-Validation-Benchmark)**.
+> 🏆 **Flagship result:** RedAmon solves **101 / 104 (97.1%)** of the XBOW web-security benchmark **fully black-box**. Every solve ships a complete, unedited raw agent session **and** a reproducible, step-by-step walkthrough: open any row and read exactly how the flag fell, tool call by tool call. Auditable, line by line. See the **[XBOW Validation Benchmark scorecard](https://github.com/samugit83/redamon/wiki/XBOW-Validation-Benchmark)**.
 
 <p align="center">
   <img src="docs/assets/agent.gif" alt="RedAmon Agent Demo" width="100%"/>
