@@ -451,9 +451,19 @@ UNIT_OVERRIDE: dict[str, str] = {
 # never meant as a semantic bound, or a coefficient whose range a form never
 # stated.
 BOUNDS_OVERRIDE: dict[str, tuple[float, float]] = {
+    "fireteamMaxConcurrent": (1, 8),
+    "fireteamMaxMembers": (2, 8),
+    "fireteamMemberMaxIterations": (5, 50),
+    "fireteamTimeoutSec": (60, 7200),
+    "agentLatsMaxRollouts": (4, 300),
+    "agentLatsBranching": (2, 10),
+    "agentLatsMaxDepth": (2, 10),
+    "agentLatsMaxTreeNodes": (10, 1000),
+    "agentLatsMinHypotheses": (2, 4),
+    # A backoff of 0 is "retry immediately", which the form has always allowed.
+    "graphqlRetryBackoff": (0.0, 60.0),
     "agentLatsPruneFloor": (0.0, 1.0),
     "agentLatsUctC": (0.0, 10.0),
-    "graphqlRetryBackoff": (1.0, 60.0),
     "webCachePoisonMinConfidence": (0.0, 1.0),
     "cveLookupMinCvss": (0.0, 10.0),
 }
@@ -1038,19 +1048,37 @@ def parse_form_sections() -> tuple[dict[str, dict], dict[str, str]]:
         if path.name.endswith(".test.tsx"):
             continue
         text = path.read_text(encoding="utf-8")
+        # Bounds are read PER ELEMENT. A window between one `updateField` and
+        # the next picks up the neighbouring input's min/max, because the
+        # attributes sit on either side of the handler depending on the section.
+        # That is how the first pass gave fireteamMaxMembers a minimum of 5 when
+        # the form says 2, and a narrower registry bound than the form is a save
+        # that fails after the form accepted the value.
+        for element in re.finditer(r"<input\b[\s\S]*?/>", text):
+            el = element.group(0)
+            if 'type="number"' not in el:
+                continue
+            key_match = re.search(r"updateField\(\s*'([A-Za-z0-9_]+)'", el)
+            if not key_match:
+                continue
+            key = key_match.group(1)
+            mn = re.search(r"\bmin=\{(-?[\d.]+)\}", el)
+            mx = re.search(r"\bmax=\{(-?[\d.]+)\}", el)
+            if mn or mx:
+                cur = bounds.setdefault(key, {})
+                if mn and "min" not in cur:
+                    cur["min"] = float(mn.group(1)) if "." in mn.group(1) else int(mn.group(1))
+                if mx and "max" not in cur:
+                    cur["max"] = float(mx.group(1)) if "." in mx.group(1) else int(mx.group(1))
+
+        # Hints stay window-based: they are prose beside the input rather than an
+        # attribute on it, and a wrong hint is a documentation nit rather than a
+        # refused save.
         hits = list(re.finditer(r"updateField\(\s*'([A-Za-z0-9_]+)'", text))
         for i, m in enumerate(hits):
             key = m.group(1)
             end = hits[i + 1].start() if i + 1 < len(hits) else min(len(text), m.end() + 1200)
             chunk = text[m.end(): end]
-            mn = re.search(r"\bmin=\{(-?\d+)\}", chunk)
-            mx = re.search(r"\bmax=\{(-?\d+)\}", chunk)
-            if mn or mx:
-                cur = bounds.setdefault(key, {})
-                if mn and "min" not in cur:
-                    cur["min"] = int(mn.group(1))
-                if mx and "max" not in cur:
-                    cur["max"] = int(mx.group(1))
             hint = re.search(r"fieldHint\}>([^<{]{6,400})<", chunk)
             if hint and key not in hints:
                 hints[key] = " ".join(hint.group(1).split())

@@ -859,7 +859,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 2, max: 6 }
+    bounds: { min: 2, max: 10 }
     group: agent
     meaning: >-
       Part of the agent's LATS search configuration, which is how it explores
@@ -898,7 +898,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 2, max: 50 }
+    bounds: { min: 4, max: 300 }
     group: agent
     meaning: >-
       Part of the agent's LATS search configuration, which is how it explores
@@ -911,7 +911,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 10, max: 1000 }
     group: agent
     meaning: >-
       Part of the agent's LATS search configuration, which is how it explores
@@ -924,7 +924,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 2, max: 4 }
     group: agent
     meaning: >-
       Part of the agent's LATS search configuration, which is how it explores
@@ -2523,7 +2523,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 2, max: 8 }
+    bounds: { min: 1, max: 8 }
     group: agent
     meaning: >-
       1-8. Upper limit on members in-flight at once.
@@ -2535,7 +2535,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 5, max: 50 }
+    bounds: { min: 2, max: 8 }
     group: agent
     meaning: >-
       2-8. Hard cap on fireteam size the LLM can request.
@@ -2547,7 +2547,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 10, max: 7200 }
+    bounds: { min: 5, max: 50 }
     group: agent
     meaning: >-
       5-50. Each member's ReAct budget before it exits.
@@ -2573,7 +2573,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 1, max: 3600 }
+    bounds: { min: 60, max: 7200 }
     group: agent
     meaning: >-
       60-7200. Hard wall-clock ceiling for the whole fireteam.
@@ -3276,7 +3276,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 1.0, max: 60.0 }
+    bounds: { min: 0.0, max: 60.0 }
     group: not-tuning
     meaning: >-
       Exponential backoff base seconds between retries (default 2.0)

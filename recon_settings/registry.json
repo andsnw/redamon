@@ -307,7 +307,7 @@
   "agentLatsBranching": {
    "bounds": {
     "min": 2,
-    "max": 6
+    "max": 10
    },
    "default": 6,
    "group": "agent",
@@ -362,8 +362,8 @@
   },
   "agentLatsMaxRollouts": {
    "bounds": {
-    "min": 2,
-    "max": 50
+    "min": 4,
+    "max": 300
    },
    "default": 50,
    "group": "agent",
@@ -382,8 +382,8 @@
   },
   "agentLatsMaxTreeNodes": {
    "bounds": {
-    "min": 0,
-    "max": 10000000
+    "min": 10,
+    "max": 1000
    },
    "default": 120,
    "group": "agent",
@@ -402,8 +402,8 @@
   },
   "agentLatsMinHypotheses": {
    "bounds": {
-    "min": 0,
-    "max": 10000000
+    "min": 2,
+    "max": 4
    },
    "default": 2,
    "group": "agent",
@@ -2660,7 +2660,7 @@
   },
   "fireteamMaxConcurrent": {
    "bounds": {
-    "min": 2,
+    "min": 1,
     "max": 8
    },
    "default": 5,
@@ -2680,8 +2680,8 @@
   },
   "fireteamMaxMembers": {
    "bounds": {
-    "min": 5,
-    "max": 50
+    "min": 2,
+    "max": 8
    },
    "default": 5,
    "group": "agent",
@@ -2700,8 +2700,8 @@
   },
   "fireteamMemberMaxIterations": {
    "bounds": {
-    "min": 10,
-    "max": 7200
+    "min": 5,
+    "max": 50
    },
    "default": 10,
    "group": "agent",
@@ -2740,8 +2740,8 @@
   },
   "fireteamTimeoutSec": {
    "bounds": {
-    "min": 1,
-    "max": 3600
+    "min": 60,
+    "max": 7200
    },
    "default": 3600,
    "group": "agent",
@@ -3776,7 +3776,7 @@
   },
   "graphqlRetryBackoff": {
    "bounds": {
-    "min": 1.0,
+    "min": 0.0,
     "max": 60.0
    },
    "default": 2.0,

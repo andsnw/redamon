@@ -21,7 +21,8 @@ import { fileURLToPath } from 'url'
 
 import { describe, test, expect } from 'vitest'
 
-import { fieldsWhere, loadRegistry, toolIds } from './registry'
+import { RECON_PRESETS } from '@/lib/recon-presets'
+import { field, fieldsWhere, loadRegistry, toolIds } from './registry'
 
 const REPO = fileURLToPath(new URL('../../../../', import.meta.url))
 const registry = loadRegistry()
@@ -227,5 +228,76 @@ describe('the tool table is internally consistent', () => {
       .filter(id => tools[id].module && !(tools[id].module as string).startsWith('recon.'))
       .map(id => `${id}: ${tools[id].module}`)
     expect(problems).toEqual([])
+  })
+})
+
+// --- T9 and the preset apply-time rule ------------------------------------------------
+
+describe('T9 every preset names fields the registry has', () => {
+  test('no preset names a column that does not exist', () => {
+    // A preset key with no column is silently stripped by the zod schema, so
+    // the preset applies less than it says and reports success.
+    const ghosts: string[] = []
+    for (const preset of RECON_PRESETS) {
+      for (const key of Object.keys(preset.parameters ?? {})) {
+        if (!field(key)) ghosts.push(`${preset.id}/${key}`)
+      }
+    }
+    expect(ghosts).toEqual([])
+  })
+
+  test('no preset sets the engagement scope', () => {
+    // The apply-time rule, moved to build time where it cannot reach a user. A
+    // preset that named a scope field would either be refused at apply (a
+    // failure in front of an operator) or silently stripped (a preset that
+    // applied less than it said). Neither is a good outcome; not shipping one
+    // is.
+    const problems: string[] = []
+    for (const preset of RECON_PRESETS) {
+      for (const key of Object.keys(preset.parameters ?? {})) {
+        const spec = field(key)
+        if (spec && spec.mcp === 'create_only') problems.push(`${preset.id}/${key}`)
+      }
+    }
+    expect(problems, 'a preset may not point a project at a different target').toEqual([])
+  })
+
+  test('no preset changes the Rules of Engagement', () => {
+    const problems: string[] = []
+    for (const preset of RECON_PRESETS) {
+      for (const key of Object.keys(preset.parameters ?? {})) {
+        const spec = field(key)
+        if (spec && spec.mcp === 'tighten_only') problems.push(`${preset.id}/${key}`)
+      }
+    }
+    expect(problems, 'the engagement agreement is not a tuning choice').toEqual([])
+  })
+
+  test('no preset names a closed column', () => {
+    const problems: string[] = []
+    for (const preset of RECON_PRESETS) {
+      for (const key of Object.keys(preset.parameters ?? {})) {
+        const spec = field(key)
+        if (spec && spec.mcp === 'never') problems.push(`${preset.id}/${key}`)
+      }
+    }
+    expect(problems).toEqual([])
+  })
+
+  test('every preset sets something', () => {
+    // A preset with no parameters applies nothing and says it applied.
+    const empty = RECON_PRESETS.filter(p => Object.keys(p.parameters ?? {}).length === 0)
+    expect(empty.map(p => p.id)).toEqual([])
+  })
+
+  test('a preset that claims to be quiet sets the rates that make it quiet', () => {
+    // The trap the applicability field was invented for, checked from the other
+    // side: "Stealth Recon" is only stealthy if it actually names the rate
+    // limits, and those are settable now.
+    const stealth = RECON_PRESETS.find(p => p.id === 'stealth-recon')
+    expect(stealth, 'the stealth preset is gone or renamed').toBeDefined()
+    const keys = Object.keys(stealth!.parameters ?? {})
+    const rates = keys.filter(k => field(k)?.unit === 'rps')
+    expect(rates.length, 'the stealth preset sets no rate limit at all').toBeGreaterThan(0)
   })
 })
