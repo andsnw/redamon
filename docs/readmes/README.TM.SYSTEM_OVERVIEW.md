@@ -9,7 +9,7 @@
 >
 > The structure below describes the **local** posture; each network entry point notes how the public-internet layer changes its exposure.
 
-**Project version:** 6.16.0 (`VERSION`)
+**Project version:** 6.16.1 (`VERSION`)
 
 ## Table of Contents
 
