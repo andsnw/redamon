@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from auth import is_orchestrator_request_authorized
+from recon_settings.engagement import derive_roe_enabled
 from container_manager import ContainerManager
 from admission_ledger import AdmissionError
 
@@ -151,6 +152,23 @@ except RuntimeError:
         "volumes and recreate the container (or set GRAPH_DB_PATH) so spawned scans "
         "bind the real graph_db on every platform."
     )
+# The recon settings registry, bound into every spawned scan container for the
+# same reason graph_db is: it is baked into the scan images, and a mount of the
+# host copy is what lets a registry edit reach a scan without a rebuild. Unlike
+# graph_db, a missing registry is not a silent degradation - the loader refuses
+# to start the scan - so the baked copy is the safety net and this mount is the
+# freshness one.
+try:
+    RECON_SETTINGS_PATH = _get_host_path(_host_mounts, "/app/recon_settings", "RECON_SETTINGS_PATH")
+except RuntimeError:
+    RECON_SETTINGS_PATH = ""
+    logger.warning(
+        "recon_settings is not mounted into the orchestrator, so its host path cannot be "
+        "auto-detected. Spawned scans will use the registry baked into their image, which "
+        "means a registry edit needs a rebuild to take effect. Add "
+        "'./recon_settings:/app/recon_settings:ro' to the recon-orchestrator volumes and "
+        "recreate the container (or set RECON_SETTINGS_PATH)."
+    )
 try:
     AI_ATTACK_SURFACE_PATH = _get_host_path(_host_mounts, "/app/ai_attack_surface_scan", "AI_ATTACK_SURFACE_PATH")
 except RuntimeError:
@@ -234,7 +252,11 @@ def _check_roe_time_window(project: dict) -> None:
     P0-1). Only that narrow carve-out is tolerated; every other failure
     propagates.
     """
-    if not (project.get('roeEnabled') and project.get('roeTimeWindowEnabled')):
+    # The THIRD enforcement point, after recon and the agent. It gates on the
+    # DERIVED value like the other two: gating on the column would leave this
+    # 403 keyed on something nothing writes, and the window would quietly stop
+    # blocking.
+    if not (derive_roe_enabled(project) and project.get('roeTimeWindowEnabled')):
         return
 
     from datetime import datetime
@@ -572,6 +594,10 @@ async def lifespan(app: FastAPI):
     # /app/graph_db bind. Empty => container_manager falls back to the legacy
     # sibling-derivation guess (and refuses to shadow a baked-in copy with it).
     container_manager.graph_db_host_path = GRAPH_DB_PATH
+    # Auto-detected recon_settings host path. Empty => the spawned scan uses the
+    # registry baked into its image rather than the host's, which is stale rather
+    # than absent, so the scan still starts.
+    container_manager.recon_settings_host_path = RECON_SETTINGS_PATH
     # Host path of the recon dir, used by the sca-intel refresh sidecar to derive
     # supply_chain_common's host path (it runs off the scan-spawn path and so has
     # no recon_path argument of its own).
@@ -911,53 +937,85 @@ async def get_defaults():
         # Import DEFAULT_SETTINGS from project_settings.py
         from project_settings import DEFAULT_SETTINGS
 
-        # Runtime-only settings that should NOT be sent to frontend/database
-        # These are used by recon module at runtime, not stored in PostgreSQL
-        RUNTIME_ONLY_KEYS = {
-            'PROJECT_ID',
-            'USER_ID',
-            'TARGET_DOMAIN',   # Provided by user, not a default
-            # Same reasoning: a per-project target list, never a global default.
-            'DOMAIN_BATCH_MODE',
-            'DOMAIN_BATCH_GROUPS',
-            # API keys fetched at runtime from user's global settings (not stored per-project)
-            'SHODAN_API_KEY',
-            'URLSCAN_API_KEY',
-            'CENSYS_API_TOKEN',
-            'CENSYS_ORG_ID',
-            'OTX_API_KEY',
-            'NETLAS_API_KEY',
-            'VIRUSTOTAL_API_KEY',
-            'ZOOMEYE_API_KEY',
-            'CRIMINALIP_API_KEY',
-            'FOFA_EMAIL',
-            'FOFA_API_KEY',
-            'UNCOVER_QUAKE_API_KEY',
-            'UNCOVER_HUNTER_API_KEY',
-            'UNCOVER_PUBLICWWW_API_KEY',
-            'UNCOVER_HUNTERHOW_API_KEY',
-            'UNCOVER_GOOGLE_API_KEY',
-            'UNCOVER_GOOGLE_API_CX',
-            'UNCOVER_ONYPHE_API_KEY',
-            'UNCOVER_DRIFTNET_API_KEY',
-            # Origin-IP Discovery passive-DNS credentials (per-user, never a default)
-            'SECURITYTRAILS_API_KEY',
-            'VIEWDNS_API_KEY',
-            # Authenticated-session profile: a per-project secret, never a
-            # default and never in the frontend defaults payload.
-            'AUTH_PROFILE',
-        }
+        # Runtime-only settings that must NOT reach the frontend or the database.
+        #
+        # DERIVED from the recon settings registry rather than hand-listed. The
+        # list this replaced had drifted in both directions: it named FOFA_EMAIL,
+        # which no longer exists, while a key added to DEFAULT_SETTINGS without
+        # being added here would be sent to the browser as a project default and
+        # then rejected by Prisma as an unknown column on save.
+        #
+        # Three classes, all of which the registry already records:
+        #   source: user_account   an API credential fetched per scan
+        #   source: internal       a value the pipeline computes, not a setting
+        #   source: project_relation  the authenticated session, deliberately a
+        #                          relation so it never reaches the browser
+        #
+        # Deriving it also fixes a documented workaround: the ProjectForm's
+        # preset-apply path skips any /defaults key that is not already in the
+        # form, because this payload carried settings that are NOT Project
+        # columns (takeoverCnameValidationEnabled among them) and writing one
+        # back made the save fail with a Prisma "Unknown argument" error. Those
+        # keys are exactly `source: internal`, so they are gone from the payload
+        # now rather than filtered out downstream.
+        try:
+            from settings_registry import runtime_only as _registry_runtime_only
+        except ImportError:  # pragma: no cover - the repo layout
+            from recon.settings_registry import runtime_only as _registry_runtime_only
 
-        # Convert snake_case keys to camelCase for frontend
+        RUNTIME_ONLY_KEYS = set(_registry_runtime_only())
+        # Plus the four the registry cannot infer. Each is a Project COLUMN, so
+        # it is not runtime-only in the registry's sense; it is simply not a
+        # global default. The rest of the targeting block legitimately has one:
+        # an empty subdomain list, and the shipped `_redamon-verify` TXT prefix.
+        RUNTIME_ONLY_KEYS.update({
+            "USER_ID",          # the owner, set by the loader from the API response
+            "TARGET_DOMAIN",    # per-project, provided by the operator
+            "DOMAIN_BATCH_MODE",
+            "DOMAIN_BATCH_GROUPS",
+        })
+
+
+        # The column name for each runtime key, from the registry rather than
+        # from a snake-to-camel conversion.
+        #
+        # The conversion cannot recover an intercap, and nine settings have one:
+        # CRIMINALIP_ENABLED is the column `criminalIpEnabled`, not
+        # `criminalipEnabled`. Those nine have therefore NEVER reached a new
+        # project form, because the ProjectForm only applies a /defaults key it
+        # already has - which is also why nobody noticed. The registry knows the
+        # real mapping, so it answers.
+        try:
+            from settings_registry import by_runtime_key as _registry_by_runtime_key
+        except ImportError:  # pragma: no cover - the repo layout
+            from recon.settings_registry import by_runtime_key as _registry_by_runtime_key
+
+        _column_for = {k: v["column"] for k, v in _registry_by_runtime_key().items()}
+
         def to_camel_case(snake_str: str) -> str:
+            """Fallback for a key the registry has never heard of."""
             components = snake_str.lower().split('_')
             return components[0] + ''.join(x.title() for x in components[1:])
 
         camel_case_defaults = {
-            to_camel_case(k): v
+            _column_for.get(k) or to_camel_case(k): v
             for k, v in DEFAULT_SETTINGS.items()
             if k not in RUNTIME_ONLY_KEYS
         }
+
+        # An engagement LIMIT has no global default: it is a property of one
+        # engagement, not of the installation. Emitting one is worse than
+        # useless, because the ProjectForm's preset-apply path resets every form
+        # field that appears in this payload BEFORE applying the preset - so a
+        # roeGlobalMaxRps: 0 here silently zeroes a configured rate ceiling and
+        # empties the exclusion list on every preset apply.
+        #
+        # Filtered by COLUMN and derived from the registry group, so a newly
+        # classified limit is excluded the day it is classified. One helper,
+        # shared with the agent's own /defaults, so the two cannot disagree.
+        from recon_settings.engagement import strip_engagement_limits
+
+        strip_engagement_limits(camel_case_defaults)
 
         # Also import GVM scan defaults (use importlib to avoid module name collision
         # with recon's project_settings already cached above)

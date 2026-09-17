@@ -19,43 +19,31 @@
  * `roeRawText`. A read tool that selected "the RoE" without an explicit field
  * list would hand an external agent a client's phone number.
  *
- * So: readable is a positive set, everything else is unreadable, and a test
- * walks `Prisma.ProjectScalarFieldEnum` so a NEW column is unreadable until
- * someone classifies it. Same shape, same fail-closed cost, and the same
- * staleness that is a feature rather than a bug.
+ * The list is now a REGISTRY QUERY rather than a second classification table.
+ * `readable: false` is explicit per column in `recon_settings/registry.yaml`
+ * and everything else is readable, which inverts the old default deliberately:
+ * a column nobody classified is far more likely to be ordinary recon tuning
+ * than a credential, and the credentials and the personal data are named. The
+ * registry's own tests are what stop the named set shrinking by accident.
  */
-import { RECON_SETTINGS_ALLOWLIST } from '@/lib/reconSettingsAllowlist.generated'
+import {
+  mcpReadableFields,
+  readDeniedFields,
+} from '@/lib/reconSettings/registry'
 
 /**
- * Columns readable but NOT writable.
- *
- * Read and write genuinely differ here, which is the whole reason this file is
- * not just an alias for the write allowlist. `targetDomain` is denied for write
- * because changing it points the platform at a new victim; reading it is how a
- * caller knows which engagement it is looking at.
+ * Columns withheld from every MCP read, with the reason, for the docs and the
+ * error message. Derived: this is a view of the registry, not a second copy.
  */
-export const READ_ONLY_PROJECT_FIELDS: Readonly<Record<string, string>> = Object.freeze({
-  id: 'the project id the caller already holds',
-  name: 'the operator\'s own label for the engagement',
-  createdAt: 'row age; no engagement content',
-  updatedAt: 'the optimistic-concurrency token update_recon_settings asks for',
-  // Scope, readable so an agent knows what it is looking at and can refuse work
-  // aimed anywhere else. Writable by nobody on this surface.
-  targetDomain: 'the engagement target, so a caller can confirm what it is scanning',
-  targetIps: 'the engagement target, same reason',
-  ipMode: 'which of the two target fields is in use',
-  domainBatchMode: 'whether this project scans one domain or many',
-})
+export const MCP_UNREADABLE_PROJECT_FIELDS: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(
+    readDeniedFields().map(f => [f.key, f.read_deny_reason ?? 'withheld'])
+  )
+)
 
-/**
- * Every `Project` column an MCP tool may return: the recon tuning it may also
- * write, plus the identity and scope fields above.
- */
+/** Every `Project` column an MCP tool may return. */
 export const MCP_READABLE_PROJECT_FIELDS: ReadonlySet<string> = Object.freeze(
-  new Set<string>([
-    ...Object.keys(RECON_SETTINGS_ALLOWLIST),
-    ...Object.keys(READ_ONLY_PROJECT_FIELDS),
-  ])
+  new Set<string>(mcpReadableFields().map(f => f.key))
 )
 
 export function isReadableProjectField(key: string): boolean {
@@ -74,7 +62,9 @@ export function assertReadableSelect(select: Record<string, unknown>, tool: stri
   if (forbidden.length > 0) {
     throw new Error(
       `[mcp] ${tool} selects Project column(s) that are not MCP-readable: ` +
-      `${forbidden.join(', ')}. Classify them in mcpReadableFields.ts first.`
+      `${forbidden.join(', ')}. Each is withheld from every read on this surface ` +
+      `(credential, third-party personal data, or the engagement document itself); ` +
+      `see readable: false in recon_settings/registry.yaml.`
     )
   }
 }

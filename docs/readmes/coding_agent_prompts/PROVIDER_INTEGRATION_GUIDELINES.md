@@ -252,11 +252,13 @@ If your provider is **not** OpenAI-compatible (rare - only Anthropic and Bedrock
 **File:** [webapp/prisma/schema.prisma](../../../webapp/prisma/schema.prisma) (`UserLlmProvider` model at lines 31-62)
 
 > Columns added here are on `UserLlmProvider`, **not** on `Project`, so they need
-> no entry in `webapp/src/lib/reconSettingsAllowlist.generated.ts` and the inbound
-> MCP coverage test will not fire. That test walks `Prisma.ProjectScalarFieldEnum`
-> only. The project-level model pointers that *do* live on `Project`
-> (`aiPipelineModel`, `agentOpenaiModel`) are already classified, denied with
-> reason `llm`.
+> no entry in `recon_settings/registry.yaml` and the registry build will not fire.
+> That build compares against `Prisma.ProjectScalarFieldEnum` only. The
+> project-level model pointers that *do* live on `Project` (`aiPipelineModel`,
+> `agentOpenaiModel`) are already described there, as ordinary settable fields in
+> the `llm` group — they choose a model, which is tuning, not a credential. The
+> credentials themselves never become `Project` columns, which is the boundary
+> that matters.
 
 The schema already has all common fields:
 

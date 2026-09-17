@@ -30,7 +30,11 @@ set of recon tuning settings, and query the attack-surface graph.
 | `kali_toolbox` | The Kali sandbox's installed toolset, by category. Reads code, not the container. | `recon:read` |
 | `start_recon` | Start the full recon pipeline. | `recon:scan` (+ `recon:overwrite` for `mode:"overwrite"`) |
 | `stop_recon` | Stop a running scan. | `recon:scan` |
-| `update_recon_settings` | Change allowlisted recon tuning. | `recon:settings` |
+| `update_recon_settings` | Change any recon tuning value. Validated and capped at scan start rather than blocked. | `recon:settings` |
+| `create_project` | Open an engagement and fix its scope, atomically with the record of what authorized it. | `project:create` |
+| `attach_engagement_authorization` | Record the scope document that permits this engagement. Append-only. | `engagement:authorize` |
+| `list_engagement_authorizations` | The history of what authorized it, newest first. | `recon:read` |
+| `preflight_scope_check` | Read-only proof that the configured pipeline fits the scope. RESOLVED values, not written ones. | `recon:read` |
 | `kali_exec` | A shell in the sandbox: `bash -c`, full toolset, **no target check**. | `kali:exec` |
 | `kali_output` | That command's output, paged from a byte cursor. | `kali:exec` |
 | `kali_cancel` | Stop a command it started. | `kali:exec` |
@@ -111,9 +115,9 @@ each owned by a different decision-maker, and all three must be on:
 | 2 | the `kali:exec` scope | user, password-confirmed at mint | **off** |
 | 3 | `project.mcpKaliExecEnabled` | a human in the project form | **off** |
 
-Switch 3 is `DENY`-classified in the settings allowlist with reason
-`escalation`, so `update_recon_settings` cannot turn it on: a token can never
-grant itself this. A token holding all three has a root shell in the sandbox,
+Switch 3 is `mcp: never` in the settings registry with the reason `escalation`,
+so `update_recon_settings` cannot turn it on: a token can never grant itself
+this. A token holding all three has a root shell in the sandbox,
 and that is the intended contract.
 
 **What this costs, stated plainly.** There is no server-side restraint on where a
@@ -504,29 +508,81 @@ It also requires `Content-Type: application/json`, rejects a foreign `Origin`,
 rejects JSON-RPC batches, caps the body at 64 KiB, and answers `GET`/`DELETE`
 with 405.
 
-### The settings allowlist
+### The settings surface
 
 `PUT /api/projects/[id]` spreads its body straight into `prisma.project.update`,
 and `Project` has over 700 scalar columns — so anything that reaches it is
-written. The MCP path therefore uses a **positive, frozen allowlist** of ~126
-genuine tuning fields. Every numeric mirrors its ProjectForm min/max; a field
-with no UI bound is not allowlisted. Unknown keys reject the **whole call by
-name**, never silently.
+written. Describing exclusions in prose is therefore not a control.
 
-The attack this prevents:
+**The allowlist stopped being the control; validation at the point of use became
+it.** The first version of this surface refused 586 of the 712 columns by name,
+which was a crude proxy for "this value could be dangerous" and wrong in both
+directions: it refused `nucleiTags`, a bug-class filter, while permitting
+`takeoverRateLimit` to run at 500 rps past a 3 rps engagement ceiling.
+
+Every parameter is now described once, in
+[`recon_settings/registry.yaml`](../../recon_settings/registry.yaml), and each
+one carries a bound or a named validator. Three dispositions decide what a token
+may write:
+
+| Disposition | Count | What it means |
+| --- | --- | --- |
+| `settable` | 648 | write at any time through `update_recon_settings` |
+| `create_only` | 19 | the engagement scope: written once by `create_project`, refused by name afterwards |
+| `never` | 47 | not a pipeline parameter at all; refused with its class. 24 of these are the engagement RECORD |
+
+There used to be a fourth, `tighten_only`, holding the Rules of Engagement under
+a write-time direction rule. It is deleted rather than migrated. The rule bought
+the appearance of a guarantee and not the guarantee: five of the fields it
+covered - the whole time window - accepted a WIDENING while reporting a
+tightening, because `narrow` has no machine-checkable direction.
+
+What replaced it is that the engagement splits in two. Its 15 LIMITS - the
+rate ceiling, the never-touch hosts, the scanning window, the agent's denylists -
+are ordinary `settable` fields in the `engagement_limits` group, reachable from
+the project form and from `update_recon_settings` alike, in either direction.
+What makes them safe is that every one is ENFORCED at scan start whatever the
+setting says. Its 24 RECORD columns - the client, the contacts, the dates,
+the uploaded document - are `never`, with `deny_reason: engagement-record`: a
+person writes them, a model reads them, nothing enforces them, and they carry a
+third party's personal data.
+
+A test walking `Prisma.ProjectScalarFieldEnum` fails until every column has an
+entry, so a new Prisma field still fails the build until someone describes it —
+but describing it is now writing what it means and what it accepts, rather than
+deciding whether to refuse it.
+
+The attack this still prevents:
 
 ```
 update_recon_settings({targetDomain: "victim.com", targetGuardrailEnabled: false})
 start_recon()
 ```
 
-which would turn a "rescan my own projects" credential into an
-**attack-launching credential aimed at an arbitrary third party**. Scope,
-Rules of Engagement, docker images, other scans' targets, egress toggles,
-wordlists and templates, request headers, intrusiveness toggles, credentials and
-agent settings are all denied by class, and a test asserts that every `Project`
-column is classified — so a **new Prisma field is unreachable over MCP until
-someone classifies it**. That staleness is the correct fail-closed cost.
+Both fields are `create_only`, so both are refused by name on a project that
+already exists, with a pointer to `create_project`. Scope moves with a new
+project, never with a new value on an old one. Unknown keys reject the **whole
+call by name**, never silently.
+
+**What replaced each deny class.** A rate above the engagement ceiling is
+rewritten to the ceiling at scan start. A container image outside the shipped
+set is pinned back to the default with a `[guardrail]` line — the precedent
+`sanitize_image_settings()` already set. A custom header may not carry CR, LF,
+`Host`, `Authorization`, `Cookie` or `Proxy-*`, each of which would change where
+a request goes rather than annotate it. A wordlist or template path must resolve
+inside this project's own directories, checked at the write AND again at
+settings load, because a row also arrives through the webapp, an import and a
+version restore.
+
+That last one is not theoretical: ffuf sends each wordlist LINE as a URL path
+and records which ones responded, so a wordlist aimed at a file inside the scan
+container reflected its contents into the graph. The deny list was the only
+thing in front of it.
+
+**Written is not resolved.** `get_recon_settings` echoes what a caller wrote;
+`preflight_scope_check` reports what the scan will actually run with. They
+differ wherever the runtime corrects a value, and an agent that only read the
+first would believe a rejected value was accepted.
 
 ### Prompt injection is expected
 
@@ -537,10 +593,15 @@ server's tools. Assume an instruction embedded in a page title reaches the model
 
 | What an injected instruction could try | What stops it |
 | --- | --- |
-| Redirect the platform at a new target | Scope fields are not writable at all; the call is rejected by name. |
+| Redirect the platform at a new target | Scope is `create_only`: refused by name on an existing project, whatever the token holds. A different target means a different project. |
 | Discard the victim's graph history | `mode:"overwrite"` needs `recon:overwrite`, off by default. |
 | Launch a scan storm | Strict per-token/per-project start bucket + the orchestrator's one-scan-per-project rule. |
-| Escalate scan aggression | Every intrusiveness toggle is denied. |
+| Escalate scan aggression | Aggression is SETTABLE and CAPPED instead of refused. Every rate resolves to at most the engagement ceiling at scan start, and `roeForbiddenTools` / `roeForbiddenCategories` / `roeAllowDos` are checked in code before a tool executes. A `third_party` engagement cannot start without a ceiling at all. |
+| Loosen the engagement to make room | Nothing REFUSES it, and that is deliberate: a write-time direction rule covered five fields it could not actually check. What stops it mattering is that the limits are applied at scan start regardless, the change is audited with a before and an after, and `preflight_scope_check` reports the RESOLVED configuration rather than the written one. A queued job whose limits changed goes to `needs_review` instead of dispatching. |
+| Disable the engagement limits wholesale | There is no flag to write. `roeEnabled` is derived from whether any limit is SET, so removing a limit means removing it visibly rather than flipping one boolean and leaving every field displaying its old value. |
+| Point a scan tool at a local file | A wordlist or template path must resolve inside this project's own directories, checked at the write and again at settings load. |
+| Make the scan run an attacker's container | Every `*DockerImage` field is a closed list of the shipped images and an out-of-set value is REFUSED at the write. It used to be accepted and pinned back at scan start, which contained the danger but not the dishonesty: `get_recon_settings` echoed an image the scan would never run. |
+| Reconfigure a job already in the queue | The C-4 fingerprint covers every field that steers where or how hard a job scans, including every engagement limit and the DERIVED answer to whether they are live, so the job goes to `needs_review` instead of dispatching. |
 | Exfiltrate another tenant's data | Ownership check + `scope_query` + result post-validation. |
 | Exfiltrate secrets | No tool returns a credential. |
 | Burn the owner's LLM budget | Per-token daily budget. |

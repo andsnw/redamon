@@ -19,13 +19,9 @@ vi.mock('@/lib/prisma', () => ({ default: {} }))
 
 import { McpScopeError, __resetRateLimiter } from '@/lib/mcpAuth'
 import { McpToolError } from './errors'
-import {
-  ALLOWED_SETTING_KEYS,
-  RECON_SETTINGS_ALLOWLIST,
-  SCAN_MODULE_VALUES,
-  SEVERITY_VALUES,
-  filterReconSettings,
-} from '@/lib/reconSettingsAllowlist'
+import { filterReconSettings, permittedKeys } from '@/lib/reconSettings/filter'
+import { SCAN_MODULE_VALUES, SEVERITY_VALUES } from '@/lib/reconSettings/validators'
+import { engagementLimitFields, field } from '@/lib/reconSettings/registry'
 import {
   __resetCatalogCache,
   describeReconSettings,
@@ -51,20 +47,40 @@ beforeEach(() => {
 })
 
 describe('describe_recon_settings covers exactly the settable surface', () => {
-  test('every allowlisted field is described, once', () => {
+  test('every settable field is described, once', () => {
     const keys = allSettings().map(s => s.key).sort()
-    expect(keys).toEqual([...ALLOWED_SETTING_KEYS].sort())
+    expect(keys).toEqual([...permittedKeys('update')].sort())
   })
 
-  test('no denied field is advertised', () => {
-    // Not merely useless: it would tell an external agent exactly which
-    // sensitive fields exist and are withheld.
+  test('no field this surface refuses is advertised as settable', () => {
+    // Not merely useless: advertising a field the caller will then be refused
+    // for is the exact surprise describe_recon_settings exists to prevent. The
+    // SET changed with the registry - the scope and the Rules of Engagement are
+    // still refused, and a docker image or a rate limit no longer is.
     const described = new Set(allSettings().map(s => s.key))
-    for (const denied of [
-      'targetDomain', 'targetIps', 'stealthMode', 'amassActive', 'roeEnabled',
-      'agentOpenaiModel', 'reconDockerImage', 'naabuRateLimit', 'customHeaders',
+    for (const refused of [
+      'targetDomain', 'targetIps', 'ipMode',        // scope: create_project owns it
+      'roeEnabled',                                 // derived from the limits that ARE set
+      'roeClientName', 'roeClientContactEmail',     // the engagement RECORD, UI-only
+      'updateGraphDb',                              // a debug switch, not tuning
+      'cypherfixGithubToken', 'activationState',    // never a pipeline parameter
+      'jsReconUploadedFiles',                       // upload-managed
     ]) {
-      expect(described.has(denied), `${denied} must not be advertised`).toBe(false)
+      expect(described.has(refused), `${refused} must not be advertised`).toBe(false)
+    }
+  })
+
+  test('the fields that were opened ARE advertised', () => {
+    // The headline, asserted from the caller's side.
+    const described = new Set(allSettings().map(s => s.key))
+    for (const opened of [
+      'naabuRateLimit', 'takeoverRateLimit', 'ffufRate',   // every rate, not 3 of 15
+      'nucleiDockerImage',                                  // open; the runtime pins it
+      'httpxCustomHeaders',                                 // open; the validator checks it
+      'ffufWordlist',                                       // open; the path is validated
+      'stealthMode', 'nucleiTags', 'arjunTimeout',
+    ]) {
+      expect(described.has(opened), `${opened} should be advertised`).toBe(true)
     }
   })
 
@@ -81,8 +97,14 @@ describe('describe_recon_settings covers exactly the settable surface', () => {
   test('the described enum values ARE the accepted values', () => {
     for (const s of allSettings()) {
       if (!s.values) continue
-      expect(filterReconSettings({ [s.key]: [...s.values] }).ok, s.key).toBe(true)
-      expect(filterReconSettings({ [s.key]: ['definitely-not-a-value'] }).ok, s.key).toBe(false)
+      // A scalar enum takes ONE of its values; a list takes an array of them.
+      // Passing the whole vocabulary to a scalar was the old shape and only
+      // worked while every enumerated field happened to be a list.
+      const spec = field(s.key)!
+      const good = spec.type === 'string' ? s.values[0] : [...s.values]
+      const bad = spec.type === 'string' ? 'definitely-not-a-value' : ['definitely-not-a-value']
+      expect(filterReconSettings({ [s.key]: good }).ok, `${s.key} accepts its own value`).toBe(true)
+      expect(filterReconSettings({ [s.key]: bad }).ok, `${s.key} refuses a foreign value`).toBe(false)
     }
   })
 
@@ -94,9 +116,9 @@ describe('describe_recon_settings covers exactly the settable surface', () => {
     expect(codes!.values).toBeUndefined()
   })
 
-  test('numbers carry bounds and booleans do not', () => {
+  test('numbers carry bounds and non-numbers do not', () => {
     for (const s of allSettings()) {
-      if (s.kind === 'number') {
+      if (s.kind === 'int' || s.kind === 'float') {
         expect(typeof s.min, s.key).toBe('number')
         expect(typeof s.max, s.key).toBe('number')
       } else {
@@ -105,29 +127,63 @@ describe('describe_recon_settings covers exactly the settable surface', () => {
     }
   })
 
-  test('the meaning is the catalog prose, not re-authored here', () => {
-    const byKey = new Map(allSettings().map(s => [s.key, s]))
-    expect(byKey.get('amassTimeout')?.meaning).toBe('Amass timeout in MINUTES (default 10)')
-    expect(byKey.get('gauWorkers')?.meaning).toBe('Parallel domain query workers')
+  test('every field carries a unit, a phase and a traffic class', () => {
+    // The semantics layer. A field with `unit: rps` and `traffic: active` is
+    // one an engagement ceiling applies to, and an agent cannot work that out
+    // from a name.
+    const UNITS = new Set([
+      'rps', 'seconds', 'minutes', 'milliseconds', 'threads', 'count', 'bytes',
+      'depth', 'percent', 'ratio', 'port', 'none',
+    ])
+    for (const s of allSettings()) {
+      expect(UNITS.has(s.unit), `${s.key} has unit '${s.unit}'`).toBe(true)
+      expect(['none', 'passive', 'active'], s.key).toContain(s.traffic)
+      expect(s.phase.length, s.key).toBeGreaterThan(0)
+    }
   })
 
-  test('every settable field lands in a real catalog section', () => {
-    // The drift control. A key with no catalog line falls into the "Other"
-    // bucket, which is how a newly allowlisted field that nobody documented
-    // shows up here instead of reaching a caller undescribed.
+  test('a rate the ceiling rewrites says so', () => {
+    const byKey = new Map(allSettings().map(s => [s.key, s]))
+    for (const key of ['naabuRateLimit', 'takeoverRateLimit', 'jsluiceVerifyRateLimit']) {
+      expect(byKey.get(key)?.roeCapped, key).toBe(true)
+    }
+  })
+
+  test('a rate whose zero means unlimited says so in the field AND in words', () => {
+    // The single largest new-bug risk the registry documents: an agent reading
+    // `unit: rps` with no further hint concludes 0 is the gentlest setting,
+    // then writes it onto a 3 rps engagement and runs unlimited.
+    const byKey = new Map(allSettings().map(s => [s.key, s]))
+    for (const key of ['ffufRate', 'arjunRateLimit', 'purednsRateLimit']) {
+      expect(byKey.get(key)?.zeroMeans, key).toBe('unlimited')
+      expect(byKey.get(key)?.meaning.toLowerCase(), key).toContain('unlimited')
+    }
+  })
+
+  test('every field has a meaning and it is a sentence', () => {
+    for (const s of allSettings()) {
+      expect(s.meaning.length, `${s.key} has no meaning`).toBeGreaterThan(19)
+    }
+  })
+
+  test('a timeout whose unit is not seconds says so in words', () => {
+    // Found by the unit-coherence check against prose that already existed.
+    // A reader who assumes seconds writes a value off by 60 or by 1000.
+    const byKey = new Map(allSettings().map(s => [s.key, s]))
+    expect(byKey.get('amassTimeout')?.unit).toBe('minutes')
+    expect(byKey.get('amassTimeout')?.meaning).toMatch(/MINUTES/)
+    expect(byKey.get('naabuTimeout')?.unit).toBe('milliseconds')
+    expect(byKey.get('naabuTimeout')?.meaning).toMatch(/MILLISECONDS/)
+  })
+
+  test('every settable field lands in a named tool group', () => {
+    // Grouping is by the TOOL a field configures, which is the thing an agent
+    // is actually choosing. A field whose tool has no title would group under a
+    // bare identifier; the registry's own tests stop that upstream.
     const orphans = settingGroups()
-      .filter(g => g.group === 'Other')
+      .filter(g => !g.group || g.group === 'Other')
       .flatMap(g => g.settings.map(s => s.key))
     expect(orphans).toEqual([])
-  })
-
-  test('most fields carry prose, and the rest are self-describing', () => {
-    // The catalog has deliberate type-only lines for fields whose name, group
-    // and bounds say everything (`naabuThreads: number, 1..200`, under "Port
-    // Scanning - Naabu"). That is fine; a majority without prose would not be.
-    const all = allSettings()
-    const withMeaning = all.filter(s => s.meaning).length
-    expect(withMeaning / all.length).toBeGreaterThan(0.6)
   })
 })
 
@@ -205,15 +261,50 @@ describe('list_recon_presets', () => {
 })
 
 describe('applicability is the field that stops a half-applied preset', () => {
-  test('stealth-recon is reported as stealth-critical', () => {
-    // The exact trap: applying "Stealth Recon" over MCP would apply everything
-    // EXCEPT the stealth - the rate limits, passive mode and brute-force
-    // toggles are all denied by class - leaving the caller louder than the
-    // preset it asked for while believing it was quieter.
+  test('stealth-recon is no longer half-applicable, which was the trap', () => {
+    // The trap this field existed for: applying "Stealth Recon" over MCP used
+    // to apply everything EXCEPT the stealth, because the rate limits, passive
+    // mode and brute-force toggles were all denied by class. The caller ended up
+    // LOUDER than the preset it asked for while believing it was quieter.
+    //
+    // Opening those fields is what removes the trap, so the assertion inverts:
+    // the preset's quiet half now applies, and nothing refused makes a scan
+    // louder.
     const a = presetApplicability(getPresetById('stealth-recon')!)
-    expect(a.stealthCritical).toBe(true)
-    expect(a.deniedCount).toBeGreaterThan(0)
-    expect(a.stealthCriticalFields.length).toBeGreaterThan(0)
+    expect(a.stealthCritical).toBe(false)
+    expect(a.stealthCriticalFields).toEqual([])
+    expect(a.appliedCount).toBeGreaterThan(a.deniedCount)
+  })
+
+  test('the quiet half of every stealth preset is applicable', () => {
+    // Named fields rather than a count: these are the ones whose absence made a
+    // half-applied preset dangerous.
+    const QUIET = [
+      'naabuRateLimit', 'nucleiRateLimit', 'httpxRateLimit', 'katanaRateLimit',
+      'ffufRate', 'arjunRateLimit', 'naabuPassiveMode', 'amassActive', 'amassBrute',
+    ]
+    const settable = new Set(permittedKeys('update'))
+    expect(QUIET.filter(k => !settable.has(k))).toEqual([])
+  })
+
+  test('what a preset still cannot set is scope and the engagement record, by name', () => {
+    const settable = new Set(permittedKeys('update'))
+    for (const key of ['targetDomain', 'ipMode', 'roeEnabled', 'roeClientName']) {
+      expect(settable.has(key), key).toBe(false)
+    }
+  })
+
+  test('an engagement LIMIT is settable but no preset carries one', () => {
+    // Settable, because the form reaches it and the two doors must match.
+    // Absent from every preset, because a limit belongs to ONE engagement rather
+    // than to a reusable configuration, and a preset that carried one would
+    // overwrite the rate ceiling of whatever project it was loaded into.
+    expect(new Set(permittedKeys('update')).has('roeGlobalMaxRps')).toBe(true)
+    const limits = new Set(engagementLimitFields().map(f => f.key))
+    for (const p of RECON_PRESETS) {
+      const carried = Object.keys(p.parameters ?? {}).filter(k => limits.has(k))
+      expect(carried, p.id).toEqual([])
+    }
   })
 
   test('applied + denied accounts for every key the preset sets', () => {
@@ -224,17 +315,41 @@ describe('applicability is the field that stops a half-applied preset', () => {
   })
 
   test('a counted-as-applied key really is writable', () => {
+    const settable = new Set(permittedKeys('update'))
     for (const p of RECON_PRESETS) {
-      const writable = Object.keys(p.parameters ?? {})
-        .filter(k => Object.prototype.hasOwnProperty.call(RECON_SETTINGS_ALLOWLIST, k))
+      const writable = Object.keys(p.parameters ?? {}).filter(k => settable.has(k))
       expect(presetApplicability(p).appliedCount, p.id).toBe(writable.length)
     }
   })
 
-  test('the tool says plainly that a preset cannot be applied from here', async () => {
+  test('T46: every preset value a caller could write passes its registry bound', () => {
+    // A preset carrying an out-of-bounds value would otherwise fail only at
+    // apply time, in front of a user.
+    const settable = new Set(permittedKeys('update'))
+    const problems: string[] = []
+    for (const p of RECON_PRESETS) {
+      for (const [key, value] of Object.entries(p.parameters ?? {})) {
+        if (!settable.has(key)) continue
+        const r = filterReconSettings({ [key]: value })
+        if (!r.ok) problems.push(`${p.id}/${key}: ${r.error}`)
+      }
+    }
+    expect(problems).toEqual([])
+  })
+
+  test('the tool says plainly that it describes rather than applies', async () => {
     const notes = (await listReconPresets(ctx()) as { notes: string[] }).notes.join(' ')
-    expect(notes).toMatch(/cannot be applied from here/i)
-    expect(notes).toMatch(/LOUDER/)
+    expect(notes).toMatch(/read-only here/i)
+    expect(notes).toMatch(/update_recon_settings/)
+  })
+
+  test('the notes make no claim the registry contradicts', async () => {
+    // The old copy said a preset "cannot be applied from here" because "this
+    // surface may only write recon tuning". Recon tuning is now the whole
+    // pipeline, so that sentence would overstate the restriction.
+    const notes = (await listReconPresets(ctx()) as { notes: string[] }).notes.join(' ')
+    expect(notes).not.toMatch(/may only write recon tuning/i)
+    expect(notes).not.toMatch(/narrow allowlist/i)
   })
 
   test('no preset parameter VALUES are echoed, only counts', async () => {

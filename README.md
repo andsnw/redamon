@@ -948,6 +948,7 @@ flowchart TB
 | **Secret Multiscanner** | Deep secret scanning across 14 source kinds (git, GitHub, GitLab, Docker, Hugging Face, S3, GCS, filesystem, Jenkins, Elasticsearch, Postman, CI) with 1060 detectors, live-credential verification, and one hardened container per source running in parallel | [Wiki: Secret Multiscanner](https://github.com/samugit83/redamon/wiki/Secret-Multiscanner) |
 | **Supply-Chain Scanner** | Offline malicious/vulnerable package detection (OSV-Scanner + GuardDog + retire.js) with a hardened DIRTY/CLEAN split; 3 layers (agent tools, standalone SBOM scan, live-target recon) | [README.SUPPLY_CHAIN.md](docs/readmes/README.SUPPLY_CHAIN.md) |
 | **PostgreSQL Database** | Project settings, user accounts, configuration data | [README.POSTGRES.md](docs/readmes/README.POSTGRES.md) |
+| **Settings Registry** | The one description of every recon parameter: its unit, bounds, engagement cap, stealth profile and who may write it. Every derived list the pipeline used to keep aligned by hand is a query over it | [README.SETTINGS_REGISTRY.md](docs/readmes/README.SETTINGS_REGISTRY.md) · [Wiki: Project Settings Registry](https://github.com/samugit83/redamon/wiki/Project-Settings-Registry) |
 | **Test Environments** | Intentionally vulnerable Docker containers for safe testing | [README.GPIGS.md](docs/readmes/README.GPIGS.md) |
 
 ---

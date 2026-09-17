@@ -90,17 +90,39 @@ def test_fetch_never_swallows_its_own_refusal(monkeypatch):
 
 # --- _check_roe_time_window --------------------------------------------------
 
-def test_roe_check_is_a_noop_when_disabled():
+def test_roe_check_is_a_noop_when_no_window_is_configured():
+    """With no window there is nothing to gate on, whatever else is set."""
     api._check_roe_time_window({})
+    api._check_roe_time_window({"roeGlobalMaxRps": 3})
+    # The stored column contributes nothing: the flag is DERIVED, and a window
+    # that is off is not a limit.
     api._check_roe_time_window({"roeEnabled": True})
-    api._check_roe_time_window({"roeTimeWindowEnabled": True})
+
+
+def test_the_window_gates_on_itself_rather_than_on_a_stored_flag():
+    """A window switched on IS a live limit, with no second switch to agree.
+
+    This is the case the derivation exists for: `roeEnabled` used to have to be
+    true as well, so a configured window with the flag off silently gated
+    nothing. The 403 below is what stops that being possible.
+    """
+    with pytest.raises(HTTPException) as ei:
+        api._check_roe_time_window(
+            {
+                # Deliberately FALSE, and deliberately ignored.
+                "roeEnabled": False,
+                "roeTimeWindowEnabled": True,
+                "roeTimeWindowTimezone": "UTC",
+                "roeTimeWindowDays": [],
+            }
+        )
+    assert ei.value.status_code == 403
 
 
 def test_malformed_timezone_is_a_named_400_not_a_silent_pass():
     with pytest.raises(HTTPException) as ei:
         api._check_roe_time_window(
             {
-                "roeEnabled": True,
                 "roeTimeWindowEnabled": True,
                 "roeTimeWindowTimezone": "Not/AZone",
             }
@@ -114,7 +136,6 @@ def test_disallowed_day_raises_403():
     with pytest.raises(HTTPException) as ei:
         api._check_roe_time_window(
             {
-                "roeEnabled": True,
                 "roeTimeWindowEnabled": True,
                 "roeTimeWindowTimezone": "UTC",
                 "roeTimeWindowDays": [],
@@ -132,7 +153,6 @@ def test_outside_time_window_raises_403():
     with pytest.raises(HTTPException) as ei:
         api._check_roe_time_window(
             {
-                "roeEnabled": True,
                 "roeTimeWindowEnabled": True,
                 "roeTimeWindowTimezone": "UTC",
                 "roeTimeWindowDays": all_days,
@@ -151,7 +171,6 @@ def test_inside_a_full_day_window_passes():
     ]
     api._check_roe_time_window(
         {
-            "roeEnabled": True,
             "roeTimeWindowEnabled": True,
             "roeTimeWindowTimezone": "UTC",
             "roeTimeWindowDays": all_days,

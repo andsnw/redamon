@@ -13,6 +13,8 @@
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 
+import { isReadableProjectField } from '@/lib/mcpReadableFields'
+
 const h = vi.hoisted(() => ({
   findProject: vi.fn(),
   findManyProjects: vi.fn(),
@@ -294,15 +296,30 @@ describe('get_recon_settings', () => {
     expect(r.settings).toEqual({ naabuThreads: 25, nucleiEnabled: true })
   })
 
-  test('the prisma select is built FROM the allowlist, so no secret is loaded', async () => {
+  test('the prisma select is built FROM the registry, so no secret is loaded', async () => {
+    // The shape of this check changed with the recon settings registry, and the
+    // change is deliberate. A `*DockerImage` column IS selected now, because it
+    // is open and the runtime pins a non-allowlisted value at scan start; the
+    // scope and the Rules of Engagement ARE selected, because an agent that
+    // cannot see its own ceiling cannot verify it is inside it.
+    //
+    // What must never be selected is what is withheld from every read on this
+    // surface, and that is a registry query rather than a pattern.
     h.findProject
       .mockResolvedValueOnce({ id: 'p1', userId: 'owner' })
       .mockResolvedValueOnce({})
     await getReconSettings(ctx(), 'p1')
 
     const select = h.findProject.mock.calls[1][0].select
-    for (const key of Object.keys(select)) {
-      expect(key).not.toMatch(/Token|ApiKey|Secret|Password|DockerImage|^roe|^target/)
+    const withheld = Object.keys(select).filter(k => !isReadableProjectField(k))
+    expect(withheld, 'get_recon_settings selects a column withheld from every read').toEqual([])
+
+    // The named credentials and personal data, by name.
+    for (const secret of [
+      'cypherfixGithubToken', 'graphqlAuthValue', 'ownershipToken',
+      'roeClientContactEmail', 'roeEmergencyContact', 'roeDocumentData', 'roeRawText',
+    ]) {
+      expect(select, `${secret} must not be selected`).not.toHaveProperty(secret)
     }
   })
 })

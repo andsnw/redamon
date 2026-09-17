@@ -82,7 +82,10 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
       'hunting bounty-eligible vulnerabilities across a broad surface, deduplicating against what ' +
       'was already reported, and ranking what is left by how exploitable it is',
     recommendedScopes: [...READ, 'triage:read', 'graph:cypher', 'recon:scan'],
-    optInScopes: ['kali:exec'],
+    // Opt-in, never recommended: opening an engagement binds the platform to a
+    // target, and recording what authorized one is a durable claim. Both follow
+    // the convention kali:exec and recon:overwrite already set.
+    optInScopes: ['project:create', 'engagement:authorize', 'kali:exec'],
   },
   pentest: {
     id: 'pentest',
@@ -92,7 +95,7 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
       'running an authorized engagement inside its rules of engagement, validating findings with ' +
       'evidence a client can act on, and never straying outside the agreed scope or window',
     recommendedScopes: [...READ, 'triage:read', 'graph:cypher', 'recon:scan'],
-    optInScopes: ['kali:exec'],
+    optInScopes: ['project:create', 'engagement:authorize', 'kali:exec'],
   },
   asm: {
     id: 'asm',
@@ -102,7 +105,10 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
       'watching an estate over time without a human present: rescanning on a schedule, diffing ' +
       'against the last run, and reporting only what changed',
     recommendedScopes: [...READ, 'triage:read', 'recon:scan', 'recon:queue'],
-    optInScopes: [],
+    // Monitoring an estate over time can mean bringing a newly-discovered
+    // property under watch. Recording what authorized one is not part of the
+    // job, so engagement:authorize is deliberately absent.
+    optInScopes: ['project:create'],
   },
   vuln_mgmt: {
     id: 'vuln_mgmt',

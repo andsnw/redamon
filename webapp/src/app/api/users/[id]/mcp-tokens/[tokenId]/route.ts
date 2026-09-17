@@ -1,5 +1,5 @@
 /**
- * MCP personal access tokens: edit and revoke.
+ * MCP personal access tokens: edit and delete.
  *
  * PATCH changes a token's name, profile, scopes and expiry. The hash and the
  * owner are never mutable, and a revoked token keeps its capability frozen (only
@@ -7,8 +7,8 @@
  *
  * The rule an edit is judged by is DIRECTION, not field:
  *  - a change that NARROWS the token (drop a scope, earlier expiry, "expire
- *    now", rename) keeps the admin bypass, exactly like revoke. Taking power
- *    away is a safe privilege during an incident. A profile change is in this
+ *    now", rename) keeps the admin bypass, exactly like DELETE below. Taking
+ *    power away is a safe privilege during an incident. A profile change is in this
  *    group: it is a label, never an authorization input, so on its own it grants
  *    nothing and needs no step-up. Switching profile in the UI also re-ticks the
  *    scopes, and THAT change is judged here on its own merits.
@@ -237,28 +237,38 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   const existing = await loadOwned(id, tokenId)
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Revoke, never delete: the row stays visible so the operator can see why
-  // their agent stopped working. Pruning is a separate, time-based job.
-  if (existing.revokedAt) return NextResponse.json({ token: existing })
-
+  // A hard delete: the row goes, and with it the token's only capability record,
+  // so an agent presenting it gets the same answer as one presenting a string
+  // that was never minted. `resolveMcpToken` looks a token up by hash, so a
+  // missing row denies it as surely as a revoked one.
+  //
+  // The audit row below is what survives. It is written in a separate table the
+  // delete cannot reach, so "this prefix existed, and who removed it when"
+  // outlives the credential itself - which is the part an incident review needs
+  // and the part the row on screen was never the right home for.
   try {
-    const updated = await prisma.mcpAccessToken.update({
-      where: { id: tokenId },
-      data: { revokedAt: new Date() },
-      select: SELECT,
-    })
+    await prisma.mcpAccessToken.delete({ where: { id: tokenId } })
     const session = await getSession()
     await writeAudit({
       actorId: session?.userId ?? null,
-      action: 'mcp-token.revoke',
+      action: 'mcp-token.delete',
       targetType: 'mcpAccessToken',
       targetId: tokenId,
-      after: { tokenPrefix: existing.tokenPrefix, name: existing.name, ownerId: id },
+      before: {
+        tokenPrefix: existing.tokenPrefix,
+        name: existing.name,
+        ownerId: id,
+        scopes: existing.scopes,
+        createdAt: existing.createdAt,
+        lastUsedAt: existing.lastUsedAt,
+        expiresAt: existing.expiresAt,
+        revokedAt: existing.revokedAt,
+      },
       source: 'ui',
     })
-    return NextResponse.json({ token: updated })
+    return NextResponse.json({ deleted: true, token: existing })
   } catch (error) {
-    console.error('[mcp-tokens] revoke failed:', error)
-    return NextResponse.json({ error: 'Could not revoke the token' }, { status: 500 })
+    console.error('[mcp-tokens] delete failed:', error)
+    return NextResponse.json({ error: 'Could not delete the token' }, { status: 500 })
   }
 }

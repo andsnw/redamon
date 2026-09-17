@@ -4510,13 +4510,13 @@ cmd_help() {
 # The root `tests/` dir is a grab-bag: most files exercise the agent image, but a
 # set of them import recon enrichment modules (recon/main_recon_modules/*) and so
 # must run in the recon image, not the agent image. We route them explicitly.
-_ROOT_RECON_TESTS="test_censys_enrich.py,test_criminalip_enrich.py,test_fofa_enrich.py,test_netlas_enrich.py,test_otx_enrich.py,test_uncover_enrich.py,test_virustotal_enrich.py,test_zoomeye_enrich.py,test_gau_parallel.py,test_gau_urlscan_api_key.py,test_recon_mixin_split.py,test_custom_templates_integration.py,test_masscan_integration.py"
+_ROOT_RECON_TESTS="test_censys_enrich.py,test_criminalip_enrich.py,test_fofa_enrich.py,test_netlas_enrich.py,test_otx_enrich.py,test_uncover_enrich.py,test_virustotal_enrich.py,test_zoomeye_enrich.py,test_gau_parallel.py,test_gau_urlscan_api_key.py,test_recon_mixin_split.py,test_custom_templates_integration.py,test_masscan_integration.py,test_registry_tool_wiring.py"
 
 # Section spec: name|image|workdir|PYTHONPATH|testpaths|covpkg|exclude
 _TEST_SECTIONS=(
     "agent|redamon-agent|/repo/agentic|/repo/agentic:/repo:/repo/mcp/servers:/repo/recon_orchestrator:/repo/services|tests|.|"
     "root-agent|redamon-agent|/repo|/repo:/repo/agentic:/repo/mcp/servers:/repo/services:/repo/scanners|tests scanners/supply_chain_common scanners/supply_chain_analyzer scanners/supply_chain_scan graph_db services/knowledge_base mcp|supply_chain_common|${_ROOT_RECON_TESTS}"
-    "root-recon|redamon-recon|/repo|/repo:/repo/recon:/repo/recon/main_recon_modules|tests|.|"
+    "root-recon|redamon-recon|/repo|/repo:/repo/recon:/repo/recon/main_recon_modules:/repo/scanners|tests|.|"
     "recon|redamon-recon|/repo/recon|/repo/recon:/repo|tests|.|"
     "recon_orchestrator|redamon-recon-orchestrator|/repo/recon_orchestrator|/repo/recon_orchestrator:/repo|.|.|"
     "ai_attack_surface|redamon-ai-attack-surface|/repo/scanners/ai_attack_surface_scan|/repo/scanners/ai_attack_surface_scan:/repo|tests adapters|.|"
@@ -4529,12 +4529,52 @@ _TEST_SECTIONS=(
 _ROOT_RECON_PATHS=""
 for _f in ${_ROOT_RECON_TESTS//,/ }; do _ROOT_RECON_PATHS="$_ROOT_RECON_PATHS tests/$_f"; done
 
+# A section, a shell suite or the webapp suite that cannot run is a gate
+# FAILURE, not a skip. A green run that never executed the tests is worse than a
+# red one: it reports that a control holds when nothing checked it.
+#
+# `REDAMON_TEST_ALLOW_MISSING` is the deliberate, named opt-out for a working
+# copy that genuinely lacks an input (comma-separated section names, or `all`).
+# It prints a line containing the word SKIPPED so the hole is visible in any log
+# rather than being inferable only from a count.
+_test_section_may_skip() {
+    local name="$1"
+    local allow="${REDAMON_TEST_ALLOW_MISSING:-}"
+    [[ -z "$allow" ]] && return 1
+    [[ "$allow" == "all" ]] && return 0
+    local entry
+    local -a _allow_list
+    IFS=',' read -ra _allow_list <<< "$allow"
+    for entry in "${_allow_list[@]}"; do
+        [[ "${entry// /}" == "$name" ]] && return 0
+    done
+    return 1
+}
+
+_test_missing_input() {
+    local name="$1" what="$2" fix="$3" tier="$4"
+    if [[ "$tier" != "unit" && "$tier" != "all" && "$tier" != "coverage" ]]; then
+        warn "SKIP section '$name' ($what)"
+        return 0
+    fi
+    if _test_section_may_skip "$name"; then
+        error "SKIPPED section '$name' ($what) — allowed by REDAMON_TEST_ALLOW_MISSING"
+        return 0
+    fi
+    error "section '$name' CANNOT RUN: $what"
+    error "  This fails the gate rather than skipping: a suite that never ran proves nothing."
+    error "  Fix: $fix"
+    error "  Or, deliberately: REDAMON_TEST_ALLOW_MISSING=$name ./redamon.sh test $tier"
+    return 1
+}
+
 _test_run_section() {
     local name="$1" image="$2" workdir="$3" pypath="$4" testpaths="$5" covpkg="$6" exclude="$7"
     local tier="$8"
     if ! docker image inspect "$image" >/dev/null 2>&1; then
-        warn "SKIP section '$name' ($image not built)"
-        return 0
+        _test_missing_input "$name" "$image is not built" \
+            "./redamon.sh install  (or: docker compose build ${image#redamon-})" "$tier"
+        return $?
     fi
     # root-recon runs ONLY the recon-oriented files from tests/, in the recon image.
     if [[ "$name" == "root-recon" ]]; then
@@ -4595,7 +4635,7 @@ cmd_test() {
     # Shell (bash) — the redamon.sh/deploy logic the Python sections cannot reach.
     # Same tiers as webapp: these suites are hermetic, so they belong in the gate.
     if [[ "$tier" == "all" || "$tier" == "coverage" || "$tier" == "unit" ]]; then
-        _test_run_shell || failed=1
+        _test_run_shell "$tier" || failed=1
     fi
     # Webapp (vitest) — only for the broader tiers; needs node_modules.
     if [[ "$tier" == "all" || "$tier" == "coverage" || "$tier" == "unit" ]]; then
@@ -4615,8 +4655,9 @@ cmd_test() {
 _test_run_shell() {
     local files=("$SCRIPT_DIR"/tests/*_test.sh)
     if [[ ! -e "${files[0]}" ]]; then
-        warn "SKIP shell suites (no tests/*_test.sh found)"
-        return 0
+        _test_missing_input "shell" "no tests/*_test.sh were found" \
+            "check out the tests/ directory" "${1:-unit}"
+        return $?
     fi
     info "=== section: shell (bash) ==="
     local f name rc shell_failed=0 passed=0
@@ -4646,8 +4687,9 @@ _test_run_shell() {
 _test_run_webapp() {
     local tier="$1"
     if [[ ! -x "$SCRIPT_DIR/webapp/node_modules/.bin/vitest" ]]; then
-        warn "SKIP webapp vitest (webapp/node_modules absent; run in the webapp image or 'npm ci')"
-        return 0
+        _test_missing_input "webapp" "webapp/node_modules is absent, so vitest cannot run" \
+            "cd webapp && npm ci" "$tier"
+        return $?
     fi
     info "=== section: webapp (vitest) ==="
     if [[ "$tier" == "coverage" ]]; then

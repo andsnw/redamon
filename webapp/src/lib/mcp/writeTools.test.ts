@@ -349,11 +349,65 @@ describe('update_recon_settings refuses what would redirect the platform', () =>
     expect(h.updateProject).not.toHaveBeenCalled()
   })
 
+  // Still refused, and each for a DIFFERENT reason, which is the point of the
+  // dispositions replacing one allowlist.
   test.each([
-    'roeEnabled', 'stealthMode', 'nucleiDockerImage', 'nucleiCustomTemplates',
-    'httpxCustomHeaders', 'cypherfixGithubToken', 'agentModel', 'activationState',
-  ])('%s is refused', async field => {
-    await expect(updateReconSettings(ctx(), 'p1', { [field]: 'x' })).rejects.toThrow()
+    ['roeEnabled', /derived/i, 'derived from whether any engagement limit is set'],
+    ['roeClientName', /engagement RECORD/, 'the contract: a person writes it, nothing enforces it'],
+    ['targetDomain', /create_project/, 'scope: fixed at creation'],
+    ['cypherfixGithubToken', /credential/, 'a stored credential'],
+    ['activationState', /not a pipeline parameter/, 'an application-written lock flag'],
+    ['jsReconUploadedFiles', /upload/, 'written by the endpoint that places the file on disk'],
+    ['agentModel', /not a recon setting/, 'not a column at all'],
+  ])('%s is refused (%s)', async (field, pattern) => {
+    await expect(updateReconSettings(ctx(), 'p1', { [field]: 'x' })).rejects.toThrow(pattern)
+    expect(h.updateProject).not.toHaveBeenCalled()
+  })
+
+  test('a wrong-typed value is refused whatever the disposition', async () => {
+    // nucleiCustomTemplates and httpxCustomHeaders are String[] columns, so a
+    // bare string is refused on type before any policy question arises.
+    for (const field of ['nucleiCustomTemplates', 'httpxCustomHeaders']) {
+      await expect(updateReconSettings(ctx(), 'p1', { [field]: 'x' }))
+        .rejects.toThrow(/must be an array/)
+    }
+  })
+
+  test('a docker image outside the shipped set is REFUSED at the write', async () => {
+    // It used to be accepted and then pinned back to the shipped default at scan
+    // start. The danger was contained; the DISHONESTY was not, because
+    // get_recon_settings echoed the value the caller wrote while the scan ran a
+    // different one, so a caller believed a setting applied when it did not.
+    // That is exactly what "nothing is silently stripped" exists to prevent, so
+    // the field carries a closed value set and the write is refused by name.
+    await expect(updateReconSettings(ctx(), 'p1', { nucleiDockerImage: 'attacker/evil:latest' }))
+      .rejects.toThrow(/must be one of/)
+    expect(h.updateProject).not.toHaveBeenCalled()
+  })
+
+  test('a shipped image is accepted', async () => {
+    const r = await updateReconSettings(ctx(), 'p1', {
+      nucleiDockerImage: 'projectdiscovery/nuclei:latest',
+    })
+    expect(r.projectId).toBe('p1')
+    expect(h.updateProject).toHaveBeenCalled()
+  })
+
+  test('a path outside the project directory is still refused at the write', async () => {
+    // The scan side drops it to the default anyway, but refusing here names the
+    // problem while the caller is still there to fix it.
+    await expect(updateReconSettings(ctx(), 'p1', { ffufWordlist: '/etc/shadow' }))
+      .rejects.toThrow(/absolute path inside/)
+  })
+
+  test('a header that would re-point or authenticate the request is refused', async () => {
+    for (const bad of ['Host: victim.com', 'Authorization: Bearer x', 'X-A: b\r\nX-C: d']) {
+      await expect(updateReconSettings(ctx(), 'p1', { httpxCustomHeaders: [bad] }))
+        .rejects.toThrow()
+    }
+    // An ordinary annotating header is fine.
+    await expect(updateReconSettings(ctx(), 'p1', { httpxCustomHeaders: ['X-Scan-Id: abc'] }))
+      .resolves.toBeTruthy()
   })
 
   test('an out-of-range value is refused, not clamped', async () => {
