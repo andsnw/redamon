@@ -74,6 +74,14 @@ def is_policy_constrainable(name: str, spec: dict[str, Any]) -> bool:
     opinion about, and naming 60 of them in the prompt costs accuracy on the
     ones that matter.
 
+    `tool: engagement` is in that list because of what real policies turned out
+    to say. Measured over sixty live bug-bounty and disclosure policies, 28 of
+    them REQUIRE a custom identification header on every request - more than
+    state a rate limit - and `engagementIdentityHeader` reached none of the five
+    tests above, so the one setting those 28 documents all state could not be
+    extracted from any of them. It adds exactly one field: the other `engagement`
+    column is `engagementKind`, which is create_only and so not parse-writable.
+
     A field excluded here is still WRITABLE by the parse path if the model
     returns it. This decides what the model is TOLD about, not what is allowed.
     """
@@ -85,7 +93,7 @@ def is_policy_constrainable(name: str, spec: dict[str, Any]) -> bool:
         return True
     if spec.get("traffic") != "none":
         return True
-    if spec.get("tool") in ("pipeline", "project"):
+    if spec.get("tool") in ("pipeline", "project", "engagement"):
         return True
     return name.endswith("Enabled")
 

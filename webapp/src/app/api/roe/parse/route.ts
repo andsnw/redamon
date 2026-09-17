@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { internalKeyHeaders } from '@/lib/agentAuth'
 import { getEffectiveUser } from '@/lib/session'
-import { buildParseProposal } from '@/lib/reconSettings/roeParse'
+import { buildParseProposal, proposalIsImplausible, MAX_PROPOSED_CHANGES } from '@/lib/reconSettings/roeParse'
 
 const AGENT_API_URL = process.env.AGENT_API_URL || process.env.NEXT_PUBLIC_AGENT_API_URL || 'http://localhost:8080'
 const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20 MB
@@ -151,6 +151,24 @@ export async function POST(request: NextRequest) {
     const fields = (parsed?.fields ?? {}) as Record<string, unknown>
     const current = readCurrentValues(formData)
     const proposal = buildParseProposal(fields, current)
+
+    // A document that would change more settings than any real one ever has is
+    // a failed parse, not a demanding policy. Refusing beats asking somebody to
+    // review hundreds of rows they did not ask for.
+    if (proposalIsImplausible(proposal.changes.length)) {
+      return NextResponse.json(
+        {
+          error:
+            `The model proposed ${proposal.changes.length} setting changes from this document, ` +
+            `which is more than any Rules of Engagement document should make (limit ${MAX_PROPOSED_CHANGES}). ` +
+            `Nothing has been changed. This is almost always the model answering with its whole field ` +
+            `list rather than reading the document; try again, or try a different model.`,
+          proposedCount: proposal.changes.length,
+          limit: MAX_PROPOSED_CHANGES,
+        },
+        { status: 422 }
+      )
+    }
 
     return NextResponse.json({
       ...proposal,

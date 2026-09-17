@@ -145,3 +145,28 @@ function sameValue(a: unknown, b: unknown): boolean {
   }
   return false
 }
+
+/**
+ * The most settings one document may change before the parse is disbelieved.
+ *
+ * A Rules of Engagement document constrains an engagement. It does not
+ * reconfigure a scan pipeline. Across forty real disclosure policies and twenty
+ * synthetic ones, the proposal sizes were 2 to 14 fields - and then one 15,000
+ * character policy came back with 631 of the 658 fields in the prompt, almost
+ * all of them zeroes and falses, none of them rejected by per-field validation
+ * because each value was individually legal.
+ *
+ * That is a model failure rather than a document, and per-field validation
+ * cannot see it: the signal is the SHAPE of the answer, not any one value. Left
+ * alone it either buries a real diff in a 631-row table for a human to approve,
+ * or on a non-interactive path rewrites the project wholesale.
+ *
+ * 60 is roughly four times the largest legitimate proposal observed and an order
+ * of magnitude below the failure.
+ */
+export const MAX_PROPOSED_CHANGES = 60
+
+/** Is this proposal so large it is evidence the parse went wrong? */
+export function proposalIsImplausible(changeCount: number): boolean {
+  return changeCount > MAX_PROPOSED_CHANGES
+}

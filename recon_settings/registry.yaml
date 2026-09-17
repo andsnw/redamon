@@ -7012,13 +7012,22 @@ fields:
     validator: free_text
     group: engagement_limits
     meaning: >-
-      Technique categories the agent may not run on this engagement. Each token is
-      expanded to the tools that perform it and refused before the tool executes
-      (CATEGORY_TOOL_MAP in agentic/orchestrator_helpers/nodes/execute_plan_node.py),
-      and the list is also withheld from the classifier's options. The vocabulary is
-      closed because the gate matches these tokens EXACTLY: a free-text category such
-      as "Denial of Service" reaches the agent's prompt as advice and never reaches
-      the gate, so the refusal the UI promises silently does not happen.
+      Technique categories the agent may not run on this engagement. Each token
+      is expanded to the tools that perform it and refused before the tool
+      executes (CATEGORY_TOOL_MAP in
+      agentic/orchestrator_helpers/nodes/execute_plan_node.py), and the list is
+      also withheld from the classifier's options. What each token covers:
+      brute_force is any credential guessing, including brute forcing, password
+      spraying and credential stuffing; dos is anything aimed at availability,
+      including denial of service, resource exhaustion and volumetric or
+      high-volume testing; social_engineering is anything aimed at a person
+      rather than a system, including phishing, vishing, smishing and
+      pretexting; physical is physical premises, hardware or tailgating;
+      exploitation is taking a confirmed finding further than proving it. The
+      vocabulary is closed because the gate matches these tokens EXACTLY: a
+      free-text category such as "Denial of Service" reaches the agent's prompt
+      as advice and never reaches the gate, so the refusal the UI promises
+      silently does not happen.
     form_section: "AgentBehaviourSection"
   roeForbiddenTools:
     tool: roe
@@ -8274,6 +8283,7 @@ fields:
     traffic: passive
     roe_capped: false
     mcp: settable
+    values: ["upload", "github", "org"]
     validator: free_text
     group: not-tuning
     meaning: >-

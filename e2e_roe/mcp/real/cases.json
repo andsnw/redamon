@@ -1,0 +1,702 @@
+{
+  "_what": "20 REAL disclosure policies, sanitised. Same prose, length and noise as the originals; every company name, hostname, email and address replaced with a fictional equivalent in a reserved TLD.",
+  "_how_to_read": "expect = a rule the DOCUMENT states with one correct encoding. expect_any = a rule with several, any of which counts. The rest of the check is RESTRAINT: what else moved, classified by direction.",
+  "_scoring": "Hard failures are a stated rule that did not land, a change to the engagement SCOPE, and any change that LOOSENS the engagement. A tightening change the document did not ask for is recorded rather than failed: it is worth knowing about and it is safe. Asserted columns are seeded with a value the case does not expect, and the project is restored to a pristine baseline between cases.",
+  "_prohibition_vs_payout": "A technique named in a policy is usually NOT a prohibition. 'Brute force reports without demonstrated impact' and 'reports involving phishing are not eligible' are payout exclusions, and a document saying either must produce no setting. Expectations here are derived with that distinction (see signals2.py in the generator), because a keyword match produced two wrong expectations and made a correct parser look broken.",
+  "_provenance": "Derived from real public programs. The real-to-fictional mapping is deliberately not recorded, so a document cannot be traced back to a live program's scope.",
+  "_never_scanned": "No case starts, queues or probes anything.",
+  "cases": [
+    {
+      "id": "MCP-01",
+      "name": "rate ceiling",
+      "doc": "mcp-01-rate-ceiling.md",
+      "company": "Ardent Defence",
+      "chars": 6792,
+      "focus": "6,792 characters of real policy prose. States 3 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {
+        "roeGlobalMaxRps": 10,
+        "engagementIdentityHeader": {
+          "contains": "X-Researcher-Researcher"
+        }
+      },
+      "expect_any": [
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-02",
+      "name": "rate ceiling and per minute",
+      "doc": "mcp-02-rate-ceiling-and-per-minute.md",
+      "company": "Palladium Gaming",
+      "chars": 8533,
+      "focus": "8,533 characters of real policy prose. States 3 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {
+        "roeGlobalMaxRps": 5
+      },
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        },
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-03",
+      "name": "rate per minute long",
+      "doc": "mcp-03-rate-per-minute-long.md",
+      "company": "Vaultward",
+      "chars": 24418,
+      "focus": "24,418 characters of real policy prose. States no machine-settable rule at all. Everything else it says must produce no setting.",
+      "expect": {},
+      "notes": [
+        "states 45 requests per MINUTE; the column is integer requests per second, and 0 would mean UNLIMITED"
+      ]
+    },
+    {
+      "id": "MCP-04",
+      "name": "very long 31k",
+      "doc": "mcp-04-very-long-31k.md",
+      "company": "Lumiphone",
+      "chars": 31236,
+      "focus": "31,236 characters of real policy prose. States 2 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {
+        "engagementIdentityHeader": {
+          "contains": "X-Researcher-Research"
+        }
+      },
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-05",
+      "name": "very long 18k payments",
+      "doc": "mcp-05-very-long-18k-payments.md",
+      "company": "Transacta",
+      "chars": 18218,
+      "focus": "18,218 characters of real policy prose. States 4 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {},
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        },
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        },
+        {
+          "why": "credential testing is prohibited",
+          "options": {
+            "roeForbiddenCategories": [
+              "brute_force"
+            ],
+            "roeAllowAccountLockout": false
+          }
+        },
+        {
+          "why": "physical access is prohibited",
+          "options": {
+            "roeAllowPhysicalAccess": false,
+            "roeForbiddenCategories": [
+              "physical"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-06",
+      "name": "very long 17k",
+      "doc": "mcp-06-very-long-17k.md",
+      "company": "Growthdesk",
+      "chars": 17992,
+      "focus": "17,992 characters of real policy prose. States 3 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {},
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        },
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        },
+        {
+          "why": "credential testing is prohibited",
+          "options": {
+            "roeForbiddenCategories": [
+              "brute_force"
+            ],
+            "roeAllowAccountLockout": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-07",
+      "name": "dense prohibitions",
+      "doc": "mcp-07-dense-prohibitions.md",
+      "company": "Sakura Financial",
+      "chars": 16338,
+      "focus": "16,338 characters of real policy prose. States 2 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {},
+      "expect_any": [
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        },
+        {
+          "why": "credential testing is prohibited",
+          "options": {
+            "roeForbiddenCategories": [
+              "brute_force"
+            ],
+            "roeAllowAccountLockout": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-08",
+      "name": "dense prohibitions",
+      "doc": "mcp-08-dense-prohibitions.md",
+      "company": "Cursolar",
+      "chars": 15114,
+      "focus": "15,114 characters of real policy prose. States 5 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {
+        "engagementIdentityHeader": {
+          "contains": "X-Bug-Bounty"
+        }
+      },
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        },
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        },
+        {
+          "why": "credential testing is prohibited",
+          "options": {
+            "roeForbiddenCategories": [
+              "brute_force"
+            ],
+            "roeAllowAccountLockout": false
+          }
+        },
+        {
+          "why": "physical access is prohibited",
+          "options": {
+            "roeAllowPhysicalAccess": false,
+            "roeForbiddenCategories": [
+              "physical"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-09",
+      "name": "dense prohibitions",
+      "doc": "mcp-09-dense-prohibitions.md",
+      "company": "Harbour City Health",
+      "chars": 12861,
+      "focus": "12,861 characters of real policy prose. States 4 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {},
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        },
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        },
+        {
+          "why": "credential testing is prohibited",
+          "options": {
+            "roeForbiddenCategories": [
+              "brute_force"
+            ],
+            "roeAllowAccountLockout": false
+          }
+        },
+        {
+          "why": "physical access is prohibited",
+          "options": {
+            "roeAllowPhysicalAccess": false,
+            "roeForbiddenCategories": [
+              "physical"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-10",
+      "name": "dense prohibitions",
+      "doc": "mcp-10-dense-prohibitions.md",
+      "company": "Rupaya Pay",
+      "chars": 13622,
+      "focus": "13,622 characters of real policy prose. States 2 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {},
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        },
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-11",
+      "name": "healthcare",
+      "doc": "mcp-11-healthcare.md",
+      "company": "Medivance Systems",
+      "chars": 5793,
+      "focus": "5,793 characters of real policy prose. States 4 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {},
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        },
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        },
+        {
+          "why": "credential testing is prohibited",
+          "options": {
+            "roeForbiddenCategories": [
+              "brute_force"
+            ],
+            "roeAllowAccountLockout": false
+          }
+        },
+        {
+          "why": "physical access is prohibited",
+          "options": {
+            "roeAllowPhysicalAccess": false,
+            "roeForbiddenCategories": [
+              "physical"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-12",
+      "name": "enterprise software",
+      "doc": "mcp-12-enterprise-software.md",
+      "company": "Docuvault",
+      "chars": 13074,
+      "focus": "13,074 characters of real policy prose. States 3 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {},
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        },
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        },
+        {
+          "why": "physical access is prohibited",
+          "options": {
+            "roeAllowPhysicalAccess": false,
+            "roeForbiddenCategories": [
+              "physical"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-13",
+      "name": "finance",
+      "doc": "mcp-13-finance.md",
+      "company": "Indexa Analytics",
+      "chars": 8996,
+      "focus": "8,996 characters of real policy prose. States 4 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {},
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        },
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        },
+        {
+          "why": "credential testing is prohibited",
+          "options": {
+            "roeForbiddenCategories": [
+              "brute_force"
+            ],
+            "roeAllowAccountLockout": false
+          }
+        },
+        {
+          "why": "physical access is prohibited",
+          "options": {
+            "roeAllowPhysicalAccess": false,
+            "roeForbiddenCategories": [
+              "physical"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-14",
+      "name": "credit bureau",
+      "doc": "mcp-14-credit-bureau.md",
+      "company": "Veritas Credit",
+      "chars": 9713,
+      "focus": "9,713 characters of real policy prose. States 3 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {},
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        },
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        },
+        {
+          "why": "physical access is prohibited",
+          "options": {
+            "roeAllowPhysicalAccess": false,
+            "roeForbiddenCategories": [
+              "physical"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-15",
+      "name": "identity header",
+      "doc": "mcp-15-identity-header.md",
+      "company": "Southbank Financial",
+      "chars": 3846,
+      "focus": "3,846 characters of real policy prose. States 4 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {
+        "engagementIdentityHeader": {
+          "contains": "X-Researcher-Research"
+        }
+      },
+      "expect_any": [
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        },
+        {
+          "why": "credential testing is prohibited",
+          "options": {
+            "roeForbiddenCategories": [
+              "brute_force"
+            ],
+            "roeAllowAccountLockout": false
+          }
+        },
+        {
+          "why": "physical access is prohibited",
+          "options": {
+            "roeAllowPhysicalAccess": false,
+            "roeForbiddenCategories": [
+              "physical"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-16",
+      "name": "identity header",
+      "doc": "mcp-16-identity-header.md",
+      "company": "Refractive Labs",
+      "chars": 5038,
+      "focus": "5,038 characters of real policy prose. States 4 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {
+        "engagementIdentityHeader": {
+          "contains": "X-Researcher"
+        }
+      },
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        },
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        },
+        {
+          "why": "physical access is prohibited",
+          "options": {
+            "roeAllowPhysicalAccess": false,
+            "roeForbiddenCategories": [
+              "physical"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-17",
+      "name": "identity header",
+      "doc": "mcp-17-identity-header.md",
+      "company": "Wanderlist",
+      "chars": 5202,
+      "focus": "5,202 characters of real policy prose. States 4 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {
+        "engagementIdentityHeader": {
+          "contains": "X-Researcher-Research"
+        }
+      },
+      "expect_any": [
+        {
+          "why": "availability testing is prohibited",
+          "options": {
+            "roeAllowDos": false,
+            "roeForbiddenCategories": [
+              "dos"
+            ]
+          }
+        },
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        },
+        {
+          "why": "physical access is prohibited",
+          "options": {
+            "roeAllowPhysicalAccess": false,
+            "roeForbiddenCategories": [
+              "physical"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-18",
+      "name": "sparse restraint",
+      "doc": "mcp-18-sparse-restraint.md",
+      "company": "Sentinel Robotics",
+      "chars": 2581,
+      "focus": "2,581 characters of real policy prose. States 1 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {
+        "engagementIdentityHeader": {
+          "contains": "X-Researcher-Research"
+        }
+      }
+    },
+    {
+      "id": "MCP-19",
+      "name": "sparse restraint",
+      "doc": "mcp-19-sparse-restraint.md",
+      "company": "Orbital IT",
+      "chars": 4063,
+      "focus": "4,063 characters of real policy prose. States 2 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {
+        "engagementIdentityHeader": {
+          "contains": "X-Researcher-Research"
+        }
+      },
+      "expect_any": [
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "MCP-20",
+      "name": "sparse restraint",
+      "doc": "mcp-20-sparse-restraint.md",
+      "company": "Swiftmart",
+      "chars": 3981,
+      "focus": "3,981 characters of real policy prose. States 2 machine-settable rule(s). Everything else it says must produce no setting.",
+      "expect": {
+        "engagementIdentityHeader": {
+          "contains": "X-Researcher-Researcher"
+        }
+      },
+      "expect_any": [
+        {
+          "why": "techniques aimed at people are prohibited",
+          "options": {
+            "roeAllowSocialEngineering": false,
+            "roeForbiddenCategories": [
+              "social_engineering"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "_runaway": "A parse refused by MAX_PROPOSED_CHANGES is a PASS-equivalent outcome for any case. The model intermittently answers with its whole field list - 619 to 631 of 658 fields, every value individually legal - and it struck a different document on each run. Refusing and writing nothing is the correct behaviour; the runner records it as `refused` and checks the project did not move.",
+  "_extraction": "Extraction of an individual rule from a long real policy is not deterministic. The suite therefore HARD-fails only on safety (scope moved, engagement loosened, something written after a refusal) and on a rule that lands in NO run, and reports a per-rule extraction rate across repeats."
+}

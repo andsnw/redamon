@@ -1,11 +1,28 @@
 # RoE end-to-end validation
 
-Two phases, 40 synthetic Rules-of-Engagement documents, both green.
+Two surfaces, two kinds of document, 80 documents in all. Everything green.
+
+**Synthetic** documents state one rule each, crisply. They test whether a stated
+rule reaches the thing that enforces it.
 
 | | | Result | Report |
 |---|---|---|---|
-| Phase 1 | a document uploaded through the **UI** becomes the right settings | 20/20, five consecutive runs | [ui/report.md](ui/report.md) |
-| Phase 2 | an **agent** over MCP opens engagements that respect the document | 20/20, four consecutive runs | [mcp/report.md](mcp/report.md) |
+| UI | a document uploaded through the form becomes the right settings | 20/20, five consecutive runs | [ui/report.md](ui/report.md) |
+| MCP | an agent opens engagements that respect the document | 20/20, four consecutive runs | [mcp/report.md](mcp/report.md) |
+
+**Real** policies are the opposite: 2,218 to 41,734 characters of reporting
+procedure, payout tables and safe-harbour clauses, with the occasional rule
+buried in it. They test restraint, and they found four defects the synthetic set
+could not.
+
+| | | Result | Report |
+|---|---|---|---|
+| UI | twenty real disclosure policies, sanitised | safety 100/100 over five runs; extraction 95% | [ui/real/report.md](ui/real/report.md) |
+| MCP | an agent opens engagements from the same kind of document | 20/20, zero scan jobs | [mcp/real/report.md](mcp/real/report.md) |
+
+Nothing in either suite scans, probes or queues anything. The real documents'
+targets are reserved-TLD names that resolve nowhere, and the MCP runner verifies
+against the live tool list that no scan tool is reachable from it.
 
 Both phases read the verdict out of Postgres. A proposal that looks right over a
 row that holds something else is precisely the failure this feature can have, and
@@ -15,7 +32,7 @@ checks what the scan will *resolve* to, which is not what was written.
 
 ## What it found
 
-Six defects, all fixed:
+Ten defects, all fixed. The synthetic suites found six:
 
 | | Where | |
 |---|---|---|
@@ -36,11 +53,24 @@ validator refuses anything outside them.
 Defect 4 was introduced by that fix and caught by the matrix, which is the
 argument for having run it.
 
+The real policies found four more, and every one of them is a thing a
+purpose-built document could not have surfaced:
+
+| | Where | |
+|---|---|---|
+| 7 | prompt generator | `engagementIdentityHeader` was **not in the parse prompt at all**. More real policies require an identification header than state a rate limit, and the field for it was unreachable from every one of them |
+| 8 | parse route | one document made the model return **631 of 658 fields**, all individually legal so nothing rejected any of it. Per-field validation cannot see a failure in the SHAPE of an answer; there is now a bound, and it fires |
+| 9 | registry | `supplyChainInputMode` was a closed set the registry called free text, so the parse accepted a value the save refused. Third instance of defect 2's class, first one found by a real document |
+| 10 | registry | the forbidden-category vocabulary never said what its tokens cover, so "credential stuffing" rarely became `brute_force` |
+
 ## Running them
 
 ```bash
 E2E_PASSWORD=...                     python3 e2e_roe/ui/run_ui_e2e.py
 E2E_MCP_TOKEN=... E2E_PASSWORD=...   python3 e2e_roe/mcp/run_mcp_e2e.py
+
+E2E_PASSWORD=...                     python3 e2e_roe/run_real.py --phase ui --runs 5
+E2E_MCP_TOKEN=... E2E_PASSWORD=...   python3 e2e_roe/run_real.py --phase mcp --keep
 ```
 
 Both create their own projects and delete them on the way out, including when a
@@ -63,3 +93,22 @@ write is re-read from the database, and every resolved value comes from
 Phase 1 goes through an LLM, so it was run five times rather than once. That is
 how UI-07 was caught pinning one of three equally correct encodings of the same
 rule, passing about half the time and looking like a product bug.
+
+
+## Judging an LLM-backed suite
+
+Two lessons from the real policies, both of which made a correct parser look
+broken before they were understood.
+
+**A technique named in a policy is usually not a prohibition.** "Brute force
+reports without demonstrated impact" and "reports involving phishing are not
+eligible" are payout exclusions, and a document saying either must produce no
+setting. Expectations are derived with a sentence-level classifier for that
+reason.
+
+**Extraction of one clause from a long document is not deterministic, so it is
+measured rather than asserted.** The real suites hard-fail only on safety - scope
+moved, engagement loosened, something written after a refusal - and on a rule
+that lands in no run of three or more attempts. Everything else is a rate, and
+the rate is reported. Across five runs: 315 of 330 stated rules landed, and not
+one change loosened an engagement.
