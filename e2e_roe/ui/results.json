@@ -1,8 +1,8 @@
 {
   "phase": "ui",
-  "generated": "2026-09-17T15:10:02+00:00",
+  "generated": "2026-09-17T16:00:48+00:00",
   "model": "deepseek/deepseek-chat",
-  "project": "cmu5o0rhu000bp801zrh3t91v",
+  "project": "cmu5ptxxr007wpa01z10zy9t8",
   "results": [
     {
       "id": "UI-01",
@@ -25,7 +25,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 1.8
+      "seconds": 2.1
     },
     {
       "id": "UI-02",
@@ -59,7 +59,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 2.0
+      "seconds": 2.5
     },
     {
       "id": "UI-03",
@@ -96,7 +96,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 2.2
+      "seconds": 2.6
     },
     {
       "id": "UI-04",
@@ -121,7 +121,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 1.8
+      "seconds": 2.3
     },
     {
       "id": "UI-05",
@@ -151,7 +151,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 2.0
+      "seconds": 2.5
     },
     {
       "id": "UI-06",
@@ -184,10 +184,14 @@
       "id": "UI-07",
       "name": "named tool ban",
       "doc": "ui-07-forbidden-tool.md",
-      "focus": "An explicit 'do not use Hydra' becomes a forbidden tool, refused before it runs.",
+      "focus": "An explicit 'do not use Hydra'. The product offers three correct ways to encode that and the parse picks between them run to run, so the case asserts the RULE landed rather than which column carried it. Demanding roeForbiddenTools alone failed about half the time on a parse that had understood the document perfectly well and turned the tool off instead.",
       "seeded": {
         "roeForbiddenTools": [
           "cve_intel"
+        ],
+        "hydraEnabled": true,
+        "roeForbiddenCategories": [
+          "dos"
         ]
       },
       "proposed": {
@@ -195,21 +199,26 @@
         "roeClientName": "Acme Retail Ltd.",
         "roeForbiddenCategories": [
           "brute_force"
-        ],
-        "roeForbiddenTools": [
-          "execute_hydra"
         ]
       },
       "rejected": [],
       "ignored": [],
+      "satisfied_by": [
+        "hydraEnabled",
+        "roeForbiddenCategories"
+      ],
       "stored": {
         "roe_forbidden_tools": [
-          "execute_hydra"
+          "cve_intel"
+        ],
+        "hydra_enabled": false,
+        "roe_forbidden_categories": [
+          "brute_force"
         ]
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 2.2
+      "seconds": 2.6
     },
     {
       "id": "UI-08",
@@ -227,7 +236,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 1.9
+      "seconds": 2.0
     },
     {
       "id": "UI-09",
@@ -248,7 +257,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 1.8
+      "seconds": 2.4
     },
     {
       "id": "UI-10",
@@ -264,7 +273,7 @@
         "roeClientContactName": "Dana Whitfield",
         "roeClientContactPhone": "+44 20 7946 0102",
         "roeClientName": "Northwind Trading",
-        "roeEmergencyContact": "Dana Whitfield, same number.",
+        "roeEmergencyContact": "Dana Whitfield, +44 20 7946 0102",
         "roeEngagementType": "external"
       },
       "rejected": [],
@@ -275,7 +284,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 2.1
+      "seconds": 2.2
     },
     {
       "id": "UI-11",
@@ -299,7 +308,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 2.1
+      "seconds": 2.2
     },
     {
       "id": "UI-12",
@@ -328,7 +337,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 1.9
+      "seconds": 2.2
     },
     {
       "id": "UI-13",
@@ -357,7 +366,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 2.0
+      "seconds": 2.2
     },
     {
       "id": "UI-14",
@@ -381,7 +390,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 2.1
+      "seconds": 2.0
     },
     {
       "id": "UI-15",
@@ -413,7 +422,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 2.2
+      "seconds": 2.0
     },
     {
       "id": "UI-16",
@@ -437,7 +446,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 2.0
+      "seconds": 2.1
     },
     {
       "id": "UI-17",
@@ -464,7 +473,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 1.8
+      "seconds": 2.2
     },
     {
       "id": "UI-18",
@@ -517,7 +526,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 2.4
+      "seconds": 2.5
     },
     {
       "id": "UI-19",
@@ -565,7 +574,7 @@
       },
       "misses": [],
       "status": "PASS",
-      "seconds": 1.9
+      "seconds": 2.2
     }
   ]
 }

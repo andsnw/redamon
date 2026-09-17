@@ -127,6 +127,18 @@ def same(expected, actual, allow_extra=()) -> bool:
     return expected == actual
 
 
+def _encodes(want, actual) -> bool:
+    """Does `actual` carry `want`? A list expectation is containment, not equality.
+
+    "Do not use Hydra" is satisfied by roeForbiddenTools CONTAINING execute_hydra,
+    whatever else is in the list - including a value seeded to make the case start
+    from the wrong answer.
+    """
+    if isinstance(want, list):
+        return isinstance(actual, list) and set(map(str, want)) <= set(map(str, actual))
+    return want == actual
+
+
 def run_case(s: requests.Session, case: dict, pid: str) -> dict:
     """One document, from upload to a verdict read out of the database."""
     doc = DOCS / case["doc"]
@@ -183,6 +195,23 @@ def run_case(s: requests.Session, case: dict, pid: str) -> dict:
         if stored.get(col) != before.get(col):
             misses.append({"column": key, "expected": f"untouched ({before.get(col)!r})",
                            "stored": stored.get(col), "proposed": changes.get(key, "<not proposed>")})
+
+    # Some rules have more than one correct encoding, and the parse legitimately
+    # picks between them. `expect_any` asserts the RULE landed rather than which
+    # column carried it; see cases.json for why that is not a weakened test.
+    for group in case.get("expect_any", []):
+        keys = list(group["options"])
+        present = project_row(pid, [camel_to_snake(k) for k in keys])
+        satisfied = [
+            key for key, want in group["options"].items()
+            if _encodes(want, present.get(camel_to_snake(key)))
+        ]
+        stored.update(present)
+        if not satisfied:
+            misses.append({"column": " | ".join(keys), "expected": group["options"],
+                           "stored": present, "proposed": "<none of them>",
+                           "why": group.get("why", "")})
+        result.setdefault("satisfied_by", []).extend(satisfied)
 
     result["stored"] = stored
     result["misses"] = misses
@@ -274,7 +303,10 @@ def seed_anti_values(s: requests.Session, pid: str, case: dict) -> dict:
     """Put the project in a state where every expectation is currently false."""
     registry = json.loads((REPO / "recon_settings" / "registry.json").read_text(encoding="utf-8"))
     seed = {}
-    for key, want in case["expect"].items():
+    targets = dict(case["expect"])
+    for group in case.get("expect_any", []):
+        targets.update(group["options"])
+    for key, want in targets.items():
         value = anti_value(key, want, registry)
         if value is not None and value != want:
             seed[key] = value
@@ -290,7 +322,9 @@ def seed_anti_values(s: requests.Session, pid: str, case: dict) -> dict:
 def reset_project(s: requests.Session, pid: str) -> None:
     """Return every column any case asserts to its shipped default."""
     registry = json.loads((REPO / "recon_settings" / "registry.json").read_text(encoding="utf-8"))
-    touched = {k for c in CASES for k in list(c["expect"]) + c.get("expect_absent", [])}
+    touched = {k for c in CASES
+               for k in list(c["expect"]) + c.get("expect_absent", [])
+               + [k for g in c.get("expect_any", []) for k in g["options"]]}
     reset = {}
     for key in touched:
         spec = registry["fields"].get(key)

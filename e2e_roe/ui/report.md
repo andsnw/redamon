@@ -1,8 +1,11 @@
 # Phase 1 — RoE upload through the UI
 
-**Result: 20/20 pass, three consecutive runs.** Five defects were found and fixed
+**Result: 20/20 pass, five consecutive runs.** Five defects were found and fixed
 to get there; two more are recorded below as findings rather than fixes, with
 evidence, because closing them safely is a separate change.
+
+One case had to be rewritten before that number meant anything: see
+[UI-07 was flaky and the matrix was wrong](#ui-07-was-flaky-and-the-matrix-was-wrong).
 
 - Date: 2026-09-17
 - Branch: `feature/mcp-recon-settings-registry`
@@ -54,7 +57,7 @@ UI-20) stay meaningful — for them an unexpected value is still a failure.
 | UI-04 | no directory brute forcing | a prohibition on a **technique** reaches the tool that performs it |
 | UI-05 | DoS prohibited | both expressions of one rule: the allow flag and the category |
 | UI-06 | reconnaissance only | a phase restriction caps severity without stripping tools |
-| UI-07 | named tool ban | "do not use Hydra" becomes a tool the gate actually refuses |
+| UI-07 | named tool ban | "do not use Hydra" is encoded as a rule, by any of the three correct means |
 | UI-08 | discouraged ≠ forbidden | **negative case**: "use with caution" must change nothing |
 | UI-09 | passive only | the engagement's passive switch |
 | UI-10 | client and contacts | the record fills from the document though MCP can never write it |
@@ -76,6 +79,33 @@ project, it does not decide what the project points at. UI-20 additionally tries
 to extract a credential (`cypherfixGithubToken`), enable `mcpKaliExecEnabled`,
 and remove the rate ceiling. It gets the ceiling it asked to remove (2 rps) and
 nothing else.
+
+## UI-07 was flaky and the matrix was wrong
+
+Worth stating plainly, because an earlier draft of this report claimed three
+consecutive green runs and that claim was partly luck.
+
+UI-07 asserted `roeForbiddenTools == ['execute_hydra']`. Run on its own four
+times it passed twice and failed twice. The failures were not the parse
+misunderstanding "Do not use Hydra" - it understood perfectly and encoded the
+rule a different way, turning `hydraEnabled` off and naming the `brute_force`
+category, which in the gate expands to `execute_hydra` plus three more tools. All
+three encodings prevent Hydra; the category one prevents the most.
+
+So the case was testing an implementation detail of the parse rather than the
+rule the document states. It now uses `expect_any`: the rule must land through
+one of the three, and which one is not the matrix's business. Five runs of UI-07
+alone, then five full runs of all 20, are green.
+
+This is not a weakened assertion. It is still seeded against - all three columns
+start holding a value the case does not want - so a parse that ignored the
+document still fails. What changed is that the case stopped insisting on one
+correct answer out of three.
+
+The general lesson for anyone extending this matrix: an LLM-backed step has more
+than one right answer wherever the product has more than one way to express a
+rule, and a case that pins the wrong one is flaky in a way that looks like a
+product bug.
 
 ## Defects found and fixed
 

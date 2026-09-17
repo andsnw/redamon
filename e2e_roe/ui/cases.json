@@ -1,6 +1,6 @@
 {
   "_what": "The 20 UI cases. Each names a document under docs/ and the settings that document must produce once the proposal is applied and the project saved.",
-  "_how_to_read": "expect = column -> required value. expect_absent = columns the parse must NOT propose. The runner compares against the project row in Postgres AFTER save, which is the only place that settles whether the pipeline really got the setting.",
+  "_how_to_read": "expect = column -> required value. expect_absent = columns the parse must NOT propose. The runner compares against the project row in Postgres AFTER save, which is the only place that settles whether the pipeline really got the setting. expect_any = a list of groups; each group is satisfied when ANY of its options holds, for a rule with more than one correct encoding.",
   "_scoring": "A case passes when every expect matches and every expect_absent is untouched. Lists are compared exactly unless the case declares allow_extra for that column. Before each case every asserted column is seeded with a value the case does NOT expect, so a pass can only mean the parse wrote it.",
   "cases": [
     {
@@ -77,12 +77,22 @@
       "id": "UI-07",
       "name": "named tool ban",
       "doc": "ui-07-forbidden-tool.md",
-      "focus": "An explicit 'do not use Hydra' becomes a forbidden tool, refused before it runs.",
-      "expect": {
-        "roeForbiddenTools": [
-          "execute_hydra"
-        ]
-      }
+      "focus": "An explicit 'do not use Hydra'. The product offers three correct ways to encode that and the parse picks between them run to run, so the case asserts the RULE landed rather than which column carried it. Demanding roeForbiddenTools alone failed about half the time on a parse that had understood the document perfectly well and turned the tool off instead.",
+      "expect": {},
+      "expect_any": [
+        {
+          "why": "any one of these prevents Hydra; the category blocks the most",
+          "options": {
+            "roeForbiddenTools": [
+              "execute_hydra"
+            ],
+            "hydraEnabled": false,
+            "roeForbiddenCategories": [
+              "brute_force"
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "UI-08",

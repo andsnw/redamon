@@ -1,6 +1,6 @@
 # Phase 2 — opening engagements as an agent over MCP
 
-**Result: 20/20 pass, two consecutive runs.** One real product defect was found
+**Result: 20/20 pass, four consecutive runs.** One real product defect was found
 and fixed: a project holding an engagement authorization record could not be
 deleted.
 
@@ -214,8 +214,12 @@ finding reachable from both surfaces.
 
 ## Cleanup
 
-Both runs deleted every project they created. Zero `e2e-%` projects remain. The
-20 documents are kept under `docs/`.
+Every run deleted every project it created. Zero `e2e-%` projects remain. The 20
+documents are kept under `docs/`.
+
+Unlike Phase 1 there is no model in this path - the agent's calls are the
+runner's - so these cases are deterministic and repeat runs test the surface
+rather than the variance.
 
 ## Reproducing
 

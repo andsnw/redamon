@@ -4,8 +4,8 @@ Two phases, 40 synthetic Rules-of-Engagement documents, both green.
 
 | | | Result | Report |
 |---|---|---|---|
-| Phase 1 | a document uploaded through the **UI** becomes the right settings | 20/20, three consecutive runs | [ui/report.md](ui/report.md) |
-| Phase 2 | an **agent** over MCP opens engagements that respect the document | 20/20, two consecutive runs | [mcp/report.md](mcp/report.md) |
+| Phase 1 | a document uploaded through the **UI** becomes the right settings | 20/20, five consecutive runs | [ui/report.md](ui/report.md) |
+| Phase 2 | an **agent** over MCP opens engagements that respect the document | 20/20, four consecutive runs | [mcp/report.md](mcp/report.md) |
 
 Both phases read the verdict out of Postgres. A proposal that looks right over a
 row that holds something else is precisely the failure this feature can have, and
@@ -59,3 +59,7 @@ moment seeding was added.
 Phase 2 never accepts a tool's own success message as evidence: every refused
 write is re-read from the database, and every resolved value comes from
 `preflight_scope_check` rather than from the settings the agent wrote.
+
+Phase 1 goes through an LLM, so it was run five times rather than once. That is
+how UI-07 was caught pinning one of three equally correct encodings of the same
+rule, passing about half the time and looking like a product bug.
