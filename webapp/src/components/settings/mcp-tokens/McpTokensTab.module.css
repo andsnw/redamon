@@ -431,6 +431,7 @@
 
 .rowMenuBtn {
   display: inline-flex;
+  /* A span, not a button: Menu's own wrapper carries the button role. */
   align-items: center;
   justify-content: center;
   width: 28px;

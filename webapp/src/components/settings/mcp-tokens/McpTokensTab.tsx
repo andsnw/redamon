@@ -851,15 +851,8 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
                     <td className={styles.actionsCell}>
                       <Menu
                         align="right"
-                        trigger={
-                          <button
-                            className={styles.rowMenuBtn}
-                            title={`Actions for ${t.name}`}
-                            aria-label={`Actions for ${t.name}`}
-                          >
-                            <MoreVertical size={16} />
-                          </button>
-                        }
+                        ariaLabel={`Actions for ${t.name}`}
+                        trigger={<span className={styles.rowMenuBtn}><MoreVertical size={16} /></span>}
                       >
                         <MenuItem
                           icon={<GraduationCap size={14} />}
