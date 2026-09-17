@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.1] - 2026-09-17
+
+### Added
+
+- **Settings registry as the single source for both doors.** 714 fields with bounds, units, enums and meanings, from which the form inputs, the MCP allowlist, the RoE parse prompt and the wiki reference are all generated. 648 fields are now settable over MCP (was ~126); the remaining 66 are 19 create-only scope columns and 47 closed outright.
+- **An engagement can be proven.** `create_project`, `attach_engagement_authorization`, `list_engagement_authorizations` and `preflight_scope_check` on the MCP surface, behind two new permissions (`project:create`, `engagement:authorize`). Authorization records are append-only and store only the document's SHA-256. `preflight_scope_check` reports **resolved** values rather than written ones, and names enabled tools whose phase will not run.
+- **An "Advanced" block in 17 module sections**, generated from the registry: 65 columns were writable over the API with an input nowhere in the form.
+
+### Changed
+
+- **RoE is split in two by classification, not by name prefix.** *Engagement limits* (rate ceiling, never-touch hosts, scanning window, agent denylists) are ordinary settings, enforced at scan start, editable at any time and reachable over MCP. The *engagement record* (client, contacts, dates, document) is UI-only and closed to agents because it carries third-party PII.
+- **`roeEnabled` is derived, never stored.** The master switch it replaced was a bypass shipped as a checkbox: one write of `false` disabled ceiling, exclusions and window together while every field still displayed its value. Limits now apply when there is a limit.
+- **Scope is create-only.** Set once in `create_project`, then refused on every route by classification rather than by a list. A different target is a different project.
+- **MCP token rows** use one kebab menu, and Revoke became a real Delete.
+
+### Fixed
+
+- **A forbidden tool or category could be recorded and never enforced.** The gate matches these strings exactly while the registry declared both columns free text, so `hydra` never matched `execute_hydra`. A live project held `execute_sqlmap`, which is not a tool, beside categories reading "Denial of Service" and "Brute Forcing", which the gate does not know. Both are now closed vocabularies, ticked from the registry rather than typed, refused at the write, and taught to the parse prompt.
+- **A project holding an authorization record could not be deleted.** The archive table the delete path writes to was raw SQL outside the Prisma schema, so every `db push` dropped it and left the project undeletable with a 500 until the next boot. It is a model now.
+- **`/roe/parse` returned 503 for every model**, reading its credentials from a project scope that does not exist while a project is being created.
+- **An oversized parse is refused.** One document made the model return 631 of 658 fields, each individually legal so nothing rejected any of it. Over 60 proposed changes the upload returns 422 and writes nothing.
+- **Three live bypasses of the engagement rate ceiling** in the recon pipeline, and `/defaults` sent nine keys under names no column has.
+- **Six MCP guards checked one value while another took effect.**
+- Form bounds and enforced bounds can no longer disagree; 24 fields declared a fake `0..10000000` range. 17 container-image fields became closed lists, so a value outside the set is refused at the write instead of silently replaced at scan start.
+- `stealthMode` now describes itself as the engagement's passive switch, and `roeForbiddenCategories` says what each token covers.
+
+### Security
+
+- **A scope document cannot re-point the platform.** Parsed documents are refused every targeting column by classification, so a column added later is refused the day it is added. Validated against 80 Rules-of-Engagement documents — 40 synthetic and 40 real disclosure policies — across both the UI upload and the MCP surface: no run moved the scope, wrote a credential, or loosened an engagement.
+
 ## [6.16.0] - 2026-09-14
 
 ### Added
