@@ -193,11 +193,24 @@ describe('the dispositions cover the model', () => {
     expect(counts.never).toBeLessThan(25)
   })
 
-  test('the whole RoE block is tighten_only', () => {
+  test('the RoE block is tighten_only, except what no settings write can carry', () => {
+    // One exception, and it is a type fact rather than a policy one.
+    // `roeDocumentData` is `Bytes?`: the agreement's own file, written by the
+    // endpoints that receive it. A JSON-RPC settings write cannot carry bytes,
+    // so describing it as writable meant a string passing every validator and
+    // then throwing a raw Prisma type error out of the tool. The MCP surface
+    // records the document's SHA-256 through attach_engagement_authorization.
+    const UPLOAD_MANAGED = ['roeDocumentData']
     const roe = columns.filter(c => c.startsWith('roe')).sort()
-    const notTighten = roe.filter(c => fields[c].mcp !== 'tighten_only')
+    const notTighten = roe.filter(
+      c => fields[c].mcp !== 'tighten_only' && !UPLOAD_MANAGED.includes(c)
+    )
     expect(notTighten).toEqual([])
     expect(roe.length).toBeGreaterThan(30)
+    for (const key of UPLOAD_MANAGED) {
+      expect(fields[key].mcp, key).toBe('never')
+      expect(fields[key].deny_reason, key).toBe('upload-managed')
+    }
   })
 
   test('the scope columns are create_only, never settable', () => {

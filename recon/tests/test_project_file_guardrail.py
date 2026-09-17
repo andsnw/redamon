@@ -68,11 +68,15 @@ def test_a_path_outside_the_allowed_roots_is_rejected(path):
 @pytest.mark.parametrize("path", [
     "/usr/share/seclists/Discovery/Web-Content/common.txt",
     "/app/recon/wordlists/vhost-common.txt",
-    "/app/recon/wordlists/proj123/custom.txt",
     "/usr/share/wordlists/rockyou.txt",
 ])
 def test_a_path_inside_an_allowed_root_is_accepted(path):
+    """Shipped files. Every project may read these whoever is scanning."""
     assert _inside_allowed_root(path) is True
+
+
+def test_a_projects_own_upload_is_accepted():
+    assert _inside_allowed_root("/app/recon/wordlists/proj123/custom.txt", "proj123") is True
 
 
 @pytest.mark.parametrize("value", [None, "", "   ", 42, [], {}, True])
@@ -104,6 +108,7 @@ def test_an_escaping_scalar_is_pinned_to_the_shipped_default(capsys):
 
 def test_an_allowed_scalar_is_left_alone():
     settings = dict(DEFAULT_SETTINGS)
+    settings["PROJECT_ID"] = "proj1"
     settings["FFUF_WORDLIST"] = "/app/recon/wordlists/proj1/mine.txt"
     assert sanitize_project_file_settings(settings)["FFUF_WORDLIST"] == \
         "/app/recon/wordlists/proj1/mine.txt"
@@ -185,3 +190,77 @@ def test_nothing_else_in_the_settings_dict_is_touched():
     after = sanitize_project_file_settings(dict(before))
     moved = {k for k in before if before[k] != after[k]}
     assert moved == {"FFUF_WORDLIST"}
+
+
+# --- regression: the upload root is SHARED ------------------------------------------
+
+# "Inside an allowed root" and "this project may read it" were the same question
+# until they were not. `/app/recon/wordlists` holds the shipped lists AND every
+# project's uploads, at `<root>/<project id>/<name>`, and the recon container
+# mounts the whole tree. So one project could name another's uploaded file and
+# get it read line by line into its own scan output, which is the exfiltration
+# this module's docstring already describes with the victim changed.
+
+OTHER = "cm1111111111111111111111"
+MINE = "cm0000000000000000000000"
+
+
+@pytest.mark.parametrize("path", [
+    f"/app/recon/wordlists/{OTHER}/creds.txt",
+    f"/app/recon/wordlists/{MINE}/../{OTHER}/creds.txt",
+    f"/app/recon/wordlists/{MINE}-evil/creds.txt",
+])
+def test_another_projects_upload_is_rejected(path):
+    assert _inside_allowed_root(path, MINE) is False
+
+
+def test_an_upload_is_unreadable_when_the_project_is_unknown():
+    """Fail closed: an empty id means we could not establish whose scan this is."""
+    assert _inside_allowed_root(f"/app/recon/wordlists/{MINE}/creds.txt", "") is False
+
+
+def test_a_shipped_list_stays_readable_without_a_project_id():
+    """Only the SUBDIRECTORIES are per-project; the root itself is shipped content."""
+    assert _inside_allowed_root("/app/recon/wordlists/jhaddix-all.txt", "") is True
+
+
+def test_the_other_roots_are_not_project_scoped():
+    """They hold shipped or operator-mounted files, not per-project uploads."""
+    for path in (
+        "/app/custom_templates/mine.yaml",
+        "/custom-templates/mine.yaml",
+        "/usr/share/seclists/a/b.txt",
+        "/usr/share/dirb/wordlists/common.txt",
+    ):
+        assert _inside_allowed_root(path, "") is True, path
+
+
+def test_the_settings_pass_drops_a_neighbours_upload(capsys):
+    settings = dict(DEFAULT_SETTINGS)
+    settings["PROJECT_ID"] = MINE
+    settings["FFUF_WORDLIST"] = f"/app/recon/wordlists/{OTHER}/creds.txt"
+    out = sanitize_project_file_settings(settings)
+    assert out["FFUF_WORDLIST"] == DEFAULT_SETTINGS["FFUF_WORDLIST"]
+    assert "[guardrail]" in capsys.readouterr().out
+
+
+def test_the_settings_pass_keeps_my_own_upload_in_a_list():
+    settings = dict(DEFAULT_SETTINGS)
+    settings["PROJECT_ID"] = MINE
+    settings["NUCLEI_CUSTOM_TEMPLATES"] = [
+        f"/app/recon/wordlists/{MINE}/mine.yaml",
+        f"/app/recon/wordlists/{OTHER}/theirs.yaml",
+    ]
+    out = sanitize_project_file_settings(settings)
+    assert out["NUCLEI_CUSTOM_TEMPLATES"] == [f"/app/recon/wordlists/{MINE}/mine.yaml"]
+
+
+def test_a_scan_with_no_project_id_still_gets_its_shipped_defaults():
+    """
+    CLI mode has no PROJECT_ID. Every shipped default must survive the pass, or
+    tightening this would have broken every local run.
+    """
+    settings = dict(DEFAULT_SETTINGS)
+    out = sanitize_project_file_settings(dict(settings))
+    for key in PATH_KEYS:
+        assert out.get(key) == settings.get(key), key

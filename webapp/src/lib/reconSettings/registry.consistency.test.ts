@@ -367,6 +367,10 @@ describe('T16 exactly the documented columns are closed', () => {
     jsReconCustomEndpointKeywords: 'upload-managed',
     jsReconCustomFrameworks: 'upload-managed',
     supplyChainSbomFile: 'upload-managed',
+    // A Bytes column. It was tighten-only, described as a string, so a write
+    // passed every validator and then threw a raw Prisma type error out of the
+    // tool. The MCP surface records the document's DIGEST instead.
+    roeDocumentData: 'upload-managed',
   }
 
   test('the never set is exactly this list', () => {
