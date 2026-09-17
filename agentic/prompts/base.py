@@ -605,13 +605,35 @@ def build_kali_install_prompt():
 
 
 def build_roe_prompt_section():
-    """Build the Rules of Engagement prompt section from project settings.
+    """Build the engagement section of the agent's system prompt.
 
-    Returns a formatted string to inject into the system prompt when RoE is enabled.
+    Two things are injected, and the gate is deliberately the OR of them:
+
+      the LIMITS   live when a ceiling, an exclusion list or a time window is
+                   set. ROE_ENABLED is DERIVED - see
+                   recon_settings.engagement.derive_roe_enabled, applied in
+                   agentic/project_settings.py - so it gates on a limit
+                   EXISTING, never on a column a person could switch off.
+      the RECORD   the client, the contacts, the dates, the document text.
+                   Nothing enforces it; the model reads it.
+
+    Gating the whole block on the derived flag alone would drop the record
+    from every project that recorded an engagement without configuring a
+    limit, which is most of them. A project with neither gets nothing, which
+    is correct: there is no engagement to describe.
     """
     from project_settings import get_setting
 
-    if not get_setting('ROE_ENABLED', False):
+    limits_live = get_setting('ROE_ENABLED', False)
+    has_record = any(
+        get_setting(key, '')
+        for key in (
+            'ROE_CLIENT_NAME', 'ROE_CLIENT_CONTACT_NAME', 'ROE_EMERGENCY_CONTACT',
+            'ROE_ENGAGEMENT_START_DATE', 'ROE_INCIDENT_PROCEDURE', 'ROE_NOTES',
+            'ROE_RAW_TEXT',
+        )
+    )
+    if not limits_live and not has_record:
         return ""
 
     sections = ["## RULES OF ENGAGEMENT (MANDATORY)"]

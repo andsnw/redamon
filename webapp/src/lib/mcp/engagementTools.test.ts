@@ -60,11 +60,13 @@ import {
   createProject,
   listEngagementAuthorizations,
   preflightScopeCheck,
-  tightenEngagementRoe,
 } from './engagementTools'
+import { updateReconSettings } from './writeTools'
 import type { McpContext } from './tools'
 
-const ALL_SCOPES = ['recon:read', 'project:create', 'engagement:authorize'] as const
+const ALL_SCOPES = [
+  'recon:read', 'project:create', 'engagement:authorize', 'recon:settings',
+] as const
 
 const ctx = (scopes: readonly string[] = ALL_SCOPES): McpContext => ({
   token: {
@@ -87,7 +89,6 @@ const projectRow = (over: Record<string, unknown> = {}) => ({
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   engagementKind: 'internal',
   engagementIdentityHeader: '',
-  roeEnabled: false,
   roeGlobalMaxRps: 0,
   targetDomain: 'example.com',
   targetIps: [],
@@ -195,7 +196,7 @@ describe('create_project enforces the third-party rule before writing anything',
   test('third_party with a 0 ceiling is refused, saying what 0 means', async () => {
     await expect(createProject(ctx(), {
       name: 'test', engagementKind: 'third_party', targetDomain: 'example.com',
-      roe: { roeEnabled: true, roeGlobalMaxRps: 0 },
+      settings: { roeGlobalMaxRps: 0 },
       authorization: AUTH,
     })).rejects.toThrow(/NO ceiling/)
   })
@@ -203,7 +204,7 @@ describe('create_project enforces the third-party rule before writing anything',
   test('third_party with no authorization is refused', async () => {
     await expect(createProject(ctx(), {
       name: 'test', engagementKind: 'third_party', targetDomain: 'example.com',
-      roe: { roeEnabled: true, roeGlobalMaxRps: 3 },
+      settings: { roeGlobalMaxRps: 3 },
     })).rejects.toThrow(/authorized it/)
     expect(h.createProject).not.toHaveBeenCalled()
   })
@@ -211,7 +212,7 @@ describe('create_project enforces the third-party rule before writing anything',
   test('third_party with both is created, and the authorization with it', async () => {
     const r = await createProject(ctx(), {
       name: 'test', engagementKind: 'third_party', targetDomain: 'example.com',
-      roe: { roeEnabled: true, roeGlobalMaxRps: 3 },
+      settings: { roeGlobalMaxRps: 3 },
       authorization: AUTH,
     })
     expect(r.created).toBe(true)
@@ -224,7 +225,7 @@ describe('create_project enforces the third-party rule before writing anything',
     // the state the third-party rule is meant to make impossible.
     await createProject(ctx(), {
       name: 'test', engagementKind: 'third_party', targetDomain: 'example.com',
-      roe: { roeEnabled: true, roeGlobalMaxRps: 3 },
+      settings: { roeGlobalMaxRps: 3 },
       authorization: AUTH,
     })
     expect(h.transaction).toHaveBeenCalledTimes(1)
@@ -235,7 +236,7 @@ describe('create_project takes a digest, never the document', () => {
   test('documentText is digested here and not stored', async () => {
     await createProject(ctx(), {
       name: 'test', engagementKind: 'third_party', targetDomain: 'example.com',
-      roe: { roeEnabled: true, roeGlobalMaxRps: 3 },
+      settings: { roeGlobalMaxRps: 3 },
       authorization: { ...AUTH, documentSha256: undefined, documentText: 'in scope: *.example.com' },
     })
     const data = h.createAuthorization.mock.calls[0][0].data
@@ -246,7 +247,7 @@ describe('create_project takes a digest, never the document', () => {
   test('a malformed digest is refused', async () => {
     await expect(createProject(ctx(), {
       name: 'test', engagementKind: 'third_party', targetDomain: 'example.com',
-      roe: { roeEnabled: true, roeGlobalMaxRps: 3 },
+      settings: { roeGlobalMaxRps: 3 },
       authorization: { ...AUTH, documentSha256: 'not-a-digest' },
     })).rejects.toThrow(/64 lower-case hex/)
   })
@@ -254,7 +255,7 @@ describe('create_project takes a digest, never the document', () => {
   test('a future issuedAt is refused', async () => {
     await expect(createProject(ctx(), {
       name: 'test', engagementKind: 'third_party', targetDomain: 'example.com',
-      roe: { roeEnabled: true, roeGlobalMaxRps: 3 },
+      settings: { roeGlobalMaxRps: 3 },
       authorization: { ...AUTH, issuedAt: new Date(Date.now() + 86_400_000).toISOString() },
     })).rejects.toThrow(/future/)
   })
@@ -263,7 +264,7 @@ describe('create_project takes a digest, never the document', () => {
     // A timestamp a caller can choose proves nothing.
     await createProject(ctx(), {
       name: 'test', engagementKind: 'third_party', targetDomain: 'example.com',
-      roe: { roeEnabled: true, roeGlobalMaxRps: 3 },
+      settings: { roeGlobalMaxRps: 3 },
       authorization: { ...AUTH, recordedAt: '1999-01-01T00:00:00.000Z' } as never,
     })
     expect(h.createAuthorization.mock.calls[0][0].data).not.toHaveProperty('recordedAt')
@@ -272,7 +273,7 @@ describe('create_project takes a digest, never the document', () => {
   test('the writing token is recorded, so a revoked one stays attributable', async () => {
     await createProject(ctx(), {
       name: 'test', engagementKind: 'third_party', targetDomain: 'example.com',
-      roe: { roeEnabled: true, roeGlobalMaxRps: 3 },
+      settings: { roeGlobalMaxRps: 3 },
       authorization: AUTH,
     })
     expect(h.createAuthorization.mock.calls[0][0].data.recordedByTokenId).toBe('t1')
@@ -319,11 +320,33 @@ describe('create_project is safe to retry', () => {
 })
 
 describe('create_project validates what it writes', () => {
-  test('a non-RoE field in the roe block is refused by name', async () => {
+  test('the engagement limits go in `settings`, like any other field', async () => {
+    // There is no `roe` argument any more. A limit is an ordinary setting, so a
+    // caller does not have to know which block a field belongs to before it can
+    // open an engagement.
+    await createProject(ctx(), {
+      name: 'test', engagementKind: 'internal', targetDomain: 'example.com',
+      settings: { roeGlobalMaxRps: 3, roeExcludedHosts: ['pay.example.com'] },
+    })
+    const data = h.createProject.mock.calls[0][0].data
+    expect(data.roeGlobalMaxRps).toBe(3)
+    expect(data.roeExcludedHosts).toEqual(['pay.example.com'])
+  })
+
+  test('an engagement RECORD field is refused by name, even at creation', async () => {
+    // The contract is a person's to write. It carries third-party personal data
+    // and nothing in the pipeline enforces it.
     await expect(createProject(ctx(), {
       name: 'test', engagementKind: 'internal', targetDomain: 'example.com',
-      roe: { naabuThreads: 25 },
-    })).rejects.toThrow(/naabuThreads/)
+      settings: { roeClientContactEmail: 'someone@client.test' },
+    })).rejects.toThrow(/roeClientContactEmail/)
+  })
+
+  test('the derived engagement flag is refused at creation too', async () => {
+    await expect(createProject(ctx(), {
+      name: 'test', engagementKind: 'internal', targetDomain: 'example.com',
+      settings: { roeEnabled: true },
+    })).rejects.toThrow(/roeEnabled/)
   })
 
   test('an out-of-bounds tuning value is refused', async () => {
@@ -350,70 +373,50 @@ describe('create_project validates what it writes', () => {
   })
 })
 
-// --- tighten_engagement_roe ------------------------------------------------------------
+// --- the engagement limits, through the ordinary settings path -------------------------
 
-describe('tighten_engagement_roe moves one direction', () => {
-  test('it needs project:create, not recon:settings', async () => {
-    await expect(tightenEngagementRoe(ctx(['recon:settings']), 'p1', { roeGlobalMaxRps: 1 }))
-      .rejects.toBeInstanceOf(McpScopeError)
-  })
-
+describe('an engagement limit is changed with update_recon_settings', () => {
   test('lowering the ceiling is accepted', async () => {
-    h.findProject.mockResolvedValue(projectRow({ roeEnabled: true, roeGlobalMaxRps: 3 }))
-    const r = await tightenEngagementRoe(ctx(), 'p1', { roeGlobalMaxRps: 1 })
-    expect(r.tightened).toEqual({ roeGlobalMaxRps: 1 })
+    h.findProject.mockResolvedValue(projectRow({ roeGlobalMaxRps: 3 }))
+    await updateReconSettings(ctx(['recon:settings']), 'p1', { roeGlobalMaxRps: 1 })
+    expect(h.updateProject).toHaveBeenCalled()
+    expect(h.updateProject.mock.calls[0][0].data).toEqual({ roeGlobalMaxRps: 1 })
   })
 
-  test('raising the ceiling is refused', async () => {
-    h.findProject.mockResolvedValue(projectRow({ roeEnabled: true, roeGlobalMaxRps: 3 }))
-    await expect(tightenEngagementRoe(ctx(), 'p1', { roeGlobalMaxRps: 10 }))
-      .rejects.toThrow(/only decrease/)
-    expect(h.updateProject).not.toHaveBeenCalled()
+  test('raising the ceiling is ALSO accepted, and audited', async () => {
+    // The direction rule is gone. What replaced it is not permissiveness: the
+    // ceiling is applied at scan start whatever it says, so raising it changes
+    // what runs rather than what is checked, and preflight_scope_check reports
+    // the resolved rates. The audit row is what records the move.
+    h.findProject.mockResolvedValue(projectRow({ roeGlobalMaxRps: 3 }))
+    await updateReconSettings(ctx(['recon:settings']), 'p1', { roeGlobalMaxRps: 10 })
+    expect(h.updateProject.mock.calls[0][0].data).toEqual({ roeGlobalMaxRps: 10 })
+    const row = h.audit.mock.calls[0][0]
+    expect(row.before).toEqual({ roeGlobalMaxRps: 3 })
   })
 
-  test('removing the ceiling is refused, because 0 means none', async () => {
-    h.findProject.mockResolvedValue(projectRow({ roeEnabled: true, roeGlobalMaxRps: 3 }))
-    await expect(tightenEngagementRoe(ctx(), 'p1', { roeGlobalMaxRps: 0 }))
-      .rejects.toThrow(/NO ceiling/)
+  test('recon:settings is enough; project:create is not required', async () => {
+    // B4: project:create governs create_project alone now.
+    h.findProject.mockResolvedValue(projectRow({ roeGlobalMaxRps: 3 }))
+    await expect(
+      updateReconSettings(ctx(['recon:settings']), 'p1', { roeExcludedHosts: ['a.tld'] })
+    ).resolves.toBeTruthy()
   })
 
-  test('growing an exclusion list is accepted and shrinking it is not', async () => {
-    h.findProject.mockResolvedValue(projectRow({ roeExcludedHosts: ['a.example.com'] }))
-    await expect(tightenEngagementRoe(ctx(), 'p1', {
-      roeExcludedHosts: ['a.example.com', 'b.example.com'],
-    })).resolves.toBeTruthy()
-    await expect(tightenEngagementRoe(ctx(), 'p1', { roeExcludedHosts: [] }))
-      .rejects.toThrow(/only grow/)
-  })
-
-  test('a non-RoE field is refused by name', async () => {
-    await expect(tightenEngagementRoe(ctx(), 'p1', { naabuThreads: 25 }))
-      .rejects.toThrow(/naabuThreads/)
+  test('an engagement RECORD field is still refused by name', async () => {
+    h.findProject.mockResolvedValue(projectRow({}))
+    await expect(
+      updateReconSettings(ctx(['recon:settings']), 'p1', { roeClientName: 'Acme' })
+    ).rejects.toThrow(/roeClientName/)
   })
 
   test('it is refused while a scan is writing the graph', async () => {
-    // The running scan read its Rules of Engagement at start. A tightening
-    // accepted mid-scan is one that silently did not apply, which is worse than
-    // a refused one.
+    // The running scan read its settings at start, so a change accepted
+    // mid-scan is one that silently did not apply.
     h.busy.mockResolvedValue('a full recon is running')
-    await expect(tightenEngagementRoe(ctx(), 'p1', { roeGlobalMaxRps: 1 }))
-      .rejects.toThrow(/will not see the change/)
-  })
-
-  test('a stale expectedUpdatedAt is a conflict, not an overwrite', async () => {
-    h.findProject.mockResolvedValue(projectRow({ roeEnabled: true, roeGlobalMaxRps: 3 }))
-    h.updateManyProject.mockResolvedValue({ count: 0 })
-    await expect(tightenEngagementRoe(ctx(), 'p1', { roeGlobalMaxRps: 1 }, '2020-01-01T00:00:00.000Z'))
-      .rejects.toThrow(/changed since you read it/)
-  })
-
-  test('it writes an audit row with a before and an after', async () => {
-    h.findProject.mockResolvedValue(projectRow({ roeEnabled: true, roeGlobalMaxRps: 3 }))
-    await tightenEngagementRoe(ctx(), 'p1', { roeGlobalMaxRps: 1 })
-    const row = h.audit.mock.calls[0][0]
-    expect(row.action).toBe('mcp.tighten_roe')
-    expect(row.before).toEqual({ roeGlobalMaxRps: 3 })
-    expect((row.after as Record<string, unknown>).changes).toEqual({ roeGlobalMaxRps: 1 })
+    await expect(
+      updateReconSettings(ctx(['recon:settings']), 'p1', { roeGlobalMaxRps: 1 })
+    ).rejects.toThrow(/will not see/)
   })
 })
 
@@ -640,7 +643,8 @@ describe('T24 every new tool joins the guards the others keep', () => {
     expect(h.audit).toHaveBeenCalledTimes(1)
 
     h.audit.mockClear()
-    await tightenEngagementRoe(ctx(), 'p1', { roeExcludedHosts: ['a.tld'] })
+    h.findProject.mockResolvedValue(projectRow())
+    await updateReconSettings(ctx(), 'p1', { roeExcludedHosts: ['a.tld'] })
     expect(h.audit).toHaveBeenCalledTimes(1)
 
     h.audit.mockClear()
@@ -659,7 +663,7 @@ describe('T24 every new tool joins the guards the others keep', () => {
     // that skipped it would read another account's engagement.
     h.findProject.mockResolvedValue({ ...projectRow(), userId: 'someone-else' })
     for (const call of [
-      () => tightenEngagementRoe(ctx(), 'p1', { roeExcludedHosts: ['a'] }),
+      () => updateReconSettings(ctx(), 'p1', { roeExcludedHosts: ['a'] }),
       () => attachEngagementAuthorization(ctx(), 'p1', AUTH),
       () => preflightScopeCheck(ctx(), 'p1'),
       () => listEngagementAuthorizations(ctx(), 'p1'),

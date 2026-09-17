@@ -78,7 +78,7 @@ describe('row 8: engagementKind is persisted, not defaulted', () => {
   test('third_party reaches the create call', async () => {
     const res = await POST(postReq({
       name: 'test', targetDomain: 'example.invalid', engagementKind: 'third_party',
-      roeEnabled: true, roeGlobalMaxRps: 3,
+      roeGlobalMaxRps: 3,
     }))
     expect(res.status).toBeLessThan(400)
     expect(createdData().engagementKind).toBe('third_party')
@@ -87,9 +87,11 @@ describe('row 8: engagementKind is persisted, not defaulted', () => {
   test('the ceiling that makes it usable is persisted with it', async () => {
     await POST(postReq({
       name: 'test', targetDomain: 'example.invalid', engagementKind: 'third_party',
-      roeEnabled: true, roeGlobalMaxRps: 3,
+      roeGlobalMaxRps: 3,
     }))
-    expect(createdData().roeEnabled).toBe(true)
+    // The DERIVED flag is dropped, not stored: a ceiling alone is what makes the
+    // limits live, and a persisted copy could only ever disagree with it.
+    expect(createdData()).not.toHaveProperty('roeEnabled')
     expect(createdData().roeGlobalMaxRps).toBe(3)
   })
 
@@ -113,7 +115,9 @@ describe('row 8: engagementKind is persisted, not defaulted', () => {
       name: 'test', targetDomain: 'example.invalid',
       engagementKind: 'third_party', roeEnabled: 'true', roeGlobalMaxRps: '3',
     }))
-    expect(createdData().roeEnabled).toBe(true)
+    // The DERIVED flag is dropped, not stored: a ceiling alone is what makes the
+    // limits live, and a persisted copy could only ever disagree with it.
+    expect(createdData()).not.toHaveProperty('roeEnabled')
     expect(createdData().roeGlobalMaxRps).toBe(3)
   })
 })

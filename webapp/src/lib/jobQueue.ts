@@ -16,6 +16,7 @@
  */
 import { createHash } from 'crypto'
 
+import { deriveRoeEnabled } from '@/lib/engagement'
 import { fingerprintFields, fingerprintKinds } from '@/lib/reconSettings/registry'
 
 export type JobKind =
@@ -139,6 +140,14 @@ export function settingsFingerprint(
     for (const [k, v] of Object.entries(extra)) {
       if (v !== undefined) subset[k] = v
     }
+  }
+  // Whether the engagement's limits are LIVE is a synthetic input, because it is
+  // derived rather than stored and FINGERPRINT_FIELDS only sees columns. It is
+  // not redundant with the columns it is derived from: a project can reach the
+  // same derived answer by three different routes, and the effective
+  // configuration of a queued job turns on the answer rather than on the route.
+  if (fields.length > 0) {
+    subset.__engagementLimitsActive = deriveRoeEnabled(project as never)
   }
   const canonical = JSON.stringify({ kind, settings: canonicalize(subset) })
   return createHash('sha256').update(canonical).digest('hex')

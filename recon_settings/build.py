@@ -34,6 +34,7 @@ YAML_PATH = HERE / "registry.yaml"
 SCHEMA_PATH = HERE / "registry.schema.json"
 JSON_PATH = HERE / "registry.json"
 WEBAPP_JSON_PATH = REPO_ROOT / "webapp" / "src" / "lib" / "reconSettings" / "registry.json"
+ROE_PROMPT_PATH = HERE / "roe_parse_prompt.py"
 
 sys.path.insert(0, str(REPO_ROOT / "tooling" / "scripts"))
 
@@ -164,10 +165,18 @@ def build(document: dict | None = None) -> dict:
             f"{', '.join(ghosts[:10])}{' ...' if len(ghosts) > 10 else ''}"
         )
 
+    tool_sections = {name: tool.get("form_section") for name, tool in doc["tools"].items()}
+
     out_fields: dict[str, dict] = {}
     for name in sorted(fields):
         col = columns[name]
         entry = dict(fields[name])
+        # A field is rendered beside the other settings of the tool it configures,
+        # so the section is the TOOL's unless the field names its own. An explicit
+        # null survives the join and means "no input anywhere", which is what the
+        # parity test reads to tell a deliberate omission from a forgotten one.
+        if "form_section" not in entry:
+            entry["form_section"] = tool_sections.get(entry["tool"])
         entry["type"] = col.kind
         entry["prisma_type"] = col.type + ("[]" if col.is_list else "")
         entry["optional"] = col.optional
@@ -204,10 +213,17 @@ def main(argv: list[str]) -> int:
         print(f"registry build FAILED: {exc}", file=sys.stderr)
         return 2
 
-    targets = [JSON_PATH, WEBAPP_JSON_PATH]
-    stale = [p for p in targets if not p.exists() or p.read_text(encoding="utf-8") != text]
+    targets = {JSON_PATH: text, WEBAPP_JSON_PATH: text}
 
+    # The prompt is generated from the registry AS JUST BUILT, not from whatever
+    # registry.json happens to be on disk, so one run cannot leave the two
+    # artifacts describing different field sets.
     if check:
+        stale = [p for p, body in targets.items()
+                 if not p.exists() or p.read_text(encoding="utf-8") != body]
+        prompt_text = _prompt_from(text)
+        if not ROE_PROMPT_PATH.exists() or ROE_PROMPT_PATH.read_text(encoding="utf-8") != prompt_text:
+            stale.append(ROE_PROMPT_PATH)
         if stale:
             names = ", ".join(str(p.relative_to(REPO_ROOT)) for p in stale)
             print(
@@ -219,16 +235,38 @@ def main(argv: list[str]) -> int:
         print("registry artifacts are up to date")
         return 0
 
-    for path in targets:
+    for path, body in targets.items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        path.write_text(body, encoding="utf-8")
+    ROE_PROMPT_PATH.write_text(_prompt_from(text), encoding="utf-8")
+
     registry = json.loads(text)
     print(
-        f"wrote {len(targets)} artifact(s): "
+        f"wrote {len(targets) + 1} artifact(s): "
         f"{len(registry['fields'])} fields, {len(registry['tools'])} tools, "
         f"{len(registry['runtime_only'])} runtime-only keys"
     )
     return 0
+
+
+def _prompt_from(registry_text: str) -> str:
+    """Render the prompt against the registry text this run produced.
+
+    The loader caches, and it reads the file, so a build that wrote a new
+    registry and then rendered would otherwise render from the PREVIOUS bytes on
+    the first run after a change. Writing the registry first and dropping the
+    cache is what keeps the digest in the prompt equal to the digest of the file
+    beside it.
+    """
+    JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+    JSON_PATH.write_text(registry_text, encoding="utf-8")
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from recon_settings.loader import reload_registry  # noqa: PLC0415
+    from recon_settings.roe_prompt import render_module  # noqa: PLC0415
+
+    reload_registry()
+    return render_module()
 
 
 if __name__ == "__main__":

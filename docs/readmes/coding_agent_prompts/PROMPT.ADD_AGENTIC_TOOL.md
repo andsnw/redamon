@@ -412,8 +412,11 @@ If the tool has configurable parameters (like Hydra's threads, SQLMap's level/ri
 - [ ] **Frontend section component** — Create `[Tool]Section.tsx` in `webapp/src/components/projects/ProjectForm/sections/` (read `BruteForceSection.tsx` or `SqliSection.tsx` as reference). Export from `sections/index.ts`.
 - [ ] **`webapp/src/components/projects/ProjectForm/ProjectForm.tsx`** — Import and render section in appropriate tab
 - [ ] Run `docker compose exec webapp npx prisma db push`
-- [ ] **`webapp/src/lib/reconSettingsAllowlist.generated.ts`** — Classify every new `Project` column in the ALLOW or DENY table. The inbound MCP server writes settings through a positive allowlist and a coverage test fails until each column is classified. An **agent** setting is almost always `DENY` with reason `agent` (agent/fireteam behaviour is out of scope for a recon credential); `llm` for a model or prompt field, `intrusive` for anything that raises aggression at a live target.
-  - The test reads `Prisma.ProjectScalarFieldEnum` from the **generated client**, not `schema.prisma`, so it stays green until the client is regenerated (`docker compose build webapp`, or `prisma generate`). A green local run right after editing the schema does **not** mean you are done.
+- [ ] **`recon_settings/registry.yaml`** — Describe every new `Project` column, then run `python3 recon_settings/build.py`. The build FAILS on an undescribed column, so this layer announces itself.
+  - **`mcp: settable` is the normal answer for an agent setting**, and that is a change from how this used to work. Agent behaviour was denied wholesale as "out of scope for a recon credential"; the result was 63 columns the API could not reach while the form could, which is a capability gap rather than a control. `parity.test.ts` now fails exactly that shape.
+  - Put it in the `agent` group and give it real `bounds` or a `values:` list. The bound is the control, not the classification: a settable field with a fake bound (`0..10000000`) is a fake control on the form input AND the API validator at once, because both are generated from it.
+  - Use `never` only for a column that configures nothing about a run, with a `deny_reason` the schema defines — `escalation` for `mcpKaliExecEnabled`, `secret` for a stored token, `internal` for state the application writes. There is no ALLOW/DENY table and no `agent`, `llm` or `intrusive` deny reason.
+  - The build reads `Prisma.ProjectScalarFieldEnum` from the **generated client**, not `schema.prisma`, so it stays green until the client is regenerated (`docker compose build webapp`, or `prisma generate`). A green local run right after editing the schema does **not** mean you are done.
 
 #### Optional: Attack Skill Integration
 

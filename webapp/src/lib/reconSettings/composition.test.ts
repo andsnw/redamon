@@ -19,7 +19,7 @@ import { describe, test, expect, vi } from 'vitest'
 vi.mock('@/lib/prisma', () => ({ default: {} }))
 
 import { settingGroups } from '@/lib/mcp/catalogTools'
-import { checkTighten, filterReconSettings, permittedKeys } from './filter'
+import { filterReconSettings, permittedKeys } from './filter'
 import { fieldsWhere, loadRegistry, type RegistryField } from './registry'
 
 const registry = loadRegistry()
@@ -150,88 +150,57 @@ describe('T45 each disposition behaves the way it is documented', () => {
     expect(problems).toEqual([])
   })
 
-  test('every tighten_only field is refused without the engagement permission', () => {
+  test('every engagement limit is writable through update_recon_settings', () => {
+    // The direction rules are gone. A limit is an ordinary setting that moves in
+    // either direction, because what makes it safe is that it is ENFORCED at scan
+    // start whatever the write said - not that the write was checked. The five
+    // fields whose declared direction never actually constrained anything
+    // (`tighten: narrow` on the whole time window) are the proof that the
+    // write-time check bought the appearance of a guarantee rather than one.
     const problems: string[] = []
-    for (const f of fieldsWhere(s => s.mcp === 'tighten_only')) {
+    for (const f of fieldsWhere(s => s.group === 'engagement_limits')) {
+      if (f.key === 'roeEnabled') continue // derived, refused by design
       const r = filterReconSettings({ [f.key]: legalValue(f.key, f) })
-      if (r.ok) problems.push(`${f.key}: writable through update_recon_settings`)
-      else if (!/tighten_engagement_roe/.test(r.error)) {
-        problems.push(`${f.key}: refused without naming the right tool`)
-      }
+      if (!r.ok) problems.push(`${f.key}: refused (${r.error})`)
     }
     expect(problems).toEqual([])
   })
 
-  test('every tighten_only field accepts the safe direction and refuses the other', () => {
-    // Both directions per field, generated from the field's own shape, so a new
-    // RoE column is covered the day it is added.
+  test('the rate ceiling moves in both directions and is enforced at scan start', () => {
+    // Lowering it and raising it are equally permitted and equally auditable.
+    // preflight_scope_check is where a caller sees what will actually run.
+    expect(filterReconSettings({ roeGlobalMaxRps: 1 }, { current: { roeGlobalMaxRps: 3 } }).ok).toBe(true)
+    expect(filterReconSettings({ roeGlobalMaxRps: 10 }, { current: { roeGlobalMaxRps: 3 } }).ok).toBe(true)
+    // 0 is still accepted and still means NO ceiling; the bound is what is
+    // enforced, and the meaning says so where a caller reads it.
+    expect(filterReconSettings({ roeGlobalMaxRps: 0 }).ok).toBe(true)
+    expect(registry.fields.roeGlobalMaxRps.meaning).toMatch(/ZERO MEANS NO CEILING/)
+  })
+
+  test('the derived engagement flag is refused, in both modes, naming why', () => {
+    for (const mode of ['update', 'create'] as const) {
+      const r = filterReconSettings({ roeEnabled: true }, { mode })
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.error).toMatch(/derived/i)
+    }
+  })
+
+  test('an exclusion list may be written in full, added to or cleared', () => {
+    for (const value of [['a'], ['a', 'b'], []]) {
+      expect(filterReconSettings({ roeExcludedHosts: value }).ok).toBe(true)
+    }
+  })
+
+  test('every engagement RECORD column is refused, in both modes, by name', () => {
     const problems: string[] = []
-    for (const f of fieldsWhere(s => s.mcp === 'tighten_only')) {
-      let current: unknown
-      let safe: unknown
-      let unsafe: unknown
-      switch (f.tighten) {
-        case 'decrease':
-          current = 10; safe = 5; unsafe = 50; break
-        case 'increase':
-          current = 10; safe = 50; unsafe = 5; break
-        case 'superset':
-          current = ['a']; safe = ['a', 'b']; unsafe = []; break
-        case 'true_to_false':
-          current = true; safe = false; unsafe = undefined; break
-        case 'false_to_true':
-          current = false; safe = true; unsafe = undefined; break
-        default:
-          continue // 'narrow': no machine-checkable direction
-      }
-      if (checkTighten(f.key, f, current, safe)) {
-        problems.push(`${f.key}: the SAFE direction was refused`)
-      }
-      if (unsafe !== undefined && !checkTighten(f.key, f, current, unsafe)) {
-        problems.push(`${f.key}: the LOOSENING direction was accepted`)
+    for (const f of fieldsWhere(s => s.deny_reason === 'engagement-record')) {
+      for (const mode of ['update', 'create'] as const) {
+        const r = filterReconSettings({ [f.key]: legalValue(f.key, f) }, { mode })
+        if (r.ok) problems.push(`${f.key}: accepted in ${mode} mode`)
+        else if (!r.error.includes(f.key)) problems.push(`${f.key}: ${mode} refusal does not name it`)
       }
     }
     expect(problems).toEqual([])
-  })
-
-  test('the rate ceiling may never be removed once it exists', () => {
-    // 0 means NO ceiling, so `3 -> 0` reads as a decrease and is the one move
-    // that would leave the engagement unlimited.
-    const spec = registry.fields.roeGlobalMaxRps
-    expect(checkTighten('roeGlobalMaxRps', spec, 3, 0)).toMatch(/NO ceiling/)
-    expect(checkTighten('roeGlobalMaxRps', spec, 3, 1)).toBeNull()
-    expect(checkTighten('roeGlobalMaxRps', spec, 3, 10)).toMatch(/only decrease/)
-    // Setting a ceiling where there was none IS a tightening, whatever the
-    // arithmetic says.
-    expect(checkTighten('roeGlobalMaxRps', spec, 0, 3)).toBeNull()
-  })
-
-  test('roeEnabled may be switched on and never off', () => {
-    const spec = registry.fields.roeEnabled
-    expect(checkTighten('roeEnabled', spec, false, true)).toBeNull()
-    expect(checkTighten('roeEnabled', spec, true, false)).toMatch(/false to true/)
-  })
-
-  test('an exclusion list may grow and never shrink', () => {
-    const spec = registry.fields.roeExcludedHosts
-    expect(checkTighten('roeExcludedHosts', spec, ['a'], ['a', 'b'])).toBeNull()
-    expect(checkTighten('roeExcludedHosts', spec, ['a', 'b'], ['a'])).toMatch(/only grow/)
-  })
-
-  test('a tighten write with the permission but no current values is refused', () => {
-    // Permitting a move whose direction could not be checked is the one failure
-    // this layer cannot afford.
-    const r = filterReconSettings({ roeGlobalMaxRps: 1 }, { allowTighten: true })
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toMatch(/current values/)
-  })
-
-  test('a tighten write with the permission and current values goes through', () => {
-    const r = filterReconSettings(
-      { roeGlobalMaxRps: 1 },
-      { allowTighten: true, current: { roeGlobalMaxRps: 3 } }
-    )
-    expect(r.ok).toBe(true)
   })
 })
 
@@ -241,7 +210,11 @@ describe('the surface is the size it claims to be', () => {
   test('most of the model is settable and the closed set is small', () => {
     const total = Object.keys(registry.fields).length
     expect(permittedKeys('update').length / total).toBeGreaterThan(0.85)
-    expect(fieldsWhere(f => f.mcp === 'never').length).toBeLessThan(25)
+    // The closed set grew by the 24 engagement-RECORD columns, which are not
+    // pipeline parameters at all: the client, the contacts, the dates and the
+    // document. Everything a scan is configured by is still open.
+    expect(fieldsWhere(f => f.mcp === 'never' && f.deny_reason !== 'engagement-record').length)
+      .toBeLessThan(25)
   })
 
   test('every rate limit is reachable, not three of fifteen', () => {

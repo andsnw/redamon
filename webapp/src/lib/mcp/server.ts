@@ -72,7 +72,6 @@ import {
   createProject,
   listEngagementAuthorizations,
   preflightScopeCheck,
-  tightenEngagementRoe,
 } from '@/lib/mcp/engagementTools'
 import { cancelQueuedScan, queueRecon } from '@/lib/mcp/queueTools'
 import { SCANNER_NAMES, getScanStatus } from '@/lib/mcp/scannerTools'
@@ -1073,17 +1072,16 @@ export function buildMcpServer(ctx: McpContext, instructions?: string): McpServe
     {
       title: 'Create a project and fix its scope',
       description:
-        'Open a NEW engagement: a project with its targeting mode, its Rules of Engagement and ' +
-        'the record of what authorized it, written atomically.\n\n' +
+        'Open a NEW engagement: a project with its targeting mode, its settings and the ' +
+        'record of what authorized it, written atomically.\n\n' +
         'Scope is fixed HERE and nowhere else. Exactly one targeting mode - targetDomain, ' +
         'targetIps, or domainBatchHosts - and it is immutable afterwards through every route on ' +
         'this surface. A different target means a different project, which is why this tool ' +
         'exists rather than a way to re-point an existing one.\n\n' +
         'engagementKind is the decision that matters. "internal" is your own estate. ' +
-        '"third_party" is somebody else\'s, and then a non-zero roeGlobalMaxRps and an ' +
+        '"third_party" is somebody else\'s, and then a non-zero settings.roeGlobalMaxRps and an ' +
         '`authorization` record are both REQUIRED - start_recon refuses the project otherwise. ' +
-        'Note that roeGlobalMaxRps 0 means NO ceiling rather than a slow one, and that ' +
-        'roeEnabled must be true or the ceiling is never applied.\n\n' +
+        'Note that roeGlobalMaxRps 0 means NO ceiling rather than a slow one.\n\n' +
         'Only a DIGEST of the scope document is stored, never the document. Pass documentSha256, ' +
         'or pass documentText and it is digested here.\n\n' +
         'Pass idempotencyKey, derived from the authorization digest and the program handle. A ' +
@@ -1114,10 +1112,12 @@ export function buildMcpServer(ctx: McpContext, instructions?: string): McpServe
           .describe('Hosts seeded in addition to whatever discovery finds.'),
         engagementIdentityHeader: z.string().max(400).optional()
           .describe('"Name: value", sent with every request so the target can attribute it to you.'),
-        roe: z.record(z.string(), z.unknown()).optional()
-          .describe('The Rules of Engagement block. Fully writable here, tighten-only afterwards.'),
         settings: z.record(z.string(), z.unknown()).optional()
-          .describe('Ordinary recon tuning, so the first scan runs configured. See describe_recon_settings.'),
+          .describe(
+            'Recon tuning AND the engagement limits (roeGlobalMaxRps, roeExcludedHosts, the ' +
+            'time window, the agent denylists), so the first scan runs configured. The limits ' +
+            'stay writable afterwards through update_recon_settings. See describe_recon_settings.'
+          ),
         authorization: z.object({
           documentSha256: z.string().max(64).optional().describe('64 lower-case hex.'),
           documentText: z.string().max(200000).optional().describe('The document, digested here and discarded.'),
@@ -1133,45 +1133,6 @@ export function buildMcpServer(ctx: McpContext, instructions?: string): McpServe
       },
     },
     handler(ctx, 'create_project', a => createProject(ctx, a as never))
-  )
-
-  server.registerTool(
-    'tighten_engagement_roe',
-    {
-      title: 'Tighten an engagement',
-      description:
-        'Narrow the Rules of Engagement on an existing project. ONE DIRECTION ONLY: a rate ' +
-        'ceiling may fall and never rise, an exclusion list may grow and never shrink, a ' +
-        'permitted technique may be withdrawn and never granted, and the ceiling may never go ' +
-        'back to 0 once set because 0 means no ceiling at all.\n\n' +
-        'That asymmetry is the point. An agent that discovers a stricter rule mid-engagement ' +
-        'applies it immediately; one that wants more room asks a person.\n\n' +
-        'Refused while a scan is writing the graph: the running scan read its Rules of ' +
-        'Engagement when it started and will not see the change, so accepting it would report ' +
-        'success for a tightening that does not apply.\n\n' +
-        'Pass expectedUpdatedAt from get_recon_settings to refuse writing over a change you ' +
-        'have not seen.',
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-      _meta: scopesMeta({ required: ['project:create'] }),
-      inputSchema: {
-        projectId: projectIdSchema,
-        roe: z.record(z.string(), z.unknown())
-          .describe('The RoE fields to tighten. Anything else is refused by name.'),
-        expectedUpdatedAt: z.string().optional()
-          .describe('Optimistic concurrency: from get_recon_settings.'),
-      },
-    },
-    handler(
-      ctx,
-      'tighten_engagement_roe',
-      a => tightenEngagementRoe(ctx, a.projectId, a.roe as Record<string, unknown>, a.expectedUpdatedAt),
-      a => a.projectId
-    )
   )
 
   server.registerTool(

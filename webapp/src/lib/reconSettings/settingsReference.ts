@@ -33,7 +33,6 @@ const CANONICAL_BANNER = [
 const DISPOSITION_LABEL: Record<string, string> = {
   settable: 'settable',
   create_only: 'create-only',
-  tighten_only: 'tighten-only',
   never: 'closed',
 }
 
@@ -75,8 +74,15 @@ function meaningCell(f: NamedField): string {
   if (f.mcp === 'create_only') {
     notes.push('Fixed at project creation; refused on an existing project.')
   }
-  if (f.mcp === 'tighten_only') {
-    notes.push('May only move in the safe direction after creation.')
+  if (f.group === 'engagement_limits') {
+    notes.push('An engagement LIMIT: enforced at scan start whatever tuning says.')
+  }
+  if (f.deny_reason === 'engagement-record') {
+    notes.push('Part of the engagement RECORD. A person writes it, a model reads it, ' +
+      'nothing enforces it; the MCP surface never touches it.')
+  }
+  if (f.deny_reason === 'derived') {
+    notes.push('DERIVED, never written.')
   }
   if (f.readable === false) {
     notes.push('Withheld from every read on the MCP surface.')
@@ -120,8 +126,8 @@ export function renderSettingsReference(): string {
     total: all.length,
     settable: all.filter(f => f.mcp === 'settable').length,
     createOnly: all.filter(f => f.mcp === 'create_only').length,
-    tightenOnly: all.filter(f => f.mcp === 'tighten_only').length,
     never: all.filter(f => f.mcp === 'never').length,
+    engagementLimits: all.filter(f => f.group === 'engagement_limits' && f.mcp === 'settable').length,
   }
 
   const out: string[] = [...CANONICAL_BANNER]
@@ -136,9 +142,11 @@ export function renderSettingsReference(): string {
   out.push('')
   out.push(
     `There are **${counts.total}** parameters. ${counts.settable} are settable over the MCP ` +
-    `surface at any time, ${counts.createOnly} are fixed when a project is created, ` +
-    `${counts.tightenOnly} (the Rules of Engagement) may only be tightened afterwards, and ` +
-    `${counts.never} are not pipeline parameters at all.`
+    `surface at any time, ${counts.createOnly} are fixed when a project is created, and ` +
+    `${counts.never} are not pipeline parameters at all. ${counts.engagementLimits} of the ` +
+    `settable ones are the engagement's LIMITS - a rate ceiling, an exclusion list, a time ` +
+    `window, the agent's denylists - which the form and the MCP surface reach alike and which ` +
+    `the pipeline enforces at scan start whatever tuning says.`
   )
   out.push('')
   out.push('For the narrative version with screenshots, see [Project Settings Reference](Project-Settings-Reference).')
@@ -162,6 +170,11 @@ export function renderSettingsReference(): string {
   out.push(
     '- **Two levels.** `scanModules` decides which PHASES run; a per-tool `*Enabled` flag ' +
     'decides which tools run inside a phase. Setting one without the other is a silent no-op.'
+  )
+  out.push(
+    '- **One capability surface.** Every settable field has an input in the project form and ' +
+    'is writable through `update_recon_settings`; neither door reaches something the other ' +
+    'cannot. The exception is the engagement RECORD, which is deliberately UI-only.'
   )
   out.push('')
 
@@ -198,7 +211,25 @@ export function renderSettingsReference(): string {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
 }
 
-/** The parameter count the narrative page must agree with. */
+/**
+ * The counts the narrative page must agree with.
+ *
+ * TWO numbers, not one, because "714 configurable parameters" was false in a
+ * quieter way than the "245+" it replaced: 47 of the 714 configure nothing a
+ * person or an agent can reach - row identity, internal state, a stored
+ * credential, a derived flag. Stating the total as the configurable count
+ * overstates the surface exactly as the old number understated it.
+ */
 export function parameterCount(): number {
+  return settableFieldCount()
+}
+
+/** Every Project column the registry describes, configurable or not. */
+export function totalColumnCount(): number {
   return fieldsWhere(() => true).length
+}
+
+/** Columns a token may write through `update_recon_settings`. */
+export function settableFieldCount(): number {
+  return fieldsWhere(f => f.mcp === 'settable').length
 }

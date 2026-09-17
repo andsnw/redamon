@@ -90,6 +90,11 @@ RESOLVES_TO_DEFAULTS = {
     # Same shape: sanitize_project_file_settings drops a path that escapes its
     # allowed roots back to the shipped default.
     "escaping_wordlist",
+    # Same shape again, one layer up. The row writes the OLD master switch true
+    # with nothing behind it - no ceiling, no exclusions, no window - and the
+    # derivation reads it as inert, which it always was. Resolving exactly like
+    # the baseline IS the assertion, and it is checked by name below.
+    "old_switch_on_with_no_limit",
 }
 
 
@@ -107,6 +112,44 @@ def test_the_cases_actually_differ():
         if name != "all_defaults" and name not in RESOLVES_TO_DEFAULTS and _baseline(name) == base
     ]
     assert same == [], f"these cases resolve identically to all_defaults, so they test nothing: {same}"
+
+
+def test_the_old_master_switch_buys_nothing_on_its_own():
+    """`roeEnabled` is DERIVED, so the stored column decides nothing.
+
+    Written true with no ceiling, no exclusion list and no time window, the row
+    must resolve exactly like a project that set none of them. The value of the
+    case is that identity: it is what "the column is not read" looks like from
+    the outside.
+    """
+    resolved = _baseline("old_switch_on_with_no_limit")
+    assert resolved["ROE_ENABLED"] is False
+    assert resolved == _baseline("all_defaults")
+
+
+def test_a_written_ceiling_applies_without_a_second_switch():
+    """The one behaviour this change deliberately alters.
+
+    A 3 rps ceiling written while the old switch was off used to cap nothing:
+    the capper was gated on the flag, so the number sat there and an operator
+    believed in a ceiling that was never applied. It applies now.
+    """
+    resolved = _baseline("ceiling_with_the_old_switch_off")
+    assert resolved["ROE_ENABLED"] is True
+    assert resolved["NAABU_RATE_LIMIT"] == 3
+    assert resolved["NUCLEI_RATE_LIMIT"] == 3
+
+
+def test_an_exclusion_list_alone_makes_the_limits_live():
+    resolved = _baseline("exclusions_only")
+    assert resolved["ROE_ENABLED"] is True
+    assert resolved["ROE_EXCLUDED_HOSTS"] == ["pay.target.test"]
+
+
+def test_a_time_window_alone_makes_the_limits_live():
+    resolved = _baseline("time_window_only")
+    assert resolved["ROE_ENABLED"] is True
+    assert resolved["ROE_TIME_WINDOW_ENABLED"] is True
 
 
 def test_a_hostile_docker_image_is_pinned_to_the_shipped_default():

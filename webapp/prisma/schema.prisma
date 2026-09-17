@@ -1280,8 +1280,24 @@ model Project {
 
   engagementAuthorizations    EngagementAuthorization[]
 
-  // ========== RULES OF ENGAGEMENT ==========
+  // ========== THE ENGAGEMENT ==========
+  // Two unrelated things share the `roe` prefix, and the columns keep their
+  // names on purpose - renaming fifteen buys nothing and costs a migration.
+  // What tells them apart is recon_settings/registry.yaml, never the prefix:
+  //
+  //   group: engagement_limits         enforced at scan start. Ordinary settings
+  //   deny_reason: engagement-record   the contract. UI-only; nothing enforces it
+  //
+  // Anything that needs "the engagement" asks the registry, because a name
+  // prefix survives a reclassification by accident.
   // --- Document & Metadata ---
+  /// DERIVED, never written. Kept so old rows and old export bundles still load.
+  /// The engagement's limits apply when there IS a limit to apply: a non-zero
+  /// roeGlobalMaxRps, OR a non-empty roeExcludedHosts, OR roeTimeWindowEnabled.
+  /// recon_settings/engagement.py computes it for recon, the agent and the
+  /// orchestrator; deriveRoeEnabled in webapp/src/lib/engagement.ts is the
+  /// TypeScript half, pinned to it by a shared fixture table. Read it nowhere
+  /// else: as a writable master switch it was a bypass shipped as a checkbox.
   roeEnabled                  Boolean  @default(false) @map("roe_enabled")
   roeRawText                  String   @default("") @map("roe_raw_text") @db.Text
   roeDocumentName             String   @default("") @map("roe_document_name")

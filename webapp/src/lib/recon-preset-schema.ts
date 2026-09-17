@@ -19,7 +19,10 @@ export const reconPresetSchema = z.object({
   stealthMode: bool,
   aiInPipeline: bool,
   aiPipelineModel: str,
-  updateGraphDb: bool,
+  // `updateGraphDb` is deliberately absent. Off, a scan still runs and still
+  // reaches the target and writes nothing, so every later read says "nothing
+  // found" where the truth is "nothing was written". A preset that turned it off
+  // would produce a scan that looks clean rather than one that is.
   useBruteforceForSubdomains: bool,
 
   // -- WHOIS / DNS --
@@ -577,7 +580,6 @@ export const RECON_PARAMETER_CATALOG = `
 - stealthMode: boolean - Reduce scan aggressiveness and network noise
 - aiInPipeline: boolean - Master toggle that enables AI-powered enhancements across all recon modules that support them. Cascades on/off to per-tool AI flags (ffufAiExtensions, nucleiAiTags, wafAiClassifier, nucleiAiResponseFilter, takeoverAiClassifier).
 - aiPipelineModel: string - Model identifier for the AI hooks in recon (e.g. "claude-opus-4-6", "claude-haiku-4-5-20251001"). Independent of agentOpenaiModel.
-- updateGraphDb: boolean - Store results in the graph database
 - useBruteforceForSubdomains: boolean - Enable DNS brute-force for subdomain discovery
 
 ## WHOIS & DNS

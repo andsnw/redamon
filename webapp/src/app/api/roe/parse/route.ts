@@ -1,10 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { internalKeyHeaders } from '@/lib/agentAuth'
+import { buildParseProposal } from '@/lib/reconSettings/roeParse'
 
 const AGENT_API_URL = process.env.AGENT_API_URL || process.env.NEXT_PUBLIC_AGENT_API_URL || 'http://localhost:8080'
 const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20 MB
 const MAX_PDF_PAGES = 200
 const AGENT_TIMEOUT_MS = 120_000 // 2 minutes for LLM parsing
+
+/**
+ * The form's present values, so the proposal is a diff rather than a list.
+ *
+ * Optional: without it every parsed field reads as a change, which is correct
+ * for a new project and merely noisier for an existing one.
+ */
+function readCurrentValues(formData: FormData): Record<string, unknown> {
+  const raw = formData.get('current')
+  if (typeof raw !== 'string' || raw.trim() === '') return {}
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
 
 // POST /api/roe/parse - Upload RoE document, extract text, forward to agent for LLM parsing
 export async function POST(request: NextRequest) {
@@ -111,11 +129,27 @@ export async function POST(request: NextRequest) {
 
     const parsed = await agentResponse.json()
 
-    // Return parsed settings + raw text for storage
+    // The agent returns what the MODEL said. This turns it into a PROPOSAL: every
+    // value re-validated against the same registry bounds an MCP write goes
+    // through, a scope column refused rather than applied, and a rejected value
+    // reported rather than dropped. Nothing here writes; the form shows the diff
+    // and a person confirms it.
+    //
+    // Re-validating is not belt and braces. The document is a third party's text,
+    // an LLM reading it is not a sanitiser, and after the parser gained the whole
+    // pipeline the difference between "validated" and "trusted" is the difference
+    // between a configuration change and a configuration attack.
+    const fields = (parsed?.fields ?? {}) as Record<string, unknown>
+    const current = readCurrentValues(formData)
+    const proposal = buildParseProposal(fields, current)
+
     return NextResponse.json({
-      ...parsed,
+      ...proposal,
+      // Kept separate from the proposal: it is the document, not a setting a
+      // person reviews, and the form stores it alongside whatever it confirms.
       roeRawText: text,
-      roeEnabled: true,
+      unknownKeys: parsed?.unknownKeys ?? [],
+      registryDigest: parsed?.registryDigest ?? null,
     })
   } catch (error) {
     console.error('RoE parse error:', error)

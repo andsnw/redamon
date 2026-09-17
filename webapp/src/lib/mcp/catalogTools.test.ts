@@ -21,6 +21,7 @@ import { McpScopeError, __resetRateLimiter } from '@/lib/mcpAuth'
 import { McpToolError } from './errors'
 import { filterReconSettings, permittedKeys } from '@/lib/reconSettings/filter'
 import { SCAN_MODULE_VALUES, SEVERITY_VALUES } from '@/lib/reconSettings/validators'
+import { engagementLimitFields, field } from '@/lib/reconSettings/registry'
 import {
   __resetCatalogCache,
   describeReconSettings,
@@ -59,7 +60,9 @@ describe('describe_recon_settings covers exactly the settable surface', () => {
     const described = new Set(allSettings().map(s => s.key))
     for (const refused of [
       'targetDomain', 'targetIps', 'ipMode',        // scope: create_project owns it
-      'roeEnabled', 'roeGlobalMaxRps',              // RoE: tighten_engagement_roe owns it
+      'roeEnabled',                                 // derived from the limits that ARE set
+      'roeClientName', 'roeClientContactEmail',     // the engagement RECORD, UI-only
+      'updateGraphDb',                              // a debug switch, not tuning
       'cypherfixGithubToken', 'activationState',    // never a pipeline parameter
       'jsReconUploadedFiles',                       // upload-managed
     ]) {
@@ -94,8 +97,14 @@ describe('describe_recon_settings covers exactly the settable surface', () => {
   test('the described enum values ARE the accepted values', () => {
     for (const s of allSettings()) {
       if (!s.values) continue
-      expect(filterReconSettings({ [s.key]: [...s.values] }).ok, s.key).toBe(true)
-      expect(filterReconSettings({ [s.key]: ['definitely-not-a-value'] }).ok, s.key).toBe(false)
+      // A scalar enum takes ONE of its values; a list takes an array of them.
+      // Passing the whole vocabulary to a scalar was the old shape and only
+      // worked while every enumerated field happened to be a list.
+      const spec = field(s.key)!
+      const good = spec.type === 'string' ? s.values[0] : [...s.values]
+      const bad = spec.type === 'string' ? 'definitely-not-a-value' : ['definitely-not-a-value']
+      expect(filterReconSettings({ [s.key]: good }).ok, `${s.key} accepts its own value`).toBe(true)
+      expect(filterReconSettings({ [s.key]: bad }).ok, `${s.key} refuses a foreign value`).toBe(false)
     }
   })
 
@@ -278,10 +287,23 @@ describe('applicability is the field that stops a half-applied preset', () => {
     expect(QUIET.filter(k => !settable.has(k))).toEqual([])
   })
 
-  test('what a preset still cannot set is scope and the engagement, by name', () => {
+  test('what a preset still cannot set is scope and the engagement record, by name', () => {
     const settable = new Set(permittedKeys('update'))
-    for (const key of ['targetDomain', 'ipMode', 'roeEnabled', 'roeGlobalMaxRps']) {
+    for (const key of ['targetDomain', 'ipMode', 'roeEnabled', 'roeClientName']) {
       expect(settable.has(key), key).toBe(false)
+    }
+  })
+
+  test('an engagement LIMIT is settable but no preset carries one', () => {
+    // Settable, because the form reaches it and the two doors must match.
+    // Absent from every preset, because a limit belongs to ONE engagement rather
+    // than to a reusable configuration, and a preset that carried one would
+    // overwrite the rate ceiling of whatever project it was loaded into.
+    expect(new Set(permittedKeys('update')).has('roeGlobalMaxRps')).toBe(true)
+    const limits = new Set(engagementLimitFields().map(f => f.key))
+    for (const p of RECON_PRESETS) {
+      const carried = Object.keys(p.parameters ?? {}).filter(k => limits.has(k))
+      expect(carried, p.id).toEqual([])
     }
   })
 

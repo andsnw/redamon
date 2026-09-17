@@ -9,8 +9,15 @@
  *   settable      write any time
  *   create_only   write once at creation; refused afterwards, naming the tool
  *                 that can set it
- *   tighten_only  the Rules of Engagement: the safe direction only
  *   never         not a pipeline parameter at all; refused with its class
+ *
+ * There is no one-direction disposition any more. The engagement's limits are
+ * ordinary settable fields: what makes them safe is that every one of them is
+ * ENFORCED at scan start whatever tuning says, so lowering a ceiling and raising
+ * it are equally permitted and equally auditable, which is how the rest of this
+ * surface already works. A write-time direction check bought the appearance of
+ * that guarantee and not the guarantee: five of the fields it covered accepted a
+ * widening while reporting 'tightened'.
  *
  * Fail-closed in every direction, as before: an unknown key rejects the WHOLE
  * call naming the key, and an out-of-range value rejects it naming the bound.
@@ -26,7 +33,6 @@ import {
   neverFields,
   mcpReadableFields,
   settableFields,
-  tightenOnlyFields,
   type RegistryField,
 } from './registry'
 import { validateValue } from './validators'
@@ -56,6 +62,16 @@ export const DENY_REASON_DOC: Readonly<Record<string, string>> = Object.freeze({
   'upload-managed':
     'written only by the endpoint that also places the file on disk, so a second ' +
     'writer could name a file this project never uploaded',
+  'engagement-record':
+    'part of the engagement RECORD rather than its limits: who the client is, who to ' +
+    'call, what the document said. A person writes it and a model reads it; nothing ' +
+    'enforces it, and it carries third-party personal data',
+  'not-tuning':
+    'a debug switch rather than a pipeline parameter; changing it would alter what a ' +
+    'later read MEANS rather than how the scan runs',
+  derived:
+    'derived from the engagement limits that are actually set, and written by nothing. ' +
+    'Set a ceiling, an exclusion or a time window instead',
 })
 
 /** Every key a caller may write in this mode. */
@@ -80,8 +96,7 @@ export function settableFieldCount(): number {
 function explainRefusal(
   key: string,
   spec: RegistryField,
-  mode: SettingsMode,
-  allowTighten: boolean
+  mode: SettingsMode
 ): string | null {
   if (spec.mcp === 'never') {
     const reason = spec.deny_reason ? DENY_REASON_DOC[spec.deny_reason] : undefined
@@ -96,83 +111,7 @@ function explainRefusal(
       `target, so it is refused here; use create_project to open a new engagement.`
     )
   }
-  if (spec.mcp === 'tighten_only' && !allowTighten) {
-    return (
-      `'${key}' is part of this project's Rules of Engagement, which this permission ` +
-      `does not change. Use tighten_engagement_roe, which may only move the engagement ` +
-      `in the safe direction.`
-    )
-  }
   return null
-}
-
-/**
- * Is this a permitted move for a tighten-only field?
- *
- * The one direction rule that survives, and it is there to serve the goal
- * rather than to restrict it: the point is a pipeline that cannot exceed its
- * engagement, and an agent that can raise its own rate ceiling mid-run does not
- * have one. An agent that discovers a STRICTER rule applies it immediately; one
- * that wants more room asks a human.
- */
-export function checkTighten(
-  key: string,
-  spec: RegistryField,
-  current: unknown,
-  next: unknown
-): string | null {
-  const direction = spec.tighten
-  switch (direction) {
-    case 'decrease': {
-      if (typeof next !== 'number' || typeof current !== 'number') return null
-      if (key === 'roeGlobalMaxRps' && current > 0 && next === 0) {
-        return (
-          `'${key}' may not go back to 0 once a ceiling has been set: 0 means NO ceiling, ` +
-          `so that would remove the engagement's rate limit entirely.`
-        )
-      }
-      // Setting a ceiling where there was none is a tightening, whatever the
-      // arithmetic says: 0 means unlimited.
-      if (current === 0) return null
-      return next <= current
-        ? null
-        : `'${key}' may only decrease after creation (currently ${current}).`
-    }
-    case 'increase': {
-      if (typeof next !== 'number' || typeof current !== 'number') return null
-      return next >= current
-        ? null
-        : `'${key}' may only increase after creation (currently ${current}).`
-    }
-    case 'superset': {
-      if (!Array.isArray(next) || !Array.isArray(current)) return null
-      const have = new Set(next.map(String))
-      const lost = current.map(String).filter(v => !have.has(v))
-      return lost.length === 0
-        ? null
-        : `'${key}' may only grow after creation; this would remove ${lost.slice(0, 5).join(', ')}.`
-    }
-    case 'true_to_false':
-      if (typeof next !== 'boolean' || typeof current !== 'boolean') return null
-      return current === true && next === false
-        ? null
-        : current === next
-          ? null
-          : `'${key}' may only go from true to false after creation.`
-    case 'false_to_true':
-      if (typeof next !== 'boolean' || typeof current !== 'boolean') return null
-      return current === false && next === true
-        ? null
-        : current === next
-          ? null
-          : `'${key}' may only go from false to true after creation.`
-    case 'narrow':
-      // A time window or a free-text field: no machine-checkable direction, so
-      // the write is allowed and the audit row is what records it.
-      return null
-    default:
-      return null
-  }
 }
 
 /**
@@ -181,11 +120,9 @@ export function checkTighten(
  * Returns the FIRST rejection rather than a list: the whole call is refused
  * either way, and naming one offending key is clearer than a wall of them.
  *
- * `allowTighten` is off by default, and that is a permission boundary rather
- * than a convenience: `recon:settings` tunes a pipeline, and changing the
- * engagement agreement is a different act under a different permission. With it
- * on, `current` is required, because permitting a move whose direction could
- * not be checked is the one failure this layer cannot afford.
+ * Engagement limits come through here like any other setting. They are not
+ * special-cased and no direction is checked: the control is that every one of
+ * them is enforced at scan start, and the audit row records the move.
  */
 /** The most fields one write may carry. See the check in `filterReconSettings`. */
 export const MAX_KEYS_PER_CALL = 200
@@ -194,8 +131,6 @@ export function filterReconSettings(
   input: unknown,
   options: {
     mode?: SettingsMode
-    current?: Record<string, unknown>
-    allowTighten?: boolean
     /**
      * Whose project this write is for. The `project_file` validator needs it
      * because the upload directory is shared between projects; without it no
@@ -240,25 +175,11 @@ export function filterReconSettings(
       }
     }
 
-    const refusal = explainRefusal(key, spec, mode, options.allowTighten ?? false)
+    const refusal = explainRefusal(key, spec, mode)
     if (refusal) return { ok: false, key, error: refusal }
 
     const problem = validateValue(key, spec, value, options.projectId)
     if (problem) return { ok: false, key, error: `'${key}' ${problem}` }
-
-    if (spec.mcp === 'tighten_only' && mode === 'update') {
-      if (!options.current) {
-        return {
-          ok: false,
-          key,
-          error:
-            `'${key}' may only be tightened, and the direction cannot be checked ` +
-            `without the project's current values.`,
-        }
-      }
-      const direction = checkTighten(key, spec, options.current[key], value)
-      if (direction) return { ok: false, key, error: direction }
-    }
 
     data[key] = value
   }
@@ -310,12 +231,11 @@ export function reconSettingsSelect(): Record<string, true> {
   return select
 }
 
-/** The four disposition sets, for the docs and the tests. */
+/** The three disposition sets, for the docs and the tests. */
 export function dispositionSummary() {
   return {
     settable: settableFields().length,
     create_only: createOnlyFields().length,
-    tighten_only: tightenOnlyFields().length,
     never: neverFields().length,
     total: Object.keys(loadRegistry().fields).length,
   }

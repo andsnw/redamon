@@ -82,8 +82,14 @@ def _empty_row() -> dict:
 
 
 def _roe_row(**over) -> dict:
+    """A project with a live rate ceiling.
+
+    The ceiling alone is what makes the limits live: `roeEnabled` is DERIVED
+    now, so there is no second switch to set here and no way to write a ceiling
+    that does not apply.
+    """
     row = _defaults_row()
-    row.update({"roeEnabled": True, "roeGlobalMaxRps": 3})
+    row.update({"roeGlobalMaxRps": 3})
     row.update(over)
     return row
 
@@ -123,10 +129,25 @@ def cases() -> dict[str, dict]:
             "jsluiceVerifyRateLimit": 1000,
             "masscanRate": 100000,
         },
-        # capping must not start applying where it did not before
-        "roe_disabled": {**_defaults_row(), "roeEnabled": False, "roeGlobalMaxRps": 3},
-        # RoE on with no ceiling: the P0-2 shape, which caps nothing today
-        "roe_enabled_no_ceiling": {**_defaults_row(), "roeEnabled": True, "roeGlobalMaxRps": 0},
+        # A ceiling written while the OLD master switch was off. This is the
+        # one case the derivation deliberately changes: the ceiling used to be
+        # inert and now applies, which is why the baseline for it moved.
+        "ceiling_with_the_old_switch_off": {
+            **_defaults_row(), "roeEnabled": False, "roeGlobalMaxRps": 3,
+        },
+        # The old switch ON with nothing behind it: no ceiling, no exclusions,
+        # no window. The derivation reads it as inert, which it always was.
+        "old_switch_on_with_no_limit": {
+            **_defaults_row(), "roeEnabled": True, "roeGlobalMaxRps": 0,
+        },
+        # The two limits that are NOT a rate: each makes the limits live on its
+        # own, and neither used to without the switch.
+        "exclusions_only": {
+            **_defaults_row(), "roeExcludedHosts": ["pay.target.test"],
+        },
+        "time_window_only": {
+            **_defaults_row(), "roeTimeWindowEnabled": True,
+        },
         # pass-ordering between stealth, RoE and the governor
         "stealth": {**_defaults_row(), "stealthMode": True},
         "stealth_with_roe": {**_roe_row(), "stealthMode": True},

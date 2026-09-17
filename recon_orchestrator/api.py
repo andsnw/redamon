@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from auth import is_orchestrator_request_authorized
+from recon_settings.engagement import derive_roe_enabled
 from container_manager import ContainerManager
 from admission_ledger import AdmissionError
 
@@ -251,7 +252,11 @@ def _check_roe_time_window(project: dict) -> None:
     P0-1). Only that narrow carve-out is tolerated; every other failure
     propagates.
     """
-    if not (project.get('roeEnabled') and project.get('roeTimeWindowEnabled')):
+    # The THIRD enforcement point, after recon and the agent. It gates on the
+    # DERIVED value like the other two: gating on the column would leave this
+    # 403 keyed on something nothing writes, and the window would quietly stop
+    # blocking.
+    if not (derive_roe_enabled(project) and project.get('roeTimeWindowEnabled')):
         return
 
     from datetime import datetime
@@ -970,6 +975,7 @@ async def get_defaults():
             "DOMAIN_BATCH_GROUPS",
         })
 
+
         # The column name for each runtime key, from the registry rather than
         # from a snake-to-camel conversion.
         #
@@ -996,6 +1002,20 @@ async def get_defaults():
             for k, v in DEFAULT_SETTINGS.items()
             if k not in RUNTIME_ONLY_KEYS
         }
+
+        # An engagement LIMIT has no global default: it is a property of one
+        # engagement, not of the installation. Emitting one is worse than
+        # useless, because the ProjectForm's preset-apply path resets every form
+        # field that appears in this payload BEFORE applying the preset - so a
+        # roeGlobalMaxRps: 0 here silently zeroes a configured rate ceiling and
+        # empties the exclusion list on every preset apply.
+        #
+        # Filtered by COLUMN and derived from the registry group, so a newly
+        # classified limit is excluded the day it is classified. One helper,
+        # shared with the agent's own /defaults, so the two cannot disagree.
+        from recon_settings.engagement import strip_engagement_limits
+
+        strip_engagement_limits(camel_case_defaults)
 
         # Also import GVM scan defaults (use importlib to avoid module name collision
         # with recon's project_settings already cached above)

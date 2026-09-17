@@ -95,6 +95,27 @@ async def lifespan(app: FastAPI):
     ws_job_emitter.set_ws_manager(ws_manager)
     reg.set_ws_emitter(ws_job_emitter.emit_job_update)
 
+    # Registry skew, reported at BOOT as well as refused per request.
+    #
+    # The refusal in /roe/parse is the control and it is deliberately
+    # per-request rather than cached: the registry is a live mount for recon and
+    # the orchestrator, so a digest checked once at startup can go stale under a
+    # running agent - which is the failure this whole mechanism guards against.
+    # This line exists so an operator finds out from the log rather than from a
+    # user's failed upload.
+    from recon_settings.roe_parse_prompt import ROE_PARSE_REGISTRY_DIGEST as _boot_digest
+    from recon_settings.roe_prompt import prompt_skew as _boot_skew
+
+    _skew = _boot_skew(_boot_digest)
+    if _skew:
+        logger.error(
+            "RoE parse prompt was generated from a DIFFERENT settings registry than the one "
+            f"loaded here (prompt {_skew[0][:12]}, registry {_skew[1][:12]}). /roe/parse will "
+            "refuse with 503 until the agent image is rebuilt: docker compose build agent."
+        )
+    else:
+        logger.info(f"RoE parse prompt matches the loaded registry ({_boot_digest[:12]})")
+
     logger.info("RedAmon Agent API ready (WebSocket)")
 
     yield
@@ -277,86 +298,23 @@ class RoeParseRequest(BaseModel):
     model: str | None = None  # Optional: override the LLM model for parsing
 
 
-_ROE_PARSE_PROMPT = """You are parsing a Rules of Engagement (RoE) document for a penetration testing engagement.
-Extract ALL relevant information into the JSON structure below.
-Use null for any field not mentioned in the document. Only set values you are confident about.
-
-Return ONLY valid JSON — no markdown, no explanations, no code fences.
-
-{
-  "name": "suggested project name based on client/target",
-  "description": "brief engagement description",
-  "targetDomain": "primary target domain (e.g. devergolabs.com) — just the root domain, no www prefix",
-  "targetIps": ["in-scope IPs/CIDRs"],
-  "ipMode": false,
-  "subdomainList": ["subdomain PREFIXES only, NOT full domains — e.g. 'www', 'api', 'portal', NOT 'www.example.com'"],
-  "stealthMode": "ONLY set true if the document EXPLICITLY requires passive-only/no active scanning. Mentions of 'stealth' or 'low-noise' do NOT qualify — those are handled by notes. Default: false",
-
-  "roeClientName": "client organization name",
-  "roeClientContactName": "primary client point of contact name",
-  "roeClientContactEmail": "client POC email",
-  "roeClientContactPhone": "client POC phone",
-  "roeEmergencyContact": "who to contact if incident occurs",
-  "roeEngagementStartDate": "YYYY-MM-DD",
-  "roeEngagementEndDate": "YYYY-MM-DD",
-  "roeEngagementType": "external|internal|web_app|api|mobile|physical|social_engineering|red_team",
-
-  "roeExcludedHosts": ["IPs/domains explicitly excluded from testing"],
-  "roeExcludedHostReasons": ["reason for each exclusion, parallel array"],
-
-  "roeTimeWindowEnabled": true,
-  "roeTimeWindowTimezone": "timezone (e.g. America/New_York, Europe/Rome)",
-  "roeTimeWindowDays": ["monday","tuesday"],
-  "roeTimeWindowStartTime": "HH:MM",
-  "roeTimeWindowEndTime": "HH:MM",
-
-  "roeForbiddenCategories": ["brute_force, dos, social_engineering, physical"],
-  "roeMaxSeverityPhase": "informational|exploitation|post_exploitation",
-  "agentToolPhaseMap": "ONLY set this if the RoE says something like 'do not use Hydra' or 'tool X is forbidden'. Set the forbidden tool to []. Example: if the RoE says 'Hydra must not be used', return {\"execute_hydra\": []}. 'discouraged' or 'use with caution' does NOT count — only an explicit unconditional ban. Return null if no tool is explicitly banned by name.",
-  "roeAllowDos": false,
-  "roeAllowSocialEngineering": false,
-  "roeAllowPhysicalAccess": false,
-  "roeAllowDataExfiltration": false,
-  "roeAllowAccountLockout": false,
-  "roeAllowProductionTesting": true,
-
-  "roeGlobalMaxRps": 0,
-
-  "roeSensitiveDataHandling": "no_access|prove_access_only|limited_collection|full_access",
-  "roeDataRetentionDays": 90,
-  "roeRequireDataEncryption": true,
-
-  "roeStatusUpdateFrequency": "daily|weekly|on_finding|none",
-  "roeCriticalFindingNotify": true,
-  "roeIncidentProcedure": "description of incident response procedure",
-
-  "roeThirdPartyProviders": ["cloud/hosting providers needing separate authorization"],
-  "roeComplianceFrameworks": ["PCI-DSS", "HIPAA", "SOC2", "GDPR", "ISO27001"],
-
-  "roeNotes": "any other rules, restrictions, or guidance not captured above",
-
-  "naabuRateLimit": null,
-  "nucleiRateLimit": null,
-  "katanaRateLimit": null,
-  "httpxRateLimit": null,
-  "nucleiSeverity": null,
-  "scanModules": null
-}
-
-IMPORTANT RULES:
-- If DoS is prohibited, set roeAllowDos=false AND add "dos" to roeForbiddenCategories
-- If social engineering is prohibited, set roeAllowSocialEngineering=false AND add "social_engineering" to roeForbiddenCategories
-- If brute force is EXPLICITLY forbidden (not just "discouraged"), add "brute_force" to roeForbiddenCategories AND set execute_hydra to [] in agentToolPhaseMap
-- For phase restrictions (e.g. "no post-exploitation", "reconnaissance only"), ONLY set roeMaxSeverityPhase. Do NOT touch agentToolPhaseMap for phase-level restrictions.
-- If a global rate limit is specified, also set individual tool rate limits to that value
-- Map compliance requirements (PCI, HIPAA, etc.) to roeComplianceFrameworks
-- "discouraged", "use with caution", or "avoid unattended use" does NOT mean forbidden. Only disable a tool if the RoE explicitly says "do not use [tool]" or "[tool] is prohibited/forbidden".
-- agentToolPhaseMap: Return null unless the RoE explicitly bans a specific tool by name with words like "forbidden", "prohibited", "must not be used", or "not permitted".
-
-RoE Document:
----
-{document_text}
----"""
+# The parse prompt is a BUILD ARTIFACT generated from the registry, never a
+# string literal here. Three services read the registry on three different
+# schedules - the agent has it COPY-baked, recon mounts it, the orchestrator
+# mounts it read-only - so a hand-written field list in this file goes stale in
+# three silent ways: a renamed column the model still returns, a new field the
+# parser can never set, and a changed bound that makes a correct model answer
+# look like a model error.
+#
+# Rebuild with: python3 recon_settings/build.py
+from recon_settings.roe_parse_prompt import (
+    ROE_PARSE_FIELDS,
+    ROE_PARSE_PROMPT,
+    ROE_PARSE_REGISTRY_DIGEST,
+)
+# The skew check lives beside the generator it guards, so the rule is testable
+# without importing the whole agent.
+from recon_settings.roe_prompt import prompt_skew as _prompt_skew
 
 
 @app.post("/roe/parse", tags=["RoE"], dependencies=[Depends(require_internal_auth)])
@@ -367,6 +325,29 @@ async def parse_roe_document(body: RoeParseRequest):
 
     if not orchestrator or not orchestrator._initialized:
         return JSONResponse(content={"error": "Agent not initialized"}, status_code=503)
+
+    # FAIL CLOSED on registry skew. This image can hold a prompt generated from
+    # last week's registry while the mounted one is today's, and the failure that
+    # produces is not an error - it is a confidently wrong configuration, parsed
+    # against one field list and validated against another. Refusing names both
+    # digests so the fix is obvious: rebuild the agent image.
+    skew = _prompt_skew(ROE_PARSE_REGISTRY_DIGEST)
+    if skew:
+        built_from, live = skew
+        logger.error(f"RoE parse: registry skew, prompt={built_from} live={live}")
+        return JSONResponse(
+            content={
+                "error": (
+                    "The RoE parse prompt was generated from a different settings registry "
+                    f"than the one loaded here (prompt {built_from[:12]}, registry {live[:12]}). "
+                    "Parsing now would judge the result against bounds the model was never "
+                    "told. Rebuild the agent image: docker compose build agent."
+                ),
+                "promptRegistryDigest": built_from,
+                "loadedRegistryDigest": live,
+            },
+            status_code=503,
+        )
 
     # Use the requested model, or fall back to orchestrator's current LLM
     from orchestrator_helpers.llm_setup import setup_llm
@@ -381,7 +362,7 @@ async def parse_roe_document(body: RoeParseRequest):
     try:
         # System message has instructions only; user document goes in HumanMessage
         # to reduce prompt injection risk from adversarial document content
-        system_prompt = _ROE_PARSE_PROMPT.split("RoE Document:\n---")[0].strip()
+        system_prompt = ROE_PARSE_PROMPT.strip()
         doc_text = body.text[:50000]
         logger.info(f"RoE parse: using model {requested_model}")
         response = await llm.ainvoke([
@@ -406,7 +387,20 @@ async def parse_roe_document(body: RoeParseRequest):
                 content = content[:brace_end + 1]
 
         parsed = json_mod.loads(content)
-        return parsed
+        if not isinstance(parsed, dict):
+            return JSONResponse(
+                content={"error": "LLM returned JSON that is not an object"},
+                status_code=422,
+            )
+        # A key the prompt never named is a key the model invented, and the
+        # webapp validates what comes back anyway. Reporting the extras rather
+        # than dropping them silently is what lets a person see a model drifting.
+        known = set(ROE_PARSE_FIELDS)
+        return {
+            "fields": {k: v for k, v in parsed.items() if k in known and v is not None},
+            "unknownKeys": sorted(k for k in parsed if k not in known),
+            "registryDigest": ROE_PARSE_REGISTRY_DIGEST,
+        }
 
     except json_mod.JSONDecodeError as e:
         logger.error(f"RoE parse: invalid JSON from LLM: {e}")
@@ -1737,6 +1731,20 @@ async def get_defaults():
             camel_case_defaults[to_camel_case(k, prefix="")] = v
         else:
             camel_case_defaults[to_camel_case(k)] = v
+
+    # An engagement LIMIT has no global default: it belongs to one engagement,
+    # not to the installation. It matters more than tidiness, because the
+    # ProjectForm's preset-apply path resets every form field that appears in
+    # this payload BEFORE applying the preset, so a limit here would zero a
+    # configured rate ceiling and empty an exclusion list on every preset apply.
+    #
+    # Filtered by COLUMN, after the naming, because the six limits the agent
+    # enforces alone are keyed on their column name rather than on a recon
+    # runtime key the registry would know. One helper, shared with the
+    # orchestrator's /defaults.
+    from recon_settings.engagement import strip_engagement_limits
+
+    strip_engagement_limits(camel_case_defaults)
 
     return camel_case_defaults
 

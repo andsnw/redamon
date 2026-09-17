@@ -58,20 +58,36 @@ describe('T18 every kind has a derived field set', () => {
   })
 })
 
-describe('T18 the engagement agreement is covered for every kind', () => {
-  const ROE = fieldsWhere(f => f.mcp === 'tighten_only').map(f => f.key)
+describe('T18 the engagement limits are covered for every kind', () => {
+  const LIMITS = fieldsWhere(f => f.group === 'engagement_limits').map(f => f.key)
 
-  test('the whole RoE block is in every kind', () => {
-    expect(ROE.length).toBeGreaterThan(30)
+  test('every engagement limit is in every kind', () => {
+    // Keyed on the registry GROUP, not on the `roe` name prefix. The columns
+    // keep those names while their classification changed, so a prefix match
+    // would survive a reclassification by accident and stop covering a limit
+    // nobody renamed.
+    expect(LIMITS.length).toBeGreaterThanOrEqual(15)
     for (const kind of fingerprintKinds()) {
-      const missing = ROE.filter(f => !FINGERPRINT_FIELDS[kind].includes(f))
+      const missing = LIMITS.filter(f => !FINGERPRINT_FIELDS[kind].includes(f))
       expect(missing, `${kind} does not fingerprint: ${missing.slice(0, 5).join(', ')}`).toEqual([])
     }
   })
 
+  test('the DERIVED flag is fingerprinted, although it is not a column', () => {
+    // G8. Adding one excluded host to a project with no prior limits flips the
+    // derivation from false to true, which changes the effective configuration
+    // of a job already enqueued and fingerprinted. FINGERPRINT_FIELDS is
+    // registry-derived so the columns are covered; the derived value is not a
+    // column and would otherwise be invisible to it.
+    const base = { targetDomain: 'example.com', roeGlobalMaxRps: 0, roeExcludedHosts: [] }
+    const before = settingsFingerprint('full_recon', base)
+    const after = settingsFingerprint('full_recon', { ...base, roeExcludedHosts: ['pay.test'] })
+    expect(after).not.toBe(before)
+  })
+
   test('raising the rate ceiling after enqueue invalidates the hash', () => {
     // The exact path the old six-field list left open.
-    const base = { targetDomain: 'example.com', roeEnabled: true, roeGlobalMaxRps: 3 }
+    const base = { targetDomain: 'example.com', roeGlobalMaxRps: 3 }
     const before = settingsFingerprint('full_recon', base)
     const after = settingsFingerprint('full_recon', { ...base, roeGlobalMaxRps: 500 })
     expect(after).not.toBe(before)

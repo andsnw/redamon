@@ -3,12 +3,13 @@
  *
  * Two defects this closes, and they compound.
  *
- * The first: `roeEnabled` defaults false and `roeGlobalMaxRps` defaults 0, so a
- * project created without deliberately switching the Rules of Engagement on has
- * NO rate ceiling at all. That was survivable while 126 columns were settable
- * and three of the fifteen rate fields were reachable. Once every rate is
- * reachable the RoE layer is the main control for all of them, which makes an
- * inert-by-default ceiling load-bearing in a way it was not before.
+ * The first: the engagement limits used to hang off a writable master switch.
+ * `roeEnabled` defaulted false and gated the capper, so a project with a 3 rps
+ * ceiling written and the switch off ran unlimited, and one write of false
+ * disabled the ceiling, the exclusions and the window at once while every field
+ * still showed its configured value. It is DERIVED now - see
+ * `deriveRoeEnabled` - so limits apply when there is a limit to apply and
+ * nothing can turn them off without removing them.
  *
  * The second: a project carried no link to the document that permitted it. With
  * an agent able to create projects and reach every pipeline parameter, "who said
@@ -66,8 +67,9 @@ export function digestScopeDocument(text: string): string {
 export interface EngagementProjectRow {
   id: string
   engagementKind: string
-  roeEnabled: boolean
   roeGlobalMaxRps: number
+  roeExcludedHosts?: string[]
+  roeTimeWindowEnabled?: boolean
   targetDomain?: string
   engagementIdentityHeader?: string
 }
@@ -76,8 +78,12 @@ export interface EngagementStatus {
   kind: EngagementKind
   /** The effective request-rate ceiling, or null when there is none. */
   ceilingRps: number | null
-  /** True when a ceiling is configured AND the RoE switch that applies it is on. */
+  /** True when a ceiling is configured. */
   ceilingEffective: boolean
+  /** The derived answer to "are this project's engagement limits live". */
+  limitsActive: boolean
+  /** Which of the three limits make them live, for the status line in the form. */
+  activeLimits: string[]
   hasAuthorization: boolean
   /** Empty when the engagement is startable. Otherwise, why it is not. */
   blockers: string[]
@@ -86,15 +92,41 @@ export interface EngagementStatus {
 }
 
 /**
- * A ceiling is only real when BOTH switches agree.
+ * Are this project's engagement limits live?
  *
- * `roeGlobalMaxRps` alone caps nothing: the capper is gated on `roeEnabled`, so
- * a project with a 3 written and the switch off runs unlimited. Reporting the
- * number without the switch is how an operator believes in a ceiling that is not
- * applied.
+ * The TypeScript half of one rule. `recon_settings/engagement.py` holds the
+ * other, for recon, the agent and the orchestrator; the webapp cannot import
+ * Python, so the copy is unavoidable and `engagement.derivation.test.ts` pins
+ * the two to a shared fixture table instead.
+ *
+ * Limits apply when there is a limit to apply. Never read `project.roeEnabled`:
+ * the column is kept only so old rows and old exports still load, and nothing
+ * writes it.
+ */
+export function deriveRoeEnabled(project: {
+  roeGlobalMaxRps?: number | null
+  roeExcludedHosts?: string[] | null
+  roeTimeWindowEnabled?: boolean | null
+} | null | undefined): boolean {
+  // Never throws. It runs on the path that decides whether a rate ceiling
+  // applies and on the queued-job fingerprint, and both take rows assembled
+  // elsewhere - a partial select, an older export bundle, a test fixture. A
+  // throw here would be a scan that starts without a ceiling.
+  if (!project || typeof project !== 'object') return false
+  const ceiling = Number(project.roeGlobalMaxRps ?? 0)
+  if (Number.isFinite(ceiling) && ceiling > 0) return true
+  const excluded = project.roeExcludedHosts
+  if (Array.isArray(excluded) && excluded.some(h => String(h).trim() !== '')) return true
+  return Boolean(project.roeTimeWindowEnabled)
+}
+
+/**
+ * The effective request-rate ceiling, or null when there is none.
+ *
+ * ZERO MEANS NO CEILING rather than a slow one, which is the trap this function
+ * exists to keep out of every caller.
  */
 export function effectiveCeiling(project: EngagementProjectRow): number | null {
-  if (!project.roeEnabled) return null
   return project.roeGlobalMaxRps > 0 ? project.roeGlobalMaxRps : null
 }
 
@@ -110,12 +142,7 @@ export function describeEngagement(
   const warnings: string[] = []
 
   if (kind === 'third_party') {
-    if (!project.roeEnabled) {
-      blockers.push(
-        'Rules of Engagement are switched off, so no rate ceiling is applied. A third-party ' +
-        'engagement must run under one.'
-      )
-    } else if (!(project.roeGlobalMaxRps > 0)) {
+    if (!(project.roeGlobalMaxRps > 0)) {
       blockers.push(
         'roeGlobalMaxRps is 0, which means NO ceiling rather than a slow one. A third-party ' +
         'engagement must declare a request-rate ceiling.'
@@ -134,7 +161,7 @@ export function describeEngagement(
       'This project has NO request-rate ceiling: every tool runs at whatever rate its own ' +
       'setting says. That is the default for a project created before engagement kinds ' +
       'existed. If the target is not your own estate, set engagementKind to third_party on a ' +
-      'new project, or switch the Rules of Engagement on with a ceiling.'
+      'new project, or set roeGlobalMaxRps to a non-zero value.'
     )
   }
 
@@ -145,10 +172,19 @@ export function describeEngagement(
     )
   }
 
+  const activeLimits: string[] = []
+  if (project.roeGlobalMaxRps > 0) activeLimits.push('a request-rate ceiling')
+  if ((project.roeExcludedHosts ?? []).some(h => String(h).trim() !== '')) {
+    activeLimits.push('an excluded-host list')
+  }
+  if (project.roeTimeWindowEnabled) activeLimits.push('a scanning time window')
+
   return {
     kind,
     ceilingRps: ceiling,
     ceilingEffective: ceiling !== null,
+    limitsActive: deriveRoeEnabled(project),
+    activeLimits,
     hasAuthorization: authorizationCount > 0,
     blockers,
     warnings,
@@ -159,8 +195,9 @@ const ENGAGEMENT_SELECT = {
   id: true,
   engagementKind: true,
   engagementIdentityHeader: true,
-  roeEnabled: true,
   roeGlobalMaxRps: true,
+  roeExcludedHosts: true,
+  roeTimeWindowEnabled: true,
   targetDomain: true,
 } as const
 
@@ -182,6 +219,8 @@ export async function loadEngagement(projectId: string): Promise<EngagementStatu
       kind: 'third_party',
       ceilingRps: null,
       ceilingEffective: false,
+      limitsActive: false,
+      activeLimits: [],
       hasAuthorization: false,
       blockers: ['Project not found.'],
       warnings: [],

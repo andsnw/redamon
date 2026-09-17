@@ -15,6 +15,7 @@ import { describe, test, expect } from 'vitest'
 import {
   loadRegistry,
   fieldKeys,
+  fieldsWhere,
   prismaColumns,
   prismaDefaults,
   prismaTypes,
@@ -182,41 +183,72 @@ describe('T34 every Prisma default falls inside its registry bounds', () => {
 
 describe('the dispositions cover the model', () => {
   test('every column has exactly one disposition', () => {
-    const counts = { settable: 0, create_only: 0, tighten_only: 0, never: 0 }
+    const counts = { settable: 0, create_only: 0, never: 0 }
     for (const key of fieldKeys()) counts[fields[key].mcp] += 1
-    expect(counts.settable + counts.create_only + counts.tighten_only + counts.never).toBe(
-      columns.length
-    )
+    expect(counts.settable + counts.create_only + counts.never).toBe(columns.length)
     // The headline: most of the model is reachable, and what is not is a short,
-    // named list rather than a class that grew.
+    // named list plus ONE class - the engagement record, which is the contract
+    // rather than a pipeline parameter.
     expect(counts.settable).toBeGreaterThan(600)
-    expect(counts.never).toBeLessThan(25)
+    const record = fieldsWhere(f => f.deny_reason === 'engagement-record').length
+    expect(counts.never - record).toBeLessThan(25)
   })
 
-  test('the RoE block is tighten_only, except what no settings write can carry', () => {
-    // One exception, and it is a type fact rather than a policy one.
-    // `roeDocumentData` is `Bytes?`: the agreement's own file, written by the
-    // endpoints that receive it. A JSON-RPC settings write cannot carry bytes,
-    // so describing it as writable meant a string passing every validator and
-    // then throwing a raw Prisma type error out of the tool. The MCP surface
-    // records the document's SHA-256 through attach_engagement_authorization.
-    const UPLOAD_MANAGED = ['roeDocumentData']
+  test('there is no tighten-only disposition left to hold anything', () => {
+    for (const key of fieldKeys()) {
+      expect(['settable', 'create_only', 'never']).toContain(fields[key].mcp)
+    }
+  })
+
+  test('P4: every roe* column is a limit or a record, and nothing is both', () => {
+    // The `roe` PREFIX stopped being a classification. Fifteen of these columns
+    // are enforced limits and are ordinary settings; the rest are the contract
+    // and are UI-only. The columns keep their names - renaming fifteen buys
+    // nothing and costs a migration - so anything keyed on the prefix now
+    // survives that split by accident rather than by design, which is why every
+    // control that needs "the limits" asks the registry GROUP.
     const roe = columns.filter(c => c.startsWith('roe')).sort()
-    const notTighten = roe.filter(
-      c => fields[c].mcp !== 'tighten_only' && !UPLOAD_MANAGED.includes(c)
-    )
-    expect(notTighten).toEqual([])
     expect(roe.length).toBeGreaterThan(30)
-    for (const key of UPLOAD_MANAGED) {
-      expect(fields[key].mcp, key).toBe('never')
-      expect(fields[key].deny_reason, key).toBe('upload-managed')
+
+    const unclassified = roe.filter(
+      c => fields[c].group !== 'engagement_limits' && fields[c].deny_reason !== 'engagement-record'
+    )
+    // roeDocumentData is the one that is neither: it is the document's own bytes,
+    // written by the endpoint that receives the file. A JSON-RPC settings write
+    // cannot carry bytes at all, so it was a type error waiting behind a
+    // validator that described it as a string.
+    expect(unclassified).toEqual(['roeDocumentData'])
+    expect(fields.roeDocumentData.mcp).toBe('never')
+    expect(fields.roeDocumentData.deny_reason).toBe('upload-managed')
+
+    const both = roe.filter(
+      c => fields[c].group === 'engagement_limits' && fields[c].deny_reason === 'engagement-record'
+    )
+    expect(both).toEqual([])
+  })
+
+  test('P4: no engagement-record column is writable through any MCP path', () => {
+    for (const f of fieldsWhere(s => s.deny_reason === 'engagement-record')) {
+      expect(f.mcp, f.key).toBe('never')
+    }
+  })
+
+  test('P4: no engagement-limit column is refused by an MCP path', () => {
+    for (const f of fieldsWhere(s => s.group === 'engagement_limits')) {
+      // roeEnabled is the deliberate exception: derived, written by nothing.
+      if (f.key === 'roeEnabled') {
+        expect(f.mcp).toBe('never')
+        expect(f.deny_reason).toBe('derived')
+        continue
+      }
+      expect(f.mcp, f.key).toBe('settable')
     }
   })
 
   test('the scope columns are create_only, never settable', () => {
     for (const key of [
       'targetDomain', 'subdomainList', 'targetIps', 'ipMode',
-      'domainBatchMode', 'domainBatchHosts', 'domainBatchGroups',
+      'domainBatchMode', 'domainBatchHosts',
       'targetGuardrailEnabled', 'verifyDomainOwnership',
       'githubTargetOrg', 'gvmScanTargets', 'supplyChainRepoUrl',
     ]) {

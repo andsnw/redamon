@@ -32,7 +32,6 @@ set of recon tuning settings, and query the attack-surface graph.
 | `stop_recon` | Stop a running scan. | `recon:scan` |
 | `update_recon_settings` | Change any recon tuning value. Validated and capped at scan start rather than blocked. | `recon:settings` |
 | `create_project` | Open an engagement and fix its scope, atomically with the record of what authorized it. | `project:create` |
-| `tighten_engagement_roe` | Narrow the Rules of Engagement. One direction only. | `project:create` |
 | `attach_engagement_authorization` | Record the scope document that permits this engagement. Append-only. | `engagement:authorize` |
 | `list_engagement_authorizations` | The history of what authorized it, newest first. | `recon:read` |
 | `preflight_scope_check` | Read-only proof that the configured pipeline fits the scope. RESOLVED values, not written ones. | `recon:read` |
@@ -523,15 +522,30 @@ directions: it refused `nucleiTags`, a bug-class filter, while permitting
 
 Every parameter is now described once, in
 [`recon_settings/registry.yaml`](../../recon_settings/registry.yaml), and each
-one carries a bound or a named validator. Four dispositions decide what a token
+one carries a bound or a named validator. Three dispositions decide what a token
 may write:
 
 | Disposition | Count | What it means |
 | --- | --- | --- |
-| `settable` | 635 | write at any time through `update_recon_settings` |
-| `create_only` | 20 | the engagement scope: written once by `create_project`, refused by name afterwards |
-| `tighten_only` | 39 | the Rules of Engagement: `tighten_engagement_roe`, safe direction only |
-| `never` | 20 | not a pipeline parameter at all, or a column no settings write can carry; refused with its class |
+| `settable` | 648 | write at any time through `update_recon_settings` |
+| `create_only` | 19 | the engagement scope: written once by `create_project`, refused by name afterwards |
+| `never` | 47 | not a pipeline parameter at all; refused with its class. 24 of these are the engagement RECORD |
+
+There used to be a fourth, `tighten_only`, holding the Rules of Engagement under
+a write-time direction rule. It is deleted rather than migrated. The rule bought
+the appearance of a guarantee and not the guarantee: five of the fields it
+covered - the whole time window - accepted a WIDENING while reporting a
+tightening, because `narrow` has no machine-checkable direction.
+
+What replaced it is that the engagement splits in two. Its 15 LIMITS - the
+rate ceiling, the never-touch hosts, the scanning window, the agent's denylists -
+are ordinary `settable` fields in the `engagement_limits` group, reachable from
+the project form and from `update_recon_settings` alike, in either direction.
+What makes them safe is that every one is ENFORCED at scan start whatever the
+setting says. Its 24 RECORD columns - the client, the contacts, the dates,
+the uploaded document - are `never`, with `deny_reason: engagement-record`: a
+person writes them, a model reads them, nothing enforces them, and they carry a
+third party's personal data.
 
 A test walking `Prisma.ProjectScalarFieldEnum` fails until every column has an
 entry, so a new Prisma field still fails the build until someone describes it —
@@ -582,11 +596,12 @@ server's tools. Assume an instruction embedded in a page title reaches the model
 | Redirect the platform at a new target | Scope is `create_only`: refused by name on an existing project, whatever the token holds. A different target means a different project. |
 | Discard the victim's graph history | `mode:"overwrite"` needs `recon:overwrite`, off by default. |
 | Launch a scan storm | Strict per-token/per-project start bucket + the orchestrator's one-scan-per-project rule. |
-| Escalate scan aggression | Aggression is now SETTABLE and CAPPED instead of refused. Every rate resolves to at most the engagement ceiling at scan start, the ceiling itself is `tighten_only` under a separate permission, and `roeForbiddenTools` / `roeForbiddenCategories` / `roeAllowDos` gate the techniques. A `third_party` engagement cannot start without a ceiling at all. |
-| Loosen the engagement to make room | Every RoE field moves one direction only: a ceiling falls, an exclusion list grows, a permission is withdrawn. Widening needs a person. |
+| Escalate scan aggression | Aggression is SETTABLE and CAPPED instead of refused. Every rate resolves to at most the engagement ceiling at scan start, and `roeForbiddenTools` / `roeForbiddenCategories` / `roeAllowDos` are checked in code before a tool executes. A `third_party` engagement cannot start without a ceiling at all. |
+| Loosen the engagement to make room | Nothing REFUSES it, and that is deliberate: a write-time direction rule covered five fields it could not actually check. What stops it mattering is that the limits are applied at scan start regardless, the change is audited with a before and an after, and `preflight_scope_check` reports the RESOLVED configuration rather than the written one. A queued job whose limits changed goes to `needs_review` instead of dispatching. |
+| Disable the engagement limits wholesale | There is no flag to write. `roeEnabled` is derived from whether any limit is SET, so removing a limit means removing it visibly rather than flipping one boolean and leaving every field displaying its old value. |
 | Point a scan tool at a local file | A wordlist or template path must resolve inside this project's own directories, checked at the write and again at settings load. |
-| Make the scan run an attacker's container | A non-allowlisted image is accepted and then pinned back to the shipped default at scan start, with a `[guardrail]` line. |
-| Reconfigure a job already in the queue | The C-4 fingerprint covers every field that steers where or how hard a job scans, including the whole RoE block, so the job goes to `needs_review` instead of dispatching. |
+| Make the scan run an attacker's container | Every `*DockerImage` field is a closed list of the shipped images and an out-of-set value is REFUSED at the write. It used to be accepted and pinned back at scan start, which contained the danger but not the dishonesty: `get_recon_settings` echoed an image the scan would never run. |
+| Reconfigure a job already in the queue | The C-4 fingerprint covers every field that steers where or how hard a job scans, including every engagement limit and the DERIVED answer to whether they are live, so the job goes to `needs_review` instead of dispatching. |
 | Exfiltrate another tenant's data | Ownership check + `scope_query` + result post-validation. |
 | Exfiltrate secrets | No tool returns a credential. |
 | Burn the owner's LLM budget | Per-token daily budget. |

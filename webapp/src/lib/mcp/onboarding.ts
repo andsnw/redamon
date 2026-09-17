@@ -664,15 +664,27 @@ function renderTokenPowers(tools: Tool[], scopes: readonly McpScope[]): string {
     'target guardrail are fixed when the project is created and are refused by name afterwards.',
     'Scope moves with a new project, never with a new value on an old one.',
     '',
-    '**You can never loosen the rules of engagement.** Every RoE field may move in the safe',
-    'direction only: a rate ceiling may fall and never rise, an exclusion list may grow and never',
-    'shrink, a permitted technique may be withdrawn and never granted. You can READ the parts you',
-    'are judged against - the ceiling, the exclusions, the forbidden tools and categories, the time',
-    'window - because a ceiling you cannot see is one you cannot check yourself against.',
+    '**You can never touch the engagement RECORD.** The client name, the contact details, the',
+    'emergency contact, the dates, the compliance frameworks and the document are refused on every',
+    'write AND withheld from every read. They are the contract: a person writes them, nothing in',
+    'the pipeline enforces them, and they carry a third party\'s personal data.',
     '',
-    '**You can never read the client\'s identity or the engagement document.** The client name, the',
-    'contact details, the emergency contact, the raw document and its parsed form are withheld from',
-    'every read on this surface.',
+    '### What you CAN change, and why that is not a loophole',
+    '',
+    '**The engagement LIMITS are ordinary settings.** The rate ceiling, the never-touch hosts, the',
+    'scanning window, the forbidden tools and categories, the DoS / lockout / social-engineering',
+    'gates and the severity cap all move through `update_recon_settings`, in EITHER direction.',
+    'There is no one-way rule and there is no switch that disables them while leaving them',
+    'configured.',
+    '',
+    'What keeps them honest is not the write, it is the enforcement: every limit is applied at scan',
+    'start whatever the setting says. A ceiling of 3 rewrites all 17 rate fields; an excluded host',
+    'is dropped in three separate places; the orchestrator returns 403 outside the window. So',
+    'raising a ceiling changes what runs rather than what is checked - and `preflight_scope_check`',
+    'reports the RESOLVED configuration, which is the number to report back to a person.',
+    '',
+    'If what you learned WIDENS an engagement, say so to a person rather than quietly raising the',
+    'ceiling. Nothing refuses it, and the audit row records it either way.',
     '',
     '**You can never read a stored credential.** The CypherFix GitHub token and the GraphQL auth',
     'value are write-only or closed entirely, and no read tool returns either.',
@@ -875,10 +887,11 @@ const REFERENCES: ReferenceSpec[] = [
     intro:
       'Everything that has to be true BEFORE a scan is allowed to run. A project\'s scope is ' +
       'fixed when it is created and immutable afterwards, so this is the only place it is ' +
-      'decided; the engagement agreement may be tightened later and never loosened; and what ' +
-      'authorized the work is recorded append-only, so it survives the token that claimed it. ' +
-      'The preflight is what turns "the pipeline respects the scope" from an assertion into a ' +
-      'diff you can check.',
+      'decided; the engagement\'s LIMITS are ordinary settings you can change either way and ' +
+      'that are enforced at scan start regardless; its RECORD is a person\'s to write and you ' +
+      'cannot read it; and what authorized the work is recorded append-only, so it survives the ' +
+      'token that claimed it. The preflight is what turns "the pipeline respects the scope" from ' +
+      'an assertion into a diff you can check.',
     areas: ['engagement'],
     workflows: ['open-an-engagement', 'tighten-mid-engagement'],
   },

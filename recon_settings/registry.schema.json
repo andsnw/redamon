@@ -52,7 +52,7 @@
         "phase": { "$ref": "#/definitions/phase" },
         "traffic": { "$ref": "#/definitions/traffic" },
         "roe_capped": { "type": "boolean" },
-        "mcp": { "enum": ["settable", "create_only", "tighten_only", "never"] },
+        "mcp": { "enum": ["settable", "create_only", "never"] },
         "meaning": { "type": "string", "minLength": 1 },
         "bounds": {
           "type": "object",
@@ -68,12 +68,12 @@
         "zero_means": { "enum": ["unlimited", "disabled", "auto", "literal"] },
         "fallback": { "enum": ["missing", "falsy"] },
         "coerce": { "enum": ["int", "strip", "strip_list"] },
-        "tighten": { "$ref": "#/definitions/tighten" },
         "deny_reason": { "$ref": "#/definitions/deny_reason" },
         "written_by": { "type": "string" },
         "readable": { "type": "boolean" },
         "read_deny_reason": { "$ref": "#/definitions/read_deny_reason" },
         "group": { "type": "string" },
+        "form_section": { "type": ["string", "null"] },
         "governor": { "$ref": "#/definitions/governor" },
         "stealth": { "$ref": "#/definitions/stealth" }
       }
@@ -159,14 +159,20 @@
         "json_object"
       ]
     },
-    "tighten": {
-      "enum": ["decrease", "increase", "superset", "true_to_false", "false_to_true", "narrow"]
-    },
     "read_deny_reason": {
       "enum": ["credential", "third_party_pii", "document_blob", "other_user"]
     },
     "deny_reason": {
-      "enum": ["identity", "internal", "escalation", "secret", "upload-managed"]
+      "enum": [
+        "identity",
+        "internal",
+        "escalation",
+        "secret",
+        "upload-managed",
+        "engagement-record",
+        "not-tuning",
+        "derived"
+      ]
     }
   }
 }

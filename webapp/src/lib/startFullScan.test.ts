@@ -57,7 +57,7 @@ beforeEach(() => {
   // reads as, and it is the shape these tests are about.
   h.findProject.mockResolvedValue({
     id: 'p1', userId: 'owner', targetDomain: 'x.tld', ipMode: false, targetIps: [],
-    engagementKind: 'internal', roeEnabled: false, roeGlobalMaxRps: 0,
+    engagementKind: 'internal', roeGlobalMaxRps: 0,
   })
   h.countAuthorizations.mockResolvedValue(0)
   h.findAuthorization.mockResolvedValue(null)
@@ -79,7 +79,7 @@ describe('a third-party engagement cannot start without its ceiling and its auth
   // watching.
   const thirdParty = (over: Record<string, unknown> = {}) => ({
     id: 'p1', userId: 'owner', targetDomain: 'x.tld', ipMode: false, targetIps: [],
-    engagementKind: 'third_party', roeEnabled: true, roeGlobalMaxRps: 3,
+    engagementKind: 'third_party', roeGlobalMaxRps: 3,
     ...over,
   })
 
@@ -108,14 +108,14 @@ describe('a third-party engagement cannot start without its ceiling and its auth
     expect(res.error).toMatch(/NO ceiling/)
   })
 
-  test('roeEnabled false refuses it even with a ceiling written', async () => {
-    // The number alone caps nothing: the capper is gated on the switch.
-    h.findProject.mockResolvedValue(thirdParty({ roeEnabled: false }))
+  test('a ceiling written IS a ceiling applied', async () => {
+    // There is no second switch that could leave the number configured and
+    // inert. The engagement's limits are derived from whether a limit is SET,
+    // so a project cannot show a 3 rps ceiling and run unlimited.
+    h.findProject.mockResolvedValue(thirdParty({ roeGlobalMaxRps: 3 }))
     h.countAuthorizations.mockResolvedValue(1)
-    const res = await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })
-    expect(res.ok).toBe(false)
-    if (res.ok) throw new Error('unreachable')
-    expect(res.error).toMatch(/switched off/)
+    const res = await startFullScan({ projectId: 'p1', mode: 'new', triggeredBy: 'ui' })
+    expect(res.ok).toBe(true)
   })
 
   test('an unreadable authorization set blocks rather than passes', async () => {

@@ -51,14 +51,16 @@ vi.mock('@/lib/graphWriters', () => ({ describeScanWriters: (...a: unknown[]) =>
 vi.mock('@/lib/audit', () => ({ writeAudit: (...a: unknown[]) => h.audit(...a) }))
 
 import { __resetRateLimiter } from '@/lib/mcpAuth'
-import { fieldsWhere } from '@/lib/reconSettings/registry'
-import { createProject, tightenEngagementRoe } from './engagementTools'
+import { field, fieldsWhere } from '@/lib/reconSettings/registry'
+import { createProject } from './engagementTools'
+import { updateReconSettings } from './writeTools'
 import type { McpContext } from './tools'
 
 const ctx = (): McpContext => ({
   token: {
     tokenId: 't1', userId: 'owner', tokenPrefix: 'rdmn_mcp_aaaaaaaa',
-    name: 'agent', scopes: ['recon:read', 'project:create', 'engagement:authorize'] as never,
+    name: 'agent',
+    scopes: ['recon:read', 'project:create', 'engagement:authorize', 'recon:settings'] as never,
   },
 })
 
@@ -74,7 +76,6 @@ const projectRow = (over: Record<string, unknown> = {}) => ({
   userId: 'owner',
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   engagementKind: 'internal',
-  roeEnabled: true,
   roeGlobalMaxRps: 3,
   roeExcludedHosts: ['a.tld'],
   roeNotes: 'the original note',
@@ -113,7 +114,7 @@ describe("create_project's settings block may not override the engagement guard"
     name: 'test',
     engagementKind: 'third_party',
     targetDomain: 'example.com',
-    roe: { roeEnabled: true, roeGlobalMaxRps: 3 },
+    settings: { roeGlobalMaxRps: 3 },
     authorization: AUTH,
   }
 
@@ -124,13 +125,14 @@ describe("create_project's settings block may not override the engagement guard"
     expect(h.createProject).not.toHaveBeenCalled()
   })
 
-  test('the rate ceiling the guard checked cannot be removed by the same call', async () => {
+  test('the ceiling the guard checks IS the one `settings` wrote', async () => {
+    // The limits arrive through `settings` now, so there is no second block that
+    // could disagree with the one the guard read. The guard runs after the
+    // settings are merged into `data`, which is what makes that true rather
+    // than merely likely.
     await expect(
-      createProject(ctx(), {
-        ...TIGHT_THIRD_PARTY,
-        settings: { roeEnabled: false, roeGlobalMaxRps: 0 },
-      })
-    ).rejects.toThrow(/Rules of Engagement fields and belong in `roe`/)
+      createProject(ctx(), { ...TIGHT_THIRD_PARTY, settings: { roeGlobalMaxRps: 0 } })
+    ).rejects.toThrow(/must declare a request-rate ceiling/)
     expect(h.createProject).not.toHaveBeenCalled()
   })
 
@@ -170,36 +172,49 @@ describe("create_project's settings block may not override the engagement guard"
     await createProject(ctx(), { ...TIGHT_THIRD_PARTY })
     const after = h.audit.mock.calls[0][0].after as Record<string, unknown>
     expect(after.engagementKind).toBe('third_party')
-    expect(after.roe).toEqual({ roeEnabled: true, roeGlobalMaxRps: 3 })
+    expect(after.engagementLimits).toEqual({ roeGlobalMaxRps: 3 })
   })
 })
 
-describe('tighten_engagement_roe refuses a field it cannot read back', () => {
-  // These carry the client's identity and the agreement text and are withheld
-  // from every MCP read, so `before` could not contain them: the direction rule
-  // is `narrow` (nothing to check) and the audit recorded the prior value as
-  // absent. Write-without-read with a blinded audit.
-  const BLIND = fieldsWhere(f => f.mcp === 'tighten_only' && f.readable === false).map(f => f.key)
+describe('a field the surface cannot read back is not writable either', () => {
+  // The old shape was write-without-read with a blinded audit: these columns
+  // carry the client's identity and the agreement text, so they are withheld
+  // from every MCP read, which meant the audit row recorded the prior value as
+  // absent and the overwrite was unrecoverable.
+  //
+  // It is closed differently now. They are the engagement RECORD, refused
+  // outright rather than refused by a special case inside one tool - so there is
+  // no path left that could write them blind.
+  const BLIND = fieldsWhere((f, key) => f.readable === false && key.startsWith('roe')).map(f => f.key)
 
   test('there is at least one such field, or this test proves nothing', () => {
     expect(BLIND.length).toBeGreaterThan(0)
   })
 
-  test.each(BLIND)('%s is refused', async key => {
-    await expect(tightenEngagementRoe(ctx(), 'p1', { [key]: 'overwritten' }))
-      .rejects.toThrow(/cannot read back/)
+  test.each(BLIND)('%s is refused by the ordinary settings path', async key => {
+    await expect(updateReconSettings(ctx(), 'p1', { [key]: 'overwritten' }))
+      .rejects.toThrow(new RegExp(key))
     expect(h.updateProject).not.toHaveBeenCalled()
     expect(h.updateManyProject).not.toHaveBeenCalled()
   })
 
-  test('a readable RoE field is still tightenable', async () => {
-    const r = await tightenEngagementRoe(ctx(), 'p1', { roeGlobalMaxRps: 1 })
-    expect(r.tightened).toEqual({ roeGlobalMaxRps: 1 })
+  test('every unreadable engagement column is closed to writes too', () => {
+    // The read boundary and the write boundary agree here, which is the
+    // property that makes a blinded audit impossible rather than merely
+    // guarded against.
+    for (const key of BLIND) {
+      expect(field(key)!.mcp, key).toBe('never')
+    }
   })
 
-  test('the audit for a permitted tighten still carries the real prior value', async () => {
-    await tightenEngagementRoe(ctx(), 'p1', { roeNotes: 'narrowed' })
-    expect(h.audit.mock.calls[0][0].before).toEqual({ roeNotes: 'the original note' })
+  test('a readable engagement LIMIT is still writable', async () => {
+    await updateReconSettings(ctx(), 'p1', { roeGlobalMaxRps: 1 })
+    expect(h.updateProject.mock.calls[0][0].data).toEqual({ roeGlobalMaxRps: 1 })
+  })
+
+  test('the audit for a limit change carries the real prior value', async () => {
+    await updateReconSettings(ctx(), 'p1', { roeGlobalMaxRps: 1 })
+    expect(h.audit.mock.calls[0][0].before).toEqual({ roeGlobalMaxRps: 3 })
   })
 })
 

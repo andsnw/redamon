@@ -350,9 +350,10 @@ describe('update_recon_settings refuses what would redirect the platform', () =>
   })
 
   // Still refused, and each for a DIFFERENT reason, which is the point of the
-  // four dispositions replacing one allowlist.
+  // dispositions replacing one allowlist.
   test.each([
-    ['roeEnabled', /Rules of Engagement/, 'the engagement agreement: tighten_engagement_roe owns it'],
+    ['roeEnabled', /derived/i, 'derived from whether any engagement limit is set'],
+    ['roeClientName', /engagement RECORD/, 'the contract: a person writes it, nothing enforces it'],
     ['targetDomain', /create_project/, 'scope: fixed at creation'],
     ['cypherfixGithubToken', /credential/, 'a stored credential'],
     ['activationState', /not a pipeline parameter/, 'an application-written lock flag'],
@@ -372,15 +373,22 @@ describe('update_recon_settings refuses what would redirect the platform', () =>
     }
   })
 
-  test('a docker image is now ACCEPTED, because the runtime is the control', async () => {
-    // The headline change. Blocking the field by name was a crude proxy for
-    // "this value could be dangerous"; sanitize_image_settings() already pins a
-    // non-allowlisted image back to the shipped default at scan start, with a
-    // [guardrail] line recording it. The field is open; the VALUE is controlled.
-    //
-    // Second-order effect, stated rather than hidden: get_recon_settings will
-    // echo back what was written, not what the scan will run.
-    const r = await updateReconSettings(ctx(), 'p1', { nucleiDockerImage: 'attacker/evil:latest' })
+  test('a docker image outside the shipped set is REFUSED at the write', async () => {
+    // It used to be accepted and then pinned back to the shipped default at scan
+    // start. The danger was contained; the DISHONESTY was not, because
+    // get_recon_settings echoed the value the caller wrote while the scan ran a
+    // different one, so a caller believed a setting applied when it did not.
+    // That is exactly what "nothing is silently stripped" exists to prevent, so
+    // the field carries a closed value set and the write is refused by name.
+    await expect(updateReconSettings(ctx(), 'p1', { nucleiDockerImage: 'attacker/evil:latest' }))
+      .rejects.toThrow(/must be one of/)
+    expect(h.updateProject).not.toHaveBeenCalled()
+  })
+
+  test('a shipped image is accepted', async () => {
+    const r = await updateReconSettings(ctx(), 'p1', {
+      nucleiDockerImage: 'projectdiscovery/nuclei:latest',
+    })
     expect(r.projectId).toBe('p1')
     expect(h.updateProject).toHaveBeenCalled()
   })

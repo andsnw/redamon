@@ -159,6 +159,23 @@ export function checkHeader(raw: unknown): string | null {
 
 const STATUS_CODE_RE = /^[0-9]{3}(-[0-9]{3})?$/
 
+/**
+ * Container images the OPERATOR approved beyond the shipped set.
+ *
+ * Mirrors `_operator_allowed_images()` in `recon/project_settings.py`, which is
+ * the copy that actually holds at scan start. `RECON_EXTRA_ALLOWED_IMAGES` is
+ * set on the server, so unlike a project setting it is not something a caller
+ * can influence - which is why it may widen a closed list that exists to refuse
+ * caller-supplied values.
+ *
+ * Read per call rather than cached: the value is an env var and a test that
+ * stubs it must see the change.
+ */
+export function operatorAllowedImages(): Set<string> {
+  const raw = process.env.RECON_EXTRA_ALLOWED_IMAGES ?? ''
+  return new Set(raw.split(',').map(s => s.trim()).filter(Boolean))
+}
+
 export interface ValidationContext {
   /** What the field is called, for the message. */
   key: string
@@ -193,10 +210,9 @@ function checkScalar(validator: string, value: unknown, ctx: ValidationContext):
         ? null
         : `must be one of ${SCAN_MODULE_VALUES.join(', ')}`
     case 'docker_image':
-      // Deliberately permissive: the runtime pins a non-allowlisted image to the
-      // shipped default, and `get_recon_settings` will echo what was written
-      // while the scan runs what was pinned. `preflight_scope_check` is where a
-      // caller sees the RESOLVED value.
+      // Reached only for an image the registry's closed `values:` list did not
+      // match, which is the operator-approved extra case below. Everything else
+      // is refused by the value set before it gets here.
       return typeof value === 'string' && !/[\s\0]/.test(value)
         ? null
         : 'must be a container image reference with no whitespace'
@@ -265,9 +281,15 @@ export function validateValue(
 
     case 'string': {
       if (spec.values) {
-        return typeof value === 'string' && spec.values.includes(value)
-          ? null
-          : `must be one of ${spec.values.join(', ')}`
+        if (typeof value === 'string' && spec.values.includes(value)) return null
+        // An air-gapped or private-registry deployment mirrors the shipped
+        // images, and the operator names the mirrors in an env var the SERVER
+        // controls. That is not attacker-influenceable the way a project
+        // setting is, so it widens the set without re-opening the hole.
+        if (spec.validator === 'docker_image' && operatorAllowedImages().has(String(value))) {
+          return checkScalar('docker_image', value, ctx)
+        }
+        return `must be one of ${spec.values.join(', ')}`
       }
       return checkScalar(spec.validator ?? 'free_text', value, ctx)
     }

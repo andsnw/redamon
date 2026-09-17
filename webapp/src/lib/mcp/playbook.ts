@@ -100,12 +100,13 @@ export const CAPABILITY_AREAS: CapabilityArea[] = [
     title: 'Open and prove an engagement',
     purpose:
       'Everything that happens BEFORE a scan is allowed to run. Create a project with its scope ' +
-      'fixed at creation, record the document that authorized it, tighten the agreement as you ' +
-      'learn more, and prove that the configuration fits before you start. The preflight is the ' +
-      'one that earns its place: without it "the pipeline respects the scope" is an assertion, ' +
-      'and with it it is a diff a person checks in ten seconds.',
+      'fixed at creation, record the document that authorized it, and prove that the ' +
+      'configuration fits before you start. The preflight is the one that earns its place: ' +
+      'without it "the pipeline respects the scope" is an assertion, and with it it is a diff a ' +
+      'person checks in ten seconds. The engagement\'s LIMITS are ordinary settings and are ' +
+      'changed with update_recon_settings.',
     tools: [
-      'create_project', 'tighten_engagement_roe', 'attach_engagement_authorization',
+      'create_project', 'attach_engagement_authorization',
       'list_engagement_authorizations', 'preflight_scope_check',
     ],
   },
@@ -116,8 +117,10 @@ export const CAPABILITY_AREAS: CapabilityArea[] = [
       'Read the current tuning, read the reference manual that explains every field and its ' +
       'bounds, write a change, and browse the engagement-type presets. Every parameter of the ' +
       'pipeline is reachable and each is bounded, validated or corrected at scan start rather ' +
-      'than blocked. Tuning changes HOW the pipeline runs and never WHAT it points at: the scope ' +
-      'and the Rules of Engagement belong to the engagement tools.',
+      'than blocked. The engagement\'s limits - its rate ceiling, its excluded hosts, its ' +
+      'scanning window, the agent\'s denylists - are reachable here too. What tuning never ' +
+      'changes is WHAT the pipeline points at: the scope belongs to create_project, and the ' +
+      'engagement RECORD belongs to a person.',
     tools: ['get_recon_settings', 'describe_recon_settings', 'update_recon_settings', 'list_recon_presets'],
   },
   {
@@ -418,25 +421,12 @@ export const ONBOARDING_PLAYBOOK: Record<string, PlaybookEntry> = {
     gotchas: [
       'Scope is fixed HERE and immutable afterwards. Get the targeting mode right on the first call, because the fix for a wrong one is a different project, not a different value.',
       'Exactly one targeting mode. targetDomain, targetIps and domainBatchHosts are mutually exclusive, and passing two is refused rather than resolved.',
-      'roeGlobalMaxRps 0 means NO ceiling, not a slow one. And roeEnabled must be true or the ceiling is never applied at all, whatever number is stored.',
+      'roeGlobalMaxRps 0 means NO ceiling, not a slow one. Pass it inside `settings`, like any other field; there is no separate roe argument.',
       'A third_party engagement without a ceiling and an authorization record is created and then REFUSED at start_recon. Supply both here.',
       'Pass an idempotencyKey. A retried run is normal and a retry without one opens a second engagement against the same scope.',
       'The domain-batch grouping is re-derived server-side from your raw host list; anything you supply for it is discarded. The grouping decides the run order, so it is a control, not a formatting preference.',
     ],
     workflowRefs: ['open-an-engagement'],
-  },
-  tighten_engagement_roe: {
-    whenToUse:
-      'When you learn something that NARROWS an engagement mid-run: a newly excluded host, a rate ' +
-      'the target cannot take, a technique that turned out to be out of bounds. Apply it ' +
-      'immediately rather than finishing the run first.',
-    gotchas: [
-      'One direction only. A ceiling falls and never rises, an exclusion list grows and never shrinks, a permission is withdrawn and never granted. If you need more room, ask a person; no tool here can give it to you.',
-      'The ceiling may never go back to 0 once set, because 0 means no ceiling rather than an unlimited-but-declared one.',
-      'Refused while a scan is writing the graph. The running scan read its Rules of Engagement at start and will not see this, so a tightening accepted mid-scan would be one that silently did not apply.',
-      'It needs the project:create permission, not recon:settings. Changing the engagement agreement is a different act from tuning the pipeline.',
-    ],
-    workflowRefs: ['tighten-mid-engagement'],
   },
   attach_engagement_authorization: {
     whenToUse:
@@ -489,7 +479,8 @@ export const ONBOARDING_PLAYBOOK: Record<string, PlaybookEntry> = {
       'and the reference manual. Change one thing at a time so the effect is attributable.',
     gotchas: [
       'It can NEVER change what RedAmon points at. The target, the address list, the subdomain seeds, the batch configuration and the safety guardrail are fixed at creation and refused here BY NAME. This is the product\'s legal boundary, not an oversight; a different target means create_project, not a different value.',
-      'It does not touch the Rules of Engagement either. Those are tighten-only and belong to tighten_engagement_roe, under a different permission.',
+      'It DOES change the engagement\'s limits: roeGlobalMaxRps, roeExcludedHosts, the time window, roeForbiddenTools, roeForbiddenCategories, the allow flags and roeMaxSeverityPhase are ordinary settable fields here, in either direction. What keeps them honest is that each is enforced at scan start whatever you wrote, so call preflight_scope_check afterwards and report the resolved values.',
+      'It does NOT touch the engagement RECORD: the client name, the contacts, the dates and the uploaded document are refused by name. A person writes those.',
       'A value is bounded or validated, never silently clamped, and one bad key refuses the WHOLE call. Read describe_recon_settings for the bound rather than probing for it.',
       'Some values are CORRECTED at scan start rather than refused here: a rate above the engagement ceiling, a container image outside the shipped set, a wordlist path outside the project directory. get_recon_settings echoes what you wrote; preflight_scope_check reports what will run.',
       'A conflict means someone else changed the settings underneath you. Re-read them rather than forcing your write.',
@@ -504,7 +495,7 @@ export const ONBOARDING_PLAYBOOK: Record<string, PlaybookEntry> = {
       'supply chain, OSINT, full passive. Recommend one by name.',
     gotchas: [
       'This tool READS presets; it does not apply one. Write the fields you want with update_recon_settings, which validates each.',
-      'appliedCount is how much of a preset this surface could write. What stays refused is the engagement scope and the Rules of Engagement, which a preset has no business setting.',
+      'appliedCount is how much of a preset this surface could write. What stays refused is the engagement scope and the engagement record; no preset carries an engagement limit either, because a limit belongs to one engagement rather than to a reusable configuration.',
       'Like the settings reference, it is built from constants and answers when nothing else does.',
     ],
     workflowRefs: ['change-tuning'],
@@ -646,20 +637,23 @@ export const WORKFLOWS: Workflow[] = [
   {
     id: 'tighten-mid-engagement',
     title: 'Tighten an engagement you are already running',
-    requiredTools: ['tighten_engagement_roe', 'preflight_scope_check'],
+    requiredTools: ['update_recon_settings', 'preflight_scope_check'],
     body: [
       'You learned something that narrows the engagement: a host the program excluded after the ' +
       'fact, a rate the target cannot take, a technique that turned out to be out of bounds.',
       '',
-      '1. `tighten_engagement_roe` with only the fields that narrow. It moves one direction: a ' +
-        'ceiling falls, an exclusion list grows, a permission is withdrawn.',
-      '2. `preflight_scope_check` to see the new resolved rates.',
-      '3. If a scan is running, stop it. The tightening applies to the NEXT scan; the running ' +
-        'one read its Rules of Engagement when it started and will not see the change, which is ' +
-        'why the tool refuses while the graph is being written.',
+      '1. `update_recon_settings` with only the fields that narrow: a lower `roeGlobalMaxRps`, ' +
+        'a longer `roeExcludedHosts`, a withdrawn permission. They are ordinary settings, so ' +
+        'nothing stops you widening one either - which is why step 2 is not optional.',
+      '2. `preflight_scope_check` to see the RESOLVED rates, and report them. That is the check ' +
+        'that actually holds: the ceiling rewrites every rate field at scan start whatever the ' +
+        'per-tool values say.',
+      '3. If a scan is running, stop it. The change applies to the NEXT scan; the running one ' +
+        'read its settings when it started and will not see it, which is why the write is ' +
+        'refused while the graph is being written.',
       '',
-      'If what you learned WIDENS the engagement, this tool cannot do it, and that is ' +
-      'deliberate. Ask a person.',
+      'If what you learned WIDENS the engagement, say so to a person rather than quietly ' +
+      'raising the ceiling. Nothing here refuses it, and the audit row records it either way.',
     ],
   },
   {

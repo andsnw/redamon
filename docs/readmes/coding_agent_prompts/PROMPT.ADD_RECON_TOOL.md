@@ -36,14 +36,18 @@ Integrate **[TOOL_NAME]** into the RedAmon recon pipeline.
 
 3. **Identify the pipeline phase** — Read `recon/main.py` to understand the phase structure. Determine which phase the tool belongs to and where its results feed into.
 
-4. **Settings multi-layer flow** — Every new setting must be added in ALL these layers (miss one and it breaks):
-   - `webapp/prisma/schema.prisma` — field with `@default()` and `@map()` (camelCase field, snake_case DB column)
-   - `recon/project_settings.py` → `DEFAULT_SETTINGS` dict (SCREAMING_SNAKE_CASE keys)
-   - `recon/project_settings.py` → `fetch_project_settings()` mapping (camelCase from DB → SCREAMING_SNAKE_CASE for Python)
-   - `recon_orchestrator/api.py` → `GET /defaults` endpoint (include in served defaults)
-   - `recon_orchestrator/api.py` → `RUNTIME_ONLY_KEYS` set (only if the setting should NOT appear in defaults)
-   - Frontend section component (with fallback default in `onChange`)
+4. **Settings multi-layer flow** — a new setting is described ONCE and joined everywhere else. Three of the layers this list used to name are GENERATED now; hand-editing one is undone by the next build.
+
+   | Layer | What you do |
+   | --- | --- |
+   | `webapp/prisma/schema.prisma` | Add the field with `@default()` and `@map()`. Prisma stays the source of truth for existence, type and default, so the registry never restates any of those |
+   | `recon_settings/registry.yaml` | Add the entry: `tool`, `runtime_key`, `unit`, `phase`, `traffic`, `roe_capped`, `mcp`, `meaning`, plus `bounds` / `values` / `validator`. Then run `python3 recon_settings/build.py` |
+   | `recon/project_settings.py` | `DEFAULT_SETTINGS` + the `fetch_project_settings()` mapping (SCREAMING_SNAKE_CASE) |
+   | Frontend section component | An input, in the section the registry's `form_section` names |
+   | ~~`/defaults`~~ · ~~`RUNTIME_ONLY_KEYS`~~ · ~~the MCP allowlist~~ | **Nothing.** All three are derived from the registry |
+
    - **Naming convention**: `tool_setting` (DB column) → `toolSetting` (Prisma/frontend) → `TOOL_SETTING` (Python)
+   - `recon_settings/registry.json` and `webapp/src/lib/reconSettings/registry.json` are BUILD ARTIFACTS of the YAML. Never edit either; `python3 recon_settings/build.py --check` fails the gate when they are stale.
 
 5. **Frontend settings page** — Study `webapp/src/components/projects/ProjectForm/ProjectForm.tsx` to find which tab the tool belongs to. Study existing section components in `webapp/src/components/projects/ProjectForm/sections/` — each has: collapsible header, toggle, description, badges (Passive/Active), conditional parameter inputs, and `NodeInfoTooltip` from `nodeMapping.ts`. Study how API key checks work in `ShodanSection.tsx` and `UrlscanSection.tsx` if the tool needs keys.
 
@@ -131,9 +135,13 @@ Integrate **[TOOL_NAME]** into the RedAmon recon pipeline.
 - [ ] Settings keys in `recon/project_settings.py` (`DEFAULT_SETTINGS` + `fetch_project_settings()` mapping)
 - [ ] Prisma schema fields in `webapp/prisma/schema.prisma`
 - [ ] Run `docker compose exec webapp npx prisma db push` (never use `prisma migrate`)
-- [ ] **Classify every new `Project` column** in `webapp/src/lib/reconSettingsAllowlist.generated.ts`. The inbound MCP server writes settings through a positive allowlist, and a coverage test fails until each new column appears in its ALLOW or DENY table. **Denying is the safe default**; allowlist a field only if it is genuine recon *tuning* AND has a ProjectForm min/max to mirror (a field with no UI bound is denied with reason `unbounded`). Until it is classified the field is simply unreachable over MCP, which is the correct fail-closed cost, not a bug.
-  - The test reads `Prisma.ProjectScalarFieldEnum` from the **generated client**, not `schema.prisma`, so it stays green until the client is regenerated (`docker compose build webapp`, or `prisma generate`). A green local run right after editing the schema does **not** mean you are done.
-  - An **allowlisted** key must also land in a real section of `RECON_PARAMETER_CATALOG`. That catalog is what the inbound MCP `describe_recon_settings` tool serves, and `catalogTools.test.ts` fails when an allowlisted key has no section (it falls into the "Other" bucket). If the tool adds a new `scanModules` phase, add its `PHASE_NOTES` line in `webapp/src/lib/mcp/catalogTools.ts` as well, or the phase ships with an empty description and the same test fails.
+- [ ] **Describe every new `Project` column** in `recon_settings/registry.yaml`, then run `python3 recon_settings/build.py`. The build FAILS on a column the registry does not describe and on a registry entry naming a column Prisma does not have, so this layer announces itself rather than going quiet.
+  - **`mcp: settable` is the normal answer**, not the cautious one. The allowlist stopped being the control: validation at the point of use is. A field is open and its VALUE is bounded, validated or pinned at scan start. A tuning field denied "to be safe" is a field the API cannot reach while the form can, which is the capability gap `parity.test.ts` fails on.
+  - Use `never` only for a column that configures nothing about a scan, and then give it a `deny_reason` the schema defines: `identity`, `internal`, `escalation`, `secret`, `upload-managed`, `engagement-record`, `not-tuning`, `derived`. There is no `unbounded` reason and no ALLOW/DENY table.
+  - A numeric field needs **real `bounds`**. The form input and the MCP validator are both generated from them, so a bound of `0..10000000` is a fake control on both doors at once — and `bounds.test.ts` fails a `count` or `threads` maximum that is out of proportion to what the tool ships with.
+  - A field with a closed vocabulary needs `values:`, not `validator: free_text`. That is what makes the form render a select and the write refuse an unknown value, instead of accepting it and having the runtime silently replace it.
+  - `form_section` is joined from the tool's entry, so the field lands beside the rest of that tool's settings automatically. Override it on the field only when the input genuinely lives elsewhere — and then the override records where it IS, not where it ought to be.
+  - The build reads `Prisma.ProjectScalarFieldEnum` from the **generated client**, not `schema.prisma`, so it stays green until the client is regenerated (`docker compose build webapp`, or `prisma generate`). A green local run right after editing the schema does **not** mean you are done.
 - [ ] **If the tool writes a *finding* node** (something a person can mute), add its label to `MUTEABLE_FINDING_LABELS` in `webapp/src/lib/mcp/findingLabels.ts`, keeping it in sync with `MUTEABLE_LABELS` in `graph_db/mixins/recon/triage_mixin.py` and `MUTEABLE` in `webapp/src/lib/muteEnforcement.test.ts`. **Nothing fails if you skip this.** The label is simply absent from `list_findings`, `list_muted_findings` and the stale count in `graph_summary`, so an external agent is told a clean bill of health for findings that exist. On a security surface a silent false negative is worse than an error, which is why this one is called out despite having no test behind it.
 - [ ] Docker image added to `recon/entrypoint.sh` IMAGES array (if Docker-based)
 - [ ] Docker image setting (e.g. `TOOL_DOCKER_IMAGE`) in `DEFAULT_SETTINGS` (if Docker-based)
@@ -194,9 +202,9 @@ Integrate **[TOOL_NAME]** into the RedAmon recon pipeline.
   4. If the tool should be enabled with non-default settings (e.g., higher limits, specific mode), add those parameters to the preset
   5. If the tool uses default settings and the preset doesn't need to change it, do NOT add it -- missing keys automatically inherit from defaults (safe merge)
   6. The preset registry is at `webapp/src/lib/recon-presets/index.ts` -- no changes needed there unless adding a new preset
-  7. Add all new tool parameters to `reconPresetSchema` in `webapp/src/lib/recon-preset-schema.ts` (Zod validation). Without this, AI-generated presets will silently strip the new tool's settings during validation.
+  7. Add all new tool parameters to `reconPresetSchema` in `webapp/src/lib/recon-preset-schema.ts` (Zod validation). Without this, AI-generated presets will silently strip the new tool's settings during validation. A test asserts every key the schema accepts is one the MCP surface may write, so a column classified `never` must NOT appear there.
   8. Add the new tool's parameters (name, type, default, description) to the `RECON_PARAMETER_CATALOG` in `webapp/src/lib/recon-preset-schema.ts` (same file as the Zod schema above, further down). Without this, the LLM that generates AI presets won't know the tool exists and will never include its settings. A parity test asserts every Zod key appears in the catalogue, so missing one fails the suite.
-  9. If the new tool introduces file-upload or target-identity settings, add them to `PRESET_EXCLUDED_FIELDS` in `webapp/src/lib/project-preset-utils.ts` so they are stripped when users save reusable presets. Standard toggle/number/string settings do NOT need to be excluded.
+  9. If the new tool introduces a file-upload or target-identity setting, add it to `TARGET_IDENTITY_FIELDS` in `webapp/src/lib/project-preset-utils.ts` so it is stripped when users save reusable presets. Standard toggle/number/string settings do NOT need it. **Do not add an engagement field there by hand** — the engagement limits and the engagement record are excluded by a registry QUERY, so classifying the field is what excludes it, and a hand-added name would drift from the classification.
 - [ ] **Input/Output logic tooltip** (`webapp/src/components/projects/ProjectForm/WorkflowView/inputLogicTooltips.tsx`):
   Every tool that consumes graph data or writes nodes/relationships must have an entry in the `INPUT_LOGIC_TOOLTIPS` map. The tooltip is rendered both in the project-form section header (next to the existing graph-info icon) and in the partial recon modal next to the "Input" label.
 

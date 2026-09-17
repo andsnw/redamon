@@ -55,9 +55,50 @@ MULTILINE_MAPPINGS = {
     "DOMAIN_BATCH_MODE",
 }
 
+# Runtime keys that are DERIVED rather than mapped from their column.
+#
+# The distinction this file exists for is "documented but never read". A derived
+# key is the opposite: it IS read, by more of the system than a mapped one, and
+# the column it is named after is deliberately not consulted. So it is named
+# here rather than left to fail as unmapped - and the assertion below checks the
+# derivation is actually wired, which is the property that would otherwise go
+# unchecked.
+DERIVED_KEYS = {
+    # recon_settings.engagement.derive_roe_enabled, called by recon, the agent
+    # AND the orchestrator. A writable master switch was a bypass shipped as a
+    # checkbox: one write of false and the ceiling, the exclusions and the time
+    # window all stopped applying while every field still showed its value.
+    "ROE_ENABLED",
+}
+
 
 def _all_mapped() -> set[str]:
-    return set(RECON_MAPPINGS) | set(AGENT_MAPPINGS) | MULTILINE_MAPPINGS
+    return set(RECON_MAPPINGS) | set(AGENT_MAPPINGS) | MULTILINE_MAPPINGS | DERIVED_KEYS
+
+
+@pytest.mark.parametrize("key", sorted(DERIVED_KEYS))
+def test_a_derived_key_is_derived_in_every_loader_that_sets_it(key):
+    """Excusing a key from the mapping check has to cost something.
+
+    Without this, adding a name to DERIVED_KEYS would silence the coverage
+    failure for a key nothing computes either - which is the exact
+    documented-but-inert state the file exists to catch, reached by a different
+    route.
+    """
+    setters = [
+        path for path in (RECON_SETTINGS, AGENT_SETTINGS)
+        if f"settings['{key}']" in path.read_text(encoding="utf-8")
+    ]
+    assert setters, f"{key} is excused from the mapping check but nothing sets it"
+    for path in setters:
+        text = path.read_text(encoding="utf-8")
+        line = next(l for l in text.split("\n") if f"settings['{key}']" in l)
+        assert "derive_" in line, (
+            f"{path.name} sets {key} from something other than a derivation: {line.strip()}"
+        )
+        assert "project.get(" not in line, (
+            f"{path.name} reads the {key} COLUMN, which is what the derivation replaced"
+        )
 
 
 def test_the_parsers_found_the_mappings():

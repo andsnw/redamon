@@ -133,10 +133,18 @@ const NOTES = [
   'These are the fields THIS surface may write. A key absent from them is refused BY NAME, ' +
     'never silently ignored, and one bad key refuses the whole call - so read the bounds ' +
     'rather than probing for them.',
-  'Two more field sets exist and are not listed here. The engagement scope is fixed at ' +
-    'creation and is set through create_project; the Rules of Engagement may only be ' +
-    'tightened, through tighten_engagement_roe. Writing either through update_recon_settings ' +
-    'is refused with a pointer to the right tool.',
+  'One more field set exists and is not listed here: the engagement scope is fixed at ' +
+    'creation and is set through create_project. Writing it through update_recon_settings is ' +
+    'refused with a pointer to the right tool.',
+  'The engagement LIMITS - roeGlobalMaxRps, roeExcludedHosts, the time window, ' +
+    'roeForbiddenTools, roeForbiddenCategories, the allow flags and roeMaxSeverityPhase - ARE ' +
+    'listed and ARE settable here, in either direction. What keeps them honest is not a ' +
+    'write-time direction rule but that every one of them is enforced at scan start whatever ' +
+    'the setting says: a ceiling still rewrites all 17 rate fields, an excluded host is still ' +
+    'dropped in three places. Read preflight_scope_check to see the resolved configuration.',
+  'The engagement RECORD - the client name, the contacts, the dates, the document - is not ' +
+    'here and is not writable by any tool on this surface. It is the contract, a person ' +
+    'writes it, and it carries third-party personal data.',
   'A value is VALIDATED and then CAPPED, not blocked. A rate above the engagement ceiling is ' +
     'rewritten to the ceiling at scan start, and a container image outside the shipped ' +
     'allowlist is pinned back to the default. get_recon_settings echoes what you wrote; ' +
@@ -179,7 +187,6 @@ export async function describeReconSettings(ctx: McpContext, args: { group?: str
     dispositions: {
       settable: 'write any time through update_recon_settings',
       create_only: 'the engagement scope: set once by create_project, immutable after',
-      tighten_only: 'the Rules of Engagement: tighten_engagement_roe, safe direction only',
       never: 'not a pipeline parameter; refused with its class',
     },
     notes: NOTES,
@@ -211,9 +218,11 @@ export interface PresetApplicability {
  * because the rate limits and the passive-mode switches were all in the denied
  * classes.
  *
- * What is still refused is the engagement scope and the Rules of Engagement,
- * and those are refused because a preset has no business setting them, not
- * because they are dangerous to tune.
+ * What is still refused is the engagement scope and the engagement record, and
+ * those are refused because a preset has no business setting them, not because
+ * they are dangerous to tune. The engagement LIMITS are settable but a preset
+ * never carries them either: they are a property of one engagement, not of a
+ * reusable configuration, so `extractPresetSettings` drops them at capture.
  */
 const SETTABLE = new Set(permittedKeys('update'))
 
@@ -300,8 +309,8 @@ export async function listReconPresets(ctx: McpContext, args: { presetId?: strin
         'the fields you want with update_recon_settings, which validates each one.',
       'appliedCount is how much of a preset this surface could write. It is most of every ' +
         'preset now that the tuning surface is the whole pipeline; what stays refused is the ' +
-        'engagement scope (create_project) and the Rules of Engagement ' +
-        '(tighten_engagement_roe), which a preset has no business setting.',
+        'engagement scope (create_project) and the engagement record, which a preset has no ' +
+        'business setting. No preset carries an engagement LIMIT either, by construction.',
       'stealthCritical means the refused part of a preset includes something that sends ' +
         'traffic, so writing the rest would not reproduce the preset\'s posture. It is false ' +
         'for every shipped preset today; treat a true as a reason to hand the preset to an ' +

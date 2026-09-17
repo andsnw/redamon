@@ -205,8 +205,18 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (project.roeDocumentData) {
       roeDocumentBase64 = Buffer.from(project.roeDocumentData).toString('base64')
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { roeDocumentData: _roeDocBinary, ...projectWithoutBinary } = project
+    // `roeEnabled` leaves the bundle. It is DERIVED from whether any engagement
+    // limit is set, so an exported copy would be a value nothing writes and
+    // nothing believes: the far side recomputes it from the limits, which do
+    // round-trip normally. Carrying it would let a bundle assert a flag that
+    // disagrees with the limits beside it.
+    const {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      roeDocumentData: _roeDocBinary,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      roeEnabled: _roeEnabledDerived,
+      ...projectWithoutBinary
+    } = project
     const projectExport = {
       ...projectWithoutBinary,
       ...(roeDocumentBase64 ? { roeDocumentDataBase64: roeDocumentBase64 } : {}),

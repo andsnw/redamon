@@ -2,19 +2,18 @@
  * The engagement gate: what has to be true before a scan reaches somebody
  * else's estate.
  *
- * The rule these tests pin is narrow and load-bearing. `roeEnabled` defaults
- * false and `roeGlobalMaxRps` defaults 0, so a project has NO rate ceiling
- * unless someone deliberately switched one on. That was survivable while three
- * of fifteen rate fields were reachable over MCP; with every rate reachable, the
- * RoE layer is the main control for all of them.
+ * The rule these tests pin is narrow and load-bearing. `roeGlobalMaxRps`
+ * defaults 0, so a project has NO rate ceiling unless someone deliberately set
+ * one. That was survivable while three of fifteen rate fields were reachable
+ * over MCP; with every rate reachable, the engagement limits are the main
+ * control for all of them.
  *
- * Two failures the assertions below exist to prevent, both of which read as fine
- * from a distance:
+ * The failure the assertions below exist to prevent is that a ceiling of 0 is NO
+ * ceiling rather than a slow one, and is also the shipped default.
  *
- *  - a ceiling written with the switch off, which caps nothing. The number is
- *    there, an operator believes in it, and the capper never runs.
- *  - a ceiling of 0, which is NO ceiling rather than a slow one, and which is
- *    also the shipped default.
+ * The other one they used to guard - a ceiling written with a master switch off,
+ * which capped nothing - cannot happen any more: the switch is DERIVED from
+ * whether a limit is set, so a written ceiling is always a live one.
  *
  * @vitest-environment node
  */
@@ -23,6 +22,7 @@ import { describe, test, expect } from 'vitest'
 import {
   DOCUMENT_KINDS,
   describeEngagement,
+  deriveRoeEnabled,
   digestScopeDocument,
   effectiveCeiling,
   isDocumentKind,
@@ -34,28 +34,64 @@ import {
 const project = (over: Partial<EngagementProjectRow> = {}): EngagementProjectRow => ({
   id: 'p1',
   engagementKind: 'internal',
-  roeEnabled: false,
   roeGlobalMaxRps: 0,
   ...over,
 })
 
-describe('a ceiling is only real when both switches agree', () => {
-  test('a number with the switch off is not a ceiling', () => {
-    expect(effectiveCeiling(project({ roeEnabled: false, roeGlobalMaxRps: 3 }))).toBeNull()
+describe('zero is not a slow ceiling, it is no ceiling', () => {
+  test('a written ceiling is a live ceiling', () => {
+    expect(effectiveCeiling(project({ roeGlobalMaxRps: 3 }))).toBe(3)
   })
 
-  test('a switch with no number is not a ceiling either', () => {
-    expect(effectiveCeiling(project({ roeEnabled: true, roeGlobalMaxRps: 0 }))).toBeNull()
+  test('0 is not a ceiling', () => {
+    expect(effectiveCeiling(project({ roeGlobalMaxRps: 0 }))).toBeNull()
+  })
+})
+
+describe('the engagement limits are live when there is a limit to apply', () => {
+  test('a rate ceiling makes them live', () => {
+    expect(deriveRoeEnabled({ roeGlobalMaxRps: 3 })).toBe(true)
   })
 
-  test('both together is a ceiling', () => {
-    expect(effectiveCeiling(project({ roeEnabled: true, roeGlobalMaxRps: 3 }))).toBe(3)
+  test('an excluded host makes them live', () => {
+    expect(deriveRoeEnabled({ roeExcludedHosts: ['pay.target.test'] })).toBe(true)
+  })
+
+  test('a time window makes them live', () => {
+    expect(deriveRoeEnabled({ roeTimeWindowEnabled: true })).toBe(true)
+  })
+
+  test('none of the three leaves them inert', () => {
+    expect(deriveRoeEnabled({
+      roeGlobalMaxRps: 0, roeExcludedHosts: [], roeTimeWindowEnabled: false,
+    })).toBe(false)
+  })
+
+  test('a blank exclusion entry is not an exclusion', () => {
+    // An empty row left behind by the paired editor is not a limit, and reading
+    // it as one would tell an operator their limits are live when nothing is.
+    expect(deriveRoeEnabled({ roeExcludedHosts: ['', '  '] })).toBe(false)
+  })
+
+  test('a missing project is not enabled rather than throwing', () => {
+    expect(deriveRoeEnabled(null)).toBe(false)
+    expect(deriveRoeEnabled(undefined)).toBe(false)
+  })
+
+  test('describeEngagement reports WHICH limits are live', () => {
+    // So the form can say "limits are active because a rate ceiling is set"
+    // rather than showing a checkbox nobody may tick.
+    const status = describeEngagement(
+      project({ roeGlobalMaxRps: 3, roeTimeWindowEnabled: true }), 0
+    )
+    expect(status.limitsActive).toBe(true)
+    expect(status.activeLimits).toEqual(['a request-rate ceiling', 'a scanning time window'])
   })
 })
 
 describe('a third-party engagement is blocked until both exist', () => {
   const third = (over: Partial<EngagementProjectRow> = {}) =>
-    project({ engagementKind: 'third_party', roeEnabled: true, roeGlobalMaxRps: 3, ...over })
+    project({ engagementKind: 'third_party', roeGlobalMaxRps: 3, ...over })
 
   test('a ceiling and a record together make it startable', () => {
     const status = describeEngagement(third(), 1)
@@ -75,15 +111,10 @@ describe('a third-party engagement is blocked until both exist', () => {
     expect(status.blockers[0]).toMatch(/NO ceiling/)
   })
 
-  test('the switch off blocks it even with a number written', () => {
-    const status = describeEngagement(third({ roeEnabled: false, roeGlobalMaxRps: 3 }), 1)
-    expect(status.blockers[0]).toMatch(/switched off/)
-  })
-
   test('two missing things produce two blockers, not one', () => {
     // An operator who fixes the first and retries should not discover the
     // second one call later.
-    const status = describeEngagement(third({ roeEnabled: false }), 0)
+    const status = describeEngagement(third({ roeGlobalMaxRps: 0 }), 0)
     expect(status.blockers).toHaveLength(2)
   })
 
@@ -106,10 +137,7 @@ describe('the existing estate is flagged, not broken', () => {
   })
 
   test('an internal project WITH a ceiling gets no warning', () => {
-    const status = describeEngagement(
-      project({ roeEnabled: true, roeGlobalMaxRps: 10 }),
-      0
-    )
+    const status = describeEngagement(project({ roeGlobalMaxRps: 10 }), 0)
     expect(status.warnings).toEqual([])
   })
 

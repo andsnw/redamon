@@ -57,7 +57,7 @@ let tools: Awaited<ReturnType<typeof listTools>>['tools']
  * Kept as ONE number rather than repeated at each call site, so adding a tool
  * fails in one place with a clear message instead of in three with three.
  */
-const EXPECTED_TOOL_COUNT = 35
+const EXPECTED_TOOL_COUNT = 34
 
 beforeEach(async () => {
   vi.clearAllMocks()
@@ -114,7 +114,6 @@ describe('tools/list satisfies the MCP contract', () => {
       'set_finding_verdict',
       'start_recon',
       'stop_recon',
-      'tighten_engagement_roe',
       'update_recon_settings',
     ])
   })

@@ -11,6 +11,8 @@
  *
  * @vitest-environment node
  */
+import { readFileSync } from 'fs'
+
 import { describe, test, expect } from 'vitest'
 
 import {
@@ -155,13 +157,20 @@ describe('T30/T12 every enumerated value is in its enum', () => {
     expect(problems).toEqual([])
   })
 
-  test('tighten is set if and only if mcp is tighten_only', () => {
-    const problems = offenders(f => {
-      if (f.mcp === 'tighten_only' && !f.tighten) return 'tighten_only with no direction'
-      if (f.mcp !== 'tighten_only' && f.tighten) return `tighten '${f.tighten}' on a ${f.mcp} field`
-      return null
-    })
-    expect(problems).toEqual([])
+  test('no field carries a direction rule any more', () => {
+    // The `tighten_only` disposition and its five directions are deleted, not
+    // migrated. Five of the fields they covered (the whole time window)
+    // accepted a WIDENING while reporting "tightened", because `narrow` has no
+    // machine-checkable direction - so the rule bought the appearance of a
+    // guarantee and not the guarantee. What replaced it is that every
+    // engagement limit is enforced at scan start regardless of what tuning says.
+    const raw = JSON.parse(
+      readFileSync(new URL('./registry.json', import.meta.url), 'utf8')
+    ) as { fields: Record<string, Record<string, unknown>> }
+    const offenders = Object.entries(raw.fields)
+      .filter(([, f]) => 'tighten' in f)
+      .map(([k]) => k)
+    expect(offenders).toEqual([])
   })
 
   test('written_by is set if and only if the deny reason is upload-managed', () => {
@@ -169,7 +178,11 @@ describe('T30/T12 every enumerated value is in its enum', () => {
       if (f.deny_reason === 'upload-managed' && !f.written_by) {
         return 'upload-managed with no written_by endpoint'
       }
-      if (f.deny_reason !== 'upload-managed' && f.written_by) {
+      // `derived` and `internal` name their writer too, and for the same
+      // reason: a reader's next question after "why can I not write this" is
+      // "then who does".
+      const NAMES_A_WRITER = ['upload-managed', 'derived', 'internal']
+      if (!NAMES_A_WRITER.includes(f.deny_reason ?? '') && f.written_by) {
         return `written_by on a field denied for '${f.deny_reason ?? 'no reason'}'`
       }
       return null
@@ -367,15 +380,32 @@ describe('T16 exactly the documented columns are closed', () => {
     jsReconCustomEndpointKeywords: 'upload-managed',
     jsReconCustomFrameworks: 'upload-managed',
     supplyChainSbomFile: 'upload-managed',
-    // A Bytes column. It was tighten-only, described as a string, so a write
-    // passed every validator and then threw a raw Prisma type error out of the
-    // tool. The MCP surface records the document's DIGEST instead.
+    // A Bytes column, written only by the endpoint that receives the file. The
+    // MCP surface records the document's DIGEST instead.
     roeDocumentData: 'upload-managed',
+    // Re-derived server-side from the raw host list, because the grouping
+    // decides the run order. create_project discards any client-supplied value,
+    // so a column nothing may write is internal rather than create-only.
+    domainBatchGroups: 'internal',
+    // Off, the scan still runs, still reaches the target, and stores nothing -
+    // so every later read reports "nothing found" where the truth is "nothing
+    // was written". A debug switch, not a pipeline parameter.
+    updateGraphDb: 'not-tuning',
+    // DERIVED from whether any engagement limit is set. As a writable boolean it
+    // was a master bypass shipped as a checkbox.
+    roeEnabled: 'derived',
   }
 
-  test('the never set is exactly this list', () => {
+  test('the never set is exactly this list, plus the engagement record', () => {
+    // The record is listed by CLASS rather than by name, and it is the one
+    // closure that is a class rather than a decision per column: the client, the
+    // contacts, the dates, the compliance frameworks and the document text are
+    // the CONTRACT. A person writes them, a model reads them, nothing enforces
+    // them, and they carry third-party personal data.
+    const record = fieldsWhere(f => f.deny_reason === 'engagement-record').map(f => f.key)
+    expect(record.length).toBeGreaterThanOrEqual(20)
     const actual = fieldsWhere(f => f.mcp === 'never').map(f => f.key).sort()
-    expect(actual).toEqual(Object.keys(CLOSED).sort())
+    expect(actual).toEqual([...Object.keys(CLOSED), ...record].sort())
   })
 
   test('each closed column carries the documented reason', () => {

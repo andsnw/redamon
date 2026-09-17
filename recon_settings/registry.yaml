@@ -70,7 +70,7 @@ tools:
     phase: standalone
     traffic: active
     enabled_key: "CAPTURE_PROXY_ENABLED"
-    form_section: "ToolMatrixSection"
+    form_section: "ScanModulesSection"
   censys:
     title: "Censys"
     phase: domain_discovery
@@ -605,7 +605,7 @@ tools:
     enabled_key: "WEB_CACHE_POISON_ENABLED"
     image: "redamon-wcvs:latest"
     partial_recon_module: "cache_scanning"
-    form_section: "ToolMatrixSection"
+    form_section: "WebCachePoisonSection"
     produces: ["Vulnerability"]
   whois:
     title: "WHOIS"
@@ -624,7 +624,7 @@ tools:
     image: "ghcr.io/zaproxy/zaproxy:stable"
     module: "recon.main_recon_modules.resource_enum"
     partial_recon_module: "web_crawling"
-    form_section: "KatanaSection"
+    form_section: "ZapAjaxSpiderSection"
     produces: ["Endpoint", "Parameter"]
   zoomeye:
     title: "ZoomEye"
@@ -713,7 +713,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 1000 }
     group: wordlist
     meaning: >-
       The attempt ceiling for one credential attack, which is what keeps it from
@@ -726,7 +726,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 10 }
     group: agent
     meaning: >-
       How aggressively the agent's credential attacks run, which trades attempts
@@ -775,7 +775,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 1, max: 10000000 }
+    bounds: { min: 1, max: 10000 }
     group: agent
     meaning: >-
       Past steps kept in context
@@ -1012,7 +1012,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 20 }
     group: llm
     meaning: >-
       How many times agent retries a failed request before giving up on it.
@@ -1024,7 +1024,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 100 }
     group: agent
     meaning: >-
       Rotated backups to keep
@@ -1036,7 +1036,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 1, max: 10000000 }
+    bounds: { min: 1, max: 1024 }
     group: agent
     meaning: >-
       The size at which the agent's log file rolls, in megabytes.
@@ -1060,7 +1060,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 1, max: 10000000 }
+    bounds: { min: 1, max: 1000 }
     group: agent
     meaning: >-
       LLM reasoning iterations limit
@@ -1178,7 +1178,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 1000, max: 10000000 }
+    bounds: { min: 1000, max: 100000 }
     group: agent
     meaning: >-
       Truncation limit for tool output
@@ -1194,6 +1194,7 @@ fields:
     group: agent
     meaning: >-
       Per-project overrides for which engagement phase each agent tool belongs to.
+    form_section: "ToolMatrixSection"
   aiInPipeline:
     tool: pipeline_ai
     runtime_key: "AI_IN_PIPELINE"
@@ -1208,6 +1209,7 @@ fields:
       that support them. Cascades on/off to per-tool AI flags (ffufAiExtensions,
       nucleiAiTags, wafAiClassifier, nucleiAiResponseFilter,
       takeoverAiClassifier).
+    form_section: "TargetSection"
   aiPipelineModel:
     tool: pipeline_ai
     runtime_key: "AI_PIPELINE_MODEL"
@@ -1221,6 +1223,7 @@ fields:
     meaning: >-
       Model identifier for the AI hooks in recon (e.g. "claude-opus-4-6",
       "claude-haiku-4-5-20251001"). Independent of agentOpenaiModel.
+    form_section: "TargetSection"
   aiSurfaceReconCacheEnabled:
     tool: ai_surface_recon
     runtime_key: "AI_SURFACE_RECON_CACHE_ENABLED"
@@ -1483,6 +1486,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   amassEnabled:
     tool: amass
     runtime_key: "AMASS_ENABLED"
@@ -1684,6 +1688,7 @@ fields:
     meaning: >-
       Per-project enable state for the built-in attack skills. Rewritten across
       every project when a user deletes one of their own skills.
+    form_section: "AttackSkillsSection"
   baddnsDockerImage:
     tool: baddns
     runtime_key: "BADDNS_DOCKER_IMAGE"
@@ -1699,6 +1704,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   baddnsEnabled:
     tool: baddns
     runtime_key: "BADDNS_ENABLED"
@@ -1766,6 +1772,7 @@ fields:
       Whether Banner grab runs. Configuration is two levels: this flag decides
       whether the tool runs INSIDE its phase, and scanModules decides whether the
       phase runs at all. Setting one without the other is a silent no-op.
+    form_section: "HttpxSection"
   bannerGrabMaxLength:
     tool: banner_grab
     runtime_key: "BANNER_GRAB_MAX_LENGTH"
@@ -1777,6 +1784,7 @@ fields:
     bounds: { min: 100, max: 5000 }
     meaning: >-
       Truncate banners longer than this (chars)
+    form_section: "HttpxSection"
   bannerGrabThreads:
     tool: banner_grab
     runtime_key: "BANNER_GRAB_THREADS"
@@ -1792,6 +1800,7 @@ fields:
       How many Banner grab operations run at once. The memory governor scales it
       down when the host is short of RAM, so the effective value can be below what
       is written here.
+    form_section: "HttpxSection"
   bannerGrabTimeout:
     tool: banner_grab
     runtime_key: "BANNER_GRAB_TIMEOUT"
@@ -1806,6 +1815,7 @@ fields:
       How long Banner grab may spend before it is abandoned, in seconds. A run
       that hits it contributes whatever it found so far rather than failing the
       scan.
+    form_section: "HttpxSection"
   captureProxyEnabled:
     tool: capture_proxy
     runtime_key: "CAPTURE_PROXY_ENABLED"
@@ -2121,7 +2131,7 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: create_only
+    mcp: never
     validator: json_object
     group: scope
     meaning: >-
@@ -2130,6 +2140,9 @@ fields:
       exactly ONE implementation, and so what the operator approved in the preview
       is literally what the pipeline runs. Always recomputed server-side; never
       trusted from a body.
+    form_section: null
+    deny_reason: internal
+    written_by: "create_project, from domainBatchHosts"
   domainBatchHosts:
     tool: targeting
     runtime_key: null
@@ -2514,7 +2527,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 86400 }
     group: agent
     meaning: >-
       How long a fireteam member waits for confirmation before giving up on a
@@ -2574,7 +2587,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 10 }
     group: agent
     meaning: >-
       How strongly the agent leans toward deploying a fireteam over single-agent
@@ -2672,6 +2685,7 @@ fields:
       The container image spawned for gau. Any value outside the shipped allowlist
       is silently pinned back to the default at scan start, with a [guardrail]
       line recording it, so the field is open and the runtime is the control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   gauEnabled:
     tool: gau
     runtime_key: "GAU_ENABLED"
@@ -2705,7 +2719,7 @@ fields:
     traffic: passive
     roe_capped: false
     mcp: settable
-    bounds: { min: 1, max: 10000000 }
+    bounds: { min: 1, max: 100000 }
     governor: { model: budget, family: url, floor: 1000 }
     group: unbounded
     meaning: >-
@@ -2833,6 +2847,7 @@ fields:
       The container image spawned for gau. Any value outside the shipped allowlist
       is silently pinned back to the default at scan start, with a [guardrail]
       line recording it, so the field is open and the runtime is the control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   gauVerifyRateLimit:
     tool: gau
     runtime_key: "GAU_VERIFY_RATE_LIMIT"
@@ -3077,6 +3092,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   graphqlCopEnabled:
     tool: graphql_cop
     runtime_key: "GRAPHQL_COP_ENABLED"
@@ -3499,6 +3515,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   hakrawlerEnabled:
     tool: hakrawler
     runtime_key: "HAKRAWLER_ENABLED"
@@ -3542,7 +3559,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 1, max: 10000000 }
+    bounds: { min: 1, max: 100000 }
     governor: { model: budget, family: url, floor: 1000 }
     group: unbounded
     meaning: >-
@@ -3677,6 +3694,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   httpxEnabled:
     tool: httpx
     runtime_key: "HTTPX_ENABLED"
@@ -4085,6 +4103,7 @@ fields:
       Whether hydra runs. Configuration is two levels: this flag decides whether
       the tool runs INSIDE its phase, and scanModules decides whether the phase
       runs at all. Setting one without the other is a silent no-op.
+    form_section: "AttackSkillsSection"
   hydraExtraChecks:
     tool: hydra
     runtime_key: null
@@ -4710,6 +4729,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   jsluiceVerifyRateLimit:
     tool: jsluice
     runtime_key: "JSLUICE_VERIFY_RATE_LIMIT"
@@ -4815,6 +4835,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   katanaEnabled:
     tool: katana
     runtime_key: "KATANA_ENABLED"
@@ -4860,7 +4881,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 1, max: 10000000 }
+    bounds: { min: 1, max: 1000000 }
     stealth: { set: 50 }
     governor: { model: budget, family: url, floor: 1000 }
     group: unbounded
@@ -5083,7 +5104,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 100000 }
     zero_means: literal
     group: not-tuning
     meaning: >-
@@ -5440,6 +5461,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   naabuEnabled:
     tool: naabu
     runtime_key: "NAABU_ENABLED"
@@ -5834,6 +5856,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   nucleiEnabled:
     tool: nuclei
     runtime_key: "NUCLEI_ENABLED"
@@ -6043,6 +6066,7 @@ fields:
       Whether nuclei runs. Configuration is two levels: this flag decides whether
       the tool runs INSIDE its phase, and scanModules decides whether the phase
       runs at all. Setting one without the other is a silent no-op.
+    form_section: "TakeoverSection"
   nucleiTemplates:
     tool: nuclei
     runtime_key: "NUCLEI_TEMPLATES"
@@ -6430,6 +6454,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   purednsEnabled:
     tool: puredns
     runtime_key: "PUREDNS_ENABLED"
@@ -6492,7 +6517,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 100000 }
     zero_means: literal
     group: not-tuning
     meaning: >-
@@ -6626,13 +6651,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    tighten: true_to_false
-    group: roe
+    mcp: settable
+    group: engagement_limits
     meaning: >-
       Whether a technique that can lock a real account out is permitted. Off keeps
-      credential attacks to a single attempt per account. After creation this may
-      only go true to false.
+      credential attacks to a single attempt per account and withholds the
+      lockout-capable skills from the agent's options.
+    form_section: "AgentBehaviourSection"
   roeAllowDataExfiltration:
     tool: roe
     runtime_key: null
@@ -6640,13 +6665,14 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    tighten: true_to_false
-    group: roe
+    mcp: never
+    group: engagement_record
     meaning: >-
-      Whether a finding may be proven by moving data off the target. Off means the
-      out-of-band callback paths and collector egress are refused at scan start.
-      After creation this may only go true to false.
+      Whether a finding may be proven by moving data off the target. Part of the
+      engagement RECORD: it is injected into the agent's prompt and read by a
+      model, and no code refuses an exfiltration path on it.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeAllowDos:
     tool: roe
     runtime_key: null
@@ -6654,14 +6680,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    tighten: true_to_false
-    group: roe
+    mcp: settable
+    group: engagement_limits
     meaning: >-
-      Whether denial-of-service techniques are permitted. Off means the DoS module
-      and every aggression switch that could exhaust a target are refused at scan
-      start, whatever their own toggles say. After creation this may only go true
-      to false.
+      Whether denial-of-service techniques are permitted. Off means the DoS path is
+      refused before it runs and the DoS skill is withheld from the agent's
+      options, whatever their own toggles say.
+    form_section: "AgentBehaviourSection"
   roeAllowPhysicalAccess:
     tool: roe
     runtime_key: null
@@ -6669,13 +6694,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    tighten: true_to_false
-    group: roe
+    mcp: never
+    group: engagement_record
     meaning: >-
-      Whether the engagement covers physical access. Recorded for the report; the
-      pipeline has no physical capability. After creation this may only go true to
-      false.
+      Whether the engagement covers physical access. Recorded for the report;
+      the pipeline has no physical capability.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeAllowProductionTesting:
     tool: roe
     runtime_key: null
@@ -6683,13 +6708,14 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    tighten: true_to_false
-    group: roe
+    mcp: never
+    group: engagement_record
     meaning: >-
       Whether production systems are in scope. Off is a statement the operator
       makes about the estate, not something the scanner can verify, so it
       constrains what an agent may choose rather than what a tool can reach.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeAllowSocialEngineering:
     tool: roe
     runtime_key: null
@@ -6697,12 +6723,12 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    tighten: true_to_false
-    group: roe
+    mcp: settable
+    group: engagement_limits
     meaning: >-
-      Whether techniques aimed at people rather than systems are permitted. After
-      creation this may only go true to false.
+      Whether techniques aimed at people rather than systems are permitted. Off
+      withholds the social-engineering skills from the agent's options.
+    form_section: "AgentBehaviourSection"
   roeClientContactEmail:
     tool: roe
     runtime_key: null
@@ -6710,14 +6736,15 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     readable: false
     validator: free_text
-    tighten: narrow
     read_deny_reason: third_party_pii
-    group: roe
+    group: engagement_record
     meaning: >-
       Where to reach the client contact by email.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeClientContactName:
     tool: roe
     runtime_key: null
@@ -6725,14 +6752,15 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     readable: false
     validator: free_text
-    tighten: narrow
     read_deny_reason: third_party_pii
-    group: roe
+    group: engagement_record
     meaning: >-
       The named client contact for this engagement.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeClientContactPhone:
     tool: roe
     runtime_key: null
@@ -6740,14 +6768,15 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     readable: false
     validator: free_text
-    tighten: narrow
     read_deny_reason: third_party_pii
-    group: roe
+    group: engagement_record
     meaning: >-
       Where to reach the client contact by phone.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeClientName:
     tool: roe
     runtime_key: null
@@ -6755,14 +6784,15 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     readable: false
     validator: free_text
-    tighten: narrow
     read_deny_reason: third_party_pii
-    group: roe
+    group: engagement_record
     meaning: >-
       The client the engagement is for, as it should appear in the report.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeComplianceFrameworks:
     tool: roe
     runtime_key: null
@@ -6770,13 +6800,14 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     validator: free_text
-    tighten: superset
-    group: roe
+    group: engagement_record
     meaning: >-
       Compliance frameworks the engagement is conducted under, recorded for the
       report.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeCriticalFindingNotify:
     tool: roe
     runtime_key: null
@@ -6784,12 +6815,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    tighten: true_to_false
-    group: roe
+    mcp: never
+    group: engagement_record
     meaning: >-
       Whether a critical finding triggers an immediate notification rather than
       waiting for the report.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeDataRetentionDays:
     tool: roe
     runtime_key: null
@@ -6797,13 +6829,14 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    bounds: { min: 0, max: 10000000 }
-    tighten: decrease
-    group: roe
+    mcp: never
+    bounds: { min: 0, max: 3650 }
+    group: engagement_record
     meaning: >-
       How many days findings and captured data may be kept after the engagement
       ends.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeDocumentData:
     tool: roe
     runtime_key: null
@@ -6817,13 +6850,14 @@ fields:
     deny_reason: upload-managed
     read_deny_reason: document_blob
     written_by: "/api/projects"
-    group: roe
+    group: engagement_record
     meaning: >-
       The uploaded Rules of Engagement document itself, stored so the engagement
       carries its own authority. A Bytes column written only by the project
       create and import endpoints, which receive the file. The MCP surface
       records the document's SHA-256 through attach_engagement_authorization
       instead; it never carries the bytes.
+    form_section: "RoeSection"
   roeDocumentMimeType:
     tool: roe
     runtime_key: null
@@ -6831,12 +6865,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     validator: free_text
-    tighten: narrow
-    group: roe
+    group: engagement_record
     meaning: >-
       The media type of the uploaded Rules of Engagement document.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeDocumentName:
     tool: roe
     runtime_key: null
@@ -6844,14 +6879,15 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     readable: false
     validator: free_text
-    tighten: narrow
     read_deny_reason: document_blob
-    group: roe
+    group: engagement_record
     meaning: >-
       The filename of the uploaded Rules of Engagement document.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeEmergencyContact:
     tool: roe
     runtime_key: null
@@ -6859,14 +6895,15 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     readable: false
     validator: free_text
-    tighten: narrow
     read_deny_reason: third_party_pii
-    group: roe
+    group: engagement_record
     meaning: >-
       Who to reach out of hours if a scan causes an incident.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeEnabled:
     tool: roe
     runtime_key: "ROE_ENABLED"
@@ -6874,13 +6911,20 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    tighten: false_to_true
-    group: roe
+    mcp: never
+    group: engagement_limits
     meaning: >-
-      The master switch for the Rules of Engagement. While it is off there is NO
-      rate ceiling at all, whatever roeGlobalMaxRps says, because the capper is
-      gated on this flag. After creation it may only go false to true.
+      DERIVED, never written. Engagement limits apply when there is a limit to
+      apply: a non-zero roeGlobalMaxRps, OR a non-empty roeExcludedHosts, OR
+      roeTimeWindowEnabled. The column is kept so old rows and old exports still
+      load, and every service computes the value through
+      recon_settings.engagement.derive_roe_enabled instead of reading it. A
+      writable master switch would be a bypass shipped as a checkbox: one write
+      of false and the ceiling, the exclusions and the window all stop applying
+      at once while every other field still shows its configured value.
+    deny_reason: derived
+    form_section: null
+    written_by: "nothing - it is derived"
   roeEngagementEndDate:
     tool: roe
     runtime_key: null
@@ -6888,12 +6932,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     validator: free_text
-    tighten: narrow
-    group: roe
+    group: engagement_record
     meaning: >-
       The last date the engagement authorises any activity.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeEngagementStartDate:
     tool: roe
     runtime_key: null
@@ -6901,12 +6946,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     validator: free_text
-    tighten: narrow
-    group: roe
+    group: engagement_record
     meaning: >-
       The first date the engagement authorises any activity.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeEngagementType:
     tool: roe
     runtime_key: null
@@ -6914,13 +6960,14 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     validator: free_text
-    tighten: narrow
-    group: roe
+    group: engagement_record
     meaning: >-
       How the engagement is classified in the report: pentest, bug bounty, red
       team and so on.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeExcludedHostReasons:
     tool: roe
     runtime_key: null
@@ -6928,13 +6975,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: settable
     validator: free_text
-    tighten: superset
-    group: roe
+    group: engagement_limits
     meaning: >-
-      Why each excluded host is excluded, keyed by host. Read by the report; it
-      does not itself exclude anything.
+      Why each excluded host is excluded, parallel to roeExcludedHosts. Read by the
+      report; it does not itself exclude anything.
+    form_section: "TargetSection"
   roeExcludedHosts:
     tool: roe
     runtime_key: "ROE_EXCLUDED_HOSTS"
@@ -6942,15 +6989,15 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: settable
     validator: free_text
-    tighten: superset
-    group: roe
+    group: engagement_limits
     meaning: >-
       Hosts that must never be touched even though they fall inside the target
-      scope. After creation this may only grow: an agent that discovers a new
-      exclusion applies it immediately, and one that wants to remove an exclusion
-      asks a human.
+      scope. Enforced in three places in recon/main.py: expanded IPs, discovered
+      subdomains and the target domain itself. A non-empty list is one of the three
+      things that make the engagement limits live at all.
+    form_section: "TargetSection"
   roeForbiddenCategories:
     tool: roe
     runtime_key: null
@@ -6958,14 +7005,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: settable
     validator: free_text
-    tighten: superset
-    group: roe
+    group: engagement_limits
     meaning: >-
-      Technique categories that may not run on this engagement. Enforced at scan
-      start against each module's category. After creation this list may only
-      grow.
+      Technique categories the agent may not run on this engagement. Refused before
+      the tool executes, and also withheld from the classifier's options.
+    form_section: "AgentBehaviourSection"
   roeForbiddenTools:
     tool: roe
     runtime_key: null
@@ -6973,14 +7019,14 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: settable
     validator: free_text
-    tighten: superset
-    group: roe
+    group: engagement_limits
     meaning: >-
-      Tools that may not run on this engagement, by name, whatever their own
-      enable flag says. Enforced at scan start. After creation this list may only
-      grow.
+      Tools the agent may not run on this engagement, by name, whatever their own
+      enable flag says. Refused before the tool executes, in
+      agentic/orchestrator_helpers/nodes/execute_plan_node.py.
+    form_section: "AgentBehaviourSection"
   roeGlobalMaxRps:
     tool: roe
     runtime_key: "ROE_GLOBAL_MAX_RPS"
@@ -6988,17 +7034,17 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    bounds: { min: 0, max: 10000000 }
+    mcp: settable
+    bounds: { min: 0, max: 10000 }
     zero_means: literal
-    tighten: decrease
-    group: roe
+    group: engagement_limits
     meaning: >-
       The engagement's request-rate ceiling, in requests per second. Every
       per-tool rate is capped to it at scan start, including the ones whose own
-      value means 'unlimited'. ZERO MEANS NO CEILING, so a project with roeEnabled
-      on and this at 0 is not rate-limited. After creation it may only decrease,
-      and never back to 0 once it is non-zero.
+      value means 'unlimited'. ZERO MEANS NO CEILING, so this at 0 is not a slow
+      engagement, it is an unlimited one. A non-zero value is also one of the three
+      things that make the engagement limits live at all.
+    form_section: "TargetSection"
   roeIncidentProcedure:
     tool: roe
     runtime_key: null
@@ -7006,12 +7052,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     validator: free_text
-    tighten: narrow
-    group: roe
+    group: engagement_record
     meaning: >-
       What to do if the engagement causes an outage or a security incident.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeMaxSeverityPhase:
     tool: roe
     runtime_key: null
@@ -7019,14 +7066,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    validator: free_text
-    tighten: narrow
-    group: roe
+    mcp: settable
+    group: engagement_limits
     meaning: >-
       The most severe phase the engagement permits, which bounds how far an attack
-      chain may be taken. After creation it may only move toward the less severe
-      end.
+      chain may be taken: informational, exploitation or post_exploitation.
+    form_section: "AgentBehaviourSection"
+    values: ["informational", "exploitation", "post_exploitation"]
   roeNotes:
     tool: roe
     runtime_key: null
@@ -7034,12 +7080,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     validator: free_text
-    tighten: narrow
-    group: roe
+    group: engagement_record
     meaning: >-
       Free-text engagement notes that did not fit another field.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeParsedJson:
     tool: roe
     runtime_key: null
@@ -7047,15 +7094,16 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     readable: false
     validator: json_object
-    tighten: narrow
     read_deny_reason: document_blob
-    group: roe
+    group: engagement_record
     meaning: >-
       The structured form extracted from the uploaded document, which populated
       the fields above.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeRawText:
     tool: roe
     runtime_key: null
@@ -7063,15 +7111,16 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     readable: false
     validator: free_text
-    tighten: narrow
     read_deny_reason: document_blob
-    group: roe
+    group: engagement_record
     meaning: >-
       The Rules of Engagement document as plain text, kept so the report can quote
       it.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeRequireDataEncryption:
     tool: roe
     runtime_key: null
@@ -7079,11 +7128,12 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    tighten: true_to_false
-    group: roe
+    mcp: never
+    group: engagement_record
     meaning: >-
       Whether engagement data must be encrypted at rest.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeSensitiveDataHandling:
     tool: roe
     runtime_key: null
@@ -7091,13 +7141,14 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     validator: free_text
-    tighten: narrow
-    group: roe
+    group: engagement_record
     meaning: >-
       The agreed handling rule for sensitive data encountered during the
       engagement.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeStatusUpdateFrequency:
     tool: roe
     runtime_key: null
@@ -7105,12 +7156,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     validator: free_text
-    tighten: narrow
-    group: roe
+    group: engagement_record
     meaning: >-
       How often the client expects a progress update during the engagement.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeThirdPartyProviders:
     tool: roe
     runtime_key: null
@@ -7118,13 +7170,14 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     validator: free_text
-    tighten: superset
-    group: roe
+    group: engagement_record
     meaning: >-
       Third-party providers hosting in-scope assets, who may need their own
       notification.
+    deny_reason: engagement-record
+    form_section: "RoeSection"
   roeTimeWindowDays:
     tool: roe
     runtime_key: "ROE_TIME_WINDOW_DAYS"
@@ -7132,12 +7185,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: settable
     validator: free_text
-    tighten: superset
-    group: roe
+    group: engagement_limits
     meaning: >-
-      Days of the week on which scanning is permitted.
+      Days of the week on which scanning is permitted, lower-case English names.
+      Empty means every day, once the window is switched on.
+    form_section: "TargetSection"
   roeTimeWindowEnabled:
     tool: roe
     runtime_key: "ROE_TIME_WINDOW_ENABLED"
@@ -7145,11 +7199,14 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
-    tighten: true_to_false
-    group: roe
+    mcp: settable
+    group: engagement_limits
     meaning: >-
-      Whether scanning is restricted to an agreed time window.
+      Whether scanning is restricted to an agreed time window. The recon pipeline
+      and the orchestrator both enforce it, and the orchestrator refuses a scan
+      start outside the window with HTTP 403 rather than queueing it. Switching it
+      on is one of the three things that make the engagement limits live at all.
+    form_section: "TargetSection"
   roeTimeWindowEndTime:
     tool: roe
     runtime_key: "ROE_TIME_WINDOW_END_TIME"
@@ -7157,12 +7214,13 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: settable
     validator: free_text
-    tighten: narrow
-    group: roe
+    group: engagement_limits
     meaning: >-
-      Local end of the permitted scanning window, as HH:MM.
+      Local end of the permitted scanning window, as HH:MM. An end before the start
+      is read as a window that crosses midnight.
+    form_section: "TargetSection"
   roeTimeWindowStartTime:
     tool: roe
     runtime_key: "ROE_TIME_WINDOW_START_TIME"
@@ -7170,12 +7228,12 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: settable
     validator: free_text
-    tighten: narrow
-    group: roe
+    group: engagement_limits
     meaning: >-
       Local start of the permitted scanning window, as HH:MM.
+    form_section: "TargetSection"
   roeTimeWindowTimezone:
     tool: roe
     runtime_key: "ROE_TIME_WINDOW_TIMEZONE"
@@ -7183,12 +7241,12 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: settable
     validator: free_text
-    tighten: narrow
-    group: roe
+    group: engagement_limits
     meaning: >-
       The IANA timezone the scanning window's times are read in.
+    form_section: "TargetSection"
   scaIntelCorrelationEnabled:
     tool: supply_chain
     runtime_key: "SCA_INTEL_CORRELATION_ENABLED"
@@ -7202,6 +7260,7 @@ fields:
       Whether supply-chain findings are correlated against the wider intelligence
       set. It reaches beyond this project's own assets, so it moves with the
       scope.
+    form_section: "SupplyChainReconSection"
   scanModules:
     tool: pipeline
     runtime_key: "SCAN_MODULES"
@@ -7969,6 +8028,7 @@ fields:
     group: intrusive
     meaning: >-
       Reduce scan aggressiveness and network noise
+    form_section: "TargetSection"
   subdomainDiscoveryEnabled:
     tool: subdomain_discovery
     runtime_key: "SUBDOMAIN_DISCOVERY_ENABLED"
@@ -8024,6 +8084,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   subfinderEnabled:
     tool: subfinder
     runtime_key: "SUBFINDER_ENABLED"
@@ -8241,7 +8302,7 @@ fields:
     traffic: passive
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 10000 }
     group: unbounded
     meaning: >-
       Maximum repositories walked when scanning an organisation.
@@ -8379,6 +8440,7 @@ fields:
       decides whether the tool runs INSIDE its phase, and scanModules decides
       whether the phase runs at all. Setting one without the other is a silent
       no-op.
+    form_section: "SupplyChainReconSection"
   takeoverAiClassifier:
     tool: takeover
     runtime_key: "TAKEOVER_AI_CLASSIFIER"
@@ -8572,6 +8634,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   tlsxEnabled:
     tool: tlsx
     runtime_key: "TLSX_ENABLED"
@@ -8616,7 +8679,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 1000 }
     group: not-tuning
     meaning: >-
       When one IP serves several known hostnames, how many to scan (each may
@@ -8666,7 +8729,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 10 }
     group: unbounded
     meaning: >-
       How many times tlsx retries a failed request before giving up on it.
@@ -8740,11 +8803,12 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 10000 }
     group: not-tuning
     meaning: >-
       How many findings one triage job may review before it stops and reports what
       it got through.
+    form_section: "CypherFixSettingsSection"
   trufflehogAllowVerificationOverlap:
     tool: trufflehog
     runtime_key: null
@@ -8958,6 +9022,7 @@ fields:
       allowlist is silently pinned back to the default at scan start, with a
       [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   uncoverEnabled:
     tool: uncover
     runtime_key: "UNCOVER_ENABLED"
@@ -8993,10 +9058,16 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: settable
+    mcp: never
     group: not-tuning
     meaning: >-
-      Store results in the graph database
+      Whether results are stored in the graph database. Off, the scan still runs
+      and still reaches the target, and writes nothing, so every later read
+      reports "nothing found" where the truth is "nothing was written". That is
+      the scanned-and-clean versus never-scanned confusion, so it is a debug
+      switch rather than a pipeline parameter.
+    deny_reason: not-tuning
+    form_section: null
   updatedAt:
     tool: project
     runtime_key: null
@@ -9063,6 +9134,7 @@ fields:
     group: intrusive
     meaning: >-
       Enable DNS brute-force for subdomain discovery
+    form_section: "SubdomainDiscoverySection"
   userId:
     tool: project
     runtime_key: "USER_ID"
@@ -9274,6 +9346,7 @@ fields:
       the static check misses (requires aiInPipeline=true). Augments
       _has_cdn_markers and check_waf_bypass; AI-detected bypasses are tagged
       detection_method=ai_classifier. Default false.
+    form_section: "SecurityChecksSection"
   wappalyzerAutoUpdate:
     tool: wappalyzer
     runtime_key: "WAPPALYZER_AUTO_UPDATE"
@@ -9293,7 +9366,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 1, max: 10000000 }
+    bounds: { min: 1, max: 8760 }
     group: not-tuning
     meaning: >-
       How long to cache tech database (0 = always fresh)
@@ -9511,6 +9584,7 @@ fields:
       shipped allowlist is silently pinned back to the default at scan start, with
       a [guardrail] line recording it, so the field is open and the runtime is the
       control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   webCachePoisonEnabled:
     tool: web_cache_poison
     runtime_key: "WEB_CACHE_POISON_ENABLED"
@@ -9689,6 +9763,7 @@ fields:
       The container image spawned for zap. Any value outside the shipped allowlist
       is silently pinned back to the default at scan start, with a [guardrail]
       line recording it, so the field is open and the runtime is the control.
+    values: ["caffix/amass:latest", "dolevf/graphql-cop:1.14", "frost19k/puredns:latest", "ghcr.io/zaproxy/zaproxy:stable", "jauderho/hakrawler:latest", "projectdiscovery/httpx:latest", "projectdiscovery/katana:latest", "projectdiscovery/naabu:latest", "projectdiscovery/nuclei:latest", "projectdiscovery/subfinder:latest", "projectdiscovery/tlsx:latest", "projectdiscovery/uncover:latest", "redamon-baddns:latest", "redamon-wcvs:latest", "sxcurity/gau:latest"]
   zapAjaxSpiderEnabled:
     tool: zap
     runtime_key: "ZAP_AJAX_SPIDER_ENABLED"
@@ -9759,7 +9834,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 0, max: 10000000 }
+    bounds: { min: 0, max: 100000 }
     zero_means: literal
     group: not-tuning
     meaning: >-
@@ -9785,7 +9860,7 @@ fields:
     traffic: active
     roe_capped: false
     mcp: settable
-    bounds: { min: 1, max: 10000000 }
+    bounds: { min: 1, max: 100000 }
     governor: { model: budget, family: url, floor: 100 }
     group: unbounded
     meaning: >-

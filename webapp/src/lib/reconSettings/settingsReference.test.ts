@@ -21,8 +21,9 @@ import { describe, test, expect } from 'vitest'
 import { fieldsWhere } from './registry'
 import {
   SETTINGS_REFERENCE_PAGE,
-  parameterCount,
   renderSettingsReference,
+  settableFieldCount,
+  totalColumnCount,
 } from './settingsReference'
 
 const WIKI_DIR = process.env.MCP_DOCS_WIKI_DIR
@@ -71,12 +72,12 @@ describe('the generated page is deterministic', () => {
   })
 
   test('the stated count is the registry count', () => {
-    expect(renderSettingsReference()).toContain(`There are **${parameterCount()}** parameters`)
+    expect(renderSettingsReference()).toContain(`There are **${totalColumnCount()}** parameters`)
   })
 
-  test('the four dispositions add up to the total', () => {
+  test('the three dispositions add up to the total', () => {
     const all = fieldsWhere(() => true)
-    const sum = (['settable', 'create_only', 'tighten_only', 'never'] as const)
+    const sum = (['settable', 'create_only', 'never'] as const)
       .map(d => all.filter(f => f.mcp === d).length)
       .reduce((a, b) => a + b, 0)
     expect(sum).toBe(all.length)
@@ -119,7 +120,7 @@ describe('the page says the things a reader would otherwise get wrong', () => {
 })
 
 describe('T19 the wiki page (Project-Settings-Registry.md)', () => {
-  test.skipIf(!hasWikiCheckout())('matches a fresh render', () => {
+  test.skipIf(!hasWikiCheckout())('P17: matches a fresh render', () => {
     const target = path.join(WIKI_DIR, SETTINGS_REFERENCE_PAGE)
     const rendered = renderSettingsReference()
     if (WRITE) {
@@ -133,20 +134,28 @@ describe('T19 the wiki page (Project-Settings-Registry.md)', () => {
     ).toBe(rendered)
   })
 
-  test.skipIf(!hasWikiCheckout())('the narrative page does not contradict the registry count', () => {
-    // It claimed "245+ configurable parameters" against a model of 714. A page
-    // that understates the surface by two thirds is worse than one that does
-    // not count at all, because a reader trusts the number.
+  test.skipIf(!hasWikiCheckout())('P17: the narrative page does not contradict the registry counts', () => {
+    // It claimed "245+ configurable parameters" against a model of 714, and
+    // then 714 against a model where 47 columns configure nothing anyone can
+    // reach. A page that overstates the surface is the same failure as one that
+    // understates it: a reader trusts the number.
+    //
+    // So both numbers are stated and both are checked. A reader who wants "how
+    // much can I change" and a reader who wants "how much is stored" get
+    // different, correct answers.
     const narrative = path.join(WIKI_DIR, 'Project-Settings-Reference.md')
     if (!existsSync(narrative)) return
     const text = readFileSync(narrative, 'utf8')
-    const claims = [...text.matchAll(/\*\*(\d+)\+? configurable parameters\*\*/g)]
-    for (const claim of claims) {
-      const stated = Number(claim[1])
-      expect(
-        stated,
-        `the narrative page claims ${stated} parameters; the registry has ${parameterCount()}`
-      ).toBe(parameterCount())
-    }
+
+    const stored = [...text.matchAll(/\*\*(\d+)\*\* stored parameters/g)]
+    expect(stored.length, 'the page must state the stored-column count').toBeGreaterThan(0)
+    for (const m of stored) expect(Number(m[1])).toBe(totalColumnCount())
+
+    const settable = [...text.matchAll(/\*\*(\d+)\*\* of (?:them|which)[^.]*MCP/g)]
+    expect(settable.length, 'the page must state the settable count').toBeGreaterThan(0)
+    for (const m of settable) expect(Number(m[1])).toBe(settableFieldCount())
+
+    // The old shape must not come back under either number.
+    expect(text).not.toMatch(/\d+\+? configurable parameters/)
   })
 })

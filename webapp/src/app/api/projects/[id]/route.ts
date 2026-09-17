@@ -136,7 +136,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Remove fields that shouldn't be updated directly. authProfile comes back in
     // the whole-row PUT the form sends; it is a relation written only by its own
     // route, and passing it here would make Prisma reject the update.
-    const { userId, createdAt, updatedAt, user, authProfile: _authProfile, ...updateData } = body
+    //
+    // roeEnabled is DERIVED from whether any engagement limit is set, and
+    // nothing writes it. The form no longer sends it, but this route takes the
+    // whole row, so without this line an older client - or a saved bundle
+    // replayed through it - would persist a value that disagrees with the
+    // derivation. A column nothing reads but something writes is the residue
+    // the derivation exists to remove, so it is dropped here rather than
+    // trusted not to arrive.
+    const {
+      userId, createdAt, updatedAt, user,
+      authProfile: _authProfile,
+      roeEnabled: _roeEnabledDerived,
+      ...updateData
+    } = body
 
     // Sanitize string inputs that are used as hostnames/IPs (trailing spaces break DNS)
     if (typeof updateData.targetDomain === 'string') {

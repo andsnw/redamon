@@ -8,8 +8,17 @@ import type { Project } from '@prisma/client'
 import styles from '../ProjectForm.module.css'
 import { ModelPicker } from '@/components/shared/ModelPicker'
 import { REGEX_IPV4 } from '@/lib/validation'
+import { RegistryFields } from '../RegistryFields'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
+
+/** The technique classes the agent checks a tool's category against. */
+const FORBIDDEN_CATEGORIES = [
+  { value: 'brute_force', label: 'Credential testing' },
+  { value: 'dos', label: 'Availability testing' },
+  { value: 'social_engineering', label: 'Social engineering' },
+  { value: 'physical', label: 'Physical access' },
+]
 
 interface AgentBehaviourSectionProps {
   data: FormData
@@ -21,6 +30,14 @@ interface AgentBehaviourSectionProps {
 export function AgentBehaviourSection({ data, updateField, detectedHostIp }: AgentBehaviourSectionProps) {
   const [isOpen, setIsOpen] = useState(true)
   const { userId } = useProject()
+
+  const toggleForbiddenCategory = (cat: string) => {
+    const cats = data.roeForbiddenCategories || []
+    updateField(
+      'roeForbiddenCategories',
+      cats.includes(cat) ? cats.filter(c => c !== cat) : [...cats, cat]
+    )
+  }
 
   return (
     <div className={styles.section}>
@@ -845,6 +862,128 @@ export function AgentBehaviourSection({ data, updateField, detectedHostIp }: Age
             </div>
           </div>
 
+          {/* --- Engagement limits the AGENT enforces -------------------------------
+              Six columns the agent checks in code before a tool runs, as opposed
+              to the engagement RECORD, which it only reads as prompt context.
+              They sit here rather than with the engagement record because a
+              field belongs beside the thing that enforces it: these decide what
+              the agent may do, and their sibling limits - the rate ceiling, the
+              excluded hosts, the scanning window - decide what the pipeline may
+              reach and live in Target & Modules.
+
+              Editable at any time and writable over MCP, in either direction.
+              What makes that safe is not a write-time direction rule but that
+              each one is CHECKED before the tool executes, whatever the setting
+              said when it was written. */}
+          <div className={styles.subSection}>
+            <h3 className={styles.subSectionTitle}>Engagement limits</h3>
+            <p className={styles.sectionDescription}>
+              Refused before a tool runs, not merely described to the model. The engagement&apos;s
+              other limits - the request-rate ceiling, the never-touch hosts and the scanning
+              window - are in Target &amp; Modules.
+            </p>
+
+            <div className={styles.fieldRow}>
+              <div className={styles.fieldGroup}>
+                <label className={styles.fieldLabel}>Max allowed phase</label>
+                <select
+                  className="select"
+                  value={data.roeMaxSeverityPhase}
+                  onChange={(e) => updateField('roeMaxSeverityPhase', e.target.value)}
+                >
+                  <option value="informational">Informational only (recon/scanning)</option>
+                  <option value="exploitation">Up to exploitation</option>
+                  <option value="post_exploitation">All phases (no restriction)</option>
+                </select>
+                <span className={styles.fieldHint}>
+                  Bounds how far an attack chain may be taken. A step past it is refused before
+                  it runs.
+                </span>
+              </div>
+            </div>
+
+            <div className={styles.fieldRow}>
+              <div className={styles.fieldGroup}>
+                <label className={styles.fieldLabel}>Forbidden tools</label>
+                <input
+                  className="textInput"
+                  type="text"
+                  value={(data.roeForbiddenTools || []).join(', ')}
+                  onChange={(e) => updateField(
+                    'roeForbiddenTools',
+                    e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                  )}
+                  placeholder="e.g. execute_hydra, execute_sqlmap"
+                />
+                <span className={styles.fieldHint}>
+                  By tool name, whatever that tool&apos;s own enable flag says. Refused before
+                  the tool executes.
+                </span>
+              </div>
+              <div className={styles.fieldGroup}>
+                <label className={styles.fieldLabel}>Forbidden categories</label>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {FORBIDDEN_CATEGORIES.map(cat => (
+                    <label key={cat.value} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={(data.roeForbiddenCategories || []).includes(cat.value)}
+                        onChange={() => toggleForbiddenCategory(cat.value)}
+                      />
+                      {cat.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.toggleRow}>
+              <div>
+                <span className={styles.toggleLabel}>Allow availability testing (DoS)</span>
+                <p className={styles.toggleDescription}>
+                  Off refuses the DoS path before it runs and withholds the DoS skill from the
+                  agent&apos;s options, whatever their own toggles say.
+                </p>
+              </div>
+              <Toggle
+                checked={data.roeAllowDos}
+                onChange={(checked) => updateField('roeAllowDos', checked)}
+              />
+            </div>
+            <div className={styles.toggleRow}>
+              <div>
+                <span className={styles.toggleLabel}>Allow account lockout</span>
+                <p className={styles.toggleDescription}>
+                  Off keeps credential attacks to a single attempt per account.
+                </p>
+              </div>
+              <Toggle
+                checked={data.roeAllowAccountLockout}
+                onChange={(checked) => updateField('roeAllowAccountLockout', checked)}
+              />
+            </div>
+            <div className={styles.toggleRow}>
+              <div>
+                <span className={styles.toggleLabel}>Allow social engineering</span>
+                <p className={styles.toggleDescription}>
+                  Off withholds the social-engineering skills from the agent&apos;s options.
+                </p>
+              </div>
+              <Toggle
+                checked={data.roeAllowSocialEngineering}
+                onChange={(checked) => updateField('roeAllowSocialEngineering', checked)}
+              />
+            </div>
+          </div>
+
+
+          <RegistryFields
+            keys={['agentBruteForceMaxWordlistAttempts', 'agentBruteforceSpeed', 'agentLlmParseMaxRetries', 'fireteamConfirmationTimeoutSec']}
+            data={data}
+            updateField={updateField}
+            title="Advanced"
+            description="Settings this tool accepts that have no dedicated control. Bounds, options and descriptions come from the settings registry, so they are the same ones the API enforces."
+          />
         </div>
       )}
     </div>

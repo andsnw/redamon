@@ -43,7 +43,7 @@ function renderSection(initial: Record<string, unknown> = {}, detectedHostIp?: s
 describe('LHOST field guides to the host LAN IP, not the container IP', () => {
   test('placeholder is a LAN-style example, never a 172.x container address', () => {
     renderSection()
-    const lhost = screen.getByPlaceholderText(/^e\.g\. /) as HTMLInputElement
+    const lhost = screen.getByPlaceholderText(/^e\.g\. \d/) as HTMLInputElement
     expect(lhost.placeholder).toBe('e.g. 192.168.1.50')
     expect(lhost.placeholder).not.toMatch(/172\./)
   })

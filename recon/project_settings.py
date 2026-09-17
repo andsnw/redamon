@@ -21,6 +21,8 @@ try:
 except ImportError:  # pragma: no cover - the container's own layout
     import settings_registry as _registry
 
+from recon_settings.engagement import derive_roe_enabled
+
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -1882,8 +1884,11 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
         settings['UNCOVER_ONYPHE_API_KEY'] = user_global.get('onypheApiKey', '')
         settings['UNCOVER_DRIFTNET_API_KEY'] = user_global.get('driftnetApiKey', '')
 
-    # Rules of Engagement
-    settings['ROE_ENABLED'] = project.get('roeEnabled', DEFAULT_SETTINGS['ROE_ENABLED'])
+    # Engagement limits. ROE_ENABLED is DERIVED, never read from the column:
+    # a writable master switch would silently disable the ceiling, the
+    # exclusions and the window at once. recon_settings.engagement is the one
+    # implementation the agent and the orchestrator also call.
+    settings['ROE_ENABLED'] = derive_roe_enabled(project)
     settings['ROE_EXCLUDED_HOSTS'] = project.get('roeExcludedHosts', DEFAULT_SETTINGS['ROE_EXCLUDED_HOSTS'])
     settings['ROE_TIME_WINDOW_ENABLED'] = project.get('roeTimeWindowEnabled', DEFAULT_SETTINGS['ROE_TIME_WINDOW_ENABLED'])
     settings['ROE_TIME_WINDOW_TIMEZONE'] = project.get('roeTimeWindowTimezone', DEFAULT_SETTINGS['ROE_TIME_WINDOW_TIMEZONE'])

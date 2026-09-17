@@ -52,17 +52,23 @@ export const MCP_SCOPE_COPY: Record<McpScope, ScopeCopy> = {
     // narrow allowlist" (it is now most of the model) and "never any
     // credential" (graphqlAuthHeader and graphqlAuthValue are open, because
     // scanning an authenticated GraphQL endpoint needs them).
-    blurb: 'Change any recon tuning value: per-tool enable flags, rate limits, threads, timeouts, depths, wordlists, templates, severity lists and which phases run. Values are validated and capped at scan start rather than blocked, so an engagement rate ceiling still wins over anything written here. It cannot point the project at a different target, loosen the Rules of Engagement, or read a stored credential.',
+    blurb: 'Change any recon tuning value: per-tool enable flags, rate limits, threads, timeouts, depths, wordlists, templates, severity lists and which phases run, AND the engagement\'s own limits - its rate ceiling, its excluded hosts, its scanning window and the agent\'s denylists. Values are validated and capped at scan start rather than blocked, so the ceiling still wins over anything written here. It cannot point the project at a different target, touch the engagement record, or read a stored credential.',
     detail:
       'Every parameter of the recon pipeline is reachable, and each is controlled ' +
       'by a bound or a validator rather than by being refused by name.\n\n' +
-      'Four dispositions decide what a token may write. Most fields are settable ' +
-      'at any time. The engagement scope (the target domain, the IP list, the ' +
-      'domain batch and the target guardrail) is fixed at creation and is refused ' +
-      'here by name. The Rules of Engagement may only be tightened, and only ' +
-      'through the engagement permission. A short named set is refused entirely: ' +
-      'row identity, the version-activation lock, the Kali-exec flag and the ' +
-      'stored CypherFix token.\n\n' +
+      'Three dispositions decide what a token may write. Most fields are settable ' +
+      'at any time, the engagement limits among them. The engagement scope (the ' +
+      'target domain, the IP list, the domain batch and the target guardrail) is ' +
+      'fixed at creation and is refused here by name. A named set is refused ' +
+      'entirely: row identity, the version-activation lock, the Kali-exec flag, ' +
+      'the stored CypherFix token, and the engagement RECORD - the client name, ' +
+      'the contacts, the dates and the uploaded document.\n\n' +
+      'The engagement limits move in EITHER direction here, and that is deliberate. ' +
+      'What makes them safe is not a write-time direction rule but that each one is ' +
+      'enforced at scan start whatever the setting says. A rate ceiling of 3 still ' +
+      'rewrites all 17 rate fields; an excluded host is still dropped in three ' +
+      'places. preflight_scope_check reports the resolved configuration, which is ' +
+      'the check that actually holds.\n\n' +
       'Three validators are worth knowing about. A container image outside the ' +
       'shipped allowlist is accepted and then pinned back to the default at scan ' +
       'start, so get_recon_settings echoes what was written while the scan runs ' +
@@ -96,7 +102,7 @@ export const MCP_SCOPE_COPY: Record<McpScope, ScopeCopy> = {
   },
   'project:create': {
     label: 'Create projects and set their engagement scope',
-    blurb: 'Create a new project and fix what it points at: its target list, its excluded hosts, its Rules of Engagement and its request-rate ceiling. Scope is written ONCE at creation and is immutable afterwards through every route on this surface, so this opens new engagements rather than re-pointing existing ones. It also permits TIGHTENING an engagement later, never loosening it.',
+    blurb: 'Create a new project and fix what it points at: its target list and its engagement kind, with its settings and limits applied at creation so the first scan runs configured. Scope is written ONCE at creation and is immutable afterwards through every route on this surface, so this opens new engagements rather than re-pointing existing ones. It governs create_project alone.',
     detail:
       'This is the act that binds RedAmon to a target, which is why it is its own ' +
       'checkbox rather than part of changing settings. A token with recon:settings ' +
@@ -105,14 +111,11 @@ export const MCP_SCOPE_COPY: Record<McpScope, ScopeCopy> = {
       'What it can never do is re-point an existing project. The target domain, the ' +
       'address list, the domain batch and the target guardrail are refused by name on ' +
       'a project that already exists, whatever permissions the token holds.\n\n' +
-      'It also governs tightening an engagement afterwards, in one direction only: a ' +
-      'rate ceiling may fall and never rise, an exclusion list may grow and never ' +
-      'shrink, a permitted technique may be withdrawn and never granted. An agent ' +
-      'that discovers a stricter rule mid-engagement applies it immediately; one that ' +
-      'wants more room asks a person.\n\n' +
-      'Note that a human cannot currently change the Rules of Engagement on an ' +
-      'existing project through the UI at all, so an agent holding this has a ' +
-      'narrow capability the form does not offer.',
+      'It governs create_project and nothing else. An engagement\'s LIMITS - its rate ' +
+      'ceiling, its excluded hosts, its scanning window, the agent\'s denylists - are ' +
+      'ordinary settings afterwards, changed with recon:settings, and reachable from ' +
+      'the project form by a person in exactly the same way. Recording what ' +
+      'authorized an engagement is a separate permission again.',
     danger: true,
   },
   'engagement:authorize': {

@@ -179,8 +179,19 @@ export async function POST(request: NextRequest) {
     }
     const projectData = JSON.parse(await projectFile.async('text'))
 
-    // Strip fields that will be regenerated
-    const { id: _oldProjectId, userId: _oldUserId, createdAt: _pc, updatedAt: _pu, user: _u, roeDocumentDataBase64, ...projectFields } = projectData
+    // Strip fields that will be regenerated.
+    //
+    // `roeEnabled` is among them: it is DERIVED from whether any engagement
+    // limit is set, and an older bundle still carries the column. Replaying it
+    // would write a value nothing else believes, so it is dropped here and
+    // recomputed from the limits, which round-trip normally.
+    const {
+      id: _oldProjectId, userId: _oldUserId, createdAt: _pc, updatedAt: _pu, user: _u,
+      roeDocumentDataBase64,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      roeEnabled: _roeEnabledLegacy,
+      ...projectFields
+    } = projectData
 
     // Restore binary RoE document from base64 encoding
     if (roeDocumentDataBase64 && typeof roeDocumentDataBase64 === 'string') {
@@ -198,8 +209,9 @@ export async function POST(request: NextRequest) {
       : []
 
     if (projectFields.engagementKind === 'third_party') {
-      const ceilingOk =
-        projectFields.roeEnabled === true && Number(projectFields.roeGlobalMaxRps ?? 0) > 0
+      // The ceiling is the number alone now. There is no second switch that
+      // could leave it written and inert.
+      const ceilingOk = Number(projectFields.roeGlobalMaxRps ?? 0) > 0
       if (!ceilingOk || importedAuthorizations.length === 0) {
         return NextResponse.json(
           {

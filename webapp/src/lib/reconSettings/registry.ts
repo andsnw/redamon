@@ -20,7 +20,7 @@ import { Prisma } from '@prisma/client'
 
 import registryJson from './registry.json'
 
-export type McpDisposition = 'settable' | 'create_only' | 'tighten_only' | 'never'
+export type McpDisposition = 'settable' | 'create_only' | 'never'
 export type Traffic = 'none' | 'passive' | 'active'
 export type Phase =
   | 'domain_discovery'
@@ -37,9 +37,9 @@ export type Validator =
   | 'docker_image' | 'http_header' | 'project_file' | 'project_file_name'
   | 'status_codes' | 'severity' | 'scan_modules' | 'hostname' | 'url'
   | 'port_spec' | 'free_text' | 'identifier' | 'json_object'
-export type TightenDirection =
-  | 'decrease' | 'increase' | 'superset' | 'true_to_false' | 'false_to_true' | 'narrow'
-export type DenyReason = 'identity' | 'internal' | 'escalation' | 'secret' | 'upload-managed'
+export type DenyReason =
+  | 'identity' | 'internal' | 'escalation' | 'secret' | 'upload-managed'
+  | 'engagement-record' | 'not-tuning' | 'derived'
 export type ReadDenyReason = 'credential' | 'third_party_pii' | 'document_blob' | 'other_user'
 
 /** The coarse shape a value is validated against, joined from Prisma. */
@@ -62,7 +62,6 @@ export interface RegistryField {
   zero_means?: 'unlimited' | 'disabled' | 'auto' | 'literal'
   fallback?: 'missing' | 'falsy'
   coerce?: 'int' | 'strip' | 'strip_list'
-  tighten?: TightenDirection
   deny_reason?: DenyReason
   written_by?: string
   /** Absent means readable. Only an explicit false withholds a column. */
@@ -74,6 +73,13 @@ export interface RegistryField {
   stealth?: { set?: unknown; ceiling?: number }
   read_deny_reason?: ReadDenyReason
   group?: string
+  /**
+   * The ProjectForm section that renders this field, joined from its tool at
+   * build time unless the field names its own. Null means "no input anywhere",
+   * which the parity test reads to tell a deliberate omission from a forgotten
+   * one.
+   */
+  form_section: string | null
   // joined from Prisma at build time
   type: FieldType
   prisma_type: string
@@ -207,9 +213,24 @@ export function createOnlyFields(): NamedField[] {
   return fieldsWhere(f => f.mcp === 'create_only')
 }
 
-/** The RoE block: writable at creation, one direction only after. */
-export function tightenOnlyFields(): NamedField[] {
-  return fieldsWhere(f => f.mcp === 'tighten_only')
+/**
+ * The engagement's enforced limits: a rate ceiling, an exclusion list, a time
+ * window, the agent's denylists.
+ *
+ * Ordinary settable fields, reachable from the form and from MCP alike. They are
+ * grouped because several controls key on the CLASS rather than on the field:
+ * a preset must never carry them, `/defaults` must never emit them, and the
+ * derivation reads three of them. Keyed on the registry group rather than on the
+ * `roe` name prefix, because the columns keep those names while their meaning
+ * changed, so a prefix match survives that change by accident.
+ */
+export function engagementLimitFields(): NamedField[] {
+  return fieldsWhere(f => f.group === 'engagement_limits')
+}
+
+/** The engagement contract: who the client is, what the document said. UI-only. */
+export function engagementRecordFields(): NamedField[] {
+  return fieldsWhere(f => f.deny_reason === 'engagement-record')
 }
 
 /** Columns that are not pipeline parameters at all. */
@@ -296,8 +317,8 @@ const PIPELINE_KINDS = new Set(['full_recon', 'partial_recon'])
  * Fields whose change between enqueue and dispatch must re-confirm a queued job.
  *
  * Anything that steers WHERE or HOW HARD a job scans: every field of the job's
- * own tools that sends traffic, plus the whole RoE block and the scope columns,
- * which steer every kind.
+ * own tools that sends traffic, plus every engagement limit and the scope
+ * columns, which steer every kind.
  *
  * The hand-written list this replaced named six fields for `full_recon` and no
  * `roe*` field at all. Queued work outlives the token that created it, so with
@@ -312,7 +333,7 @@ export function fingerprintFields(kind: string): string[] {
   // so they belong to that scanner's tool and are picked up per kind below
   // rather than made to re-confirm every unrelated job.
   const always = (f: RegistryField) =>
-    f.mcp === 'tighten_only' || (f.mcp === 'create_only' && f.tool === 'targeting')
+    f.group === 'engagement_limits' || (f.mcp === 'create_only' && f.tool === 'targeting')
 
   if (PIPELINE_KINDS.has(kind)) {
     return fieldsWhere(

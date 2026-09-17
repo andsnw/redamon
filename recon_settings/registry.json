@@ -5,6 +5,7 @@
   "activationStartedAt": {
    "default": null,
    "deny_reason": "internal",
+   "form_section": "TargetSection",
    "group": "internal",
    "has_default": false,
    "mcp": "never",
@@ -23,6 +24,7 @@
   "activationState": {
    "default": "idle",
    "deny_reason": "internal",
+   "form_section": "TargetSection",
    "group": "internal",
    "has_default": true,
    "mcp": "never",
@@ -41,6 +43,7 @@
   "activationVersionId": {
    "default": null,
    "deny_reason": "internal",
+   "form_section": "TargetSection",
    "group": "not-tuning",
    "has_default": false,
    "mcp": "never",
@@ -58,6 +61,7 @@
   },
   "agentActivatePostExplPhase": {
    "default": true,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -78,6 +82,7 @@
     "max": 65535
    },
    "default": null,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": false,
    "mcp": "settable",
@@ -95,9 +100,10 @@
   "agentBruteForceMaxWordlistAttempts": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 1000
    },
    "default": 3,
+   "form_section": "AgentBehaviourSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -115,9 +121,10 @@
   "agentBruteforceSpeed": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 10
    },
    "default": 5,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -134,6 +141,7 @@
   },
   "agentChiselTunnelEnabled": {
    "default": false,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -150,6 +158,7 @@
   },
   "agentCreateGraphImageOnInit": {
    "default": false,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -170,6 +179,7 @@
     "max": 10
    },
    "default": 3,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -187,9 +197,10 @@
   "agentExecutionTraceMemorySteps": {
    "bounds": {
     "min": 1,
-    "max": 10000000
+    "max": 10000
    },
    "default": 100,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -206,6 +217,7 @@
   },
   "agentExplSystemPrompt": {
    "default": "",
+   "form_section": "AgentBehaviourSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -223,6 +235,7 @@
   },
   "agentGuardrailEnabled": {
    "default": true,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -239,6 +252,7 @@
   },
   "agentInformationalSystemPrompt": {
    "default": "",
+   "form_section": "AgentBehaviourSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -256,6 +270,7 @@
   },
   "agentKaliInstallAllowedPackages": {
    "default": "",
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -273,6 +288,7 @@
   },
   "agentKaliInstallEnabled": {
    "default": false,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -289,6 +305,7 @@
   },
   "agentKaliInstallForbiddenPackages": {
    "default": "",
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -310,6 +327,7 @@
     "max": 10
    },
    "default": 6,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -326,6 +344,7 @@
   },
   "agentLatsEnabled": {
    "default": false,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -346,6 +365,7 @@
     "max": 10
    },
    "default": 6,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -366,6 +386,7 @@
     "max": 300
    },
    "default": 50,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -386,6 +407,7 @@
     "max": 1000
    },
    "default": 120,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -406,6 +428,7 @@
     "max": 4
    },
    "default": 2,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -422,6 +445,7 @@
   },
   "agentLatsPhaseExploitation": {
    "default": true,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -438,6 +462,7 @@
   },
   "agentLatsPhasePostExpl": {
    "default": false,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -458,6 +483,7 @@
     "max": 1.0
    },
    "default": 0.15,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -474,6 +500,7 @@
   },
   "agentLatsShadowMode": {
    "default": false,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -494,6 +521,7 @@
     "max": 10.0
    },
    "default": 1.4,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -510,6 +538,7 @@
   },
   "agentLhost": {
    "default": "",
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -528,9 +557,10 @@
   "agentLlmParseMaxRetries": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 20
    },
    "default": 3,
+   "form_section": "AgentBehaviourSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -548,9 +578,10 @@
   "agentLogBackupCount": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 100
    },
    "default": 5,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -568,9 +599,10 @@
   "agentLogMaxMb": {
    "bounds": {
     "min": 1,
-    "max": 10000000
+    "max": 1024
    },
    "default": 10,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -591,6 +623,7 @@
     "max": 65535
    },
    "default": null,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": false,
    "mcp": "settable",
@@ -608,9 +641,10 @@
   "agentMaxIterations": {
    "bounds": {
     "min": 1,
-    "max": 10000000
+    "max": 1000
    },
    "default": 100,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -627,6 +661,7 @@
   },
   "agentNgrokTunnelEnabled": {
    "default": false,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -643,6 +678,7 @@
   },
   "agentOpenaiModel": {
    "default": "claude-opus-4-6",
+   "form_section": "AgentBehaviourSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -660,6 +696,7 @@
   },
   "agentPayloadUseHttps": {
    "default": false,
+   "form_section": "AgentBehaviourSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -680,6 +717,7 @@
     "max": 50
    },
    "default": 10,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -696,6 +734,7 @@
   },
   "agentPostExplPhaseType": {
    "default": "statefull",
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -713,6 +752,7 @@
   },
   "agentPostExplSystemPrompt": {
    "default": "",
+   "form_section": "AgentBehaviourSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -730,6 +770,7 @@
   },
   "agentRequireApprovalForExploitation": {
    "default": true,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -746,6 +787,7 @@
   },
   "agentRequireApprovalForPostExploitation": {
    "default": true,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -762,6 +804,7 @@
   },
   "agentRequireToolConfirmation": {
    "default": true,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -779,9 +822,10 @@
   "agentToolOutputMaxChars": {
    "bounds": {
     "min": 1000,
-    "max": 10000000
+    "max": 100000
    },
    "default": 40000,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -798,6 +842,7 @@
   },
   "agentToolPhaseMap": {
    "default": "{\"query_graph\":[\"informational\",\"exploitation\",\"post_exploitation\"],\"proxy_brain\":[\"informational\",\"exploitation\",\"post_exploitation\"],\"web_search\":[\"informational\",\"exploitation\",\"post_exploitation\"],\"cve_intel\":[\"informational\",\"exploitation\",\"post_exploitation\"],\"shodan\":[\"informational\",\"exploitation\",\"post_exploitation\"],\"google_dork\":[\"informational\"],\"execute_curl\":[\"informational\",\"exploitation\",\"post_exploitation\"],\"execute_naabu\":[\"informational\",\"exploitation\"],\"execute_httpx\":[\"informational\",\"exploitation\"],\"execute_subfinder\":[\"informational\",\"exploitation\"],\"execute_wpscan\":[\"informational\",\"exploitation\"],\"execute_jsluice\":[\"informational\",\"exploitation\"],\"execute_amass\":[\"informational\",\"exploitation\"],\"execute_katana\":[\"informational\",\"exploitation\"],\"execute_arjun\":[\"informational\",\"exploitation\"],\"execute_ffuf\":[\"informational\",\"exploitation\"],\"execute_gau\":[\"informational\",\"exploitation\"],\"execute_nmap\":[\"informational\",\"exploitation\",\"post_exploitation\"],\"execute_nuclei\":[\"informational\",\"exploitation\"],\"kali_shell\":[\"informational\",\"exploitation\",\"post_exploitation\"],\"execute_code\":[\"informational\",\"exploitation\",\"post_exploitation\"],\"execute_playwright\":[\"informational\",\"exploitation\",\"post_exploitation\"],\"execute_hydra\":[\"exploitation\",\"post_exploitation\"],\"metasploit_console\":[\"exploitation\",\"post_exploitation\"],\"msf_restart\":[\"exploitation\",\"post_exploitation\"],\"tradecraft_lookup\":[\"exploitation\",\"post_exploitation\"],\"execute_osv_scanner\":[\"informational\",\"exploitation\",\"post_exploitation\"],\"execute_guarddog\":[\"informational\",\"exploitation\"]}",
+   "form_section": "ToolMatrixSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -815,6 +860,7 @@
   },
   "aiInPipeline": {
    "default": false,
+   "form_section": "TargetSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -831,6 +877,7 @@
   },
   "aiPipelineModel": {
    "default": "claude-opus-4-6",
+   "form_section": "TargetSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -848,6 +895,7 @@
   },
   "aiSurfaceReconCacheEnabled": {
    "default": true,
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -864,6 +912,7 @@
   },
   "aiSurfaceReconChatShapeProbeEnabled": {
    "default": true,
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -880,6 +929,7 @@
   },
   "aiSurfaceReconEnabled": {
    "default": true,
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -896,6 +946,7 @@
   },
   "aiSurfaceReconJuliusProbePackEnabled": {
    "default": true,
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -912,6 +963,7 @@
   },
   "aiSurfaceReconLatencyBaselineEnabled": {
    "default": true,
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -932,6 +984,7 @@
     "max": 500
    },
    "default": 5,
+   "form_section": "AiSurfaceReconSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -955,6 +1008,7 @@
   },
   "aiSurfaceReconMcpHandshakeEnabled": {
    "default": true,
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -971,6 +1025,7 @@
   },
   "aiSurfaceReconMcpListToolsEnabled": {
    "default": true,
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -990,6 +1045,7 @@
   },
   "aiSurfaceReconMcpYaraEnabled": {
    "default": true,
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -1006,6 +1062,7 @@
   },
   "aiSurfaceReconModelListEnabled": {
    "default": true,
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -1022,6 +1079,7 @@
   },
   "aiSurfaceReconOpenapiDiscoveryEnabled": {
    "default": true,
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -1038,6 +1096,7 @@
   },
   "aiSurfaceReconProbePackVersion": {
    "default": "latest",
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -1059,6 +1118,7 @@
     "max": 86400
    },
    "default": 10,
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -1075,6 +1135,7 @@
   },
   "aiSurfaceReconUserAgent": {
    "default": "RedAmon-AISurfaceRecon/1.0",
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -1092,6 +1153,7 @@
   },
   "aiSurfaceReconVectorDbReadEnabled": {
    "default": true,
+   "form_section": "AiSurfaceReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -1111,6 +1173,7 @@
   },
   "amassActive": {
    "default": false,
+   "form_section": "SubdomainDiscoverySection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -1130,6 +1193,7 @@
   },
   "amassBrute": {
    "default": false,
+   "form_section": "SubdomainDiscoverySection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -1149,6 +1213,7 @@
   },
   "amassBruteWordlists": {
    "default": "[\"default\"]",
+   "form_section": "SubdomainDiscoverySection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -1166,6 +1231,7 @@
   },
   "amassDockerImage": {
    "default": "caffix/amass:latest",
+   "form_section": "SubdomainDiscoverySection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -1179,10 +1245,28 @@
    "traffic": "passive",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "amassEnabled": {
    "default": false,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether amass runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -1202,6 +1286,7 @@
     "max": 50000
    },
    "default": 50000,
+   "form_section": "SubdomainDiscoverySection",
    "governor": {
     "model": "budget",
     "family": "osint_result",
@@ -1229,6 +1314,7 @@
     "max": 120
    },
    "default": 10,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How long amass may run, in MINUTES rather than seconds. The name reads like every other timeout in the model and the unit does not match it.",
@@ -1248,6 +1334,7 @@
     "max": 5000
    },
    "default": 500,
+   "form_section": "ArjunSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Parameters tested per request batch. Lower = more requests, higher accuracy",
@@ -1263,6 +1350,7 @@
   },
   "arjunCustomHeaders": {
    "default": [],
+   "form_section": "ArjunSection",
    "group": "headers",
    "has_default": true,
    "mcp": "settable",
@@ -1280,6 +1368,7 @@
   },
   "arjunDisableRedirects": {
    "default": false,
+   "form_section": "ArjunSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -1296,6 +1385,7 @@
   },
   "arjunEnabled": {
    "default": true,
+   "form_section": "ArjunSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether arjun runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -1315,6 +1405,7 @@
     "max": 50000
    },
    "default": 50000,
+   "form_section": "ArjunSection",
    "governor": {
     "model": "budget",
     "family": "url",
@@ -1338,6 +1429,7 @@
     "GET",
     "POST"
    ],
+   "form_section": "ArjunSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -1355,6 +1447,7 @@
   },
   "arjunPassive": {
    "default": false,
+   "form_section": "ArjunSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -1378,6 +1471,7 @@
     "max": 100000
    },
    "default": 0,
+   "form_section": "ArjunSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -1399,6 +1493,7 @@
     "max": 86400
    },
    "default": 600,
+   "form_section": "ArjunSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -1415,6 +1510,7 @@
   },
   "arjunStable": {
    "default": false,
+   "form_section": "ArjunSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -1435,6 +1531,7 @@
     "max": 20
    },
    "default": 2,
+   "form_section": "ArjunSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -1458,6 +1555,7 @@
     "max": 86400
    },
    "default": 15,
+   "form_section": "ArjunSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -1474,6 +1572,7 @@
   },
   "attackSkillConfig": {
    "default": "{\"builtIn\":{\"cve_exploit\":true,\"brute_force_credential_guess\":true,\"phishing_social_engineering\":true,\"denial_of_service\":true,\"sql_injection\":true,\"xss\":true,\"ssrf\":true,\"rce\":true,\"path_traversal\":true,\"access_control\":true,\"xxe\":true,\"crypto_attack\":true},\"user\":{}}",
+   "form_section": "AttackSkillsSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -1491,6 +1590,7 @@
   },
   "baddnsDockerImage": {
    "default": "redamon-baddns:latest",
+   "form_section": "TakeoverSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -1504,10 +1604,28 @@
    "traffic": "active",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "baddnsEnabled": {
    "default": false,
+   "form_section": "TakeoverSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether baddns runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -1532,6 +1650,7 @@
     "txt",
     "spf"
    ],
+   "form_section": "TakeoverSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -1549,6 +1668,7 @@
   },
   "baddnsNameservers": {
    "default": [],
+   "form_section": "TakeoverSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -1570,6 +1690,7 @@
     "max": 86400
    },
    "default": 1800,
+   "form_section": "TakeoverSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -1586,6 +1707,7 @@
   },
   "bannerGrabEnabled": {
    "default": true,
+   "form_section": "HttpxSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether Banner grab runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -1608,6 +1730,7 @@
     "max": 5000
    },
    "default": 1000,
+   "form_section": "HttpxSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Truncate banners longer than this (chars)",
@@ -1627,6 +1750,7 @@
     "max": 500
    },
    "default": 20,
+   "form_section": "HttpxSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -1651,6 +1775,7 @@
     "max": 86400
    },
    "default": 5,
+   "form_section": "HttpxSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -1667,6 +1792,7 @@
   },
   "captureProxyEnabled": {
    "default": false,
+   "form_section": "ScanModulesSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -1683,6 +1809,7 @@
   },
   "censysEnabled": {
    "default": false,
+   "form_section": "OsintEnrichmentSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether censys runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -1702,6 +1829,7 @@
     "max": 20
    },
    "default": 5,
+   "form_section": "OsintEnrichmentSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -1725,6 +1853,7 @@
   "createdAt": {
    "default": null,
    "deny_reason": "identity",
+   "form_section": "TargetSection",
    "group": "identity",
    "has_default": true,
    "mcp": "never",
@@ -1743,6 +1872,7 @@
   "createdById": {
    "default": null,
    "deny_reason": "identity",
+   "form_section": "TargetSection",
    "group": "identity",
    "has_default": false,
    "mcp": "never",
@@ -1760,6 +1890,7 @@
   },
   "criminalIpEnabled": {
    "default": false,
+   "form_section": "OsintEnrichmentSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether CriminalIP runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -1779,6 +1910,7 @@
     "max": 20
    },
    "default": 5,
+   "form_section": "OsintEnrichmentSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -1801,6 +1933,7 @@
   },
   "crtshEnabled": {
    "default": true,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether crtsh runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -1820,6 +1953,7 @@
     "max": 50000
    },
    "default": 5000,
+   "form_section": "SubdomainDiscoverySection",
    "governor": {
     "model": "budget",
     "family": "osint_result",
@@ -1843,6 +1977,7 @@
   },
   "cveLookupEnabled": {
    "default": true,
+   "form_section": "CveLookupSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether CVE lookup runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -1862,6 +1997,7 @@
     "max": 100
    },
    "default": 20,
+   "form_section": "CveLookupSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -1882,6 +2018,7 @@
     "max": 10.0
    },
    "default": 0.0,
+   "form_section": "CveLookupSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -1899,6 +2036,7 @@
   },
   "cveLookupSource": {
    "default": "nvd",
+   "form_section": "CveLookupSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -1916,6 +2054,7 @@
   },
   "cypherfixBranchPrefix": {
    "default": "cypherfix/",
+   "form_section": "CypherFixSettingsSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -1933,6 +2072,7 @@
   },
   "cypherfixDefaultBranch": {
    "default": "main",
+   "form_section": "CypherFixSettingsSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -1950,6 +2090,7 @@
   },
   "cypherfixDefaultRepo": {
    "default": "",
+   "form_section": "CypherFixSettingsSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -1968,6 +2109,7 @@
   "cypherfixGithubToken": {
    "default": "",
    "deny_reason": "secret",
+   "form_section": "CypherFixSettingsSection",
    "group": "secret",
    "has_default": true,
    "mcp": "never",
@@ -1987,6 +2129,7 @@
   },
   "cypherfixLlmModel": {
    "default": "",
+   "form_section": "CypherFixSettingsSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -2004,6 +2147,7 @@
   },
   "cypherfixRequireApproval": {
    "default": true,
+   "form_section": "CypherFixSettingsSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -2020,6 +2164,7 @@
   },
   "description": {
    "default": null,
+   "form_section": "TargetSection",
    "group": "identity",
    "has_default": false,
    "mcp": "settable",
@@ -2037,6 +2182,7 @@
   },
   "dnsEnabled": {
    "default": true,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether dns runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -2056,6 +2202,7 @@
     "max": 10
    },
    "default": 3,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many times dns retries a failed request before giving up on it.",
@@ -2075,6 +2222,7 @@
     "max": 200
    },
    "default": 80,
+   "form_section": "SubdomainDiscoverySection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -2097,6 +2245,7 @@
   },
   "dnsRecordParallelism": {
    "default": true,
+   "form_section": "SubdomainDiscoverySection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2116,9 +2265,11 @@
   },
   "domainBatchGroups": {
    "default": null,
+   "deny_reason": "internal",
+   "form_section": null,
    "group": "scope",
    "has_default": false,
-   "mcp": "create_only",
+   "mcp": "never",
    "meaning": "Groups derived from the list at save time: [{ rootDomain, prefixes[], hosts[] }]. Persisted rather than re-derived so the grouping rule has exactly ONE implementation, and so what the operator approved in the preview is literally what the pipeline runs. Always recomputed server-side; never trusted from a body.",
    "optional": true,
    "phase": "standalone",
@@ -2129,10 +2280,12 @@
    "traffic": "none",
    "type": "json",
    "unit": "none",
-   "validator": "json_object"
+   "validator": "json_object",
+   "written_by": "create_project, from domainBatchHosts"
   },
   "domainBatchHosts": {
    "default": [],
+   "form_section": "TargetSection",
    "group": "scope",
    "has_default": true,
    "mcp": "create_only",
@@ -2150,6 +2303,7 @@
   },
   "domainBatchMode": {
    "default": false,
+   "form_section": "TargetSection",
    "group": "scope",
    "has_default": true,
    "mcp": "create_only",
@@ -2166,6 +2320,7 @@
   },
   "domainReconAiNsHintEnabled": {
    "default": true,
+   "form_section": "SubdomainDiscoverySection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -2182,6 +2337,7 @@
   },
   "domainReconAiTxtHintEnabled": {
    "default": true,
+   "form_section": "SubdomainDiscoverySection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -2198,6 +2354,7 @@
   },
   "dosAssessmentOnly": {
    "default": false,
+   "form_section": "DosSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -2218,6 +2375,7 @@
     "max": 10000
    },
    "default": 1000,
+   "form_section": "DosSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -2238,6 +2396,7 @@
     "max": 10
    },
    "default": 3,
+   "form_section": "DosSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -2258,6 +2417,7 @@
     "max": 300
    },
    "default": 60,
+   "form_section": "DosSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -2274,6 +2434,7 @@
   },
   "engagementIdentityHeader": {
    "default": "",
+   "form_section": "RoeSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "A header every request carries so the target's operators can attribute the traffic to this engagement, for example 'X-Bug-Bounty: your-handle'. Empty sends none. Many programs require one, and it is the difference between a scan that gets a question and one that gets a block. Validated like any other header: no CR or LF, and not Host, Authorization, Cookie or Proxy-*.",
@@ -2290,6 +2451,7 @@
   },
   "engagementKind": {
    "default": "internal",
+   "form_section": "RoeSection",
    "has_default": true,
    "mcp": "create_only",
    "meaning": "Who the target belongs to, and therefore what has to be true before a scan may start. 'internal' is your own estate. 'third_party' is somebody else's, and such a project MUST carry a non-zero rate ceiling and an authorization record or start_recon refuses it. Set at creation and immutable afterwards: converting a project after the fact would either claim an authority nobody granted or drop a ceiling a human put there. Every project created before this field existed reads as 'internal', so an old project with no ceiling is flagged rather than blocked.",
@@ -2310,6 +2472,7 @@
   },
   "ffufAiExtensions": {
    "default": false,
+   "form_section": "FfufSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -2326,6 +2489,7 @@
   },
   "ffufAutoCalibrate": {
    "default": true,
+   "form_section": "FfufSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2342,6 +2506,7 @@
   },
   "ffufCustomHeaders": {
    "default": [],
+   "form_section": "FfufSection",
    "group": "headers",
    "has_default": true,
    "mcp": "settable",
@@ -2359,6 +2524,7 @@
   },
   "ffufEnabled": {
    "default": false,
+   "form_section": "FfufSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether ffuf runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -2377,6 +2543,7 @@
   },
   "ffufExtensions": {
    "default": [],
+   "form_section": "FfufSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2394,6 +2561,7 @@
   },
   "ffufFilterCodes": {
    "default": [],
+   "form_section": "FfufSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2411,6 +2579,7 @@
   },
   "ffufFilterSize": {
    "default": "",
+   "form_section": "FfufSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2428,6 +2597,7 @@
   },
   "ffufFollowRedirects": {
    "default": false,
+   "form_section": "FfufSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2455,6 +2625,7 @@
     403,
     405
    ],
+   "form_section": "FfufSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2476,6 +2647,7 @@
     "max": 86400
    },
    "default": 1800,
+   "form_section": "FfufSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2496,6 +2668,7 @@
     "max": 50
    },
    "default": 20,
+   "form_section": "FfufSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -2520,6 +2693,7 @@
     "max": 100000
    },
    "default": 0,
+   "form_section": "FfufSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -2537,6 +2711,7 @@
   },
   "ffufRecursion": {
    "default": false,
+   "form_section": "FfufSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2557,6 +2732,7 @@
     "max": 5
    },
    "default": 2,
+   "form_section": "FfufSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many directories deep recursion goes before it stops.",
@@ -2572,6 +2748,7 @@
   },
   "ffufSmartFuzz": {
    "default": true,
+   "form_section": "FfufSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2592,6 +2769,7 @@
     "max": 200
    },
    "default": 40,
+   "form_section": "FfufSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -2615,6 +2793,7 @@
     "max": 86400
    },
    "default": 10,
+   "form_section": "FfufSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -2631,6 +2810,7 @@
   },
   "ffufWordlist": {
    "default": "/usr/share/seclists/Discovery/Web-Content/common.txt",
+   "form_section": "FfufSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -2652,6 +2832,7 @@
     "exploitation",
     "post_exploitation"
    ],
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -2670,9 +2851,10 @@
   "fireteamConfirmationTimeoutSec": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 86400
    },
    "default": 600,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -2689,6 +2871,7 @@
   },
   "fireteamEnabled": {
    "default": true,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -2709,6 +2892,7 @@
     "max": 8
    },
    "default": 5,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -2729,6 +2913,7 @@
     "max": 8
    },
    "default": 5,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -2749,6 +2934,7 @@
     "max": 50
    },
    "default": 10,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -2766,9 +2952,10 @@
   "fireteamPropensity": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 10
    },
    "default": 3,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -2789,6 +2976,7 @@
     "max": 7200
    },
    "default": 3600,
+   "form_section": "AgentBehaviourSection",
    "group": "agent",
    "has_default": true,
    "mcp": "settable",
@@ -2805,6 +2993,7 @@
   },
   "fofaEnabled": {
    "default": false,
+   "form_section": "OsintEnrichmentSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether fofa runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -2826,6 +3015,7 @@
    "coerce": "int",
    "default": 1000,
    "fallback": "falsy",
+   "form_section": "OsintEnrichmentSection",
    "governor": {
     "model": "budget",
     "family": "osint_result",
@@ -2850,6 +3040,7 @@
     "max": 20
    },
    "default": 5,
+   "form_section": "OsintEnrichmentSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -2872,6 +3063,7 @@
   },
   "gauBlacklistExtensions": {
    "default": [],
+   "form_section": "GauSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2889,6 +3081,7 @@
   },
   "gauDetectMethods": {
    "default": true,
+   "form_section": "GauSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2905,6 +3098,7 @@
   },
   "gauDockerImage": {
    "default": "sxcurity/gau:latest",
+   "form_section": "GauSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -2918,10 +3112,28 @@
    "traffic": "passive",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "gauEnabled": {
    "default": false,
+   "form_section": "GauSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether gau runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -2940,6 +3152,7 @@
   },
   "gauFilterDeadEndpoints": {
    "default": true,
+   "form_section": "GauSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -2957,9 +3170,10 @@
   "gauMaxUrls": {
    "bounds": {
     "min": 1,
-    "max": 10000000
+    "max": 100000
    },
    "default": 50000,
+   "form_section": "GauSection",
    "governor": {
     "model": "budget",
     "family": "url",
@@ -2985,6 +3199,7 @@
     "max": 100000
    },
    "default": 50,
+   "form_section": "GauSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -3008,6 +3223,7 @@
     "max": 500
    },
    "default": 25,
+   "form_section": "GauSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -3035,6 +3251,7 @@
     "max": 86400
    },
    "default": 5,
+   "form_section": "GauSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -3056,6 +3273,7 @@
     "otx",
     "urlscan"
    ],
+   "form_section": "GauSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3077,6 +3295,7 @@
     "max": 20
    },
    "default": 5,
+   "form_section": "GauSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -3100,6 +3319,7 @@
     "max": 86400
    },
    "default": 60,
+   "form_section": "GauSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -3116,6 +3336,7 @@
   },
   "gauVerbose": {
    "default": false,
+   "form_section": "GauSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3141,6 +3362,7 @@
     401,
     403
    ],
+   "form_section": "GauSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3158,6 +3380,7 @@
   },
   "gauVerifyDockerImage": {
    "default": "projectdiscovery/httpx:latest",
+   "form_section": "GauSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -3171,7 +3394,24 @@
    "traffic": "passive",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "gauVerifyRateLimit": {
    "bounds": {
@@ -3179,6 +3419,7 @@
     "max": 100000
    },
    "default": 100,
+   "form_section": "GauSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -3202,6 +3443,7 @@
     "max": 100
    },
    "default": 50,
+   "form_section": "GauSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -3228,6 +3470,7 @@
     "max": 86400
    },
    "default": 5,
+   "form_section": "GauSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -3244,6 +3487,7 @@
   },
   "gauVerifyUrls": {
    "default": true,
+   "form_section": "GauSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3264,6 +3508,7 @@
     "max": 20
    },
    "default": 10,
+   "form_section": "GauSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -3286,6 +3531,7 @@
   },
   "gauYearRange": {
    "default": [],
+   "form_section": "GauSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3307,6 +3553,7 @@
     "max": 1000
    },
    "default": 100,
+   "form_section": "GithubSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "The most results github accumulates in one pass. The memory governor budgets it against available RAM, so the effective value can be below what is written here.",
@@ -3322,6 +3569,7 @@
   },
   "githubOutputJson": {
    "default": true,
+   "form_section": "GithubSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3338,6 +3586,7 @@
   },
   "githubScanCommits": {
    "default": true,
+   "form_section": "GithubSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3354,6 +3603,7 @@
   },
   "githubScanGists": {
    "default": true,
+   "form_section": "GithubSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3370,6 +3620,7 @@
   },
   "githubScanMembers": {
    "default": false,
+   "form_section": "GithubSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3386,6 +3637,7 @@
   },
   "githubTargetOrg": {
    "default": "",
+   "form_section": "GithubSection",
    "group": "othertarget",
    "has_default": true,
    "mcp": "create_only",
@@ -3403,6 +3655,7 @@
   },
   "githubTargetRepos": {
    "default": "",
+   "form_section": "GithubSection",
    "group": "othertarget",
    "has_default": true,
    "mcp": "create_only",
@@ -3420,6 +3673,7 @@
   },
   "graphqlAuthHeader": {
    "default": "",
+   "form_section": "GraphqlScanSection",
    "group": "secret",
    "has_default": true,
    "mcp": "settable",
@@ -3437,6 +3691,7 @@
   },
   "graphqlAuthType": {
    "default": "",
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3454,6 +3709,7 @@
   },
   "graphqlAuthValue": {
    "default": "",
+   "form_section": "GraphqlScanSection",
    "group": "secret",
    "has_default": true,
    "mcp": "settable",
@@ -3477,6 +3733,7 @@
     "max": 20
    },
    "default": 5,
+   "form_section": "GraphqlScanSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -3499,6 +3756,7 @@
   },
   "graphqlCopDebug": {
    "default": false,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3515,6 +3773,7 @@
   },
   "graphqlCopDockerImage": {
    "default": "dolevf/graphql-cop:1.14",
+   "form_section": "GraphqlScanSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -3528,10 +3787,28 @@
    "traffic": "active",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "graphqlCopEnabled": {
    "default": false,
+   "form_section": "GraphqlScanSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether GraphQL Cop runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -3547,6 +3824,7 @@
   },
   "graphqlCopForceScan": {
    "default": false,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3563,6 +3841,7 @@
   },
   "graphqlCopTestAliasOverloading": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3582,6 +3861,7 @@
   },
   "graphqlCopTestBatchQuery": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3601,6 +3881,7 @@
   },
   "graphqlCopTestCircularIntrospection": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3620,6 +3901,7 @@
   },
   "graphqlCopTestDirectiveOverloading": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3639,6 +3921,7 @@
   },
   "graphqlCopTestFieldSuggestions": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3655,6 +3938,7 @@
   },
   "graphqlCopTestGetMethod": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3671,6 +3955,7 @@
   },
   "graphqlCopTestGetMutation": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3687,6 +3972,7 @@
   },
   "graphqlCopTestGraphiql": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3703,6 +3989,7 @@
   },
   "graphqlCopTestIntrospection": {
    "default": false,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3719,6 +4006,7 @@
   },
   "graphqlCopTestPostCsrf": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3735,6 +4023,7 @@
   },
   "graphqlCopTestTraceMode": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3751,6 +4040,7 @@
   },
   "graphqlCopTestUnhandledError": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3771,6 +4061,7 @@
     "max": 600
    },
    "default": 120,
+   "form_section": "GraphqlScanSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How long GraphQL Cop may spend before it is abandoned, in seconds. A run that hits it contributes whatever it found so far rather than failing the scan.",
@@ -3790,6 +4081,7 @@
     "max": 50
    },
    "default": 10,
+   "form_section": "GraphqlScanSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Max introspection query nesting depth (default 10)",
@@ -3805,6 +4097,7 @@
   },
   "graphqlEndpoints": {
    "default": "",
+   "form_section": "GraphqlScanSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -3822,6 +4115,7 @@
   },
   "graphqlIntrospectionTest": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3845,6 +4139,7 @@
     "max": 100
    },
    "default": 10,
+   "form_section": "GraphqlScanSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Requests per second graphql sends. Capped to the engagement ceiling at scan start, so a value above the ceiling is rewritten rather than refused.",
@@ -3867,6 +4162,7 @@
     "max": 60.0
    },
    "default": 2.0,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3887,6 +4183,7 @@
     "max": 10
    },
    "default": 3,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3903,6 +4200,7 @@
   },
   "graphqlSecurityEnabled": {
    "default": false,
+   "form_section": "GraphqlScanSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether graphql runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -3925,6 +4223,7 @@
     "max": 600
    },
    "default": 30,
+   "form_section": "GraphqlScanSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How long graphql may spend before it is abandoned, in seconds. A run that hits it contributes whatever it found so far rather than failing the scan.",
@@ -3943,6 +4242,7 @@
   },
   "graphqlVerifySsl": {
    "default": true,
+   "form_section": "GraphqlScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3959,6 +4259,7 @@
   },
   "gvmCleanupAfterScan": {
    "default": true,
+   "form_section": "GvmScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3979,6 +4280,7 @@
     "max": 300
    },
    "default": 30,
+   "form_section": "GvmScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -3995,6 +4297,7 @@
   },
   "gvmPortList": {
    "default": "All TCP and Nmap top 100 UDP",
+   "form_section": "GvmScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4012,6 +4315,7 @@
   },
   "gvmScanConfig": {
    "default": "Full and fast",
+   "form_section": "GvmScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4029,6 +4333,7 @@
   },
   "gvmScanTargets": {
    "default": "both",
+   "form_section": "GvmScanSection",
    "group": "othertarget",
    "has_default": true,
    "mcp": "create_only",
@@ -4050,6 +4355,7 @@
     "max": 86400
    },
    "default": 14400,
+   "form_section": "GvmScanSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -4066,6 +4372,7 @@
   },
   "hackerTargetEnabled": {
    "default": true,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether hackertarget runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -4085,6 +4392,7 @@
     "max": 50000
    },
    "default": 5000,
+   "form_section": "SubdomainDiscoverySection",
    "governor": {
     "model": "budget",
     "family": "osint_result",
@@ -4108,6 +4416,7 @@
   },
   "hakrawlerCustomHeaders": {
    "default": [],
+   "form_section": "HakrawlerSection",
    "group": "headers",
    "has_default": true,
    "mcp": "settable",
@@ -4129,6 +4438,7 @@
     "max": 10
    },
    "default": 2,
+   "form_section": "HakrawlerSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many links deep to follow",
@@ -4144,6 +4454,7 @@
   },
   "hakrawlerDockerImage": {
    "default": "jauderho/hakrawler:latest",
+   "form_section": "HakrawlerSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -4157,10 +4468,28 @@
    "traffic": "active",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "hakrawlerEnabled": {
    "default": true,
+   "form_section": "HakrawlerSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether hakrawler runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -4179,6 +4508,7 @@
   },
   "hakrawlerIncludeSubs": {
    "default": true,
+   "form_section": "HakrawlerSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4195,6 +4525,7 @@
   },
   "hakrawlerInsecure": {
    "default": true,
+   "form_section": "HakrawlerSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4212,9 +4543,10 @@
   "hakrawlerMaxUrls": {
    "bounds": {
     "min": 1,
-    "max": 10000000
+    "max": 100000
    },
    "default": 50000,
+   "form_section": "HakrawlerSection",
    "governor": {
     "model": "budget",
     "family": "url",
@@ -4240,6 +4572,7 @@
     "max": 10
    },
    "default": 5,
+   "form_section": "HakrawlerSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -4264,6 +4597,7 @@
     "max": 20
    },
    "default": 5,
+   "form_section": "HakrawlerSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -4287,6 +4621,7 @@
     "max": 86400
    },
    "default": 30,
+   "form_section": "HakrawlerSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -4303,6 +4638,7 @@
   },
   "httpProbeAiFaviconHashEnabled": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -4319,6 +4655,7 @@
   },
   "httpProbeAiHeaderScanEnabled": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -4335,6 +4672,7 @@
   },
   "httpProbeAiTitleDetectionEnabled": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -4351,6 +4689,7 @@
   },
   "httpProbeAiWappalyzerEnabled": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -4367,6 +4706,7 @@
   },
   "httpxCustomHeaders": {
    "default": [],
+   "form_section": "HttpxSection",
    "group": "headers",
    "has_default": true,
    "mcp": "settable",
@@ -4384,6 +4724,7 @@
   },
   "httpxDockerImage": {
    "default": "projectdiscovery/httpx:latest",
+   "form_section": "HttpxSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -4397,10 +4738,28 @@
    "traffic": "active",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "httpxEnabled": {
    "default": true,
+   "form_section": "HttpxSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether httpx runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -4416,6 +4775,7 @@
   },
   "httpxFilterCodes": {
    "default": [],
+   "form_section": "HttpxSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Hide responses with these status codes",
@@ -4432,6 +4792,7 @@
   },
   "httpxFollowRedirects": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4448,6 +4809,7 @@
   },
   "httpxIncludeResponse": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4464,6 +4826,7 @@
   },
   "httpxIncludeResponseHeaders": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4480,6 +4843,7 @@
   },
   "httpxMatchCodes": {
    "default": [],
+   "form_section": "HttpxSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Only show responses with these status codes",
@@ -4500,6 +4864,7 @@
     "max": 50
    },
    "default": 10,
+   "form_section": "HttpxSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Maximum redirect chain depth to prevent loops",
@@ -4515,6 +4880,7 @@
   },
   "httpxPaths": {
    "default": [],
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4532,6 +4898,7 @@
   },
   "httpxProbeAsn": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4548,6 +4915,7 @@
   },
   "httpxProbeCdn": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4564,6 +4932,7 @@
   },
   "httpxProbeCname": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4580,6 +4949,7 @@
   },
   "httpxProbeContentLength": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4596,6 +4966,7 @@
   },
   "httpxProbeContentType": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4612,6 +4983,7 @@
   },
   "httpxProbeFavicon": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4631,6 +5003,7 @@
   },
   "httpxProbeHash": {
    "default": "sha256",
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4648,6 +5021,7 @@
   },
   "httpxProbeIp": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4664,6 +5038,7 @@
   },
   "httpxProbeJarm": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4683,6 +5058,7 @@
   },
   "httpxProbeLineCount": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4699,6 +5075,7 @@
   },
   "httpxProbeResponseTime": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4715,6 +5092,7 @@
   },
   "httpxProbeServer": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4731,6 +5109,7 @@
   },
   "httpxProbeStatusCode": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4747,6 +5126,7 @@
   },
   "httpxProbeTechDetect": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4763,6 +5143,7 @@
   },
   "httpxProbeTitle": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4779,6 +5160,7 @@
   },
   "httpxProbeTlsGrab": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4795,6 +5177,7 @@
   },
   "httpxProbeTlsInfo": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4811,6 +5194,7 @@
   },
   "httpxProbeWordCount": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -4831,6 +5215,7 @@
     "max": 100000
    },
    "default": 50,
+   "form_section": "HttpxSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -4854,6 +5239,7 @@
     "max": 10
    },
    "default": 2,
+   "form_section": "HttpxSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many times httpx retries a failed request before giving up on it.",
@@ -4873,6 +5259,7 @@
     "max": 200
    },
    "default": 50,
+   "form_section": "HttpxSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -4899,6 +5286,7 @@
     "max": 86400
    },
    "default": 10,
+   "form_section": "HttpxSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -4919,6 +5307,7 @@
     "max": 120
    },
    "default": 32,
+   "form_section": "BruteForceSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -4935,6 +5324,7 @@
   },
   "hydraEnabled": {
    "default": true,
+   "form_section": "AttackSkillsSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -4951,6 +5341,7 @@
   },
   "hydraExtraChecks": {
    "default": "nsr",
+   "form_section": "BruteForceSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -4972,6 +5363,7 @@
     "max": 10
    },
    "default": 3,
+   "form_section": "BruteForceSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -4988,6 +5380,7 @@
   },
   "hydraStopOnFirstFound": {
    "default": true,
+   "form_section": "BruteForceSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -5008,6 +5401,7 @@
     "max": 64
    },
    "default": 16,
+   "form_section": "BruteForceSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -5024,6 +5418,7 @@
   },
   "hydraVerbose": {
    "default": true,
+   "form_section": "BruteForceSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -5044,6 +5439,7 @@
     "max": 300
    },
    "default": 0,
+   "form_section": "BruteForceSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -5062,6 +5458,7 @@
   "id": {
    "default": null,
    "deny_reason": "identity",
+   "form_section": "TargetSection",
    "group": "identity",
    "has_default": true,
    "mcp": "never",
@@ -5079,6 +5476,7 @@
   },
   "ipMode": {
    "default": false,
+   "form_section": "TargetSection",
    "group": "scope",
    "has_default": true,
    "mcp": "create_only",
@@ -5095,6 +5493,7 @@
   },
   "jsReconAiSdkDetectionEnabled": {
    "default": true,
+   "form_section": "JsReconSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -5115,6 +5514,7 @@
     "max": 30
    },
    "default": 10,
+   "form_section": "JsReconSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -5135,6 +5535,7 @@
   "jsReconCustomEndpointKeywords": {
    "default": "",
    "deny_reason": "upload-managed",
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "never",
@@ -5154,6 +5555,7 @@
   "jsReconCustomFrameworks": {
    "default": "",
    "deny_reason": "upload-managed",
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "never",
@@ -5173,6 +5575,7 @@
   "jsReconCustomPackages": {
    "default": "",
    "deny_reason": "upload-managed",
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "never",
@@ -5192,6 +5595,7 @@
   "jsReconCustomPatterns": {
    "default": "",
    "deny_reason": "upload-managed",
+   "form_section": "JsReconSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "never",
@@ -5211,6 +5615,7 @@
   "jsReconCustomSourcemapPaths": {
    "default": "",
    "deny_reason": "upload-managed",
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "never",
@@ -5229,6 +5634,7 @@
   },
   "jsReconDependencyCheck": {
    "default": true,
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5245,6 +5651,7 @@
   },
   "jsReconDevComments": {
    "default": true,
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5261,6 +5668,7 @@
   },
   "jsReconDomSinks": {
    "default": true,
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5277,6 +5685,7 @@
   },
   "jsReconEnabled": {
    "default": false,
+   "form_section": "JsReconSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether JS recon runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -5304,6 +5713,7 @@
     405
    ],
    "fallback": "falsy",
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5325,6 +5735,7 @@
     "max": 20
    },
    "default": 10,
+   "form_section": "JsReconSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -5344,6 +5755,7 @@
   },
   "jsReconEndpointCustomHeaders": {
    "default": [],
+   "form_section": "JsReconSection",
    "group": "headers",
    "has_default": true,
    "mcp": "settable",
@@ -5361,6 +5773,7 @@
   },
   "jsReconExtractEndpoints": {
    "default": true,
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5377,6 +5790,7 @@
   },
   "jsReconFrameworkDetect": {
    "default": true,
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5393,6 +5807,7 @@
   },
   "jsReconIncludeArchivedJs": {
    "default": true,
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5409,6 +5824,7 @@
   },
   "jsReconIncludeChunks": {
    "default": true,
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5428,6 +5844,7 @@
   },
   "jsReconIncludeFrameworkJs": {
    "default": true,
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5451,6 +5868,7 @@
     "max": 10000
    },
    "default": 10000,
+   "form_section": "JsReconSection",
    "governor": {
     "model": "budget",
     "family": "js_file",
@@ -5475,6 +5893,7 @@
   },
   "jsReconMinConfidence": {
    "default": "low",
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5492,6 +5911,7 @@
   },
   "jsReconRegexPatterns": {
    "default": true,
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5508,6 +5928,7 @@
   },
   "jsReconSourceMaps": {
    "default": true,
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5528,6 +5949,7 @@
     "max": 50
    },
    "default": 3,
+   "form_section": "JsReconSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -5544,6 +5966,7 @@
   },
   "jsReconStandaloneCrawlScope": {
    "default": "subdomain",
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5565,6 +5988,7 @@
     "max": 86400
    },
    "default": 900,
+   "form_section": "JsReconSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -5582,6 +6006,7 @@
   "jsReconUploadedFiles": {
    "default": [],
    "deny_reason": "upload-managed",
+   "form_section": "JsReconSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "never",
@@ -5600,6 +6025,7 @@
   },
   "jsReconValidateEndpoints": {
    "default": false,
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5616,6 +6042,7 @@
   },
   "jsReconValidateKeys": {
    "default": true,
+   "form_section": "JsReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5639,6 +6066,7 @@
     "max": 30
    },
    "default": 5,
+   "form_section": "JsReconSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How long JS recon may spend before it is abandoned, in seconds. A run that hits it contributes whatever it found so far rather than failing the scan.",
@@ -5658,6 +6086,7 @@
     "max": 20
    },
    "default": 5,
+   "form_section": "JsluiceSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -5677,6 +6106,7 @@
   },
   "jsluiceEnabled": {
    "default": true,
+   "form_section": "JsluiceSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether jsluice runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -5693,6 +6123,7 @@
   "jsluiceExcludePatterns": {
    "default": [],
    "fallback": "falsy",
+   "form_section": "JsluiceSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5710,6 +6141,7 @@
   },
   "jsluiceExtractSecrets": {
    "default": true,
+   "form_section": "JsluiceSection",
    "group": "secret",
    "has_default": true,
    "mcp": "settable",
@@ -5726,6 +6158,7 @@
   },
   "jsluiceExtractUrls": {
    "default": true,
+   "form_section": "JsluiceSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5746,6 +6179,7 @@
     "max": 10000
    },
    "default": 10000,
+   "form_section": "JsluiceSection",
    "governor": {
     "model": "budget",
     "family": "js_file",
@@ -5774,6 +6208,7 @@
     "max": 10
    },
    "default": 5,
+   "form_section": "JsluiceSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -5801,6 +6236,7 @@
     "max": 86400
    },
    "default": 300,
+   "form_section": "JsluiceSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -5827,6 +6263,7 @@
     403
    ],
    "fallback": "falsy",
+   "form_section": "JsluiceSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5844,6 +6281,7 @@
   },
   "jsluiceVerifyDockerImage": {
    "default": "projectdiscovery/httpx:latest",
+   "form_section": "JsluiceSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -5857,7 +6295,24 @@
    "traffic": "active",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "jsluiceVerifyRateLimit": {
    "bounds": {
@@ -5865,6 +6320,7 @@
     "max": 1000
    },
    "default": 50,
+   "form_section": "JsluiceSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Requests per second jsluice sends. Capped to the engagement ceiling at scan start, so a value above the ceiling is rewritten rather than refused.",
@@ -5884,6 +6340,7 @@
     "max": 500
    },
    "default": 50,
+   "form_section": "JsluiceSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -5907,6 +6364,7 @@
     "max": 60
    },
    "default": 5,
+   "form_section": "JsluiceSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How long jsluice may spend before it is abandoned, in seconds. A run that hits it contributes whatever it found so far rather than failing the scan.",
@@ -5922,6 +6380,7 @@
   },
   "jsluiceVerifyUrls": {
    "default": true,
+   "form_section": "JsluiceSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -5942,6 +6401,7 @@
     "max": 50
    },
    "default": 15,
+   "form_section": "KatanaSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -5964,6 +6424,7 @@
   },
   "katanaCustomHeaders": {
    "default": [],
+   "form_section": "KatanaSection",
    "group": "headers",
    "has_default": true,
    "mcp": "settable",
@@ -5985,6 +6446,7 @@
     "max": 10
    },
    "default": 2,
+   "form_section": "KatanaSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many links deep the crawl goes from each seed URL.",
@@ -6003,6 +6465,7 @@
   },
   "katanaDockerImage": {
    "default": "projectdiscovery/katana:latest",
+   "form_section": "KatanaSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -6016,10 +6479,28 @@
    "traffic": "active",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "katanaEnabled": {
    "default": true,
+   "form_section": "KatanaSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether katana runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -6035,6 +6516,7 @@
   },
   "katanaExcludePatterns": {
    "default": [],
+   "form_section": "KatanaSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6052,6 +6534,7 @@
   },
   "katanaJsCrawl": {
    "default": true,
+   "form_section": "KatanaSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6072,9 +6555,10 @@
   "katanaMaxUrls": {
    "bounds": {
     "min": 1,
-    "max": 10000000
+    "max": 1000000
    },
    "default": 300000,
+   "form_section": "KatanaSection",
    "governor": {
     "model": "budget",
     "family": "url",
@@ -6103,6 +6587,7 @@
     "max": 50
    },
    "default": 8,
+   "form_section": "KatanaSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -6126,6 +6611,7 @@
   },
   "katanaParamsOnly": {
    "default": false,
+   "form_section": "KatanaSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6146,6 +6632,7 @@
     "max": 100000
    },
    "default": 50,
+   "form_section": "KatanaSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -6165,6 +6652,7 @@
   },
   "katanaScope": {
    "default": "dn",
+   "form_section": "KatanaSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6186,6 +6674,7 @@
     "max": 86400
    },
    "default": 3600,
+   "form_section": "KatanaSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -6207,6 +6696,7 @@
     "DELETE",
     "PATCH"
    ],
+   "form_section": "KiterunnerSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6228,6 +6718,7 @@
     "max": 500
    },
    "default": 100,
+   "form_section": "KiterunnerSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -6248,6 +6739,7 @@
   },
   "kiterunnerDetectMethods": {
    "default": true,
+   "form_section": "KiterunnerSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6264,6 +6756,7 @@
   },
   "kiterunnerEnabled": {
    "default": false,
+   "form_section": "KiterunnerSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether kiterunner runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -6282,6 +6775,7 @@
   },
   "kiterunnerHeaders": {
    "default": [],
+   "form_section": "KiterunnerSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6299,6 +6793,7 @@
   },
   "kiterunnerIgnoreStatus": {
    "default": [],
+   "form_section": "KiterunnerSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6325,6 +6820,7 @@
     403,
     405
    ],
+   "form_section": "KiterunnerSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6346,6 +6842,7 @@
     "max": 100000
    },
    "default": 50,
+   "form_section": "KiterunnerSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -6366,6 +6863,7 @@
     "max": 500
    },
    "default": 25,
+   "form_section": "KiterunnerSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -6390,6 +6888,7 @@
     "max": 86400
    },
    "default": 5,
+   "form_section": "KiterunnerSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -6406,6 +6905,7 @@
   },
   "kiterunnerMethodDetectionMode": {
    "default": "bruteforce",
+   "form_section": "KiterunnerSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6424,9 +6924,10 @@
   "kiterunnerMinContentLength": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 100000
    },
    "default": 0,
+   "form_section": "KiterunnerSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6448,6 +6949,7 @@
     "max": 5
    },
    "default": 3,
+   "form_section": "KiterunnerSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -6472,6 +6974,7 @@
     "max": 100000
    },
    "default": 100,
+   "form_section": "KiterunnerSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -6492,6 +6995,7 @@
     "max": 86400
    },
    "default": 1000,
+   "form_section": "KiterunnerSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -6512,6 +7016,7 @@
     "max": 500
    },
    "default": 50,
+   "form_section": "KiterunnerSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -6536,6 +7041,7 @@
     "max": 86400
    },
    "default": 10,
+   "form_section": "KiterunnerSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -6554,6 +7060,7 @@
    "default": [
     "routes-large"
    ],
+   "form_section": "KiterunnerSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -6571,6 +7078,7 @@
   },
   "knockpyReconEnabled": {
    "default": true,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether knockpy runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -6590,6 +7098,7 @@
     "max": 50000
    },
    "default": 5000,
+   "form_section": "SubdomainDiscoverySection",
    "governor": {
     "model": "budget",
     "family": "osint_result",
@@ -6613,6 +7122,7 @@
   },
   "masscanAiPortCatalogEnabled": {
    "default": true,
+   "form_section": "MasscanSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -6629,6 +7139,7 @@
   },
   "masscanBanners": {
    "default": false,
+   "form_section": "MasscanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6645,6 +7156,7 @@
   },
   "masscanCustomPorts": {
    "default": "",
+   "form_section": "MasscanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6662,6 +7174,7 @@
   },
   "masscanEnabled": {
    "default": true,
+   "form_section": "MasscanSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether masscan runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -6680,6 +7193,7 @@
   },
   "masscanExcludeTargets": {
    "default": "",
+   "form_section": "MasscanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6701,6 +7215,7 @@
     "max": 100000
    },
    "default": 1000,
+   "form_section": "MasscanSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -6721,6 +7236,7 @@
     "max": 10
    },
    "default": 1,
+   "form_section": "MasscanSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many times masscan retries a failed request before giving up on it.",
@@ -6736,6 +7252,7 @@
   },
   "masscanTopPorts": {
    "default": "1000",
+   "form_section": "MasscanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6757,6 +7274,7 @@
     "max": 86400
    },
    "default": 10,
+   "form_section": "MasscanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6774,6 +7292,7 @@
   "mcpKaliExecEnabled": {
    "default": false,
    "deny_reason": "escalation",
+   "form_section": "TargetSection",
    "group": "escalation",
    "has_default": true,
    "mcp": "never",
@@ -6790,6 +7309,7 @@
   },
   "mitreAutoUpdateDb": {
    "default": true,
+   "form_section": "MitreSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6810,6 +7330,7 @@
     "max": 168
    },
    "default": 24,
+   "form_section": "MitreSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6826,6 +7347,7 @@
   },
   "mitreEnabled": {
    "default": true,
+   "form_section": "MitreSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether mitre runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -6841,6 +7363,7 @@
   },
   "mitreEnrichGvm": {
    "default": true,
+   "form_section": "MitreSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6857,6 +7380,7 @@
   },
   "mitreEnrichRecon": {
    "default": true,
+   "form_section": "MitreSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6873,6 +7397,7 @@
   },
   "mitreIncludeCapec": {
    "default": true,
+   "form_section": "MitreSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6889,6 +7414,7 @@
   },
   "mitreIncludeCwe": {
    "default": true,
+   "form_section": "MitreSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6905,6 +7431,7 @@
   },
   "naabuCustomPorts": {
    "default": "",
+   "form_section": "NaabuSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6922,6 +7449,7 @@
   },
   "naabuDisplayCdn": {
    "default": true,
+   "form_section": "NaabuSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6938,6 +7466,7 @@
   },
   "naabuDockerImage": {
    "default": "projectdiscovery/naabu:latest",
+   "form_section": "NaabuSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -6951,10 +7480,28 @@
    "traffic": "active",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "naabuEnabled": {
    "default": true,
+   "form_section": "NaabuSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether naabu runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -6970,6 +7517,7 @@
   },
   "naabuExcludeCdn": {
    "default": false,
+   "form_section": "NaabuSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -6986,6 +7534,7 @@
   },
   "naabuPassiveMode": {
    "default": false,
+   "form_section": "NaabuSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7009,6 +7558,7 @@
     "max": 100000
    },
    "default": 1000,
+   "form_section": "NaabuSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -7032,6 +7582,7 @@
     "max": 10
    },
    "default": 1,
+   "form_section": "NaabuSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many times naabu retries a failed request before giving up on it.",
@@ -7047,6 +7598,7 @@
   },
   "naabuScanType": {
    "default": "s",
+   "form_section": "NaabuSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7067,6 +7619,7 @@
   },
   "naabuSkipHostDiscovery": {
    "default": true,
+   "form_section": "NaabuSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7090,6 +7643,7 @@
     "max": 100
    },
    "default": 25,
+   "form_section": "NaabuSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -7116,6 +7670,7 @@
     "max": 3600000
    },
    "default": 10000,
+   "form_section": "NaabuSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -7132,6 +7687,7 @@
   },
   "naabuTopPorts": {
    "default": "1000",
+   "form_section": "NaabuSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7149,6 +7705,7 @@
   },
   "naabuVerifyPorts": {
    "default": true,
+   "form_section": "NaabuSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7165,6 +7722,7 @@
   },
   "name": {
    "default": null,
+   "form_section": "TargetSection",
    "group": "identity",
    "has_default": false,
    "mcp": "settable",
@@ -7182,6 +7740,7 @@
   },
   "netlasEnabled": {
    "default": false,
+   "form_section": "OsintEnrichmentSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether netlas runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -7201,6 +7760,7 @@
     "max": 20
    },
    "default": 5,
+   "form_section": "OsintEnrichmentSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -7223,6 +7783,7 @@
   },
   "nmapAiVersionRegexEnabled": {
    "default": true,
+   "form_section": "NmapSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -7239,6 +7800,7 @@
   },
   "nmapEnabled": {
    "default": true,
+   "form_section": "NmapSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether nmap runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -7258,6 +7820,7 @@
     "max": 86400
    },
    "default": 300,
+   "form_section": "NmapSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -7278,6 +7841,7 @@
     "max": 10
    },
    "default": 5,
+   "form_section": "NmapSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -7301,6 +7865,7 @@
   },
   "nmapScriptScan": {
    "default": true,
+   "form_section": "NmapSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7324,6 +7889,7 @@
     "max": 86400
    },
    "default": 600,
+   "form_section": "NmapSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -7340,6 +7906,7 @@
   },
   "nmapTimingTemplate": {
    "default": "T3",
+   "form_section": "NmapSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -7360,6 +7927,7 @@
   },
   "nmapVersionDetection": {
    "default": true,
+   "form_section": "NmapSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7376,6 +7944,7 @@
   },
   "nucleiAiResponseFilter": {
    "default": false,
+   "form_section": "NucleiSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -7392,6 +7961,7 @@
   },
   "nucleiAiTags": {
    "default": false,
+   "form_section": "NucleiSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -7408,6 +7978,7 @@
   },
   "nucleiAutoUpdateTemplates": {
    "default": true,
+   "form_section": "NucleiSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -7428,6 +7999,7 @@
     "max": 500
    },
    "default": 25,
+   "form_section": "NucleiSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -7455,6 +8027,7 @@
     "max": 500
    },
    "default": 25,
+   "form_section": "NucleiSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -7478,6 +8051,7 @@
   },
   "nucleiCustomTemplates": {
    "default": [],
+   "form_section": "NucleiSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -7495,6 +8069,7 @@
   },
   "nucleiDastMode": {
    "default": false,
+   "form_section": "NucleiSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -7514,6 +8089,7 @@
   },
   "nucleiDockerImage": {
    "default": "projectdiscovery/nuclei:latest",
+   "form_section": "NucleiSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -7527,10 +8103,28 @@
    "traffic": "active",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "nucleiEnabled": {
    "default": true,
+   "form_section": "NucleiSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether nuclei runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -7549,6 +8143,7 @@
     "dos",
     "fuzz"
    ],
+   "form_section": "NucleiSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7566,6 +8161,7 @@
   },
   "nucleiExcludeTemplates": {
    "default": [],
+   "form_section": "NucleiSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -7583,6 +8179,7 @@
   },
   "nucleiFollowRedirects": {
    "default": true,
+   "form_section": "NucleiSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7599,6 +8196,7 @@
   },
   "nucleiHeadless": {
    "default": false,
+   "form_section": "NucleiSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -7618,6 +8216,7 @@
   },
   "nucleiInteractsh": {
    "default": true,
+   "form_section": "NucleiSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -7641,6 +8240,7 @@
     "max": 50
    },
    "default": 10,
+   "form_section": "NucleiSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Maximum redirect chain to follow",
@@ -7656,6 +8256,7 @@
   },
   "nucleiNewTemplatesOnly": {
    "default": false,
+   "form_section": "NucleiSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -7676,6 +8277,7 @@
     "max": 100000
    },
    "default": 100,
+   "form_section": "NucleiSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -7699,6 +8301,7 @@
     "max": 10
    },
    "default": 1,
+   "form_section": "NucleiSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many times nuclei retries a failed request before giving up on it.",
@@ -7714,6 +8317,7 @@
   },
   "nucleiScanAllIps": {
    "default": false,
+   "form_section": "NucleiSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7730,6 +8334,7 @@
   },
   "nucleiSelectedCustomTemplates": {
    "default": [],
+   "form_section": "NucleiSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -7752,6 +8357,7 @@
     "medium",
     "low"
    ],
+   "form_section": "NucleiSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Severity filter: \"critical\", \"high\", \"medium\", \"low\"",
@@ -7776,6 +8382,7 @@
   },
   "nucleiSystemResolvers": {
    "default": true,
+   "form_section": "NucleiSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7801,6 +8408,7 @@
     "xxe",
     "ssti"
    ],
+   "form_section": "NucleiSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -7822,6 +8430,7 @@
     "max": 86400
    },
    "default": 1800,
+   "form_section": "NucleiSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -7838,6 +8447,7 @@
   },
   "nucleiTakeoversEnabled": {
    "default": true,
+   "form_section": "TakeoverSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether nuclei runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -7856,6 +8466,7 @@
   },
   "nucleiTemplates": {
    "default": [],
+   "form_section": "NucleiSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -7877,6 +8488,7 @@
     "max": 86400
    },
    "default": 10,
+   "form_section": "NucleiSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -7893,6 +8505,7 @@
   },
   "originDiscoveryEnabled": {
    "default": false,
+   "form_section": "OriginDiscoverySection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -7909,6 +8522,7 @@
   },
   "originDiscoveryKeyless": {
    "default": true,
+   "form_section": "OriginDiscoverySection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -7929,6 +8543,7 @@
     "max": 200
    },
    "default": 25,
+   "form_section": "OriginDiscoverySection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -7949,6 +8564,7 @@
     "max": 500
    },
    "default": 50,
+   "form_section": "OriginDiscoverySection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -7965,6 +8581,7 @@
   },
   "originDiscoveryPassiveDns": {
    "default": true,
+   "form_section": "OriginDiscoverySection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -7981,6 +8598,7 @@
   },
   "originDiscoveryScanners": {
    "default": true,
+   "form_section": "OriginDiscoverySection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -8004,6 +8622,7 @@
     "max": 100
    },
    "default": 60,
+   "form_section": "OriginDiscoverySection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -8024,6 +8643,7 @@
     "max": 60
    },
    "default": 10,
+   "form_section": "OriginDiscoverySection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -8044,6 +8664,7 @@
     "max": 30
    },
    "default": 10,
+   "form_section": "OriginDiscoverySection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -8063,6 +8684,7 @@
   },
   "osintEnrichmentEnabled": {
    "default": false,
+   "form_section": "OsintEnrichmentSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether OSINT enrichment runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -8078,6 +8700,7 @@
   },
   "otxEnabled": {
    "default": true,
+   "form_section": "OsintEnrichmentSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether otx runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -8097,6 +8720,7 @@
     "max": 20
    },
    "default": 5,
+   "form_section": "OsintEnrichmentSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -8119,6 +8743,7 @@
   },
   "ownershipToken": {
    "default": "your-secret-token-here",
+   "form_section": "TargetSection",
    "group": "scope",
    "has_default": true,
    "mcp": "create_only",
@@ -8138,6 +8763,7 @@
   },
   "ownershipTxtPrefix": {
    "default": "_redamon-verify",
+   "form_section": "TargetSection",
    "group": "scope",
    "has_default": true,
    "mcp": "create_only",
@@ -8155,6 +8781,7 @@
   },
   "paramspiderEnabled": {
    "default": false,
+   "form_section": "ParamSpiderSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether paramspider runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -8173,6 +8800,7 @@
   },
   "paramspiderPlaceholder": {
    "default": "FUZZ",
+   "form_section": "ParamSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -8194,6 +8822,7 @@
     "max": 86400
    },
    "default": 120,
+   "form_section": "ParamSpiderSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -8214,6 +8843,7 @@
     "max": 10
    },
    "default": 8,
+   "form_section": "ParamSpiderSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -8236,6 +8866,7 @@
   },
   "pathTraversalArchiveExtractionEnabled": {
    "default": false,
+   "form_section": "PathTraversalSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -8252,6 +8883,7 @@
   },
   "pathTraversalOobCallbackEnabled": {
    "default": true,
+   "form_section": "PathTraversalSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -8268,6 +8900,7 @@
   },
   "pathTraversalOobProvider": {
    "default": "oast.fun",
+   "form_section": "PathTraversalSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -8285,6 +8918,7 @@
   },
   "pathTraversalPayloadReferenceEnabled": {
    "default": true,
+   "form_section": "PathTraversalSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -8301,6 +8935,7 @@
   },
   "pathTraversalPhpWrappersEnabled": {
    "default": true,
+   "form_section": "PathTraversalSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -8321,6 +8956,7 @@
     "max": 120
    },
    "default": 10,
+   "form_section": "PathTraversalSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -8337,6 +8973,7 @@
   },
   "phishingSmtpConfig": {
    "default": "",
+   "form_section": "PhishingSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -8356,6 +8993,7 @@
   },
   "portScanAiPortCatalogEnabled": {
    "default": true,
+   "form_section": "NaabuSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -8372,6 +9010,7 @@
   },
   "purednsDockerImage": {
    "default": "frost19k/puredns:latest",
+   "form_section": "SubdomainDiscoverySection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -8385,10 +9024,28 @@
    "traffic": "active",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "purednsEnabled": {
    "default": true,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether puredns runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -8411,6 +9068,7 @@
     "max": 100000
    },
    "default": 0,
+   "form_section": "SubdomainDiscoverySection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -8428,6 +9086,7 @@
   },
   "purednsSkipValidation": {
    "default": false,
+   "form_section": "SubdomainDiscoverySection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -8448,6 +9107,7 @@
     "max": 1000
    },
    "default": 0,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many puredns operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -8465,9 +9125,10 @@
   "purednsWildcardBatch": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 100000
    },
    "default": 0,
+   "form_section": "SubdomainDiscoverySection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -8485,6 +9146,7 @@
   },
   "rceAggressivePayloads": {
    "default": false,
+   "form_section": "RceSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -8501,6 +9163,7 @@
   },
   "rceDeserializationEnabled": {
    "default": true,
+   "form_section": "RceSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -8517,6 +9180,7 @@
   },
   "rceOobCallbackEnabled": {
    "default": true,
+   "form_section": "RceSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -8534,6 +9198,7 @@
   "reconPresetId": {
    "default": null,
    "deny_reason": "internal",
+   "form_section": "TargetSection",
    "group": "internal",
    "has_default": false,
    "mcp": "never",
@@ -8551,6 +9216,7 @@
   },
   "resourceEnumAiClassifierEnabled": {
    "default": true,
+   "form_section": "ResourceEnumAiSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -8567,6 +9233,7 @@
   },
   "resourceEnumAiParamInjectableFlagEnabled": {
    "default": true,
+   "form_section": "ResourceEnumAiSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -8583,6 +9250,7 @@
   },
   "resourceEnumAiPathClassifierEnabled": {
    "default": true,
+   "form_section": "ResourceEnumAiSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -8599,6 +9267,7 @@
   },
   "resourceEnumAiRagPathFlagEnabled": {
    "default": true,
+   "form_section": "ResourceEnumAiSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -8615,6 +9284,7 @@
   },
   "resourceEnumAiToolArgPathEnabled": {
    "default": true,
+   "form_section": "ResourceEnumAiSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -8631,16 +9301,16 @@
   },
   "roeAllowAccountLockout": {
    "default": false,
-   "group": "roe",
+   "form_section": "AgentBehaviourSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "Whether a technique that can lock a real account out is permitted. Off keeps credential attacks to a single attempt per account. After creation this may only go true to false.",
+   "mcp": "settable",
+   "meaning": "Whether a technique that can lock a real account out is permitted. Off keeps credential attacks to a single attempt per account and withholds the lockout-capable skills from the agent's options.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "true_to_false",
    "tool": "roe",
    "traffic": "none",
    "type": "boolean",
@@ -8648,16 +9318,17 @@
   },
   "roeAllowDataExfiltration": {
    "default": false,
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "Whether a finding may be proven by moving data off the target. Off means the out-of-band callback paths and collector egress are refused at scan start. After creation this may only go true to false.",
+   "mcp": "never",
+   "meaning": "Whether a finding may be proven by moving data off the target. Part of the engagement RECORD: it is injected into the agent's prompt and read by a model, and no code refuses an exfiltration path on it.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "true_to_false",
    "tool": "roe",
    "traffic": "none",
    "type": "boolean",
@@ -8665,16 +9336,16 @@
   },
   "roeAllowDos": {
    "default": false,
-   "group": "roe",
+   "form_section": "AgentBehaviourSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "Whether denial-of-service techniques are permitted. Off means the DoS module and every aggression switch that could exhaust a target are refused at scan start, whatever their own toggles say. After creation this may only go true to false.",
+   "mcp": "settable",
+   "meaning": "Whether denial-of-service techniques are permitted. Off means the DoS path is refused before it runs and the DoS skill is withheld from the agent's options, whatever their own toggles say.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "true_to_false",
    "tool": "roe",
    "traffic": "none",
    "type": "boolean",
@@ -8682,16 +9353,17 @@
   },
   "roeAllowPhysicalAccess": {
    "default": false,
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "Whether the engagement covers physical access. Recorded for the report; the pipeline has no physical capability. After creation this may only go true to false.",
+   "mcp": "never",
+   "meaning": "Whether the engagement covers physical access. Recorded for the report; the pipeline has no physical capability.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "true_to_false",
    "tool": "roe",
    "traffic": "none",
    "type": "boolean",
@@ -8699,16 +9371,17 @@
   },
   "roeAllowProductionTesting": {
    "default": true,
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "Whether production systems are in scope. Off is a statement the operator makes about the estate, not something the scanner can verify, so it constrains what an agent may choose rather than what a tool can reach.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "true_to_false",
    "tool": "roe",
    "traffic": "none",
    "type": "boolean",
@@ -8716,16 +9389,16 @@
   },
   "roeAllowSocialEngineering": {
    "default": false,
-   "group": "roe",
+   "form_section": "AgentBehaviourSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "Whether techniques aimed at people rather than systems are permitted. After creation this may only go true to false.",
+   "mcp": "settable",
+   "meaning": "Whether techniques aimed at people rather than systems are permitted. Off withholds the social-engineering skills from the agent's options.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "true_to_false",
    "tool": "roe",
    "traffic": "none",
    "type": "boolean",
@@ -8733,9 +9406,11 @@
   },
   "roeClientContactEmail": {
    "default": "",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "Where to reach the client contact by email.",
    "optional": false,
    "phase": "standalone",
@@ -8744,7 +9419,6 @@
    "readable": false,
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -8753,9 +9427,11 @@
   },
   "roeClientContactName": {
    "default": "",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "The named client contact for this engagement.",
    "optional": false,
    "phase": "standalone",
@@ -8764,7 +9440,6 @@
    "readable": false,
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -8773,9 +9448,11 @@
   },
   "roeClientContactPhone": {
    "default": "",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "Where to reach the client contact by phone.",
    "optional": false,
    "phase": "standalone",
@@ -8784,7 +9461,6 @@
    "readable": false,
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -8793,9 +9469,11 @@
   },
   "roeClientName": {
    "default": "",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "The client the engagement is for, as it should appear in the report.",
    "optional": false,
    "phase": "standalone",
@@ -8804,7 +9482,6 @@
    "readable": false,
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -8813,16 +9490,17 @@
   },
   "roeComplianceFrameworks": {
    "default": [],
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "Compliance frameworks the engagement is conducted under, recorded for the report.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String[]",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "superset",
    "tool": "roe",
    "traffic": "none",
    "type": "string-list",
@@ -8831,16 +9509,17 @@
   },
   "roeCriticalFindingNotify": {
    "default": true,
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "Whether a critical finding triggers an immediate notification rather than waiting for the report.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "true_to_false",
    "tool": "roe",
    "traffic": "none",
    "type": "boolean",
@@ -8849,19 +9528,20 @@
   "roeDataRetentionDays": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 3650
    },
    "default": 90,
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "How many days findings and captured data may be kept after the engagement ends.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "decrease",
    "tool": "roe",
    "traffic": "none",
    "type": "int",
@@ -8870,7 +9550,8 @@
   "roeDocumentData": {
    "default": null,
    "deny_reason": "upload-managed",
-   "group": "roe",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": false,
    "mcp": "never",
    "meaning": "The uploaded Rules of Engagement document itself, stored so the engagement carries its own authority. A Bytes column written only by the project create and import endpoints, which receive the file. The MCP surface records the document's SHA-256 through attach_engagement_authorization instead; it never carries the bytes.",
@@ -8890,16 +9571,17 @@
   },
   "roeDocumentMimeType": {
    "default": "",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "The media type of the uploaded Rules of Engagement document.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -8908,9 +9590,11 @@
   },
   "roeDocumentName": {
    "default": "",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "The filename of the uploaded Rules of Engagement document.",
    "optional": false,
    "phase": "standalone",
@@ -8919,7 +9603,6 @@
    "readable": false,
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -8928,9 +9611,11 @@
   },
   "roeEmergencyContact": {
    "default": "",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "Who to reach out of hours if a scan causes an incident.",
    "optional": false,
    "phase": "standalone",
@@ -8939,7 +9624,6 @@
    "readable": false,
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -8948,33 +9632,36 @@
   },
   "roeEnabled": {
    "default": false,
-   "group": "roe",
+   "deny_reason": "derived",
+   "form_section": null,
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "The master switch for the Rules of Engagement. While it is off there is NO rate ceiling at all, whatever roeGlobalMaxRps says, because the capper is gated on this flag. After creation it may only go false to true.",
+   "mcp": "never",
+   "meaning": "DERIVED, never written. Engagement limits apply when there is a limit to apply: a non-zero roeGlobalMaxRps, OR a non-empty roeExcludedHosts, OR roeTimeWindowEnabled. The column is kept so old rows and old exports still load, and every service computes the value through recon_settings.engagement.derive_roe_enabled instead of reading it. A writable master switch would be a bypass shipped as a checkbox: one write of false and the ceiling, the exclusions and the window all stop applying at once while every other field still shows its configured value.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "ROE_ENABLED",
-   "tighten": "false_to_true",
    "tool": "roe",
    "traffic": "none",
    "type": "boolean",
-   "unit": "none"
+   "unit": "none",
+   "written_by": "nothing - it is derived"
   },
   "roeEngagementEndDate": {
    "default": "",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "The last date the engagement authorises any activity.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -8983,16 +9670,17 @@
   },
   "roeEngagementStartDate": {
    "default": "",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "The first date the engagement authorises any activity.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -9001,16 +9689,17 @@
   },
   "roeEngagementType": {
    "default": "external",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "How the engagement is classified in the report: pentest, bug bounty, red team and so on.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -9019,16 +9708,16 @@
   },
   "roeExcludedHostReasons": {
    "default": [],
-   "group": "roe",
+   "form_section": "TargetSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "Why each excluded host is excluded, keyed by host. Read by the report; it does not itself exclude anything.",
+   "mcp": "settable",
+   "meaning": "Why each excluded host is excluded, parallel to roeExcludedHosts. Read by the report; it does not itself exclude anything.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String[]",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "superset",
    "tool": "roe",
    "traffic": "none",
    "type": "string-list",
@@ -9037,16 +9726,16 @@
   },
   "roeExcludedHosts": {
    "default": [],
-   "group": "roe",
+   "form_section": "TargetSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "Hosts that must never be touched even though they fall inside the target scope. After creation this may only grow: an agent that discovers a new exclusion applies it immediately, and one that wants to remove an exclusion asks a human.",
+   "mcp": "settable",
+   "meaning": "Hosts that must never be touched even though they fall inside the target scope. Enforced in three places in recon/main.py: expanded IPs, discovered subdomains and the target domain itself. A non-empty list is one of the three things that make the engagement limits live at all.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String[]",
    "roe_capped": false,
    "runtime_key": "ROE_EXCLUDED_HOSTS",
-   "tighten": "superset",
    "tool": "roe",
    "traffic": "none",
    "type": "string-list",
@@ -9055,16 +9744,16 @@
   },
   "roeForbiddenCategories": {
    "default": [],
-   "group": "roe",
+   "form_section": "AgentBehaviourSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "Technique categories that may not run on this engagement. Enforced at scan start against each module's category. After creation this list may only grow.",
+   "mcp": "settable",
+   "meaning": "Technique categories the agent may not run on this engagement. Refused before the tool executes, and also withheld from the classifier's options.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String[]",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "superset",
    "tool": "roe",
    "traffic": "none",
    "type": "string-list",
@@ -9073,16 +9762,16 @@
   },
   "roeForbiddenTools": {
    "default": [],
-   "group": "roe",
+   "form_section": "AgentBehaviourSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "Tools that may not run on this engagement, by name, whatever their own enable flag says. Enforced at scan start. After creation this list may only grow.",
+   "mcp": "settable",
+   "meaning": "Tools the agent may not run on this engagement, by name, whatever their own enable flag says. Refused before the tool executes, in agentic/orchestrator_helpers/nodes/execute_plan_node.py.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String[]",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "superset",
    "tool": "roe",
    "traffic": "none",
    "type": "string-list",
@@ -9092,19 +9781,19 @@
   "roeGlobalMaxRps": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 10000
    },
    "default": 0,
-   "group": "roe",
+   "form_section": "TargetSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "The engagement's request-rate ceiling, in requests per second. Every per-tool rate is capped to it at scan start, including the ones whose own value means 'unlimited'. ZERO MEANS NO CEILING, so a project with roeEnabled on and this at 0 is not rate-limited. After creation it may only decrease, and never back to 0 once it is non-zero.",
+   "mcp": "settable",
+   "meaning": "The engagement's request-rate ceiling, in requests per second. Every per-tool rate is capped to it at scan start, including the ones whose own value means 'unlimited'. ZERO MEANS NO CEILING, so this at 0 is not a slow engagement, it is an unlimited one. A non-zero value is also one of the three things that make the engagement limits live at all.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Int",
    "roe_capped": false,
    "runtime_key": "ROE_GLOBAL_MAX_RPS",
-   "tighten": "decrease",
    "tool": "roe",
    "traffic": "none",
    "type": "int",
@@ -9113,16 +9802,17 @@
   },
   "roeIncidentProcedure": {
    "default": "",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "What to do if the engagement causes an outage or a security incident.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -9131,34 +9821,39 @@
   },
   "roeMaxSeverityPhase": {
    "default": "post_exploitation",
-   "group": "roe",
+   "form_section": "AgentBehaviourSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "The most severe phase the engagement permits, which bounds how far an attack chain may be taken. After creation it may only move toward the less severe end.",
+   "mcp": "settable",
+   "meaning": "The most severe phase the engagement permits, which bounds how far an attack chain may be taken: informational, exploitation or post_exploitation.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
    "unit": "none",
-   "validator": "free_text"
+   "values": [
+    "informational",
+    "exploitation",
+    "post_exploitation"
+   ]
   },
   "roeNotes": {
    "default": "",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "Free-text engagement notes that did not fit another field.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -9167,9 +9862,11 @@
   },
   "roeParsedJson": {
    "default": null,
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": false,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "The structured form extracted from the uploaded document, which populated the fields above.",
    "optional": true,
    "phase": "standalone",
@@ -9178,7 +9875,6 @@
    "readable": false,
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "json",
@@ -9187,9 +9883,11 @@
   },
   "roeRawText": {
    "default": "",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "The Rules of Engagement document as plain text, kept so the report can quote it.",
    "optional": false,
    "phase": "standalone",
@@ -9198,7 +9896,6 @@
    "readable": false,
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -9207,16 +9904,17 @@
   },
   "roeRequireDataEncryption": {
    "default": true,
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "Whether engagement data must be encrypted at rest.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "true_to_false",
    "tool": "roe",
    "traffic": "none",
    "type": "boolean",
@@ -9224,16 +9922,17 @@
   },
   "roeSensitiveDataHandling": {
    "default": "no_access",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "The agreed handling rule for sensitive data encountered during the engagement.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -9242,16 +9941,17 @@
   },
   "roeStatusUpdateFrequency": {
    "default": "daily",
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "How often the client expects a progress update during the engagement.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -9260,16 +9960,17 @@
   },
   "roeThirdPartyProviders": {
    "default": [],
-   "group": "roe",
+   "deny_reason": "engagement-record",
+   "form_section": "RoeSection",
+   "group": "engagement_record",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "never",
    "meaning": "Third-party providers hosting in-scope assets, who may need their own notification.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String[]",
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "superset",
    "tool": "roe",
    "traffic": "none",
    "type": "string-list",
@@ -9284,16 +9985,16 @@
     "thursday",
     "friday"
    ],
-   "group": "roe",
+   "form_section": "TargetSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "Days of the week on which scanning is permitted.",
+   "mcp": "settable",
+   "meaning": "Days of the week on which scanning is permitted, lower-case English names. Empty means every day, once the window is switched on.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String[]",
    "roe_capped": false,
    "runtime_key": "ROE_TIME_WINDOW_DAYS",
-   "tighten": "superset",
    "tool": "roe",
    "traffic": "none",
    "type": "string-list",
@@ -9302,16 +10003,16 @@
   },
   "roeTimeWindowEnabled": {
    "default": false,
-   "group": "roe",
+   "form_section": "TargetSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "Whether scanning is restricted to an agreed time window.",
+   "mcp": "settable",
+   "meaning": "Whether scanning is restricted to an agreed time window. The recon pipeline and the orchestrator both enforce it, and the orchestrator refuses a scan start outside the window with HTTP 403 rather than queueing it. Switching it on is one of the three things that make the engagement limits live at all.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Boolean",
    "roe_capped": false,
    "runtime_key": "ROE_TIME_WINDOW_ENABLED",
-   "tighten": "true_to_false",
    "tool": "roe",
    "traffic": "none",
    "type": "boolean",
@@ -9319,16 +10020,16 @@
   },
   "roeTimeWindowEndTime": {
    "default": "18:00",
-   "group": "roe",
+   "form_section": "TargetSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
-   "meaning": "Local end of the permitted scanning window, as HH:MM.",
+   "mcp": "settable",
+   "meaning": "Local end of the permitted scanning window, as HH:MM. An end before the start is read as a window that crosses midnight.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": "ROE_TIME_WINDOW_END_TIME",
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -9337,16 +10038,16 @@
   },
   "roeTimeWindowStartTime": {
    "default": "09:00",
-   "group": "roe",
+   "form_section": "TargetSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "settable",
    "meaning": "Local start of the permitted scanning window, as HH:MM.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": "ROE_TIME_WINDOW_START_TIME",
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -9355,16 +10056,16 @@
   },
   "roeTimeWindowTimezone": {
    "default": "UTC",
-   "group": "roe",
+   "form_section": "TargetSection",
+   "group": "engagement_limits",
    "has_default": true,
-   "mcp": "tighten_only",
+   "mcp": "settable",
    "meaning": "The IANA timezone the scanning window's times are read in.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String",
    "roe_capped": false,
    "runtime_key": "ROE_TIME_WINDOW_TIMEZONE",
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
@@ -9373,6 +10074,7 @@
   },
   "scaIntelCorrelationEnabled": {
    "default": true,
+   "form_section": "SupplyChainReconSection",
    "group": "othertarget",
    "has_default": true,
    "mcp": "create_only",
@@ -9395,6 +10097,7 @@
     "resource_enum",
     "vuln_scan"
    ],
+   "form_section": "ScanModulesSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Pipeline phases to run. Values: \"domain_discovery\", \"port_scan\", \"http_probe\", \"resource_enum\", \"vuln_scan\", \"js_recon\"",
@@ -9419,6 +10122,7 @@
   },
   "securityCheckAdminPortExposed": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9438,6 +10142,7 @@
   },
   "securityCheckBasicAuthNoTls": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9454,6 +10159,7 @@
   },
   "securityCheckCacheControlMissing": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9470,6 +10176,7 @@
   },
   "securityCheckCspUnsafeInline": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9486,6 +10193,7 @@
   },
   "securityCheckDatabaseExposed": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9505,6 +10213,7 @@
   },
   "securityCheckDirectIpHttp": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9524,6 +10233,7 @@
   },
   "securityCheckDirectIpHttps": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9543,6 +10253,7 @@
   },
   "securityCheckDmarcMissing": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9559,6 +10270,7 @@
   },
   "securityCheckDnssecMissing": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9575,6 +10287,7 @@
   },
   "securityCheckEnabled": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether Security checks runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -9590,6 +10303,7 @@
   },
   "securityCheckInsecureFormAction": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9606,6 +10320,7 @@
   },
   "securityCheckIpApiExposed": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9622,6 +10337,7 @@
   },
   "securityCheckKubernetesApiExposed": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9641,6 +10357,7 @@
   },
   "securityCheckLoginNoHttps": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9661,6 +10378,7 @@
     "max": 50
    },
    "default": 10,
+   "form_section": "SecurityChecksSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -9680,6 +10398,7 @@
   },
   "securityCheckMissingCoep": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9696,6 +10415,7 @@
   },
   "securityCheckMissingCoop": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9712,6 +10432,7 @@
   },
   "securityCheckMissingCorp": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9728,6 +10449,7 @@
   },
   "securityCheckMissingPermissionsPolicy": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9744,6 +10466,7 @@
   },
   "securityCheckMissingReferrerPolicy": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9760,6 +10483,7 @@
   },
   "securityCheckNoRateLimiting": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9779,6 +10503,7 @@
   },
   "securityCheckRedisNoAuth": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9798,6 +10523,7 @@
   },
   "securityCheckSessionNoHttponly": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9814,6 +10540,7 @@
   },
   "securityCheckSessionNoSecure": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9830,6 +10557,7 @@
   },
   "securityCheckSmtpOpenRelay": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -9849,6 +10577,7 @@
   },
   "securityCheckSpfMissing": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9869,6 +10598,7 @@
     "max": 86400
    },
    "default": 10,
+   "form_section": "SecurityChecksSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -9885,6 +10615,7 @@
   },
   "securityCheckTlsExpired": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9901,6 +10632,7 @@
   },
   "securityCheckTlsExpiringSoon": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9921,6 +10653,7 @@
     "max": 365
    },
    "default": 30,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9937,6 +10670,7 @@
   },
   "securityCheckTlsHostnameMismatch": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9953,6 +10687,7 @@
   },
   "securityCheckTlsSelfSigned": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9969,6 +10704,7 @@
   },
   "securityCheckTlsWeakCipher": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -9985,6 +10721,7 @@
   },
   "securityCheckTlsWeakVersion": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10001,6 +10738,7 @@
   },
   "securityCheckTlsWildcardOverbroad": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10017,6 +10755,7 @@
   },
   "securityCheckWafBypass": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10036,6 +10775,7 @@
   },
   "securityCheckZoneTransfer": {
    "default": true,
+   "form_section": "SecurityChecksSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10055,6 +10795,7 @@
   },
   "shodanDomainDns": {
    "default": false,
+   "form_section": "ShodanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10071,6 +10812,7 @@
   },
   "shodanEnabled": {
    "default": true,
+   "form_section": "ShodanSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether shodan runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -10086,6 +10828,7 @@
   },
   "shodanHostLookup": {
    "default": true,
+   "form_section": "ShodanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10102,6 +10845,7 @@
   },
   "shodanPassiveCves": {
    "default": true,
+   "form_section": "ShodanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10118,6 +10862,7 @@
   },
   "shodanReverseDns": {
    "default": true,
+   "form_section": "ShodanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10138,6 +10883,7 @@
     "max": 20
    },
    "default": 5,
+   "form_section": "ShodanSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -10164,6 +10910,7 @@
     "max": 5
    },
    "default": 1,
+   "form_section": "SqliSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -10184,6 +10931,7 @@
     "max": 3
    },
    "default": 1,
+   "form_section": "SqliSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -10200,6 +10948,7 @@
   },
   "sqliTamperScripts": {
    "default": "",
+   "form_section": "SqliSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -10217,6 +10966,7 @@
   },
   "ssrfCloudMetadataEnabled": {
    "default": true,
+   "form_section": "SsrfSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -10233,6 +10983,7 @@
   },
   "ssrfCloudProviders": {
    "default": "aws,gcp,azure,digitalocean,alibaba",
+   "form_section": "SsrfSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -10250,6 +11001,7 @@
   },
   "ssrfCustomInternalTargets": {
    "default": "",
+   "form_section": "SsrfSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -10267,6 +11019,7 @@
   },
   "ssrfDnsRebindingEnabled": {
    "default": true,
+   "form_section": "SsrfSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -10283,6 +11036,7 @@
   },
   "ssrfGopherEnabled": {
    "default": true,
+   "form_section": "SsrfSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -10299,6 +11053,7 @@
   },
   "ssrfInternalRanges": {
    "default": "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16",
+   "form_section": "SsrfSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -10316,6 +11071,7 @@
   },
   "ssrfOobCallbackEnabled": {
    "default": true,
+   "form_section": "SsrfSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -10332,6 +11088,7 @@
   },
   "ssrfOobProvider": {
    "default": "oast.fun",
+   "form_section": "SsrfSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -10349,6 +11106,7 @@
   },
   "ssrfPayloadReferenceEnabled": {
    "default": true,
+   "form_section": "SsrfSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -10365,6 +11123,7 @@
   },
   "ssrfPortScanPorts": {
    "default": "22,80,443,2375,3306,5432,6379,8080,8500,9200,27017",
+   "form_section": "SsrfSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -10386,6 +11145,7 @@
     "max": 120
    },
    "default": 10,
+   "form_section": "SsrfSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -10402,6 +11162,7 @@
   },
   "stealthMode": {
    "default": false,
+   "form_section": "TargetSection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -10418,6 +11179,7 @@
   },
   "subdomainDiscoveryEnabled": {
    "default": true,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether Subdomain discovery runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -10434,6 +11196,7 @@
   "subdomainList": {
    "coerce": "strip_list",
    "default": [],
+   "form_section": "TargetSection",
    "group": "scope",
    "has_default": true,
    "mcp": "create_only",
@@ -10451,6 +11214,7 @@
   },
   "subdomainTakeoverEnabled": {
    "default": false,
+   "form_section": "TakeoverSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether takeover runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -10466,6 +11230,7 @@
   },
   "subfinderDockerImage": {
    "default": "projectdiscovery/subfinder:latest",
+   "form_section": "SubdomainDiscoverySection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -10479,10 +11244,28 @@
    "traffic": "passive",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "subfinderEnabled": {
    "default": true,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether subfinder runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -10502,6 +11285,7 @@
     "max": 50000
    },
    "default": 5000,
+   "form_section": "SubdomainDiscoverySection",
    "governor": {
     "model": "budget",
     "family": "osint_result",
@@ -10525,6 +11309,7 @@
   },
   "subjackAll": {
    "default": false,
+   "form_section": "TakeoverSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10544,6 +11329,7 @@
   },
   "subjackCheckAr": {
    "default": false,
+   "form_section": "TakeoverSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10560,6 +11346,7 @@
   },
   "subjackCheckMail": {
    "default": false,
+   "form_section": "TakeoverSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10579,6 +11366,7 @@
   },
   "subjackCheckNs": {
    "default": false,
+   "form_section": "TakeoverSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10598,6 +11386,7 @@
   },
   "subjackEnabled": {
    "default": true,
+   "form_section": "TakeoverSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether subjack runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -10617,6 +11406,7 @@
     "max": 86400
    },
    "default": 900,
+   "form_section": "TakeoverSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -10633,6 +11423,7 @@
   },
   "subjackSsl": {
    "default": true,
+   "form_section": "TakeoverSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10653,6 +11444,7 @@
     "max": 100
    },
    "default": 10,
+   "form_section": "TakeoverSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -10679,6 +11471,7 @@
     "max": 86400
    },
    "default": 30,
+   "form_section": "TakeoverSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -10695,6 +11488,7 @@
   },
   "supplyChainDeepAnalysisEnabled": {
    "default": false,
+   "form_section": "SupplyChainScanSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether Supply chain scan runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -10710,6 +11504,7 @@
   },
   "supplyChainEcosystems": {
    "default": "npm,PyPI,Go,Maven,crates.io,Packagist,RubyGems,NuGet",
+   "form_section": "SupplyChainScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10727,6 +11522,7 @@
   },
   "supplyChainInputMode": {
    "default": "upload",
+   "form_section": "SupplyChainScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10744,6 +11540,7 @@
   },
   "supplyChainOrgDeepAnalysisEnabled": {
    "default": false,
+   "form_section": "SupplyChainScanSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether Supply chain scan runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -10759,6 +11556,7 @@
   },
   "supplyChainOrgIncludeArchived": {
    "default": false,
+   "form_section": "SupplyChainScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10775,6 +11573,7 @@
   },
   "supplyChainOrgIncludeForks": {
    "default": false,
+   "form_section": "SupplyChainScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10792,9 +11591,10 @@
   "supplyChainOrgMaxRepos": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 10000
    },
    "default": 50,
+   "form_section": "SupplyChainScanSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -10811,6 +11611,7 @@
   },
   "supplyChainOrgName": {
    "default": "",
+   "form_section": "SupplyChainScanSection",
    "group": "othertarget",
    "has_default": true,
    "mcp": "create_only",
@@ -10828,6 +11629,7 @@
   },
   "supplyChainOrgRef": {
    "default": "",
+   "form_section": "SupplyChainScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10845,6 +11647,7 @@
   },
   "supplyChainReconDeepAnalysisEnabled": {
    "default": false,
+   "form_section": "SupplyChainReconSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether Supply chain recon runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -10860,6 +11663,7 @@
   },
   "supplyChainReconEcosystems": {
    "default": "npm",
+   "form_section": "SupplyChainReconSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -10877,6 +11681,7 @@
   },
   "supplyChainReconEnabled": {
    "default": false,
+   "form_section": "SupplyChainReconSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether Supply chain recon runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -10892,6 +11697,7 @@
   },
   "supplyChainRepoRef": {
    "default": "",
+   "form_section": "SupplyChainScanSection",
    "group": "othertarget",
    "has_default": true,
    "mcp": "create_only",
@@ -10909,6 +11715,7 @@
   },
   "supplyChainRepoScope": {
    "default": "",
+   "form_section": "SupplyChainScanSection",
    "group": "othertarget",
    "has_default": true,
    "mcp": "create_only",
@@ -10926,6 +11733,7 @@
   },
   "supplyChainRepoUrl": {
    "default": "",
+   "form_section": "SupplyChainScanSection",
    "group": "othertarget",
    "has_default": true,
    "mcp": "create_only",
@@ -10944,6 +11752,7 @@
   "supplyChainSbomFile": {
    "default": "",
    "deny_reason": "upload-managed",
+   "form_section": "SupplyChainScanSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "never",
@@ -10962,6 +11771,7 @@
   },
   "supplyChainTyposquatEnabled": {
    "default": false,
+   "form_section": "SupplyChainReconSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether Supply chain scan runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -10977,6 +11787,7 @@
   },
   "takeoverAiClassifier": {
    "default": false,
+   "form_section": "TakeoverSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -10993,6 +11804,7 @@
   },
   "takeoverCertValidationEnabled": {
    "default": true,
+   "form_section": "TakeoverSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether takeover runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -11012,6 +11824,7 @@
     "max": 100
    },
    "default": 60,
+   "form_section": "TakeoverSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11028,6 +11841,7 @@
   },
   "takeoverManualReviewAutoPublish": {
    "default": false,
+   "form_section": "TakeoverSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11048,6 +11862,7 @@
     "max": 500
    },
    "default": 50,
+   "form_section": "TakeoverSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Requests per second takeover sends. Capped to the engagement ceiling at scan start, so a value above the ceiling is rewritten rather than refused.",
@@ -11070,6 +11885,7 @@
     "high",
     "medium"
    ],
+   "form_section": "TakeoverSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Severity filter for Nuclei takeover templates (e.g. [\"critical\",\"high\",\"medium\"])",
@@ -11095,6 +11911,7 @@
   "targetDomain": {
    "coerce": "strip",
    "default": "",
+   "form_section": "TargetSection",
    "group": "scope",
    "has_default": true,
    "mcp": "create_only",
@@ -11112,6 +11929,7 @@
   },
   "targetGuardrailEnabled": {
    "default": true,
+   "form_section": "TargetSection",
    "group": "scope",
    "has_default": true,
    "mcp": "create_only",
@@ -11129,6 +11947,7 @@
   "targetIps": {
    "coerce": "strip_list",
    "default": [],
+   "form_section": "TargetSection",
    "group": "scope",
    "has_default": true,
    "mcp": "create_only",
@@ -11150,6 +11969,7 @@
     "max": 500
    },
    "default": 10,
+   "form_section": "TlsxSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -11166,6 +11986,7 @@
   },
   "tlsxCipherEnum": {
    "default": false,
+   "form_section": "TlsxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11189,6 +12010,7 @@
     "max": 300
    },
    "default": 50,
+   "form_section": "TlsxSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many tlsx operations run at once. The memory governor scales it down when the host is short of RAM, so the effective value can be below what is written here.",
@@ -11207,6 +12029,7 @@
   },
   "tlsxDelay": {
    "default": "",
+   "form_section": "TlsxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11224,6 +12047,7 @@
   },
   "tlsxDockerImage": {
    "default": "projectdiscovery/tlsx:latest",
+   "form_section": "TlsxSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -11237,10 +12061,28 @@
    "traffic": "active",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "tlsxEnabled": {
    "default": true,
+   "form_section": "TlsxSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether tlsx runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -11256,6 +12098,7 @@
   },
   "tlsxIncludeHttpPorts": {
    "default": false,
+   "form_section": "TlsxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11272,6 +12115,7 @@
   },
   "tlsxInjectHostnames": {
    "default": true,
+   "form_section": "TlsxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11289,9 +12133,10 @@
   "tlsxMaxHostnamesPerIp": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 1000
    },
    "default": 1,
+   "form_section": "TlsxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11312,6 +12157,7 @@
     "max": 10000
    },
    "default": 200,
+   "form_section": "TlsxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11332,6 +12178,7 @@
     "max": 100000
    },
    "default": 2000,
+   "form_section": "TlsxSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Hard cap on ip:port pairs tlsx scans. Default 2000.",
@@ -11347,6 +12194,7 @@
   },
   "tlsxProbeJarm": {
    "default": false,
+   "form_section": "TlsxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11367,9 +12215,10 @@
   "tlsxRetries": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 10
    },
    "default": 1,
+   "form_section": "TlsxSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -11386,6 +12235,7 @@
   },
   "tlsxRevPtrSni": {
    "default": false,
+   "form_section": "TlsxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11406,6 +12256,7 @@
     "max": 86400
    },
    "default": 900,
+   "form_section": "TlsxSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -11422,6 +12273,7 @@
   },
   "tlsxScanMode": {
    "default": "auto",
+   "form_section": "TlsxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11443,6 +12295,7 @@
     "max": 60
    },
    "default": 5,
+   "form_section": "TlsxSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How long tlsx may spend before it is abandoned, in seconds. A run that hits it contributes whatever it found so far rather than failing the scan.",
@@ -11458,6 +12311,7 @@
   },
   "tlsxVersionEnum": {
    "default": false,
+   "form_section": "TlsxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11478,9 +12332,10 @@
   "triageReviewBudget": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 10000
    },
    "default": 150,
+   "form_section": "CypherFixSettingsSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11497,6 +12352,7 @@
   },
   "trufflehogAllowVerificationOverlap": {
    "default": false,
+   "form_section": "TrufflehogSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11517,6 +12373,7 @@
     "max": 50
    },
    "default": 0,
+   "form_section": "TrufflehogSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -11534,6 +12391,7 @@
   },
   "trufflehogArchiveMaxSize": {
    "default": "",
+   "form_section": "TrufflehogSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11551,6 +12409,7 @@
   },
   "trufflehogArchiveTimeout": {
    "default": "",
+   "form_section": "TrufflehogSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11572,6 +12431,7 @@
     "max": 500
    },
    "default": 8,
+   "form_section": "TrufflehogSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -11588,6 +12448,7 @@
   },
   "trufflehogDetectorTimeout": {
    "default": "",
+   "form_section": "TrufflehogSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11605,6 +12466,7 @@
   },
   "trufflehogDropUnverifiedJwt": {
    "default": false,
+   "form_section": "TrufflehogSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11621,6 +12483,7 @@
   },
   "trufflehogEnabled": {
    "default": false,
+   "form_section": "TrufflehogSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether trufflehog runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -11636,6 +12499,7 @@
   },
   "trufflehogExcludeDetectors": {
    "default": "",
+   "form_section": "TrufflehogSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11653,6 +12517,7 @@
   },
   "trufflehogFilterEntropy": {
    "default": "",
+   "form_section": "TrufflehogSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11670,6 +12535,7 @@
   },
   "trufflehogForceSkipArchives": {
    "default": false,
+   "form_section": "TrufflehogSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11686,6 +12552,7 @@
   },
   "trufflehogForceSkipBinaries": {
    "default": false,
+   "form_section": "TrufflehogSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11702,6 +12569,7 @@
   },
   "trufflehogIncludeDetectors": {
    "default": "",
+   "form_section": "TrufflehogSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11723,6 +12591,7 @@
     "max": 50
    },
    "default": 5,
+   "form_section": "TrufflehogSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -11739,6 +12608,7 @@
   },
   "trufflehogNoVerification": {
    "default": false,
+   "form_section": "TrufflehogSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11755,6 +12625,7 @@
   },
   "trufflehogResultTypes": {
    "default": "verified,unverified,unknown",
+   "form_section": "TrufflehogSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -11772,6 +12643,7 @@
   },
   "uncoverDockerImage": {
    "default": "projectdiscovery/uncover:latest",
+   "form_section": "OsintEnrichmentSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -11785,10 +12657,28 @@
    "traffic": "passive",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "uncoverEnabled": {
    "default": false,
+   "form_section": "OsintEnrichmentSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether uncover runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -11810,6 +12700,7 @@
    "coerce": "int",
    "default": 50000,
    "fallback": "falsy",
+   "form_section": "OsintEnrichmentSection",
    "governor": {
     "model": "budget",
     "family": "osint_result",
@@ -11830,10 +12721,12 @@
   },
   "updateGraphDb": {
    "default": true,
+   "deny_reason": "not-tuning",
+   "form_section": null,
    "group": "not-tuning",
    "has_default": true,
-   "mcp": "settable",
-   "meaning": "Store results in the graph database",
+   "mcp": "never",
+   "meaning": "Whether results are stored in the graph database. Off, the scan still runs and still reaches the target, and writes nothing, so every later read reports \"nothing found\" where the truth is \"nothing was written\". That is the scanned-and-clean versus never-scanned confusion, so it is a debug switch rather than a pipeline parameter.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Boolean",
@@ -11847,6 +12740,7 @@
   "updatedAt": {
    "default": null,
    "deny_reason": "identity",
+   "form_section": "TargetSection",
    "group": "identity",
    "has_default": false,
    "mcp": "never",
@@ -11865,6 +12759,7 @@
   "updatedById": {
    "default": null,
    "deny_reason": "identity",
+   "form_section": "TargetSection",
    "group": "identity",
    "has_default": false,
    "mcp": "never",
@@ -11882,6 +12777,7 @@
   },
   "urlscanEnabled": {
    "default": true,
+   "form_section": "UrlscanSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether urlscan runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -11901,6 +12797,7 @@
     "max": 50000
    },
    "default": 50000,
+   "form_section": "UrlscanSection",
    "governor": {
     "model": "budget",
     "family": "osint_result",
@@ -11924,6 +12821,7 @@
   },
   "useBruteforceForSubdomains": {
    "default": false,
+   "form_section": "SubdomainDiscoverySection",
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
@@ -11944,6 +12842,7 @@
   "userId": {
    "default": null,
    "deny_reason": "identity",
+   "form_section": "TargetSection",
    "group": "identity",
    "has_default": false,
    "mcp": "never",
@@ -11963,6 +12862,7 @@
   },
   "verifyDomainOwnership": {
    "default": false,
+   "form_section": "TargetSection",
    "group": "scope",
    "has_default": true,
    "mcp": "create_only",
@@ -11983,6 +12883,7 @@
     "max": 10000
    },
    "default": 50,
+   "form_section": "VhostSniSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Body size deltas within this many bytes are not flagged (suppresses Set-Cookie / timestamp jitter). Default 50.",
@@ -12002,6 +12903,7 @@
     "max": 100
    },
    "default": 20,
+   "form_section": "VhostSniSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -12021,6 +12923,7 @@
   },
   "vhostSniCustomWordlist": {
    "default": "",
+   "form_section": "VhostSniSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -12038,6 +12941,7 @@
   },
   "vhostSniEnabled": {
    "default": false,
+   "form_section": "VhostSniSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether Vhost / SNI enumeration runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -12056,6 +12960,7 @@
   },
   "vhostSniInjectDiscovered": {
    "default": true,
+   "form_section": "VhostSniSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12076,6 +12981,7 @@
     "max": 50000
    },
    "default": 2000,
+   "form_section": "VhostSniSection",
    "governor": {
     "model": "budget",
     "family": "vhost_candidate",
@@ -12097,6 +13003,7 @@
   },
   "vhostSniTestL4": {
    "default": true,
+   "form_section": "VhostSniSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12113,6 +13020,7 @@
   },
   "vhostSniTestL7": {
    "default": true,
+   "form_section": "VhostSniSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12133,6 +13041,7 @@
     "max": 30
    },
    "default": 3,
+   "form_section": "VhostSniSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How long Vhost / SNI enumeration may spend before it is abandoned, in seconds. A run that hits it contributes whatever it found so far rather than failing the scan.",
@@ -12148,6 +13057,7 @@
   },
   "vhostSniUseDefaultWordlist": {
    "default": true,
+   "form_section": "VhostSniSection",
    "group": "wordlist",
    "has_default": true,
    "mcp": "settable",
@@ -12164,6 +13074,7 @@
   },
   "vhostSniUseGraphCandidates": {
    "default": true,
+   "form_section": "VhostSniSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12180,6 +13091,7 @@
   },
   "virusTotalEnabled": {
    "default": false,
+   "form_section": "OsintEnrichmentSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether virustotal runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -12199,6 +13111,7 @@
     "max": 10
    },
    "default": 3,
+   "form_section": "OsintEnrichmentSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -12221,6 +13134,7 @@
   },
   "wafAiClassifier": {
    "default": false,
+   "form_section": "SecurityChecksSection",
    "group": "llm",
    "has_default": true,
    "mcp": "settable",
@@ -12237,6 +13151,7 @@
   },
   "wappalyzerAutoUpdate": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12254,9 +13169,10 @@
   "wappalyzerCacheTtlHours": {
    "bounds": {
     "min": 1,
-    "max": 10000000
+    "max": 8760
    },
    "default": 24,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12273,6 +13189,7 @@
   },
   "wappalyzerEnabled": {
    "default": true,
+   "form_section": "HttpxSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether wappalyzer runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -12292,6 +13209,7 @@
     "max": 100
    },
    "default": 50,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12308,6 +13226,7 @@
   },
   "wappalyzerNpmVersion": {
    "default": "6.10.56",
+   "form_section": "HttpxSection",
    "group": "egress",
    "has_default": true,
    "mcp": "settable",
@@ -12325,6 +13244,7 @@
   },
   "wappalyzerRequireHtml": {
    "default": true,
+   "form_section": "HttpxSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12341,6 +13261,7 @@
   },
   "webCachePoisonAllowCpdos": {
    "default": false,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12360,6 +13281,7 @@
   },
   "webCachePoisonAllowDeception": {
    "default": true,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12376,6 +13298,7 @@
   },
   "webCachePoisonAllowFrameworkPacks": {
    "default": true,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12396,6 +13319,7 @@
     "max": 10
    },
    "default": 1.1,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12412,6 +13336,7 @@
   },
   "webCachePoisonBehavioralOracle": {
    "default": true,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12428,6 +13353,7 @@
   },
   "webCachePoisonCacheBusterParam": {
    "default": "rdmncb",
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12445,6 +13371,7 @@
   },
   "webCachePoisonCacheHeader": {
    "default": "",
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12466,6 +13393,7 @@
     "max": 50
    },
    "default": 10,
+   "form_section": "WebCachePoisonSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -12490,6 +13418,7 @@
     "max": 16
    },
    "default": 6,
+   "form_section": "WebCachePoisonSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -12510,6 +13439,7 @@
   },
   "webCachePoisonCrossVantage": {
    "default": false,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12526,6 +13456,7 @@
   },
   "webCachePoisonDifferential": {
    "default": true,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12542,6 +13473,7 @@
   },
   "webCachePoisonDockerImage": {
    "default": "redamon-wcvs:latest",
+   "form_section": "WebCachePoisonSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -12555,10 +13487,28 @@
    "traffic": "active",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "webCachePoisonEnabled": {
    "default": false,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12582,6 +13532,7 @@
     "max": 1000
    },
    "default": 0,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12603,6 +13554,7 @@
     "max": 1.0
    },
    "default": 0.8,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12619,6 +13571,7 @@
   },
   "webCachePoisonScanProfile": {
    "default": "safe-confirm",
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12640,6 +13593,7 @@
     "max": 86400
    },
    "default": 1800,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12660,6 +13614,7 @@
     "max": 86400
    },
    "default": 10,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12676,6 +13631,7 @@
   },
   "webCachePoisonVerifySsl": {
    "default": true,
+   "form_section": "WebCachePoisonSection",
    "group": "attack",
    "has_default": true,
    "mcp": "settable",
@@ -12692,6 +13648,7 @@
   },
   "whoisEnabled": {
    "default": true,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether whois runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -12711,6 +13668,7 @@
     "max": 20
    },
    "default": 6,
+   "form_section": "SubdomainDiscoverySection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "How many times whois retries a failed request before giving up on it.",
@@ -12726,6 +13684,7 @@
   },
   "zapAjaxSpiderBrowserId": {
    "default": "firefox-headless",
+   "form_section": "ZapAjaxSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12743,6 +13702,7 @@
   },
   "zapAjaxSpiderClickDefaultElems": {
    "default": true,
+   "form_section": "ZapAjaxSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12759,6 +13719,7 @@
   },
   "zapAjaxSpiderClickElemsOnce": {
    "default": true,
+   "form_section": "ZapAjaxSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12775,6 +13736,7 @@
   },
   "zapAjaxSpiderCustomHeaders": {
    "default": [],
+   "form_section": "ZapAjaxSpiderSection",
    "group": "headers",
    "has_default": true,
    "mcp": "settable",
@@ -12792,6 +13754,7 @@
   },
   "zapAjaxSpiderDockerImage": {
    "default": "ghcr.io/zaproxy/zaproxy:stable",
+   "form_section": "ZapAjaxSpiderSection",
    "group": "image",
    "has_default": true,
    "mcp": "settable",
@@ -12805,10 +13768,28 @@
    "traffic": "active",
    "type": "string",
    "unit": "none",
-   "validator": "docker_image"
+   "validator": "docker_image",
+   "values": [
+    "caffix/amass:latest",
+    "dolevf/graphql-cop:1.14",
+    "frost19k/puredns:latest",
+    "ghcr.io/zaproxy/zaproxy:stable",
+    "jauderho/hakrawler:latest",
+    "projectdiscovery/httpx:latest",
+    "projectdiscovery/katana:latest",
+    "projectdiscovery/naabu:latest",
+    "projectdiscovery/nuclei:latest",
+    "projectdiscovery/subfinder:latest",
+    "projectdiscovery/tlsx:latest",
+    "projectdiscovery/uncover:latest",
+    "redamon-baddns:latest",
+    "redamon-wcvs:latest",
+    "sxcurity/gau:latest"
+   ]
   },
   "zapAjaxSpiderEnabled": {
    "default": false,
+   "form_section": "ZapAjaxSpiderSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether zap runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -12831,6 +13812,7 @@
     "max": 3600000
    },
    "default": 1000,
+   "form_section": "ZapAjaxSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12847,6 +13829,7 @@
   },
   "zapAjaxSpiderExcludePatterns": {
    "default": [],
+   "form_section": "ZapAjaxSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12864,6 +13847,7 @@
   },
   "zapAjaxSpiderLogoutAvoidance": {
    "default": true,
+   "form_section": "ZapAjaxSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12884,6 +13868,7 @@
     "max": 50
    },
    "default": 5,
+   "form_section": "ZapAjaxSpiderSection",
    "group": "unbounded",
    "has_default": true,
    "mcp": "settable",
@@ -12901,9 +13886,10 @@
   "zapAjaxSpiderMaxCrawlStates": {
    "bounds": {
     "min": 0,
-    "max": 10000000
+    "max": 100000
    },
    "default": 0,
+   "form_section": "ZapAjaxSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12925,6 +13911,7 @@
     "max": 1440
    },
    "default": 10,
+   "form_section": "ZapAjaxSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -12942,9 +13929,10 @@
   "zapAjaxSpiderMaxUrls": {
    "bounds": {
     "min": 1,
-    "max": 10000000
+    "max": 100000
    },
    "default": 1000,
+   "form_section": "ZapAjaxSpiderSection",
    "governor": {
     "model": "budget",
     "family": "url",
@@ -12970,6 +13958,7 @@
     "max": 10
    },
    "default": 1,
+   "form_section": "ZapAjaxSpiderSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -12994,6 +13983,7 @@
     "max": 10
    },
    "default": 3,
+   "form_section": "ZapAjaxSpiderSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -13014,6 +14004,7 @@
   },
   "zapAjaxSpiderRandomInputs": {
    "default": false,
+   "form_section": "ZapAjaxSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -13034,6 +14025,7 @@
     "max": 3600000
    },
    "default": 1000,
+   "form_section": "ZapAjaxSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -13050,6 +14042,7 @@
   },
   "zapAjaxSpiderScopeCheck": {
    "default": "Strict",
+   "form_section": "ZapAjaxSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -13067,6 +14060,7 @@
   },
   "zapAjaxSpiderSeedMode": {
    "default": "base_urls",
+   "form_section": "ZapAjaxSpiderSection",
    "group": "not-tuning",
    "has_default": true,
    "mcp": "settable",
@@ -13084,6 +14078,7 @@
   },
   "zoomEyeEnabled": {
    "default": false,
+   "form_section": "OsintEnrichmentSection",
    "has_default": true,
    "mcp": "settable",
    "meaning": "Whether ZoomEye runs. Configuration is two levels: this flag decides whether the tool runs INSIDE its phase, and scanModules decides whether the phase runs at all. Setting one without the other is a silent no-op.",
@@ -13103,6 +14098,7 @@
     "max": 10000
    },
    "default": 1000,
+   "form_section": "OsintEnrichmentSection",
    "governor": {
     "model": "budget",
     "family": "osint_result",
@@ -13127,6 +14123,7 @@
     "max": 20
    },
    "default": 5,
+   "form_section": "OsintEnrichmentSection",
    "governor": {
     "model": "ratio",
     "floor": 1
@@ -13503,7 +14500,7 @@
   },
   "capture_proxy": {
    "enabled_key": "CAPTURE_PROXY_ENABLED",
-   "form_section": "ToolMatrixSection",
+   "form_section": "ScanModulesSection",
    "phase": "standalone",
    "title": "Capture proxy",
    "traffic": "active"
@@ -14232,7 +15229,7 @@
   },
   "web_cache_poison": {
    "enabled_key": "WEB_CACHE_POISON_ENABLED",
-   "form_section": "ToolMatrixSection",
+   "form_section": "WebCachePoisonSection",
    "image": "redamon-wcvs:latest",
    "partial_recon_module": "cache_scanning",
    "phase": "standalone",
@@ -14256,7 +15253,7 @@
   },
   "zap": {
    "enabled_key": "ZAP_AJAX_SPIDER_ENABLED",
-   "form_section": "KatanaSection",
+   "form_section": "ZapAjaxSpiderSection",
    "image": "ghcr.io/zaproxy/zaproxy:stable",
    "module": "recon.main_recon_modules.resource_enum",
    "partial_recon_module": "web_crawling",

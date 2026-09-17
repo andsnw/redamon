@@ -135,7 +135,7 @@ const EXAMPLE_EXTRA_ARGS: Record<string, Record<string, unknown>> = {
   create_project: {
     targetDomain: 'YOUR_TARGET_DOMAIN',
     engagementKind: 'third_party',
-    roe: { roeEnabled: true, roeGlobalMaxRps: 3 },
+    settings: { roeGlobalMaxRps: 3 },
     authorization: {
       documentSha256: '0'.repeat(64),
       documentKind: 'hackerone_program',
@@ -152,8 +152,6 @@ const EXAMPLE_EXTRA_ARGS: Record<string, Record<string, unknown>> = {
     documentKind: 'hackerone_program',
     issuedAt: '2026-01-01T00:00:00.000Z',
   },
-  // A tightening, so the example has to move the ceiling DOWN to be accepted.
-  tighten_engagement_roe: { roe: { roeGlobalMaxRps: 1 } },
 }
 
 /** The example `arguments` for a tool. apiReference.test.ts calls every one of these. */

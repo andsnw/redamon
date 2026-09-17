@@ -1,5 +1,5 @@
 /**
- * The four tools that open, tighten, authorize and verify an engagement.
+ * The three tools that open, authorize and verify an engagement.
  *
  * Together they close the gap between "an agent can configure every parameter of
  * the pipeline" and "an agent can stand up a project that provably cannot
@@ -8,9 +8,15 @@
  * at a third party.
  *
  *   create_project                     opens an engagement and fixes its scope
- *   tighten_engagement_roe             narrows one, never widens it
  *   attach_engagement_authorization    records what permitted it
  *   preflight_scope_check              proves the configuration fits
+ *
+ * There is no fourth. `tighten_engagement_roe` existed because the engagement's
+ * limits were a block with its own direction rules; they are ordinary settings
+ * now, written through `update_recon_settings` like every other field and
+ * enforced at scan start whatever a write said. `preflight_scope_check` is what
+ * replaced the reassurance the direction rules only appeared to give: it reports
+ * the RESOLVED configuration rather than the written one.
  *
  * Every one of them joins the guards the existing write tools already use, and
  * a tool that skipped one would be a hole in a control that holds everywhere
@@ -35,6 +41,7 @@ import {
   effectiveCeiling,
   isDocumentKind,
   isEngagementKind,
+  deriveRoeEnabled,
   isSha256,
   loadEngagement,
   DOCUMENT_KINDS,
@@ -46,7 +53,7 @@ import { assertMcpProjectAccess, requireScope } from '@/lib/mcpAuth'
 import { McpToolError } from '@/lib/mcp/errors'
 import { enforceRate, type McpContext } from '@/lib/mcp/tools'
 import { settingsFingerprint } from '@/lib/jobQueue'
-import { checkTighten, filterReconSettings, reconSettingsSelect } from '@/lib/reconSettings/filter'
+import { filterReconSettings, reconSettingsSelect } from '@/lib/reconSettings/filter'
 import { fieldsWhere, field, loadRegistry } from '@/lib/reconSettings/registry'
 import { checkHeader, isInsideProjectFileRoot } from '@/lib/reconSettings/validators'
 
@@ -61,9 +68,12 @@ export interface CreateProjectArgs {
   targetIps?: string[]
   domainBatchHosts?: string[]
   subdomainList?: string[]
-  /** The engagement agreement. Fully writable here and tighten-only afterwards. */
-  roe?: Record<string, unknown>
-  /** Ordinary tuning, applied at creation so the first scan runs configured. */
+  /**
+   * Ordinary tuning AND the engagement's limits, applied at creation so the
+   * first scan runs configured. There is no separate `roe` argument: the limits
+   * are ordinary settings, writable here and through update_recon_settings
+   * afterwards.
+   */
   settings?: Record<string, unknown>
   engagementIdentityHeader?: string
   /** Required when engagementKind is third_party. */
@@ -147,37 +157,18 @@ function normaliseAuthorization(auth: AuthorizationArgs) {
 }
 
 /**
- * Validate the RoE block a creator supplies.
- *
- * Fully writable here, which is the point: the engagement agreement is set when
- * the engagement opens. Afterwards it is tighten-only, and that asymmetry is
- * what `tighten_engagement_roe` below enforces.
- */
-function filterRoeAtCreate(roe: Record<string, unknown>): Record<string, unknown> {
-  const tightenOnly = new Set(fieldsWhere(f => f.mcp === 'tighten_only').map(f => f.key))
-  const unknown = Object.keys(roe).filter(k => !tightenOnly.has(k))
-  if (unknown.length > 0) {
-    throw new McpToolError(
-      `These are not Rules of Engagement fields: ${unknown.join(', ')}. Ordinary tuning goes ` +
-      'in `settings`.',
-      'bad_args'
-    )
-  }
-  const result = filterReconSettings(roe, { mode: 'create' })
-  if (!result.ok) throw new McpToolError(result.error, 'setting_rejected')
-  return result.data
-}
-
-/**
  * Keys `settings` may not carry, because this tool derives them from its own
  * arguments.
  *
- * `settings` is filtered in CREATE mode, which by design accepts create-only and
- * tighten-only fields. That is right for a creation and wrong for this one
- * object: it is applied last, so a key here would silently overwrite a value the
- * engagement guard above had just checked. The mode selectors are derived from
- * the targeting arguments, `engagementKind` decides which guard runs at all, and
- * the Rules of Engagement have their own argument with its own direction rules.
+ * `settings` is filtered in CREATE mode, which by design accepts the create-only
+ * fields too. That is right for a creation and wrong for this one object: it is
+ * applied last, so a key here would silently overwrite a value the engagement
+ * guard above had just checked. The mode selectors are derived from the
+ * targeting arguments and `engagementKind` decides which guard runs at all.
+ *
+ * The engagement's LIMITS are deliberately absent from this list. They are
+ * ordinary settings and belong in `settings`, and the third_party ceiling check
+ * below reads what lands there.
  */
 const RESERVED_AT_CREATE = new Set([
   'targetDomain', 'targetIps', 'ipMode',
@@ -192,14 +183,6 @@ function filterSettingsAtCreate(settings: Record<string, unknown>): Record<strin
       `${reserved.join(', ')} may not be set through \`settings\`: this tool derives the ` +
       'targeting mode and the engagement kind from its own arguments, and a value here ' +
       'would override the scope that was just checked. Pass them as arguments.',
-      'bad_args'
-    )
-  }
-  const tightenOnly = Object.keys(settings).filter(k => field(k)?.mcp === 'tighten_only')
-  if (tightenOnly.length > 0) {
-    throw new McpToolError(
-      `${tightenOnly.join(', ')} are Rules of Engagement fields and belong in \`roe\`, not ` +
-      '`settings`. They are checked against the engagement rules there.',
       'bad_args'
     )
   }
@@ -306,8 +289,6 @@ export async function createProject(ctx: McpContext, args: CreateProjectArgs) {
     data.engagementIdentityHeader = args.engagementIdentityHeader
   }
 
-  if (args.roe) Object.assign(data, filterRoeAtCreate(args.roe))
-
   if (args.settings) Object.assign(data, filterSettingsAtCreate(args.settings))
 
   // The rule third_party projects live under, checked BEFORE the row exists so
@@ -318,13 +299,12 @@ export async function createProject(ctx: McpContext, args: CreateProjectArgs) {
   if (data.engagementKind === 'third_party') {
     const ceiling = effectiveCeiling({
       id: '', engagementKind: 'third_party',
-      roeEnabled: Boolean(data.roeEnabled),
       roeGlobalMaxRps: Number(data.roeGlobalMaxRps ?? 0),
     })
     if (ceiling === null) {
       throw new McpToolError(
-        'A third_party engagement must declare a request-rate ceiling: set roe.roeEnabled ' +
-        'true and roe.roeGlobalMaxRps to a non-zero value. Note that 0 means NO ceiling ' +
+        'A third_party engagement must declare a request-rate ceiling: set ' +
+        'settings.roeGlobalMaxRps to a non-zero value. Note that 0 means NO ceiling ' +
         'rather than a slow one.',
         'bad_args'
       )
@@ -384,8 +364,10 @@ export async function createProject(ctx: McpContext, args: CreateProjectArgs) {
         targetIps: data.targetIps ?? null,
         domainBatchHosts: data.domainBatchHosts ?? null,
       },
-      roe: Object.fromEntries(
-        Object.keys(data).filter(k => field(k)?.mcp === 'tighten_only').map(k => [k, data[k]])
+      engagementLimits: Object.fromEntries(
+        Object.keys(data)
+          .filter(k => field(k)?.group === 'engagement_limits')
+          .map(k => [k, data[k]])
       ),
       authorizationDigest: authorization?.documentSha256 ?? null,
     },
@@ -402,113 +384,6 @@ export async function createProject(ctx: McpContext, args: CreateProjectArgs) {
       'Scope is fixed now. update_recon_settings refuses every targeting field on an ' +
       'existing project, so a different target means a different project. Call ' +
       'preflight_scope_check before start_recon.',
-  }
-}
-
-// --- tighten_engagement_roe ------------------------------------------------------------
-
-export async function tightenEngagementRoe(
-  ctx: McpContext,
-  projectId: string,
-  roe: Record<string, unknown>,
-  expectedUpdatedAt?: string
-) {
-  requireScope(ctx.token, 'project:create')
-  await assertMcpProjectAccess(ctx.token.userId, projectId)
-  enforceRate(ctx, 'write')
-
-  // The same guard update_recon_settings has, and for the same reason: recon
-  // reads its settings ONCE at container spawn, so a write during a run is
-  // inert and accepting it would report success for a change that does nothing.
-  // A tightening that silently did not apply is worse than a refused one.
-  const busy = await describeScanWriters(projectId)
-  if (busy) {
-    throw new McpToolError(
-      `Cannot change the Rules of Engagement while ${busy} for this project: the running ` +
-      'scan read them when it started and will not see the change. Stop it, or wait.',
-      'busy'
-    )
-  }
-
-  const tightenOnly = new Set(fieldsWhere(f => f.mcp === 'tighten_only').map(f => f.key))
-  const unknown = Object.keys(roe ?? {}).filter(k => !tightenOnly.has(k))
-  if (unknown.length > 0) {
-    throw new McpToolError(
-      `These are not Rules of Engagement fields: ${unknown.join(', ')}. Ordinary tuning goes ` +
-      'through update_recon_settings.',
-      'bad_args'
-    )
-  }
-
-  // Write-without-read is the one asymmetry this tool must not have. These
-  // fields are withheld from every MCP read because they carry the client's
-  // identity and the agreement text, so `before` below cannot contain them:
-  // the audit row would record the prior value as absent and the overwrite
-  // would be unrecoverable. Their `tighten: narrow` has no direction to check
-  // either, so nothing else would catch it. They are set when the engagement
-  // opens and changed by the operator, not by an agent narrowing rules.
-  const blind = Object.keys(roe ?? {}).filter(k => field(k)?.readable === false)
-  if (blind.length > 0) {
-    throw new McpToolError(
-      `${blind.join(', ')} may not be changed here. They carry the client's identity and ` +
-      'the engagement agreement, which this surface cannot read back, so a write would ' +
-      'leave no record of what it replaced. Change them where the engagement was opened.',
-      'setting_rejected'
-    )
-  }
-
-  const before = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: { ...reconSettingsSelect(), updatedAt: true },
-  })
-  if (!before) throw new McpToolError('Project not found', 'not_found')
-
-  const filtered = filterReconSettings(roe, {
-    mode: 'update',
-    allowTighten: true,
-    current: before as Record<string, unknown>,
-    projectId,
-  })
-  if (!filtered.ok) throw new McpToolError(filtered.error, 'setting_rejected')
-
-  if (expectedUpdatedAt) {
-    const expected = new Date(expectedUpdatedAt)
-    if (Number.isNaN(expected.getTime())) {
-      throw new McpToolError('expectedUpdatedAt is not a valid timestamp.', 'bad_args')
-    }
-    const { count } = await prisma.project.updateMany({
-      where: { id: projectId, updatedAt: expected },
-      data: filtered.data,
-    })
-    if (count === 0) {
-      throw new McpToolError(
-        'The project changed since you read it. Re-read get_recon_settings and retry.',
-        'conflict'
-      )
-    }
-  } else {
-    await prisma.project.update({ where: { id: projectId }, data: filtered.data })
-  }
-
-  const changed = Object.keys(filtered.data)
-  void writeAudit({
-    actorId: ctx.token.userId,
-    action: 'mcp.tighten_roe',
-    targetType: 'project',
-    targetId: projectId,
-    before: Object.fromEntries(changed.map(k => [k, (before as Record<string, unknown>)[k]])),
-    after: {
-      tokenId: ctx.token.tokenId, tokenPrefix: ctx.token.tokenPrefix,
-      changes: Object.fromEntries(changed.map(k => [k, filtered.data[k]])),
-    },
-    source: 'mcp',
-  })
-
-  return {
-    projectId,
-    tightened: filtered.data,
-    engagement: await loadEngagement(projectId),
-    note: 'These apply to the NEXT scan. A run already in progress read them when it started.',
   }
 }
 
@@ -744,6 +619,22 @@ export async function preflightScopeCheck(ctx: McpContext, projectId: string) {
       maxBatchHosts: MAX_BATCH_HOSTS,
     },
     ceilingRps: ceiling,
+    // The DERIVED answer to "are this project's limits live", and which of the
+    // three makes them so. It is not a column, so a caller cannot read it from
+    // get_recon_settings; this is the only place it is reported.
+    engagementLimits: {
+      active: deriveRoeEnabled(row as never),
+      because: [
+        Number(row.roeGlobalMaxRps ?? 0) > 0 ? 'a request-rate ceiling' : null,
+        Array.isArray(row.roeExcludedHosts) && row.roeExcludedHosts.length > 0
+          ? 'an excluded-host list' : null,
+        row.roeTimeWindowEnabled ? 'a scanning time window' : null,
+      ].filter(Boolean),
+      // True when the stored column disagrees with the derivation: the project
+      // predates the change and acquires (or loses) limits without anyone
+      // having touched it. The migration records an audit row for each.
+      limitsNewlyDerived: Boolean(row.roeEnabled) !== deriveRoeEnabled(row as never),
+    },
     resolvedRates: rates,
     ratesExceedingCeiling: exceeds,
     rewrittenAtScanStart: rewritten,
@@ -786,6 +677,10 @@ export async function preflightScopeCheck(ctx: McpContext, projectId: string) {
       'silentNoOps is the two-level model biting: a tool can be enabled inside a phase that ' +
         'is not running. The scan succeeds, nothing is scanned by that tool, and no result ' +
         'field says why.',
+      'engagementLimits.active is DERIVED: limits apply when there is a limit to apply - a ' +
+        'non-zero roeGlobalMaxRps, a non-empty roeExcludedHosts, or a time window. There is ' +
+        'no switch that turns them off while leaving them configured. limitsNewlyDerived true ' +
+        'means this project predates that and its limits changed without anyone touching it.',
       'lastRun.settingsChangedSince true means the graph you are looking at was produced by a ' +
         'DIFFERENT configuration than the one above. That is the chain an incident review ' +
         'walks: a graph node, the scan job that wrote it, the settings hash it ran with, and ' +
@@ -818,4 +713,4 @@ export async function listEngagementAuthorizations(ctx: McpContext, projectId: s
   }
 }
 
-export { describeEngagement, type EngagementProjectRow, checkTighten }
+export { describeEngagement, type EngagementProjectRow }

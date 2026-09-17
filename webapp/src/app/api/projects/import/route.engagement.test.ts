@@ -83,7 +83,7 @@ describe('row 9: an unauthorized third-party bundle is refused', () => {
 
   test('a ceiling but no authorization -> 400 naming the authorization', async () => {
     const res = await POST(await bundle(
-      { engagementKind: 'third_party', roeEnabled: true, roeGlobalMaxRps: 3 },
+      { engagementKind: 'third_party', roeGlobalMaxRps: 3 },
       []
     ))
     expect(res.status).toBe(400)
@@ -95,25 +95,28 @@ describe('row 9: an unauthorized third-party bundle is refused', () => {
 
   test('an authorization but a zero ceiling -> 400, because 0 means unlimited', async () => {
     const res = await POST(await bundle(
-      { engagementKind: 'third_party', roeEnabled: true, roeGlobalMaxRps: 0 },
+      { engagementKind: 'third_party', roeGlobalMaxRps: 0 },
       THIRD_PARTY_AUTH
     ))
     expect(res.status).toBe(400)
     expect((await res.json()).error).toMatch(/request-rate ceiling/)
   })
 
-  test('roeEnabled false with a non-zero ceiling is still refused', async () => {
-    // Both switches have to agree, or the number is a value nothing reads.
+  test('a legacy bundle carrying roeEnabled has it ignored, not replayed', async () => {
+    // The column is DERIVED now, so a bundle exported before this shipped still
+    // carries it. Replaying it would write a value nothing else believes; the
+    // ceiling beside it is what decides, and it round-trips normally.
     const res = await POST(await bundle(
       { engagementKind: 'third_party', roeEnabled: false, roeGlobalMaxRps: 3 },
       THIRD_PARTY_AUTH
     ))
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(200)
+    expect(h.createProject.mock.calls[0][0].data).not.toHaveProperty('roeEnabled')
   })
 
   test('a missing authorizations file counts as none, not as unchecked', async () => {
     const res = await POST(await bundle(
-      { engagementKind: 'third_party', roeEnabled: true, roeGlobalMaxRps: 3 },
+      { engagementKind: 'third_party', roeGlobalMaxRps: 3 },
       null
     ))
     expect(res.status).toBe(400)
@@ -128,7 +131,7 @@ describe('row 9: an unauthorized third-party bundle is refused', () => {
 
   test('a compliant third-party bundle is imported with its kind intact', async () => {
     const res = await POST(await bundle(
-      { engagementKind: 'third_party', roeEnabled: true, roeGlobalMaxRps: 3 },
+      { engagementKind: 'third_party', roeGlobalMaxRps: 3 },
       THIRD_PARTY_AUTH
     ))
     expect(res.status).toBeLessThan(400)

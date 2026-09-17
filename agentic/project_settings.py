@@ -13,6 +13,10 @@ import contextvars
 import re
 from typing import Any, Optional
 
+# The engagement-limit derivation, shared with recon and the orchestrator so the
+# three services cannot disagree about whether a project's limits are live.
+from recon_settings.engagement import derive_roe_enabled
+
 logger = logging.getLogger(__name__)
 
 INTERNAL_HEADERS = {"X-Internal-Key": os.environ.get("INTERNAL_API_KEY", "")}
@@ -591,8 +595,10 @@ def fetch_agent_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['DOMAIN_BATCH_MODE'] = project.get('domainBatchMode', False)
     settings['DOMAIN_BATCH_GROUPS'] = project.get('domainBatchGroups') or []
 
-    # Rules of Engagement
-    settings['ROE_ENABLED'] = project.get('roeEnabled', DEFAULT_AGENT_SETTINGS['ROE_ENABLED'])
+    # Engagement limits. ROE_ENABLED is DERIVED, never read from the column.
+    # One implementation, in recon_settings.engagement, which recon and the
+    # orchestrator call too.
+    settings['ROE_ENABLED'] = derive_roe_enabled(project)
     settings['ROE_RAW_TEXT'] = project.get('roeRawText', DEFAULT_AGENT_SETTINGS['ROE_RAW_TEXT'])
     settings['ROE_CLIENT_NAME'] = project.get('roeClientName', DEFAULT_AGENT_SETTINGS['ROE_CLIENT_NAME'])
     settings['ROE_CLIENT_CONTACT_NAME'] = project.get('roeClientContactName', DEFAULT_AGENT_SETTINGS['ROE_CLIENT_CONTACT_NAME'])
