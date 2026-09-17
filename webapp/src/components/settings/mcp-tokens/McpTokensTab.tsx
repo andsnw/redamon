@@ -11,9 +11,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   KeyRound, Plus, Loader2, Copy, Check, Trash2, Pencil,
-  AlertTriangle, RefreshCw, ShieldAlert, Braces, GraduationCap,
+  AlertTriangle, RefreshCw, ShieldAlert, Braces, GraduationCap, MoreVertical,
 } from 'lucide-react'
-import { useAlertModal, WikiInfoButton } from '@/components/ui'
+import { Menu, MenuItem, useAlertModal, WikiInfoButton } from '@/components/ui'
 import { useDirtyState } from '@/hooks/useDirtyState'
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import {
@@ -384,22 +384,26 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
     }
   }
 
-  const revoke = async (t: TokenRow) => {
+  const remove = async (t: TokenRow) => {
     const confirmed = await dangerConfirm(
-      `Revoke '${t.name}' (${t.tokenPrefix}…)? Any agent using it stops working immediately. This cannot be undone.`,
-      'Revoke MCP Access Token',
+      `Delete '${t.name}' (${t.tokenPrefix}…)? The token is removed from the database, not ` +
+      'just switched off, so this row disappears and any agent using it stops working ' +
+      'immediately. The audit log keeps a record that it existed. This cannot be undone.',
+      'Delete MCP Access Token',
     )
     if (!confirmed) return
     try {
       const r = await fetch(`/api/users/${userId}/mcp-tokens/${t.id}`, { method: 'DELETE' })
       if (!r.ok) {
         const data = await r.json().catch(() => ({}))
-        await alertError(data.error || `Revoke failed (${r.status})`, 'Revoke MCP Access Token')
+        await alertError(data.error || `Delete failed (${r.status})`, 'Delete MCP Access Token')
         return
       }
+      // The edit panel may be open on the row that just stopped existing.
+      if (editing?.id === t.id) closeEdit()
       await load()
     } catch (e) {
-      await alertError(e instanceof Error ? e.message : 'Revoke failed', 'Revoke MCP Access Token')
+      await alertError(e instanceof Error ? e.message : 'Delete failed', 'Delete MCP Access Token')
     }
   }
 
@@ -845,10 +849,20 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
                     <td>{fmtDate(t.expiresAt) ?? <span className={styles.muted}>Never</span>}</td>
                     <td>{fmtDate(t.lastUsedAt) ?? <span className={styles.muted}>Never used</span>}</td>
                     <td className={styles.actionsCell}>
-                      <div className={styles.rowActions}>
-                        <button
-                          className={styles.rowBtn}
-                          title="Generate the instructions an external agent loads"
+                      <Menu
+                        align="right"
+                        trigger={
+                          <button
+                            className={styles.rowMenuBtn}
+                            title={`Actions for ${t.name}`}
+                            aria-label={`Actions for ${t.name}`}
+                          >
+                            <MoreVertical size={16} />
+                          </button>
+                        }
+                      >
+                        <MenuItem
+                          icon={<GraduationCap size={14} />}
                           onClick={() => setOnboarding({
                             profile: profileOrDefault(t.profile),
                             scopes: t.scopes.filter((x): x is McpScope =>
@@ -856,26 +870,23 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
                             name: t.name,
                           })}
                         >
-                          <GraduationCap size={13} /> Onboard
-                        </button>
-                        <button
-                          className={styles.rowBtn}
-                          title="Edit"
+                          Onboard
+                        </MenuItem>
+                        <MenuItem
+                          icon={<Pencil size={14} />}
                           onClick={() => openEdit(t)}
                           disabled={editing?.id === t.id}
                         >
-                          <Pencil size={13} /> Edit
-                        </button>
-                        {state === 'active' && (
-                          <button
-                            className={`${styles.rowBtn} ${styles.rowBtnDanger}`}
-                            title="Revoke"
-                            onClick={() => void revoke(t)}
-                          >
-                            <Trash2 size={13} /> Revoke
-                          </button>
-                        )}
-                      </div>
+                          Edit
+                        </MenuItem>
+                        <MenuItem
+                          icon={<Trash2 size={14} />}
+                          destructive
+                          onClick={() => void remove(t)}
+                        >
+                          Delete
+                        </MenuItem>
+                      </Menu>
                     </td>
                   </tr>
                 )

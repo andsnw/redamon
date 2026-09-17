@@ -11,9 +11,9 @@
  *  - permission-denied renders the form DISABLED WITH A REASON, rather than a
  *    button that 403s on click
  *  - the one-time reveal says plainly that it will not be shown again
- *  - every row shows its Edit/Revoke actions as labelled buttons, and an edit
- *    that gives a token MORE power asks for the password while one that takes
- *    power away does not
+ *  - every row's actions are reachable behind its kebab menu, Delete really
+ *    deletes, and an edit that gives a token MORE power asks for the password
+ *    while one that takes power away does not
  *
  * @vitest-environment jsdom
  */
@@ -24,7 +24,10 @@ const h = vi.hoisted(() => ({
   dangerConfirm: vi.fn(), alertError: vi.fn(), confirm: vi.fn(),
 }))
 
-vi.mock('@/components/ui', () => ({
+vi.mock('@/components/ui', async importActual => ({
+  // The REAL Menu, because the row's actions now live behind it: a test that
+  // stubbed the dropdown open would stop proving that they are reachable at all.
+  ...(await importActual<typeof import('@/components/ui')>()),
   useAlertModal: () => ({
     dangerConfirm: h.dangerConfirm, alertError: h.alertError, confirm: h.confirm,
   }),
@@ -167,14 +170,18 @@ describe('the list', () => {
     await waitFor(() => expect(screen.getByText('expired')).toBeTruthy())
   })
 
-  test('a revoked token offers no Revoke button', async () => {
+  test('a dead token can still be deleted, because the row is what is going', async () => {
+    // Revoking a revoked token was a no-op, so the action used to be hidden.
+    // Deleting one is not: a row nobody needs any more is exactly the row an
+    // operator wants gone.
     vi.stubGlobal('fetch', mockFetch({
       tokens: { tokens: [{ ...TOKEN, revokedAt: '2026-09-02T00:00:00.000Z' }] },
     }))
     render(<McpTokensTab userId="owner" />)
 
     await waitFor(() => expect(screen.getByText('revoked')).toBeTruthy())
-    expect(screen.queryByTitle('Revoke')).toBeNull()
+    fireEvent.click(screen.getByLabelText('Actions for ci agent'))
+    expect(screen.getByText('Delete')).toBeTruthy()
   })
 })
 
@@ -299,32 +306,100 @@ describe('the one-time reveal', () => {
   })
 })
 
-describe('revoking asks first, through the modal (never window.confirm)', () => {
-  test('a declined confirm revokes nothing', async () => {
-    h.dangerConfirm.mockResolvedValue(false)
-    const fetchMock = mockFetch({ tokens: { tokens: [TOKEN] } })
+describe('deleting asks first, through the modal (never window.confirm)', () => {
+  const openDelete = async (fetchMock: ReturnType<typeof mockFetch>) => {
     vi.stubGlobal('fetch', fetchMock)
     render(<McpTokensTab userId="owner" />)
-
     await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
-    fireEvent.click(screen.getByTitle('Revoke'))
+    fireEvent.click(screen.getByLabelText('Actions for ci agent'))
+    fireEvent.click(screen.getByText('Delete'))
+  }
+
+  test('a declined confirm deletes nothing', async () => {
+    h.dangerConfirm.mockResolvedValue(false)
+    const fetchMock = mockFetch({ tokens: { tokens: [TOKEN] } })
+    await openDelete(fetchMock)
 
     await waitFor(() => expect(h.dangerConfirm).toHaveBeenCalled())
     expect(fetchMock.mock.calls.some(c => c[1]?.method === 'DELETE')).toBe(false)
   })
 
-  test('a confirmed revoke calls DELETE', async () => {
+  test('a confirmed delete calls DELETE', async () => {
     h.dangerConfirm.mockResolvedValue(true)
     const fetchMock = mockFetch({ tokens: { tokens: [TOKEN] } })
-    vi.stubGlobal('fetch', fetchMock)
-    render(<McpTokensTab userId="owner" />)
-
-    await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
-    fireEvent.click(screen.getByTitle('Revoke'))
+    await openDelete(fetchMock)
 
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(c => c[1]?.method === 'DELETE')).toBe(true)
     )
+  })
+
+  test('the prompt says the row is going, not that the token is switched off', async () => {
+    // The old copy promised a revoke, which left the row on screen. Someone who
+    // reads "cannot be undone" and still expects to see the row afterwards is
+    // being misled about a destructive action.
+    h.dangerConfirm.mockResolvedValue(false)
+    await openDelete(mockFetch({ tokens: { tokens: [TOKEN] } }))
+
+    await waitFor(() => expect(h.dangerConfirm).toHaveBeenCalled())
+    const [message, title] = h.dangerConfirm.mock.calls[0]
+    expect(message).toMatch(/removed from the database/)
+    expect(message).toMatch(/audit log keeps a record/)
+    expect(message).toMatch(/cannot be undone/)
+    expect(title).toMatch(/Delete/)
+  })
+
+  test('the list is reloaded after a delete, so the row disappears', async () => {
+    h.dangerConfirm.mockResolvedValue(true)
+    const fetchMock = mockFetch({ tokens: { tokens: [TOKEN] } })
+    await openDelete(fetchMock)
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(c => c[1]?.method === 'DELETE')).toBe(true)
+    )
+    await waitFor(() => {
+      const lists = fetchMock.mock.calls.filter(
+        c => String(c[0]).includes('/mcp-tokens') && c[1]?.method === undefined
+      )
+      expect(lists.length).toBeGreaterThanOrEqual(2)
+    })
+  })
+})
+
+describe('the row actions live behind one kebab', () => {
+  test('nothing is shown until the kebab is opened', async () => {
+    // The point of the change: three spelled-out buttons per row were the widest
+    // thing in the table and pushed the permission tags into wrapping.
+    vi.stubGlobal('fetch', mockFetch({ tokens: { tokens: [TOKEN] } }))
+    render(<McpTokensTab userId="owner" />)
+
+    await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
+    expect(screen.queryByText('Onboard')).toBeNull()
+    expect(screen.queryByText('Edit')).toBeNull()
+    expect(screen.queryByText('Delete')).toBeNull()
+  })
+
+  test('opening it reveals all three actions', async () => {
+    vi.stubGlobal('fetch', mockFetch({ tokens: { tokens: [TOKEN] } }))
+    render(<McpTokensTab userId="owner" />)
+
+    await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
+    fireEvent.click(screen.getByLabelText('Actions for ci agent'))
+
+    expect(screen.getByText('Onboard')).toBeTruthy()
+    expect(screen.getByText('Edit')).toBeTruthy()
+    expect(screen.getByText('Delete')).toBeTruthy()
+  })
+
+  test('each row gets its own kebab, named after its token', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      tokens: { tokens: [TOKEN, { ...TOKEN, id: 't2', name: 'old agent' }] },
+    }))
+    render(<McpTokensTab userId="owner" />)
+
+    await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
+    expect(screen.getByLabelText('Actions for ci agent')).toBeTruthy()
+    expect(screen.getByLabelText('Actions for old agent')).toBeTruthy()
   })
 })
 
@@ -352,23 +427,28 @@ describe('editing a token', () => {
     await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
     // The admin tests depend on the session having resolved before the panel opens.
     await waitFor(() => expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/api/auth/me'))).toBe(true))
-    fireEvent.click(screen.getByTitle('Edit'))
+    fireEvent.click(screen.getByLabelText('Actions for ci agent'))
+    fireEvent.click(screen.getByText('Edit'))
     await waitFor(() => expect(screen.getByText('Edit token')).toBeTruthy())
   }
 
   const checkbox = (scope: string) =>
     screen.getByText(scope, { selector: 'code' }).closest('label')!.querySelector('input') as HTMLInputElement
 
-  test('every active row has labelled Edit and Revoke buttons; a revoked row only Edit', async () => {
+  test('a revoked row offers the same actions as a live one', async () => {
+    // Revoke used to be hidden on a dead row because revoking it again did
+    // nothing. Delete is not the same action: a row nobody needs any more is
+    // exactly the one an operator wants gone.
     vi.stubGlobal('fetch', mockFetch({
       tokens: { tokens: [ACTIVE, { ...TOKEN, id: 't2', name: 'old', revokedAt: '2026-09-02T00:00:00.000Z' }] },
     }))
     render(<McpTokensTab userId="owner" />)
 
     await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
-    expect(screen.getAllByTitle('Edit')).toHaveLength(2)
-    expect(screen.getAllByTitle('Revoke')).toHaveLength(1)
-    expect(screen.getAllByTitle('Edit')[0].textContent).toContain('Edit')
+    fireEvent.click(screen.getByLabelText('Actions for old'))
+    for (const label of ['Onboard', 'Edit', 'Delete']) {
+      expect(screen.getByText(label), label).toBeTruthy()
+    }
   })
 
   test('the panel opens with the current name and permissions', async () => {
@@ -613,7 +693,8 @@ describe('the Agent Profile on an existing token', () => {
     render(<McpTokensTab userId="owner" />)
     await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
     await waitFor(() => expect(f.mock.calls.some(c => String(c[0]).includes('/api/auth/me'))).toBe(true))
-    fireEvent.click(screen.getByTitle('Edit'))
+    fireEvent.click(screen.getByLabelText('Actions for ci agent'))
+    fireEvent.click(screen.getByText('Edit'))
     await waitFor(() => expect(screen.getByText('Edit token')).toBeTruthy())
     return f
   }
@@ -703,6 +784,7 @@ describe('the Agent Onboarding entry points', () => {
     vi.stubGlobal('fetch', mockFetch({ tokens: { tokens: [{ ...TOKEN, profile: 'asm' }] } }))
     render(<McpTokensTab userId="owner" />)
     await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
+    fireEvent.click(screen.getByLabelText('Actions for ci agent'))
     fireEvent.click(screen.getByText('Onboard'))
 
     const dialog = await screen.findByRole('dialog')
@@ -714,6 +796,7 @@ describe('the Agent Onboarding entry points', () => {
     vi.stubGlobal('fetch', mockFetch({ tokens: { tokens: [TOKEN] } }))
     render(<McpTokensTab userId="owner" />)
     await waitFor(() => expect(screen.getByText('ci agent')).toBeTruthy())
+    fireEvent.click(screen.getByLabelText('Actions for ci agent'))
     fireEvent.click(screen.getByText('Onboard'))
     // Without this a user ticking a permission in the modal believes they just
     // widened their token.
