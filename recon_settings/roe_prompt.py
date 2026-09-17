@@ -108,7 +108,16 @@ def accepts(spec: dict[str, Any]) -> str:
     otherwise produce rejections that look like model errors.
     """
     if spec.get("values"):
-        return "one of: " + ", ".join(spec["values"])
+        allowed = ", ".join(spec["values"])
+        # A closed vocabulary on a LIST field still takes a list. Saying "one of"
+        # here reads as "pick one", and the model duly answers with the bare
+        # string - which the validator then refuses as "must be an array" and
+        # drops, losing a rule the document stated plainly. That is how
+        # "report critical and high only" became nucleiSeverity: "high" and then
+        # nothing at all.
+        if spec.get("type") in ("string-list", "number-list"):
+            return f"a list, each item one of: {allowed}"
+        return "one of: " + allowed
     kind = spec.get("type")
     if kind == "boolean":
         return "true or false"

@@ -9505,7 +9505,14 @@
    "traffic": "none",
    "type": "string-list",
    "unit": "none",
-   "validator": "free_text"
+   "validator": "free_text",
+   "values": [
+    "PCI-DSS",
+    "HIPAA",
+    "SOC2",
+    "GDPR",
+    "ISO27001"
+   ]
   },
   "roeCriticalFindingNotify": {
    "default": true,
@@ -9704,7 +9711,17 @@
    "traffic": "none",
    "type": "string",
    "unit": "none",
-   "validator": "free_text"
+   "validator": "free_text",
+   "values": [
+    "external",
+    "internal",
+    "web_app",
+    "api",
+    "mobile",
+    "physical",
+    "social_engineering",
+    "red_team"
+   ]
   },
   "roeExcludedHostReasons": {
    "default": [],
@@ -9748,7 +9765,7 @@
    "group": "engagement_limits",
    "has_default": true,
    "mcp": "settable",
-   "meaning": "Technique categories the agent may not run on this engagement. Refused before the tool executes, and also withheld from the classifier's options.",
+   "meaning": "Technique categories the agent may not run on this engagement. Each token is expanded to the tools that perform it and refused before the tool executes (CATEGORY_TOOL_MAP in agentic/orchestrator_helpers/nodes/execute_plan_node.py), and the list is also withheld from the classifier's options. The vocabulary is closed because the gate matches these tokens EXACTLY: a free-text category such as \"Denial of Service\" reaches the agent's prompt as advice and never reaches the gate, so the refusal the UI promises silently does not happen.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String[]",
@@ -9758,7 +9775,14 @@
    "traffic": "none",
    "type": "string-list",
    "unit": "none",
-   "validator": "free_text"
+   "validator": "free_text",
+   "values": [
+    "brute_force",
+    "dos",
+    "social_engineering",
+    "physical",
+    "exploitation"
+   ]
   },
   "roeForbiddenTools": {
    "default": [],
@@ -9766,7 +9790,7 @@
    "group": "engagement_limits",
    "has_default": true,
    "mcp": "settable",
-   "meaning": "Tools the agent may not run on this engagement, by name, whatever their own enable flag says. Refused before the tool executes, in agentic/orchestrator_helpers/nodes/execute_plan_node.py.",
+   "meaning": "Tools the agent may not run on this engagement, by name, whatever their own enable flag says. Refused before the tool executes, in agentic/orchestrator_helpers/nodes/execute_plan_node.py. The vocabulary is closed to the agent's real tool names because that gate is an exact string match: a near-miss like \"hydra\" for execute_hydra never matches, and the tool runs with the ban recorded and unenforced.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "String[]",
@@ -9776,7 +9800,37 @@
    "traffic": "none",
    "type": "string-list",
    "unit": "none",
-   "validator": "free_text"
+   "validator": "free_text",
+   "values": [
+    "cve_intel",
+    "execute_amass",
+    "execute_arjun",
+    "execute_code",
+    "execute_curl",
+    "execute_ffuf",
+    "execute_gau",
+    "execute_guarddog",
+    "execute_httpx",
+    "execute_hydra",
+    "execute_jsluice",
+    "execute_katana",
+    "execute_naabu",
+    "execute_nmap",
+    "execute_nuclei",
+    "execute_osv_scanner",
+    "execute_playwright",
+    "execute_subfinder",
+    "execute_wpscan",
+    "google_dork",
+    "kali_shell",
+    "metasploit_console",
+    "msf_restart",
+    "proxy_brain",
+    "query_graph",
+    "shodan",
+    "tradecraft_lookup",
+    "web_search"
+   ]
   },
   "roeGlobalMaxRps": {
    "bounds": {
@@ -9937,7 +9991,13 @@
    "traffic": "none",
    "type": "string",
    "unit": "none",
-   "validator": "free_text"
+   "validator": "free_text",
+   "values": [
+    "no_access",
+    "prove_access_only",
+    "limited_collection",
+    "full_access"
+   ]
   },
   "roeStatusUpdateFrequency": {
    "default": "daily",
@@ -9956,7 +10016,13 @@
    "traffic": "none",
    "type": "string",
    "unit": "none",
-   "validator": "free_text"
+   "validator": "free_text",
+   "values": [
+    "daily",
+    "weekly",
+    "on_finding",
+    "none"
+   ]
   },
   "roeThirdPartyProviders": {
    "default": [],
@@ -11166,7 +11232,7 @@
    "group": "intrusive",
    "has_default": true,
    "mcp": "settable",
-   "meaning": "Reduce scan aggressiveness and network noise",
+   "meaning": "The engagement's PASSIVE switch. On, every recon tool is forced to its passive, low-noise profile and the noisiest ones are switched off outright (apply_stealth_overrides in recon/project_settings.py, driven by the registry's own stealth profile). This is the setting a rule of engagement means by \"passive only\", \"no active scanning\", \"observation only\" or \"do not send probes to the target\": it is one switch rather than the dozens of per-tool flags such a rule would otherwise have to name.",
    "optional": false,
    "phase": "standalone",
    "prisma_type": "Boolean",

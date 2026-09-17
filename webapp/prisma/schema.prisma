@@ -1535,6 +1535,44 @@ model EngagementAuthorization {
   @@map("engagement_authorizations")
 }
 
+/// Where an engagement's authorization records go when the PROJECT is deleted.
+///
+/// It is a Prisma model rather than raw SQL for one reason, found by driving the
+/// MCP create path end to end: `prisma db push --accept-data-loss` drops every
+/// table the schema does not know about, and this is the table the delete path
+/// writes to before it is allowed to remove a project. Kept outside the schema,
+/// it survived only until the next push - and in the window between that push
+/// and the next webapp boot (which re-applies it) EVERY project holding an
+/// authorization record became undeletable, failing with an opaque 500. Since
+/// `db push` is how this repo applies schema changes, that window was ordinary
+/// working practice rather than an edge case.
+///
+/// It deliberately carries no relation to Project: the whole point is that the
+/// record outlives the project, so a foreign key would defeat it. The append-only
+/// trigger on the live table still has to be re-applied on every boot, because
+/// Prisma has no primitive for one.
+model EngagementAuthorizationArchive {
+  id                String   @id
+  /// The project that was deleted. Not a relation, by design: the row exists
+  /// precisely because that project no longer does.
+  projectId         String   @map("project_id")
+  documentSha256    String   @map("document_sha256")
+  documentKind      String   @map("document_kind")
+  sourceUrl         String   @default("") @map("source_url")
+  programHandle     String?  @map("program_handle")
+  issuedAt          DateTime @map("issued_at")
+  recordedAt        DateTime @map("recorded_at")
+  recordedVia       String   @map("recorded_via")
+  recordedByTokenId String?  @map("recorded_by_token_id")
+  recordedByUserId  String?  @map("recorded_by_user_id")
+  summary           String   @default("") @map("summary")
+  archivedAt        DateTime @default(now()) @map("archived_at")
+  archivedReason    String   @default("project_deleted") @map("archived_reason")
+
+  @@index([projectId])
+  @@map("engagement_authorization_archive")
+}
+
 model ScanJob {
   id                 String       @id @default(cuid())
   projectId          String       @map("project_id")

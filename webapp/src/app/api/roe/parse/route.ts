@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { internalKeyHeaders } from '@/lib/agentAuth'
+import { getEffectiveUser } from '@/lib/session'
 import { buildParseProposal } from '@/lib/reconSettings/roeParse'
 
 const AGENT_API_URL = process.env.AGENT_API_URL || process.env.NEXT_PUBLIC_AGENT_API_URL || 'http://localhost:8080'
@@ -99,6 +100,7 @@ export async function POST(request: NextRequest) {
 
     // Forward extracted text to agent for LLM parsing (with timeout)
     const model = formData.get('model') as string | null
+    const userId = (await getEffectiveUser())?.userId ?? null
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS)
 
@@ -107,7 +109,14 @@ export async function POST(request: NextRequest) {
       agentResponse = await fetch(`${AGENT_API_URL}/roe/parse`, {
         method: 'POST',
         headers: internalKeyHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ text, ...(model && { model }) }),
+        // The caller's id travels with the request so the agent can resolve THIS
+        // user's LLM providers. Without it the agent falls back to whatever
+        // project settings happen to be cached in its orchestrator, and on a
+        // freshly started agent - or when the document is uploaded while
+        // CREATING a project, which is the only place this feature is offered -
+        // there is no project loaded and no provider key, so every parse failed
+        // with "LLM not available" whatever model was asked for.
+        body: JSON.stringify({ text, ...(model && { model }), ...(userId && { user_id: userId }) }),
         signal: controller.signal,
       })
     } catch (fetchError) {

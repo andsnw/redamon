@@ -12,10 +12,21 @@
  * trigger checks, and removes the originals, all inside one transaction, so a
  * failure anywhere leaves both the project and its records intact.
  *
- * The archive table has no Prisma model on purpose. Nothing in the application
- * reads it, it is not part of any tenant-scoped query, and giving it a model
- * would make it appear in every `select`-building helper that walks the
- * datamodel. It is queried with SQL, by a person, during an investigation.
+ * The archive table IS a Prisma model, and was deliberately not one until an
+ * end-to-end run showed what that cost. `prisma db push --accept-data-loss`
+ * drops every table the schema does not know about, and this is the table the
+ * delete path must write to before it is allowed to remove a project. Outside
+ * the schema it survived only until the next push; in the window between that
+ * push and the next webapp boot - which is where the boot script re-creates it -
+ * every project holding an authorization record was undeletable, failing with an
+ * opaque 500. Since `db push` is how this repo applies schema changes, that
+ * window was ordinary working practice.
+ *
+ * The original reason for keeping it out was that a model would appear in every
+ * `select`-building helper that walks the datamodel. No such helper exists: all
+ * three callers of `Prisma.dmmf` look up `Project` by name. Nothing in the
+ * application reads this table; it is still queried with SQL, by a person,
+ * during an investigation.
  */
 import prisma from '@/lib/prisma'
 

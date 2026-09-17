@@ -296,6 +296,12 @@ class RoeParseRequest(BaseModel):
     """Request model for RoE document parsing."""
     text: str
     model: str | None = None  # Optional: override the LLM model for parsing
+    # Whose LLM providers to use. The parse is project-INDEPENDENT, so there is
+    # no project whose settings could supply a key: the document is uploaded
+    # while a project is being created, and on a freshly started agent no
+    # project is loaded at all. Without this the endpoint resolved no provider
+    # and answered 503 for every model.
+    user_id: str | None = None
 
 
 # The parse prompt is a BUILD ARTIFACT generated from the registry, never a
@@ -354,7 +360,7 @@ async def parse_roe_document(body: RoeParseRequest):
 
     requested_model = body.model or DEFAULT_AGENT_SETTINGS['OPENAI_MODEL']
     try:
-        llm = _setup_llm_for_endpoint(requested_model)
+        llm = _setup_llm_for_endpoint(requested_model, body.user_id)
     except Exception as e:
         logger.error(f"RoE parse: failed to set up LLM ({requested_model}): {e}")
         return JSONResponse(content={"error": f"LLM not available for model {requested_model}"}, status_code=503)
@@ -1161,16 +1167,48 @@ async def get_host_ip():
     return {"detectedHostIp": os.getenv("HOST_LAN_IP", "").strip()}
 
 
-def _setup_llm_for_endpoint(model_name: str) -> "BaseChatModel":
+def _fetch_user_llm_providers(user_id: str) -> list:
+    """This user's LLM providers, with keys, straight from the webapp.
+
+    The project-settings load does this as one step of many, which is fine for
+    an agent run and wrong for an endpoint that has no project: a RoE document
+    is parsed while a project is being CREATED. Fetched per request rather than
+    cached, because a key added a minute ago must work without restarting the
+    agent.
+
+    Never raises: a provider list that cannot be fetched falls back to whatever
+    the loaded settings hold, and the caller reports 503 if that is nothing.
+    """
+    import requests
+    from project_settings import INTERNAL_HEADERS
+
+    webapp_url = os.environ.get('WEBAPP_API_URL', 'http://webapp:3000').rstrip('/')
+    try:
+        resp = requests.get(
+            f"{webapp_url}/api/users/{user_id}/llm-providers?internal=true",
+            headers=INTERNAL_HEADERS,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json() or []
+    except Exception as exc:
+        logger.warning(f"Could not fetch LLM providers for user {user_id}: {exc}")
+        return []
+
+
+def _setup_llm_for_endpoint(model_name: str, user_id: str | None = None) -> "BaseChatModel":
     """Set up an LLM for non-agent endpoints (RoE parse, report summarizer).
 
-    Uses the orchestrator's loaded project settings (user LLM providers from DB).
+    Prefers the CALLER's providers when a user id is given, and falls back to
+    the orchestrator's loaded project settings otherwise.
     """
     from orchestrator_helpers.llm_setup import setup_llm, _resolve_provider_key
     from project_settings import get_settings
 
     settings = get_settings()
     user_providers = settings.get('USER_LLM_PROVIDERS', [])
+    if user_id and not user_providers:
+        user_providers = _fetch_user_llm_providers(user_id)
     custom_config = settings.get('CUSTOM_LLM_CONFIG')
 
     openai_p = _resolve_provider_key(user_providers, "openai")

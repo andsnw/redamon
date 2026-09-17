@@ -237,6 +237,29 @@ describe('P6: the form cannot offer a value the write will refuse', () => {
     expect(problems).toEqual([])
   })
 
+  test('a closed string-list is never driven by a free-text box', () => {
+    // The list half of the same rule. `roeForbiddenTools` was a comma-separated
+    // text input over a set the gate matches exactly, so every value it produced
+    // was plausible and unenforceable - including the one its own placeholder
+    // suggested. A closed list belongs on checkboxes, like nucleiSeverity.
+    const problems: string[] = []
+    for (const full of formFiles(FORM_DIR)) {
+      const text = readFileSync(full, 'utf8')
+      for (const m of text.matchAll(/updateField\(\s*'([A-Za-z0-9_]+)'/g)) {
+        const spec = field(m[1])
+        if (!spec?.values || spec.type !== 'string-list') continue
+        const before = text.slice(0, m.index!)
+        const at = before.lastIndexOf('<input')
+        if (at < 0) continue
+        const tag = before.slice(at, at + 200)
+        if (/type="text"/.test(tag)) {
+          problems.push(`${path.basename(full)}: ${m[1]} is written from a text input`)
+        }
+      }
+    }
+    expect(problems).toEqual([])
+  })
+
   test('the backwards parser really finds a control', () => {
     // A parser that found nothing would make the assertion above vacuous, which
     // is exactly the failure it was written to replace.

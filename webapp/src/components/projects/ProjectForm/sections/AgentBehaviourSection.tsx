@@ -9,16 +9,33 @@ import styles from '../ProjectForm.module.css'
 import { ModelPicker } from '@/components/shared/ModelPicker'
 import { REGEX_IPV4 } from '@/lib/validation'
 import { RegistryFields } from '../RegistryFields'
+import { field } from '@/lib/reconSettings/registry'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
 
-/** The technique classes the agent checks a tool's category against. */
-const FORBIDDEN_CATEGORIES = [
-  { value: 'brute_force', label: 'Credential testing' },
-  { value: 'dos', label: 'Availability testing' },
-  { value: 'social_engineering', label: 'Social engineering' },
-  { value: 'physical', label: 'Physical access' },
-]
+/**
+ * Both vocabularies come from the registry, which is also what the save
+ * validates against and what the RoE parse prompt teaches the model. Hard-coding
+ * them here is how the UI drifts into offering a token the gate cannot enforce:
+ * `roeForbiddenCategories` is matched EXACTLY against CATEGORY_TOOL_MAP, so a
+ * value this list invents is recorded, shown as a rule, and never refuses
+ * anything.
+ */
+const CATEGORY_LABELS: Record<string, string> = {
+  brute_force: 'Credential testing',
+  dos: 'Availability testing',
+  social_engineering: 'Social engineering',
+  physical: 'Physical access',
+  exploitation: 'Exploitation',
+}
+
+const FORBIDDEN_CATEGORIES = (field('roeForbiddenCategories')?.values ?? []).map(value => ({
+  value,
+  label: CATEGORY_LABELS[value] ?? value,
+}))
+
+/** The agent's real tool names. A near-miss never matches the gate. */
+const FORBIDDEN_TOOLS = field('roeForbiddenTools')?.values ?? []
 
 interface AgentBehaviourSectionProps {
   data: FormData
@@ -30,6 +47,14 @@ interface AgentBehaviourSectionProps {
 export function AgentBehaviourSection({ data, updateField, detectedHostIp }: AgentBehaviourSectionProps) {
   const [isOpen, setIsOpen] = useState(true)
   const { userId } = useProject()
+
+  const toggleForbiddenTool = (tool: string) => {
+    const tools = data.roeForbiddenTools || []
+    updateField(
+      'roeForbiddenTools',
+      tools.includes(tool) ? tools.filter(t => t !== tool) : [...tools, tool]
+    )
+  }
 
   const toggleForbiddenCategory = (cat: string) => {
     const cats = data.roeForbiddenCategories || []
@@ -905,19 +930,22 @@ export function AgentBehaviourSection({ data, updateField, detectedHostIp }: Age
             <div className={styles.fieldRow}>
               <div className={styles.fieldGroup}>
                 <label className={styles.fieldLabel}>Forbidden tools</label>
-                <input
-                  className="textInput"
-                  type="text"
-                  value={(data.roeForbiddenTools || []).join(', ')}
-                  onChange={(e) => updateField(
-                    'roeForbiddenTools',
-                    e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                  )}
-                  placeholder="e.g. execute_hydra, execute_sqlmap"
-                />
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {FORBIDDEN_TOOLS.map(tool => (
+                    <label key={tool} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={(data.roeForbiddenTools || []).includes(tool)}
+                        onChange={() => toggleForbiddenTool(tool)}
+                      />
+                      <code>{tool}</code>
+                    </label>
+                  ))}
+                </div>
                 <span className={styles.fieldHint}>
-                  By tool name, whatever that tool&apos;s own enable flag says. Refused before
-                  the tool executes.
+                  Whatever that tool&apos;s own enable flag says. Refused before the tool
+                  executes, by exact name: these are the agent&apos;s real tool names, so a
+                  ban can never be recorded against something that will not match.
                 </span>
               </div>
               <div className={styles.fieldGroup}>

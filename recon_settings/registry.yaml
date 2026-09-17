@@ -6801,6 +6801,7 @@ fields:
     traffic: none
     roe_capped: false
     mcp: never
+    values: ["PCI-DSS", "HIPAA", "SOC2", "GDPR", "ISO27001"]
     validator: free_text
     group: engagement_record
     meaning: >-
@@ -6961,6 +6962,7 @@ fields:
     traffic: none
     roe_capped: false
     mcp: never
+    values: ["external", "internal", "web_app", "api", "mobile", "physical", "social_engineering", "red_team"]
     validator: free_text
     group: engagement_record
     meaning: >-
@@ -7006,11 +7008,17 @@ fields:
     traffic: none
     roe_capped: false
     mcp: settable
+    values: ["brute_force", "dos", "social_engineering", "physical", "exploitation"]
     validator: free_text
     group: engagement_limits
     meaning: >-
-      Technique categories the agent may not run on this engagement. Refused before
-      the tool executes, and also withheld from the classifier's options.
+      Technique categories the agent may not run on this engagement. Each token is
+      expanded to the tools that perform it and refused before the tool executes
+      (CATEGORY_TOOL_MAP in agentic/orchestrator_helpers/nodes/execute_plan_node.py),
+      and the list is also withheld from the classifier's options. The vocabulary is
+      closed because the gate matches these tokens EXACTLY: a free-text category such
+      as "Denial of Service" reaches the agent's prompt as advice and never reaches
+      the gate, so the refusal the UI promises silently does not happen.
     form_section: "AgentBehaviourSection"
   roeForbiddenTools:
     tool: roe
@@ -7020,12 +7028,16 @@ fields:
     traffic: none
     roe_capped: false
     mcp: settable
+    values: ["cve_intel", "execute_amass", "execute_arjun", "execute_code", "execute_curl", "execute_ffuf", "execute_gau", "execute_guarddog", "execute_httpx", "execute_hydra", "execute_jsluice", "execute_katana", "execute_naabu", "execute_nmap", "execute_nuclei", "execute_osv_scanner", "execute_playwright", "execute_subfinder", "execute_wpscan", "google_dork", "kali_shell", "metasploit_console", "msf_restart", "proxy_brain", "query_graph", "shodan", "tradecraft_lookup", "web_search"]
     validator: free_text
     group: engagement_limits
     meaning: >-
       Tools the agent may not run on this engagement, by name, whatever their own
       enable flag says. Refused before the tool executes, in
-      agentic/orchestrator_helpers/nodes/execute_plan_node.py.
+      agentic/orchestrator_helpers/nodes/execute_plan_node.py. The vocabulary is
+      closed to the agent's real tool names because that gate is an exact string
+      match: a near-miss like "hydra" for execute_hydra never matches, and the tool
+      runs with the ban recorded and unenforced.
     form_section: "AgentBehaviourSection"
   roeGlobalMaxRps:
     tool: roe
@@ -7142,6 +7154,7 @@ fields:
     traffic: none
     roe_capped: false
     mcp: never
+    values: ["no_access", "prove_access_only", "limited_collection", "full_access"]
     validator: free_text
     group: engagement_record
     meaning: >-
@@ -7157,6 +7170,7 @@ fields:
     traffic: none
     roe_capped: false
     mcp: never
+    values: ["daily", "weekly", "on_finding", "none"]
     validator: free_text
     group: engagement_record
     meaning: >-
@@ -8027,7 +8041,13 @@ fields:
     mcp: settable
     group: intrusive
     meaning: >-
-      Reduce scan aggressiveness and network noise
+      The engagement's PASSIVE switch. On, every recon tool is forced to its
+      passive, low-noise profile and the noisiest ones are switched off outright
+      (apply_stealth_overrides in recon/project_settings.py, driven by the
+      registry's own stealth profile). This is the setting a rule of engagement
+      means by "passive only", "no active scanning", "observation only" or "do
+      not send probes to the target": it is one switch rather than the dozens of
+      per-tool flags such a rule would otherwise have to name.
     form_section: "TargetSection"
   subdomainDiscoveryEnabled:
     tool: subdomain_discovery
