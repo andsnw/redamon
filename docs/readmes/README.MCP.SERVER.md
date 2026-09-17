@@ -530,8 +530,8 @@ may write:
 | --- | --- | --- |
 | `settable` | 635 | write at any time through `update_recon_settings` |
 | `create_only` | 20 | the engagement scope: written once by `create_project`, refused by name afterwards |
-| `tighten_only` | 40 | the Rules of Engagement: `tighten_engagement_roe`, safe direction only |
-| `never` | 19 | not a pipeline parameter at all; refused with its class |
+| `tighten_only` | 39 | the Rules of Engagement: `tighten_engagement_roe`, safe direction only |
+| `never` | 20 | not a pipeline parameter at all, or a column no settings write can carry; refused with its class |
 
 A test walking `Prisma.ProjectScalarFieldEnum` fails until every column has an
 entry, so a new Prisma field still fails the build until someone describes it —

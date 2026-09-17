@@ -6811,15 +6811,19 @@ fields:
     phase: standalone
     traffic: none
     roe_capped: false
-    mcp: tighten_only
+    mcp: never
     readable: false
     validator: free_text
-    tighten: narrow
+    deny_reason: upload-managed
     read_deny_reason: document_blob
+    written_by: "/api/projects"
     group: roe
     meaning: >-
       The uploaded Rules of Engagement document itself, stored so the engagement
-      carries its own authority.
+      carries its own authority. A Bytes column written only by the project
+      create and import endpoints, which receive the file. The MCP surface
+      records the document's SHA-256 through attach_engagement_authorization
+      instead; it never carries the bytes.
   roeDocumentMimeType:
     tool: roe
     runtime_key: null

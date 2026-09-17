@@ -951,6 +951,11 @@ def apply_roe_rate_cap(settings: dict[str, Any]) -> dict[str, Any]:
 # Until the registry work these columns were simply refused by name on the MCP
 # surface, and there was no check at all on the recon side. The deny list WAS the
 # control; this is what replaces it.
+# The one shared root that also holds per-project uploads, at
+# `<root>/<project_id>/<name>`. Every OTHER root holds only shipped or
+# operator-mounted files, which every project may read.
+_PROJECT_UPLOAD_ROOT = "/app/recon/wordlists"
+
 _PROJECT_FILE_ROOTS = (
     "/app/recon/wordlists",      # shipped lists + the per-project upload dir
     "/app/custom_templates",     # operator-supplied nuclei templates
@@ -962,12 +967,20 @@ _PROJECT_FILE_ROOTS = (
 )
 
 
-def _inside_allowed_root(raw: Any) -> bool:
-    """True when `raw` is an absolute path resolving inside an allowed root.
+def _inside_allowed_root(raw: Any, project_id: str = "") -> bool:
+    """True when `raw` is an absolute path this project may read.
 
     Fail closed: a value that is not a string, is empty, or cannot be resolved
     counts as escaping. `os.path.realpath` is used rather than `abspath` so a
     symlink planted inside an allowed root cannot point out of it.
+
+    The upload root is SHARED between projects, so "inside an allowed root" is
+    not the same question as "this project may read it". Uploads land at
+    `<upload root>/<project id>/<name>`, and the tools that read these files
+    report what matched, so pointing one at a neighbouring project's directory
+    reflects that project's uploaded file into this scan's graph. Inside the
+    upload root a path is therefore allowed only when it is a shipped list
+    sitting directly in it, or when it is under THIS project's directory.
     """
     if not isinstance(raw, str) or not raw.strip():
         return False
@@ -975,10 +988,19 @@ def _inside_allowed_root(raw: Any) -> bool:
         resolved = os.path.realpath(raw.strip())
     except (OSError, ValueError):
         return False
+    upload_root = os.path.realpath(_PROJECT_UPLOAD_ROOT)
     for root in _PROJECT_FILE_ROOTS:
         real_root = os.path.realpath(root)
-        if resolved == real_root or resolved.startswith(real_root + os.sep):
+        if resolved == real_root:
             return True
+        if not resolved.startswith(real_root + os.sep):
+            continue
+        if real_root != upload_root:
+            return True
+        relative = resolved[len(real_root) + 1:]
+        if os.sep not in relative:
+            return True  # a shipped list, not an upload
+        return bool(project_id) and relative.split(os.sep, 1)[0] == project_id
     return False
 
 
@@ -1007,13 +1029,17 @@ def sanitize_project_file_settings(settings: dict[str, Any]) -> dict[str, Any]:
     Both validators come from the registry, so a new path-valued column is
     covered the moment it declares one.
     """
+    # The upload directory is shared, so "allowed" is a per-project question.
+    # An empty id means we could not establish whose scan this is, and then no
+    # upload directory is readable at all.
+    project_id = str(settings.get('PROJECT_ID') or '').strip()
     for key in _registry.project_file_runtime_keys():
         if key not in settings:
             continue
         value = settings[key]
         shipped = DEFAULT_SETTINGS.get(key)
         if isinstance(value, list):
-            kept = [v for v in value if _inside_allowed_root(v)]
+            kept = [v for v in value if _inside_allowed_root(v, project_id)]
             if len(kept) != len(value):
                 dropped = [v for v in value if v not in kept]
                 logger.warning(
@@ -1028,7 +1054,7 @@ def sanitize_project_file_settings(settings: dict[str, Any]) -> dict[str, Any]:
                 settings[key] = kept
             continue
         # An empty string is "not set", which every consumer already handles.
-        if value in (None, "") or _inside_allowed_root(value):
+        if value in (None, "") or _inside_allowed_root(value, project_id):
             continue
         logger.warning(
             f"[guardrail] Rejected path outside the allowed directories for {key}: "

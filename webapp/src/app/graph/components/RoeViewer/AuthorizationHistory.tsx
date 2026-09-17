@@ -23,6 +23,7 @@
 import { useEffect, useState } from 'react'
 import { FileCheck } from 'lucide-react'
 
+import { ExternalLink } from '@/components/ui'
 import styles from './RoeViewer.module.css'
 
 export interface AuthorizationRecord {
@@ -143,14 +144,13 @@ export function AuthorizationHistory({
             {record.recordedByTokenId ? ` · token ${record.recordedByTokenId}` : ''}
           </span>
           {record.sourceUrl && (
-            <a
-              className={styles.authMeta}
-              href={record.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {record.sourceUrl}
-            </a>
+            <span className={styles.authMeta}>
+              {/* An agent holding engagement:authorize supplies this string and
+                  nothing constrains its scheme, so it reaches here as untrusted
+                  input. ExternalLink renders a non-http(s) value as plain text
+                  rather than a link the operator can click. */}
+              <ExternalLink href={record.sourceUrl}>{record.sourceUrl}</ExternalLink>
+            </span>
           )}
         </div>
       ))}

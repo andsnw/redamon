@@ -238,7 +238,7 @@ export async function updateReconSettings(
     )
   }
 
-  const filtered = filterReconSettings(settings)
+  const filtered = filterReconSettings(settings, { projectId })
   if (!filtered.ok) {
     // Named, never silently stripped: a caller who believes a setting applied
     // would act on a scan configured differently from the one they asked for.

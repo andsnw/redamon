@@ -187,12 +187,21 @@ export function checkTighten(
  * on, `current` is required, because permitting a move whose direction could
  * not be checked is the one failure this layer cannot afford.
  */
+/** The most fields one write may carry. See the check in `filterReconSettings`. */
+export const MAX_KEYS_PER_CALL = 200
+
 export function filterReconSettings(
   input: unknown,
   options: {
     mode?: SettingsMode
     current?: Record<string, unknown>
     allowTighten?: boolean
+    /**
+     * Whose project this write is for. The `project_file` validator needs it
+     * because the upload directory is shared between projects; without it no
+     * upload path is accepted.
+     */
+    projectId?: string
   } = {}
 ): SettingsValidation {
   const mode = options.mode ?? 'update'
@@ -203,6 +212,19 @@ export function filterReconSettings(
   const entries = Object.entries(input as Record<string, unknown>)
   if (entries.length === 0) {
     return { ok: false, key: '', error: 'settings must contain at least one field.' }
+  }
+  // Per-value bounds do not bound a CALL. There are over 700 columns and the
+  // free-text ones accept 20,000 characters each, so an unbounded key count is
+  // a multi-megabyte row written by one request. No real caller writes more
+  // than a handful of settings at once.
+  if (entries.length > MAX_KEYS_PER_CALL) {
+    return {
+      ok: false,
+      key: '',
+      error:
+        `${entries.length} fields in one call; at most ${MAX_KEYS_PER_CALL} may be written ` +
+        'at a time. Split the batch.',
+    }
   }
 
   const data: Record<string, unknown> = {}
@@ -221,7 +243,7 @@ export function filterReconSettings(
     const refusal = explainRefusal(key, spec, mode, options.allowTighten ?? false)
     if (refusal) return { ok: false, key, error: refusal }
 
-    const problem = validateValue(key, spec, value)
+    const problem = validateValue(key, spec, value, options.projectId)
     if (problem) return { ok: false, key, error: `'${key}' ${problem}` }
 
     if (spec.mcp === 'tighten_only' && mode === 'update') {

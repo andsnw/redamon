@@ -48,7 +48,7 @@ import { enforceRate, type McpContext } from '@/lib/mcp/tools'
 import { settingsFingerprint } from '@/lib/jobQueue'
 import { checkTighten, filterReconSettings, reconSettingsSelect } from '@/lib/reconSettings/filter'
 import { fieldsWhere, field, loadRegistry } from '@/lib/reconSettings/registry'
-import { checkHeader } from '@/lib/reconSettings/validators'
+import { checkHeader, isInsideProjectFileRoot } from '@/lib/reconSettings/validators'
 
 // --- create_project -----------------------------------------------------------------
 
@@ -168,6 +168,82 @@ function filterRoeAtCreate(roe: Record<string, unknown>): Record<string, unknown
   return result.data
 }
 
+/**
+ * Keys `settings` may not carry, because this tool derives them from its own
+ * arguments.
+ *
+ * `settings` is filtered in CREATE mode, which by design accepts create-only and
+ * tighten-only fields. That is right for a creation and wrong for this one
+ * object: it is applied last, so a key here would silently overwrite a value the
+ * engagement guard above had just checked. The mode selectors are derived from
+ * the targeting arguments, `engagementKind` decides which guard runs at all, and
+ * the Rules of Engagement have their own argument with its own direction rules.
+ */
+const RESERVED_AT_CREATE = new Set([
+  'targetDomain', 'targetIps', 'ipMode',
+  'domainBatchMode', 'domainBatchHosts', 'domainBatchGroups', 'subdomainList',
+  'engagementKind', 'engagementIdentityHeader',
+])
+
+function filterSettingsAtCreate(settings: Record<string, unknown>): Record<string, unknown> {
+  const reserved = Object.keys(settings).filter(k => RESERVED_AT_CREATE.has(k))
+  if (reserved.length > 0) {
+    throw new McpToolError(
+      `${reserved.join(', ')} may not be set through \`settings\`: this tool derives the ` +
+      'targeting mode and the engagement kind from its own arguments, and a value here ' +
+      'would override the scope that was just checked. Pass them as arguments.',
+      'bad_args'
+    )
+  }
+  const tightenOnly = Object.keys(settings).filter(k => field(k)?.mcp === 'tighten_only')
+  if (tightenOnly.length > 0) {
+    throw new McpToolError(
+      `${tightenOnly.join(', ')} are Rules of Engagement fields and belong in \`roe\`, not ` +
+      '`settings`. They are checked against the engagement rules there.',
+      'bad_args'
+    )
+  }
+  const filtered = filterReconSettings(settings, { mode: 'create' })
+  if (!filtered.ok) throw new McpToolError(filtered.error, 'setting_rejected')
+  return filtered.data
+}
+
+/**
+ * The project an earlier call with this key already created, or null.
+ *
+ * Used twice: once before writing anything, and again when the write loses the
+ * race. The pre-check alone is check-then-act, and the column is `@unique`, so
+ * two concurrent retries of the same loop tick would otherwise give the second
+ * one a raw P2002 instead of the first project. An unattended caller's answer
+ * to an opaque error is another retry, this time with a fresh key, which is the
+ * second project the key exists to prevent.
+ */
+async function findByIdempotencyKey(ctx: McpContext, key: string) {
+  const existing = await prisma.engagementAuthorization.findUnique({
+    where: { idempotencyKey: key },
+    select: { projectId: true, project: { select: { userId: true, name: true } } },
+  })
+  if (!existing) return null
+  if (existing.project.userId !== ctx.token.userId) {
+    throw new McpToolError(
+      'That idempotency key belongs to another account\'s project.',
+      'access_denied'
+    )
+  }
+  return {
+    projectId: existing.projectId,
+    name: existing.project.name,
+    created: false,
+    note: 'An earlier call with this idempotency key already created this project.',
+  }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002'
+  )
+}
+
 export async function createProject(ctx: McpContext, args: CreateProjectArgs) {
   requireScope(ctx.token, 'project:create')
   enforceRate(ctx, 'write')
@@ -187,24 +263,8 @@ export async function createProject(ctx: McpContext, args: CreateProjectArgs) {
   // otherwise produce two projects with the same scope and two authorization
   // records. Checked BEFORE anything is written.
   if (args.idempotencyKey) {
-    const existing = await prisma.engagementAuthorization.findUnique({
-      where: { idempotencyKey: args.idempotencyKey },
-      select: { projectId: true, project: { select: { userId: true, name: true } } },
-    })
-    if (existing) {
-      if (existing.project.userId !== ctx.token.userId) {
-        throw new McpToolError(
-          'That idempotency key belongs to another account\'s project.',
-          'access_denied'
-        )
-      }
-      return {
-        projectId: existing.projectId,
-        name: existing.project.name,
-        created: false,
-        note: 'An earlier call with this idempotency key already created this project.',
-      }
-    }
+    const seen = await findByIdempotencyKey(ctx, args.idempotencyKey)
+    if (seen) return seen
   }
 
   const data: Record<string, unknown> = {
@@ -248,18 +308,14 @@ export async function createProject(ctx: McpContext, args: CreateProjectArgs) {
 
   if (args.roe) Object.assign(data, filterRoeAtCreate(args.roe))
 
-  if (args.settings) {
-    const filtered = filterReconSettings(args.settings, { mode: 'create' })
-    if (!filtered.ok) throw new McpToolError(filtered.error, 'setting_rejected')
-    Object.assign(data, filtered.data)
-  }
+  if (args.settings) Object.assign(data, filterSettingsAtCreate(args.settings))
 
   // The rule third_party projects live under, checked BEFORE the row exists so
   // a refused creation leaves nothing behind.
   let authorization: ReturnType<typeof normaliseAuthorization> | null = null
   if (args.authorization) authorization = normaliseAuthorization(args.authorization)
 
-  if (args.engagementKind === 'third_party') {
+  if (data.engagementKind === 'third_party') {
     const ceiling = effectiveCeiling({
       id: '', engagementKind: 'third_party',
       roeEnabled: Boolean(data.roeEnabled),
@@ -282,25 +338,37 @@ export async function createProject(ctx: McpContext, args: CreateProjectArgs) {
     }
   }
 
-  const created = await prisma.$transaction(async tx => {
-    const project = await tx.project.create({
-      data: data as never,
-      select: { id: true, name: true },
-    })
-    if (authorization) {
-      await tx.engagementAuthorization.create({
-        data: {
-          projectId: project.id,
-          ...authorization,
-          recordedVia: 'mcp',
-          recordedByTokenId: ctx.token.tokenId,
-          recordedByUserId: ctx.token.userId,
-          idempotencyKey: args.idempotencyKey ?? null,
-        },
+  let created: { id: string; name: string }
+  try {
+    created = await prisma.$transaction(async tx => {
+      const project = await tx.project.create({
+        data: data as never,
+        select: { id: true, name: true },
       })
+      if (authorization) {
+        await tx.engagementAuthorization.create({
+          data: {
+            projectId: project.id,
+            ...authorization,
+            recordedVia: 'mcp',
+            recordedByTokenId: ctx.token.tokenId,
+            recordedByUserId: ctx.token.userId,
+            idempotencyKey: args.idempotencyKey ?? null,
+          },
+        })
+      }
+      return project
+    })
+  } catch (error) {
+    // Lost the race against a concurrent call with the same key. The
+    // transaction rolled back, so the winner's project is the only one, and
+    // returning it is the same answer the pre-check would have given.
+    if (args.idempotencyKey && isUniqueViolation(error)) {
+      const winner = await findByIdempotencyKey(ctx, args.idempotencyKey)
+      if (winner) return winner
     }
-    return project
-  })
+    throw error
+  }
 
   void writeAudit({
     actorId: ctx.token.userId,
@@ -309,14 +377,16 @@ export async function createProject(ctx: McpContext, args: CreateProjectArgs) {
     targetId: created.id,
     after: {
       tokenId: ctx.token.tokenId, tokenPrefix: ctx.token.tokenPrefix,
-      engagementKind: args.engagementKind,
+      engagementKind: data.engagementKind,
       targetingMode: mode,
       scope: {
         targetDomain: data.targetDomain ?? null,
         targetIps: data.targetIps ?? null,
         domainBatchHosts: data.domainBatchHosts ?? null,
       },
-      roe: args.roe ?? null,
+      roe: Object.fromEntries(
+        Object.keys(data).filter(k => field(k)?.mcp === 'tighten_only').map(k => [k, data[k]])
+      ),
       authorizationDigest: authorization?.documentSha256 ?? null,
     },
     source: 'mcp',
@@ -370,6 +440,23 @@ export async function tightenEngagementRoe(
     )
   }
 
+  // Write-without-read is the one asymmetry this tool must not have. These
+  // fields are withheld from every MCP read because they carry the client's
+  // identity and the agreement text, so `before` below cannot contain them:
+  // the audit row would record the prior value as absent and the overwrite
+  // would be unrecoverable. Their `tighten: narrow` has no direction to check
+  // either, so nothing else would catch it. They are set when the engagement
+  // opens and changed by the operator, not by an agent narrowing rules.
+  const blind = Object.keys(roe ?? {}).filter(k => field(k)?.readable === false)
+  if (blind.length > 0) {
+    throw new McpToolError(
+      `${blind.join(', ')} may not be changed here. They carry the client's identity and ` +
+      'the engagement agreement, which this surface cannot read back, so a write would ' +
+      'leave no record of what it replaced. Change them where the engagement was opened.',
+      'setting_rejected'
+    )
+  }
+
   const before = await prisma.project.findUnique({
     where: { id: projectId },
     select: { ...reconSettingsSelect(), updatedAt: true },
@@ -380,6 +467,7 @@ export async function tightenEngagementRoe(
     mode: 'update',
     allowTighten: true,
     current: before as Record<string, unknown>,
+    projectId,
   })
   if (!filtered.ok) throw new McpToolError(filtered.error, 'setting_rejected')
 
@@ -596,9 +684,10 @@ export async function preflightScopeCheck(ctx: McpContext, projectId: string) {
     const entries = Array.isArray(value) ? value : [value]
     for (const entry of entries) {
       if (typeof entry !== 'string' || entry === '') continue
-      if (/^\/(?:app\/recon\/wordlists|app\/custom_templates|custom-templates|usr\/share\/(?:seclists|wordlists|dirb|dirbuster))\b/.test(entry)) {
-        continue
-      }
+      // The same predicate the write path uses, rather than a third copy of
+      // the rule: preflight exists to report what the scan will actually run
+      // with, and a rule restated here would drift from the one enforced.
+      if (isInsideProjectFileRoot(entry, projectId)) continue
       rewritten.push({
         field: f.key,
         written: entry,

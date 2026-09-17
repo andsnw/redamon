@@ -8869,10 +8869,11 @@
   },
   "roeDocumentData": {
    "default": null,
+   "deny_reason": "upload-managed",
    "group": "roe",
    "has_default": false,
-   "mcp": "tighten_only",
-   "meaning": "The uploaded Rules of Engagement document itself, stored so the engagement carries its own authority.",
+   "mcp": "never",
+   "meaning": "The uploaded Rules of Engagement document itself, stored so the engagement carries its own authority. A Bytes column written only by the project create and import endpoints, which receive the file. The MCP surface records the document's SHA-256 through attach_engagement_authorization instead; it never carries the bytes.",
    "optional": true,
    "phase": "standalone",
    "prisma_type": "Bytes",
@@ -8880,12 +8881,12 @@
    "readable": false,
    "roe_capped": false,
    "runtime_key": null,
-   "tighten": "narrow",
    "tool": "roe",
    "traffic": "none",
    "type": "string",
    "unit": "none",
-   "validator": "free_text"
+   "validator": "free_text",
+   "written_by": "/api/projects"
   },
   "roeDocumentMimeType": {
    "default": "",

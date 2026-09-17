@@ -60,6 +60,13 @@ const FORBIDDEN_HEADERS = new Set(['host', 'authorization', 'cookie', 'proxy-aut
  * is the authoritative copy. This one exists to refuse early rather than to be
  * relied on.
  */
+/**
+ * The one shared root that also holds per-project uploads, at
+ * `<root>/<projectId>/<name>`. Every other root holds shipped or
+ * operator-mounted files that any project may read.
+ */
+const PROJECT_UPLOAD_ROOT = '/app/recon/wordlists'
+
 const PROJECT_FILE_ROOTS: readonly string[] = [
   '/app/recon/wordlists',
   '/app/custom_templates',
@@ -87,11 +94,33 @@ function normalisePath(raw: string): string | null {
   return '/' + out.join('/')
 }
 
-export function isInsideProjectFileRoot(raw: unknown): boolean {
+/**
+ * May this project read this path?
+ *
+ * Not the same question as "is it inside an allowed root". The upload root is
+ * shared, uploads land under `<root>/<projectId>/`, and the tools that read
+ * these files report which lines matched, so a path into a neighbouring
+ * project's directory reflects that project's file into this scan's output.
+ * Inside the upload root a path is allowed only when it is a shipped list
+ * sitting directly in it, or under THIS project's own directory. With no
+ * projectId no upload directory is readable at all.
+ *
+ * Kept in step with `_inside_allowed_root` in `recon/project_settings.py`,
+ * which is the authoritative copy.
+ */
+export function isInsideProjectFileRoot(raw: unknown, projectId = ''): boolean {
   if (typeof raw !== 'string' || raw.trim() === '') return false
   const resolved = normalisePath(raw.trim())
   if (resolved === null) return false
-  return PROJECT_FILE_ROOTS.some(root => resolved === root || resolved.startsWith(root + '/'))
+  for (const root of PROJECT_FILE_ROOTS) {
+    if (resolved === root) return true
+    if (!resolved.startsWith(root + '/')) continue
+    if (root !== PROJECT_UPLOAD_ROOT) return true
+    const relative = resolved.slice(root.length + 1)
+    if (!relative.includes('/')) return true // a shipped list, not an upload
+    return projectId !== '' && relative.slice(0, relative.indexOf('/')) === projectId
+  }
+  return false
 }
 
 export function isSafeFileName(raw: unknown): boolean {
@@ -119,6 +148,12 @@ export function checkHeader(raw: unknown): string | null {
   if (FORBIDDEN_HEADERS.has(name) || name.startsWith('proxy-')) {
     return `may not set the '${name}' header, which changes where the request goes or what it carries`
   }
+  // A header with no value is a line the tools will send and the target will
+  // ignore, so the caller believes they are identifying their traffic and are
+  // not. The length bound is the one most servers enforce anyway: a longer
+  // line is rejected by the target, not by us, and looks like a scan failure.
+  if (raw.slice(colon + 1).trim() === '') return 'has no value'
+  if (raw.length > 4096) return 'is longer than 4096 characters'
   return null
 }
 
@@ -129,6 +164,8 @@ export interface ValidationContext {
   key: string
   /** Its registry entry. */
   spec: RegistryField
+  /** Whose project the write is for. Absent at creation: nothing is uploaded yet. */
+  projectId?: string
 }
 
 /** Validate one scalar against a named validator. Returns a problem or null. */
@@ -137,9 +174,10 @@ function checkScalar(validator: string, value: unknown, ctx: ValidationContext):
     case 'http_header':
       return checkHeader(value)
     case 'project_file':
-      return isInsideProjectFileRoot(value) || value === ''
+      return isInsideProjectFileRoot(value, ctx.projectId ?? '') || value === ''
         ? null
-        : 'must be an absolute path inside this project\'s wordlist or template directory'
+        : 'must be an absolute path inside a shipped wordlist directory or this ' +
+          'project\'s own upload directory'
     case 'project_file_name':
       return isSafeFileName(value) ? null : 'must be a plain filename with no directory part'
     case 'status_codes':
@@ -198,8 +236,13 @@ function checkScalar(validator: string, value: unknown, ctx: ValidationContext):
  * being told the bound learns it one call at a time, and because one bad key
  * refuses the whole call, a batch of guesses applies nothing at all.
  */
-export function validateValue(key: string, spec: RegistryField, value: unknown): string | null {
-  const ctx: ValidationContext = { key, spec }
+export function validateValue(
+  key: string,
+  spec: RegistryField,
+  value: unknown,
+  projectId?: string
+): string | null {
+  const ctx: ValidationContext = { key, spec, projectId }
 
   switch (spec.type) {
     case 'boolean':
