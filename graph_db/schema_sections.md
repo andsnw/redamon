@@ -820,6 +820,7 @@ Graph hierarchy: Domain/BaseURL -> JS file node -> findings/secrets/endpoints
 - `(JsReconFinding {finding_type: 'js_file'})-[:HAS_JS_FINDING]->(JsReconFinding)` findings from that file
 - `(JsReconFinding {finding_type: 'js_file'})-[:HAS_SECRET]->(Secret)` secrets found in that file
 - `(JsReconFinding {finding_type: 'js_file'})-[:HAS_ENDPOINT]->(Endpoint)` endpoints extracted from that file
+- `(BaseURL)-[:HAS_ENDPOINT]->(Endpoint)` also owns every JS endpoint on a network host, like any other endpoint. Only in-scope hosts get an Endpoint; a third-party URL found in the JS is an external domain, not an Endpoint. A relative path in uploaded JS has `baseurl: 'upload'` and no BaseURL
 
 Note: JS Recon also creates Secret nodes with source='js_recon' and extra fields:
 - validation_status (string): validated, invalid, unvalidated, skipped, incomplete
@@ -1082,7 +1083,7 @@ hostname directly (nuclei vulns aren't linked to Domain/Subdomain via HAS_VULNER
 - `(d:Domain)-[:HAS_JS_FILE]->(jf:JsReconFinding {finding_type: 'js_file'})` - Domain has analyzed JS file (uploaded files)
 - `(jf:JsReconFinding {finding_type: 'js_file'})-[:HAS_JS_FINDING]->(f:JsReconFinding)` - File has finding (dep confusion, DOM sink, etc.)
 - `(jf:JsReconFinding {finding_type: 'js_file'})-[:HAS_SECRET]->(s:Secret)` - File has secret (source='js_recon')
-- `(jf:JsReconFinding {finding_type: 'js_file'})-[:HAS_ENDPOINT]->(e:Endpoint)` - File has endpoint (source='js_recon')
+- `(jf:JsReconFinding {finding_type: 'js_file'})-[:HAS_ENDPOINT]->(e:Endpoint)` - File has endpoint (source='js_recon'); the same Endpoint also hangs off its BaseURL via HAS_ENDPOINT, except uploaded-JS relative paths (baseurl 'upload')
 
 ### Gvm Exploitation Relationships
 - `(e:ExploitGvm)-[:EXPLOITED_CVE]->(c:CVE)` - GVM confirmed exploitation of CVE (only connection)

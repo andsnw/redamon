@@ -1050,6 +1050,8 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for gu
 
 For questions, feedback, or collaboration inquiries: **devergo.sam@gmail.com**
 
+**Sponsorship:** RedAmon is free and MIT licensed, and stays that way. If you would like to sponsor the project, write to the same address. Sponsorship helps cover development and testing costs.
+
 ---
 
 ## Legal
