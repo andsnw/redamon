@@ -1833,12 +1833,17 @@ ensure_sca_intel() {
     # with HTTP Traffic Capture on would never trigger one, so the catalog would
     # stay empty and every captured request would silently read as "no match".
     # Seeding it here closes that hole and costs one 5 MB fetch.
-    if [[ "$(_env_get SCA_INTEL_AUTO_REFRESH "$SCRIPT_DIR/.env")" == "false" ]]; then
-        info "SCA_INTEL_AUTO_REFRESH=false; skipping the supply-chain incident catalog (air-gapped)"
-        return 0
-    fi
+    local auto_refresh=true
+    [[ "$(_env_get SCA_INTEL_AUTO_REFRESH "$SCRIPT_DIR/.env")" == "false" ]] && auto_refresh=false
     if ! docker image inspect redamon-supply-chain-analyzer:latest &>/dev/null; then
         warn "Analyzer image not built yet; skipping incident catalog (run './redamon.sh sca-intel-sync' after the build)"
+        return 0
+    fi
+    if [[ "$auto_refresh" == "false" ]]; then
+        # Air-gapped: never fetch, but an empty catalog still gets the bundled
+        # offline copy from disk. A catalog already present is left alone.
+        info "SCA_INTEL_AUTO_REFRESH=false; not contacting the incident feed (air-gapped)"
+        ( cmd_sca_intel_sync --seed-only ) || warn "Could not install the bundled incident catalog (reason above). RedAmon runs normally without it."
         return 0
     fi
     info "Ensuring supply-chain incident catalog"
@@ -1846,7 +1851,7 @@ ensure_sca_intel() {
     # on failure, and a bare `|| warn` cannot catch an exit - it would abort the
     # whole install/update. A missing catalog must degrade to "did not run",
     # never stop the stack coming up.
-    ( cmd_sca_intel_sync ) || warn "Incident catalog sync incomplete; supply-chain findings will carry no incident context until './redamon.sh sca-intel-sync' succeeds. This is not a problem: RedAmon runs normally with the sync off, you just won't see incident context on supply-chain findings."
+    ( cmd_sca_intel_sync ) || warn "Incident catalog not refreshed (the reason is printed above). This is not a problem: install/update continues and RedAmon runs normally; the refresh is retried automatically."
 }
 
 ensure_osv_db() {
@@ -3669,8 +3674,15 @@ cmd_supply_chain_sync() {
 
 cmd_sca_intel_sync() {
     local analyzer_img="redamon-supply-chain-analyzer:latest"
-    local force=""
-    [[ "${1:-}" == "--force" ]] && force="--force"
+    # --seed-only: install the bundled offline copy into an empty volume and never
+    # contact the feed. Used by ensure_sca_intel when SCA_INTEL_AUTO_REFRESH=false.
+    local mode="" net_args=()
+    case "${1:-}" in
+        --force)     mode="--force" ;;
+        --seed-only) mode="--seed-only"; net_args=(--network none) ;;
+        "") ;;
+        *) error "Unknown flag: $1 (expected --force or --seed-only)"; exit 1 ;;
+    esac
     export_version
     if ! docker image inspect "$analyzer_img" &>/dev/null; then
         info "Supply-chain analyzer image not found, building it (first time only)..."
@@ -3680,22 +3692,33 @@ cmd_sca_intel_sync() {
         fi
     fi
     docker volume inspect redamon-sca-intel &>/dev/null || docker volume create redamon-sca-intel >/dev/null
-    info "Syncing supply-chain incident intel (supplychainattack.org, ~5 MB)."
+    if [[ "$mode" == "--seed-only" ]]; then
+        info "Installing the bundled offline incident catalog if the volume is empty (no network)."
+    else
+        info "Syncing supply-chain incident intel (supplychainattack.org, ~5 MB)."
+    fi
     # Same two rules as cmd_supply_chain_sync above:
     #   --user root       the volume is root-owned and read-only to every scanner
     #   supply_chain_common bind-mount is MANDATORY - intel_sync.py is our module
     #                     and is NOT baked into the analyzer image, so without
     #                     this the run dies with ModuleNotFoundError.
-    if docker run --rm --user root \
+    # --network none in seed-only mode makes "never contacts the feed" a property
+    # of the container, not just of the code path.
+    if docker run --rm --user root ${net_args[@]+"${net_args[@]}"} \
         -v redamon-sca-intel:/sca-intel \
         -v "$SCRIPT_DIR/scanners/supply_chain_common:/app/supply_chain_common:ro" \
         -e PYTHONPATH=/app \
         --entrypoint python3 \
         "$analyzer_img" \
-        -m supply_chain_common.intel_sync --out /sca-intel $force; then
-        success "Supply-chain incident intel sync complete."
+        -m supply_chain_common.intel_sync --out /sca-intel $mode; then
+        # The sync printed what happened (synced, up to date, or bundled offline
+        # copy installed because the feed is down); all three leave a usable catalog.
+        success "Supply-chain incident intel ready."
     else
-        error "Supply-chain incident intel sync failed."
+        # warn, not error: the reason line above says whether a stored catalog was
+        # kept, and RedAmon runs normally either way. The exit code still says the
+        # refresh did not happen.
+        warn "Supply-chain incident intel was not refreshed (reason above). RedAmon runs normally."
         exit 1
     fi
 }
@@ -4473,7 +4496,7 @@ cmd_help() {
     echo -e "  ${GREEN}reset-password${NC}   Reset an existing user's password"
     echo -e "  ${GREEN}kb <command>${NC}     Knowledge Base management (build/update/rebuild/stats)"
     echo -e "  ${GREEN}supply-chain-sync [ecos]${NC}  Populate the offline OSV DB (default: npm; e.g. 'npm PyPI Go')"
-    echo -e "  ${GREEN}sca-intel-sync [--force]${NC}  Populate the supply-chain incident intel (supplychainattack.org)"
+    echo -e "  ${GREEN}sca-intel-sync [--force|--seed-only]${NC}  Populate the supply-chain incident intel (supplychainattack.org; --seed-only installs the bundled offline copy, no network)"
     echo -e "  ${GREEN}test [tier]${NC}      Run the test suite: unit (default) | integration | live | all | coverage"
     echo -e "  ${GREEN}help${NC}             Show this help message"
     echo ""
