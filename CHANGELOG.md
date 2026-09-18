@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **JS recon no longer files third-party URLs as target endpoints.** Every URL a bundle names used to become an `Endpoint`: a payment API, a CDN, a partner host. It is now checked against the scan scope as it is written, with the same host set the crawler and Nuclei writers use, plus the subdomains JS recon itself discovered and vetted. Out-of-scope hosts are counted in `endpoints_out_of_scope` and stay recorded as external domains. Reported by @xdCloudy in #190.
+- **JS recon endpoints hang off their BaseURL.** They were linked only to the JS file node, so every query that walks `BaseURL -[:HAS_ENDPOINT]-> Endpoint` missed them. An in-scope host that only the JavaScript names (an unprobed port, a newly found subdomain) gets its BaseURL created, as the crawler already does. Uploaded-JS relative paths keep the `upload` pseudo base.
+- **Whole URLs no longer land in an Endpoint's `path`.** Config, GraphQL, WebSocket and custom-keyword matches carried the full URL there under the JS file's host; they are split and scope-checked, and a WebSocket belongs to the HTTP origin of its handshake. An existing in-scope endpoint of this shape is written once more under its corrected key; the old node is left in place.
+- **Partial JS recon and supply-chain runs are scoped.** They passed no subdomain list, so the write scope would have collapsed to the apex; they now carry the graph's in-scope subdomains and the hosts of the URLs they analyse, and they no longer fetch graph URLs outside the project scope.
+
+Nothing is deleted: endpoints written before this fix, and everything attached to them, stay as they are.
+
 ## [6.16.2] - 2026-09-18
 
 ### Fixed
