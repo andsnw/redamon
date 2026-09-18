@@ -967,7 +967,7 @@ not so you can query for one.
 - `(d:Domain)-[:HAS_IP]->(i:IP)` - Domain resolves DIRECTLY to this IP (apex A record, OSINT enrichment). Distinct from the Subdomain->IP path: a query that only walks HAS_SUBDOMAIN misses the apex
 - `(d:Domain)-[:HAS_SUBDOMAIN]->(s:Subdomain)` - Domain has subdomain. The INVERSE of BELONGS_TO; both directions are written, so traverse whichever reads better and never assume only one exists
 - `(ed:ExternalDomain)-[:DISCOVERED_BY]->(d:Domain)` - A foreign domain encountered during this domain's recon. Points BACK at the domain that found it, so an ExternalDomain is attributable rather than orphaned
-- `(s:Subdomain)-[:RESOLVES_TO {record_type, first_seen, last_seen}]->(i:IP)` - Subdomain resolves to IP (DNS); OTX passive_dns adds first_seen/last_seen to this relationship
+- `(s:Subdomain)-[:RESOLVES_TO {record_type, timestamp, last_seen_at, first_seen, last_seen, discovered_via}]->(i:IP)` - Subdomain resolves to IP (DNS). Exactly ONE edge per Subdomain->IP pair, whichever tool found it; its properties describe the resolution and may be absent. record_type is A or AAAA; OTX passive_dns adds first_seen/last_seen (earliest/latest passive-DNS sighting); discovered_via = 'vhost_sni_enum' when a vhost/SNI probe created the edge
 - `(i:IP)-[:HAS_PORT]->(p:Port)` - IP has open Port
 - `(p:Port)-[:RUNS_SERVICE]->(svc:Service)` - Port runs Service
 - `(i:IP)-[:HAS_TRACEROUTE]->(tr:Traceroute)` - IP has network route data
