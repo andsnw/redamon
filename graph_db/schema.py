@@ -99,29 +99,39 @@ DROP_LEGACY_CONSTRAINTS = [
 # "cannot import name 'init_schema' from 'graph_db.schema'".
 
 
-def _key_constraints():
-    """The label-key declaration, however this module was loaded.
+def _sibling(name):
+    """A sibling module of graph_db, however this module was loaded.
 
     Tests load schema.py BY PATH, with neither `graph_db` importable as a
     package nor its directory on sys.path, so both import forms fail there.
     Resolving the sibling file relative to __file__ works in every case: as a
     package member, as a bare module, and as a path-loaded one.
     """
-    try:
-        from graph_db.schema_keys import KEY_CONSTRAINTS
+    import importlib
 
-        return KEY_CONSTRAINTS
+    try:
+        return importlib.import_module(f"graph_db.{name}")
     except ImportError:
         pass
 
     import importlib.util
     import os
 
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema_keys.py")
-    spec = importlib.util.spec_from_file_location("_schema_keys", path)
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"{name}.py")
+    spec = importlib.util.spec_from_file_location(f"_{name}", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod.KEY_CONSTRAINTS
+    return mod
+
+
+def _key_constraints():
+    """The label-key declaration, however this module was loaded."""
+    try:
+        from graph_db.schema_keys import KEY_CONSTRAINTS
+
+        return KEY_CONSTRAINTS
+    except ImportError:
+        return _sibling("schema_keys").KEY_CONSTRAINTS
 
 
 def build_constraints() -> list:
@@ -623,6 +633,33 @@ def backfill_cert_key(session):
               "connection (no marker written)")
 
 
+TECH_IDENTITY_MARKER = "technology-identity-v1"
+
+
+def consolidate_technology_identity(session):
+    """Fold the Technology duplicates written before the writers resolved
+    identity (see technology_identity.fold_technology_duplicates).
+
+    A node kept because it holds a relationship type the fold does not know
+    does not block the marker: a retry would meet the same edge. Only an error
+    leaves the marker unwritten.
+    """
+    if _migration_applied(session, TECH_IDENTITY_MARKER):
+        return
+
+    try:
+        stats = _sibling("technology_identity").fold_technology_duplicates(session)
+    except Exception as e:
+        print(f"[!][graph-db] Technology identity fold incomplete; retried on the "
+              f"next connection (no marker written): {e}")
+        return
+
+    _mark_migration_applied(session, TECH_IDENTITY_MARKER)
+    if stats["folded"] or stats["versioned"]:
+        print(f"[graph-db] Technology identity: folded {stats['folded']} duplicate(s), "
+              f"gave {stats['versioned']} versionless node(s) version ''")
+
+
 def init_schema(session):
     """
     Initialize constraints and indexes for the graph schema.
@@ -635,6 +672,7 @@ def init_schema(session):
     backfill_updated_at(session)
     strip_reference_node_tenant(session)
     backfill_cert_key(session)
+    consolidate_technology_identity(session)
 
     for stmt in DROP_LEGACY_CONSTRAINTS:
         try:
