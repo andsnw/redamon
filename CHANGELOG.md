@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.2] - 2026-09-18
+
+### Fixed
+
+- **One `RESOLVES_TO` edge per Subdomain -> IP pair.** Fourteen writers across the full pipeline and partial recon put properties inside the MERGE pattern (`{record_type: 'A'}`, `{discovered_via: 'vhost_sni_enum'}`, or none), and a relationship MERGE matches on those properties, so each spelling stacked a parallel edge for the same DNS fact and inflated per-IP counts such as the attack-surface concentration chart. Every writer now MERGEs the bare pattern and sets its properties afterwards; a static test fails if one puts a property back in the pattern. Reported by @xdCloudy in #191.
+- **Edge properties now accumulate instead of competing.** Reverse-DNS hits from Shodan, Censys, FOFA and ZoomEye are labelled `AAAA` for an IPv6 address instead of a hard-coded `A`; OTX passive-DNS `first_seen`/`last_seen` widen the window instead of being written only on create, which silently dropped `first_seen` whenever DNS had created the edge first; `discovered_via` is set only when vhost/SNI created the edge.
+- **Existing duplicates are folded once per database** (marker `resolves-to-identity-v1`). The surviving edge keeps the union of the parallel edges' properties; no node is deleted and no edge moves between projects.
+- **VhostSni partial recon crashed on every graph-backed run** with `KeyError: 'by_host'`: the graph reader returns `port_scan` without `by_host`, and the unit-test fixture carried a shape the real reader never produces.
+
+### Changed
+
+- The `RESOLVES_TO` entry in the graph schema (and so the agent's text-to-Cypher prompt) lists every property the writers set and states the one-edge-per-pair rule. No label, relationship type or constraint changed.
+
 ## [6.16.1] - 2026-09-17
 
 ### Added
