@@ -660,6 +660,29 @@ def consolidate_technology_identity(session):
               f"gave {stats['versioned']} versionless node(s) version ''")
 
 
+RESOLVES_TO_IDENTITY_MARKER = "resolves-to-identity-v1"
+
+
+def consolidate_resolves_to_identity(session):
+    """Fold the parallel RESOLVES_TO edges written before the writers stopped
+    putting properties in the MERGE pattern (see
+    resolves_to_identity.fold_resolves_to_duplicates)."""
+    if _migration_applied(session, RESOLVES_TO_IDENTITY_MARKER):
+        return
+
+    try:
+        stats = _sibling("resolves_to_identity").fold_resolves_to_duplicates(session)
+    except Exception as e:
+        print(f"[!][graph-db] RESOLVES_TO identity fold incomplete; retried on the "
+              f"next connection (no marker written): {e}")
+        return
+
+    _mark_migration_applied(session, RESOLVES_TO_IDENTITY_MARKER)
+    if stats["folded"]:
+        print(f"[graph-db] RESOLVES_TO identity: removed {stats['folded']} parallel "
+              f"edge(s) across {stats['pairs']} Subdomain->IP pair(s)")
+
+
 def init_schema(session):
     """
     Initialize constraints and indexes for the graph schema.
@@ -673,6 +696,7 @@ def init_schema(session):
     strip_reference_node_tenant(session)
     backfill_cert_key(session)
     consolidate_technology_identity(session)
+    consolidate_resolves_to_identity(session)
 
     for stmt in DROP_LEGACY_CONSTRAINTS:
         try:

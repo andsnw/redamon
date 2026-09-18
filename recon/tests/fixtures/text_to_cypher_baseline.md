@@ -1071,7 +1071,9 @@ not so you can query for one.
 - triage_status (string): `confirmed` | `likely_noise` | `unreviewed` (absent = unreviewed)
 - triage_confidence (float): 0.0 - 1.0
 - triage_reason (string): One line, why
-- triage_source (string): `ai` | `human`. A human verdict is never overwritten
+- triage_source (string): `ai` | `human`. A human verdict is never overwritten. Deliberately only two values: a third would make the finding prune-eligible, let a later AI run overwrite the verdict, and stop `likely_noise` meaning false-positive. A verdict delegated through a token is still `human` - see `triage_verdict_channel` for how it arrived
+- triage_verdict_channel (string): How a `human` verdict arrived: absent (or `app`) = a person in the UI, `mcp` = an external agent holding that person's access token. Never changes what the verdict MEANS, only who typed it. Absent on findings judged before this existed
+- triage_verdict_by (string): `user_id` of whoever the verdict is attributed to, mirroring `muted_by`. Without it a verdict recorded only who it was NOT (the AI), never who it was
 
 ## Relationships
 
@@ -1084,7 +1086,7 @@ not so you can query for one.
 - `(d:Domain)-[:HAS_IP]->(i:IP)` - Domain resolves DIRECTLY to this IP (apex A record, OSINT enrichment). Distinct from the Subdomain->IP path: a query that only walks HAS_SUBDOMAIN misses the apex
 - `(d:Domain)-[:HAS_SUBDOMAIN]->(s:Subdomain)` - Domain has subdomain. The INVERSE of BELONGS_TO; both directions are written, so traverse whichever reads better and never assume only one exists
 - `(ed:ExternalDomain)-[:DISCOVERED_BY]->(d:Domain)` - A foreign domain encountered during this domain's recon. Points BACK at the domain that found it, so an ExternalDomain is attributable rather than orphaned
-- `(s:Subdomain)-[:RESOLVES_TO {record_type, first_seen, last_seen}]->(i:IP)` - Subdomain resolves to IP (DNS); OTX passive_dns adds first_seen/last_seen to this relationship
+- `(s:Subdomain)-[:RESOLVES_TO {record_type, timestamp, last_seen_at, first_seen, last_seen, discovered_via}]->(i:IP)` - Subdomain resolves to IP (DNS). Exactly ONE edge per Subdomain->IP pair, whichever tool found it; its properties describe the resolution and may be absent. record_type is A or AAAA; OTX passive_dns adds first_seen/last_seen (earliest/latest passive-DNS sighting); discovered_via = 'vhost_sni_enum' when a vhost/SNI probe created the edge
 - `(i:IP)-[:HAS_PORT]->(p:Port)` - IP has open Port
 - `(p:Port)-[:RUNS_SERVICE]->(svc:Service)` - Port runs Service
 - `(i:IP)-[:HAS_TRACEROUTE]->(tr:Traceroute)` - IP has network route data
