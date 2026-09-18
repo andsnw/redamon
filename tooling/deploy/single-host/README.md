@@ -173,7 +173,7 @@ flag it manages. Control KB with `ENABLE_KB` only.
 | `OSV_DB_ECOSYSTEMS` | Comma-separated ecosystems to keep synced. Blank -> all eight (~280 MB). `npm` alone is ~208 MB and a noticeably shorter first install. An ecosystem you drop here is never refreshed, and a scan against it reports a missing ecosystem rather than a clean result. |
 | `OSV_DB_TTL_SECONDS` | Freshness window before a re-sync (blank -> 86400). |
 | `OSV_DB_REFRESH_TIMEOUT` | Ceiling on a single refresh, seconds (blank -> 900). |
-| `SCA_INTEL_AUTO_REFRESH` | `false` disables the supply-chain **incident catalog** (supplychainattack.org, ~5 MB) on an **air-gapped** host. Blank -> `true`. Unlike the OSV database this one is also seeded at install/update, because captured traffic is matched against it without any scan having run. |
+| `SCA_INTEL_AUTO_REFRESH` | `false` stops contacting the supply-chain **incident catalog** feed (supplychainattack.org, ~5 MB) on an **air-gapped** host; an empty catalog still receives the bundled offline copy, installed with no network. Blank -> `true`. Unlike the OSV database this one is also seeded at install/update, because captured traffic is matched against it without any scan having run. |
 | `SCA_INTEL_TTL_SECONDS` | Freshness window before a re-sync (blank -> 86400). |
 | `SCA_INTEL_RETRY_SECONDS` | Retry floor after a failed or rejected fetch (blank -> 3600), so a broken feed is not re-fetched on every scan. |
 | `SCA_INTEL_REFRESH_TIMEOUT` | Ceiling on a single refresh, seconds (blank -> 120). Lower than the OSV one because this feed is ~5 MB, not ~208 MB. |
