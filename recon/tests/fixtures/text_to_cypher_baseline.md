@@ -575,9 +575,10 @@ graphql-cop properties (source="graphql_cop" -- external Docker scanner, Phase 2
 - id pattern: `takeover_<sha1-hex16>` where the hash is over `hostname+takeover_provider+takeover_method` — deterministic, MERGE-safe across re-scans
 - Typical query: "list confirmed Heroku takeovers" → `MATCH (s:Subdomain)-[:HAS_VULNERABILITY]->(v:Vulnerability {source: 'takeover_scan'}) WHERE v.takeover_provider = 'heroku' AND v.verdict = 'confirmed' RETURN s.name AS subdomain, v.cname_target, v.confidence, v.sources`
 - id pattern: `vhost_sni_{hostname}_{ip}_{port}_{layer}` — deterministic, MERGE-safe
-- Subdomain enrichment (set on (:Subdomain) nodes flagged as hidden vhosts): vhost_tested (bool), vhost_hidden (bool), vhost_routing_layer ("L7"|"L4"|"both"), vhost_status_code (int), vhost_size_delta (int), sni_routed (bool), vhost_tested_at (ISO ts)
+- Attachment: a hidden vhost is a routing fact, not a DNS one, so this source writes NO `RESOLVES_TO` edge. A candidate under the engagement's domain gets its `Subdomain` (created if recon has not seen the name, with `source: 'vhost_sni_enum'` and `has_dns_records: false` until a resolver confirms it) and owns the finding via `HAS_VULNERABILITY`. A candidate outside that domain (a co-hosted third party) is never added to the inventory: its finding hangs off the `IP` that served it instead
+- Subdomain enrichment (set on the (:Subdomain) flagged as a hidden vhost): vhost_tested (bool), vhost_hidden (bool), vhost_routing_layer ("L7"|"L4"|"both"), vhost_status_code (int), vhost_size_delta (int), sni_routed (bool), vhost_tested_at (ISO ts)
 - IP enrichment (set on (:IP) nodes that have been probed): vhost_sni_tested (bool), vhost_baseline_status (int), vhost_baseline_size (int), vhost_candidates_tested (int — total candidate hostnames probed against this IP), vhost_ports_tested (int — number of (port, scheme) pairs that produced a usable baseline), hosts_hidden_vhosts (bool), hidden_vhost_count (int), is_reverse_proxy (bool), vhost_sni_tested_at (ISO ts)
-- Typical query: "list hidden admin panels uncovered by vhost enumeration" → `MATCH (s:Subdomain)-[:HAS_VULNERABILITY]->(v:Vulnerability {source: 'vhost_sni_enum'}) WHERE v.internal_pattern_match IS NOT NULL RETURN s.name AS hostname, v.ip, v.port, v.layer, v.severity, v.internal_pattern_match`
+- Typical query: "list hidden admin panels uncovered by vhost enumeration" → `MATCH (s:Subdomain)-[:HAS_VULNERABILITY]->(v:Vulnerability {source: 'vhost_sni_enum'}) WHERE v.internal_pattern_match IS NOT NULL RETURN s.name AS hostname, v.ip, v.port, v.layer, v.severity, v.internal_pattern_match` (that traversal covers in-scope names; a co-hosted one is reached as `MATCH (i:IP)-[:HAS_VULNERABILITY]->(v:Vulnerability {source: 'vhost_sni_enum'})`)
 - confidence (float 0–1) and confidence_tier (string): "Confirmed" (canary persisted on a clean request + cache hit), "Strong", "Tentative"
 - id pattern: `cache_{user_id}_{project_id}_{technique}_{baseurl}_{path}_{vector}` — deterministic, MERGE-safe
 - Typical query: "list confirmed cache poisoning findings" → `MATCH (e:Endpoint)-[:HAS_VULNERABILITY]->(v:Vulnerability {source: 'cache_poisoning'}) WHERE v.confidence_tier = 'Confirmed' RETURN e.url, v.cache_header, v.cache_impact, v.confidence, v.poc_link`
@@ -961,6 +962,7 @@ Graph hierarchy: Domain/BaseURL -> JS file node -> findings/secrets/endpoints
 - `(JsReconFinding {finding_type: 'js_file'})-[:HAS_JS_FINDING]->(JsReconFinding)` findings from that file
 - `(JsReconFinding {finding_type: 'js_file'})-[:HAS_SECRET]->(Secret)` secrets found in that file
 - `(JsReconFinding {finding_type: 'js_file'})-[:HAS_ENDPOINT]->(Endpoint)` endpoints extracted from that file
+- `(BaseURL)-[:HAS_ENDPOINT]->(Endpoint)` also owns every JS endpoint on a network host, like any other endpoint. Only in-scope hosts get an Endpoint; a third-party URL found in the JS is an external domain, not an Endpoint. A relative path in uploaded JS has `baseurl: 'upload'` and no BaseURL
 Note: JS Recon also creates Secret nodes with source='js_recon' and extra fields:
 Adversarial AI Phase 6 - JS Recon AI SDK detection (lap 3):
 - New JsReconFinding finding_type values written by the AI SDK pass:
@@ -1086,7 +1088,7 @@ not so you can query for one.
 - `(d:Domain)-[:HAS_IP]->(i:IP)` - Domain resolves DIRECTLY to this IP (apex A record, OSINT enrichment). Distinct from the Subdomain->IP path: a query that only walks HAS_SUBDOMAIN misses the apex
 - `(d:Domain)-[:HAS_SUBDOMAIN]->(s:Subdomain)` - Domain has subdomain. The INVERSE of BELONGS_TO; both directions are written, so traverse whichever reads better and never assume only one exists
 - `(ed:ExternalDomain)-[:DISCOVERED_BY]->(d:Domain)` - A foreign domain encountered during this domain's recon. Points BACK at the domain that found it, so an ExternalDomain is attributable rather than orphaned
-- `(s:Subdomain)-[:RESOLVES_TO {record_type, timestamp, last_seen_at, first_seen, last_seen, discovered_via}]->(i:IP)` - Subdomain resolves to IP (DNS). Exactly ONE edge per Subdomain->IP pair, whichever tool found it; its properties describe the resolution and may be absent. record_type is A or AAAA; OTX passive_dns adds first_seen/last_seen (earliest/latest passive-DNS sighting); discovered_via = 'vhost_sni_enum' when a vhost/SNI probe created the edge
+- `(s:Subdomain)-[:RESOLVES_TO {record_type, timestamp, last_seen_at, first_seen, last_seen, discovered_via}]->(i:IP)` - Subdomain resolves to IP (DNS). Exactly ONE edge per Subdomain->IP pair, whichever tool found it; its properties describe the resolution and may be absent. record_type is A or AAAA; OTX passive_dns adds first_seen/last_seen (earliest/latest passive-DNS sighting); discovered_via = 'vhost_sni_enum' marks an edge a vhost/SNI probe created before that was stopped; the probe no longer writes this edge at all, and re-probing a pair removes a leftover one that no DNS writer ever corroborated
 - `(i:IP)-[:HAS_PORT]->(p:Port)` - IP has open Port
 - `(p:Port)-[:RUNS_SERVICE]->(svc:Service)` - Port runs Service
 - `(i:IP)-[:HAS_TRACEROUTE]->(tr:Traceroute)` - IP has network route data
@@ -1201,7 +1203,7 @@ hostname directly (nuclei vulns aren't linked to Domain/Subdomain via HAS_VULNER
 - `(d:Domain)-[:HAS_JS_FILE]->(jf:JsReconFinding {finding_type: 'js_file'})` - Domain has analyzed JS file (uploaded files)
 - `(jf:JsReconFinding {finding_type: 'js_file'})-[:HAS_JS_FINDING]->(f:JsReconFinding)` - File has finding (dep confusion, DOM sink, etc.)
 - `(jf:JsReconFinding {finding_type: 'js_file'})-[:HAS_SECRET]->(s:Secret)` - File has secret (source='js_recon')
-- `(jf:JsReconFinding {finding_type: 'js_file'})-[:HAS_ENDPOINT]->(e:Endpoint)` - File has endpoint (source='js_recon')
+- `(jf:JsReconFinding {finding_type: 'js_file'})-[:HAS_ENDPOINT]->(e:Endpoint)` - File has endpoint (source='js_recon'); the same Endpoint also hangs off its BaseURL via HAS_ENDPOINT, except uploaded-JS relative paths (baseurl 'upload')
 
 ### Gvm Exploitation Relationships
 - `(e:ExploitGvm)-[:EXPLOITED_CVE]->(c:CVE)` - GVM confirmed exploitation of CVE (only connection)

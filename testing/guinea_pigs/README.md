@@ -15,6 +15,8 @@ and a README mapping every endpoint to the exact pipeline step it exercises.
 | [`js_scope_target/`](js_scope_target/) | **JS recon endpoint scope**: in-scope JS endpoints (relative, absolute, an unprobed port, a WebSocket, an uploaded file) become Endpoints owned by their BaseURL; third-party and non-target hosts never do; a partial run on a user URL; pre-existing endpoints are neither deleted nor re-fetched. Two hosts on `192.88.97.0/24`, one of them an out-of-scope outsider that logs every request | `cd js_scope_target && docker compose up -d --build` |
 | [`tls_target/`](tls_target/) | **TLS Certificate Grab (tlsx)**: cert capture on non-HTTP ports (IMAPS/LDAPS) where httpx grabs nothing, `Service.tls_service_hint`, `COVERS_HOST` for in-scope SANs, the apex allow-list holding against an out-of-scope SAN the certificate actually carries, and the TLS-hygiene findings (expired / self-signed / hostname-mismatch) | `cd tls_target && docker compose up -d --build` |
 
+| [`vhost_target/`](vhost_target/) | **VHost & SNI Enumeration**: three virtual hosts on one address, reachable only by Host header (L7) or SNI name (L4) and present in no DNS zone. Covers the hidden in-scope panel that must still be reachable in the graph, a co-hosted third-party name that must never join the inventory, unknown hosts that answer the baseline and must not become findings, and the `RESOLVES_TO` edge a routing result must never assert | `cd vhost_target && docker compose up -d --build` |
+
 > `supply_chain_target` binds `192.88.99.10` on its own bridge rather than
 > `127.0.0.1`: L2's JS fetch is Python and enforces an SSRF guard that rejects
 > every non-routable address. See its README for why that prefix.
