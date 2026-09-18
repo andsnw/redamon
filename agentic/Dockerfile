@@ -47,11 +47,22 @@ RUN retry curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
 # Download to file first (not piped to tar) so `retry` can cleanly re-run on
 # a truncated HTTP/2 stream. curl's own --retry adds a second layer for
 # transient errors; sha256 check catches any silently-short download.
-RUN retry curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
-        -o /tmp/go.tgz https://go.dev/dl/go1.22.10.linux-amd64.tar.gz \
-    && echo "736ce492a19d756a92719a6121226087ccd91b652ed5caec40ad6dbfb2252092  /tmp/go.tgz" | sha256sum -c - \
+# The tarball must match the image architecture: an amd64 Go extracts fine on
+# arm64 and only fails when the agent first runs it, so `go version` below
+# turns that into a build failure. Hashes are go.dev's published sha256s.
+ARG TARGETARCH
+RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "$arch" in \
+         amd64) sha=736ce492a19d756a92719a6121226087ccd91b652ed5caec40ad6dbfb2252092 ;; \
+         arm64) sha=5213c5e32fde3bd7da65516467b7ffbfe40d2bb5a5f58105e387eef450583eec ;; \
+         *) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
+       esac \
+    && retry curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+        -o /tmp/go.tgz "https://go.dev/dl/go1.22.10.linux-${arch}.tar.gz" \
+    && echo "${sha}  /tmp/go.tgz" | sha256sum -c - \
     && tar -C /usr/local -xzf /tmp/go.tgz \
-    && rm /tmp/go.tgz
+    && rm /tmp/go.tgz \
+    && /usr/local/go/bin/go version
 ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 
 # Install Ruby + Bundler (for Ruby/Rails projects)
