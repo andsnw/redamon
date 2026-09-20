@@ -680,7 +680,7 @@ allocate_memory() {
     [[ "${BUILD_MEM_MB:-0}" -le 0 ]] && return 0      # RAM undetectable: fail open
 
     local total="$BUILD_MEM_MB"
-    local os_pct svc_pct burst_pct
+    local os_pct svc_pct burst_pct blast_pct
     os_pct="$(_pct_env OS_RESERVE_PCT 8 1 50)"
     svc_pct="$(_pct_env SERVICES_PCT 65 10 95)"
     burst_pct="$(_burst_pct)"
@@ -693,7 +693,8 @@ allocate_memory() {
     # Nothing may take more than this share of the host, so one runaway service
     # cannot starve the databases. Proportional, mirroring PER_CONTAINER_MAX in
     # recon_orchestrator/resource_governor.py.
-    blast_mb=$(( total * $(_pct_env BLAST_PCT 55 20 90) / 100 ))
+    blast_pct="$(_pct_env BLAST_PCT 55 20 90)"
+    blast_mb=$(( total * blast_pct / 100 ))
 
     # Parse the specs ONCE into parallel arrays; the passes below then need no
     # re-parsing (and no subshells) per service.
