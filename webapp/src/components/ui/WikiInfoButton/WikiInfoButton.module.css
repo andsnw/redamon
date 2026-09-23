@@ -33,3 +33,18 @@
 .iconOnly {
   padding: 3px;
 }
+
+/* The indigo above is a dark-theme pair: #a5b4fc on a 10% indigo wash reads as
+   pale-on-pale once that wash sits over a white page (~1.9:1). Light mode needs
+   the tint and the ink swapped round, not dimmed. */
+:global([data-theme='light']) .button {
+  border-color: #a5b4fc;
+  background-color: #eef2ff;
+  color: #3730a3;
+}
+
+:global([data-theme='light']) .button:hover {
+  background-color: #e0e7ff;
+  border-color: #818cf8;
+  color: #312e81;
+}
