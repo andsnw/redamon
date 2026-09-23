@@ -53,7 +53,6 @@ LIMITS = {
     "string_length": 256,
     "document_bytes": 64 * 1024,
     "glob_stars": 16,
-    "match_length": 2048,
     "max_days": 36500,
     "name_length": 80,
 }
@@ -151,7 +150,11 @@ def _number(value, what) -> float:
         raise _Invalid(f"{what} must be a number")
     if value != value or value in (float("inf"), float("-inf")):
         raise _Invalid(f"{what} must be a finite number")
-    return float(value)
+    try:
+        return float(value)
+    except OverflowError:
+        # A JSON integer has no size limit; 10**400 is not a float.
+        raise _Invalid(f"{what} is too large") from None
 
 
 def parse_datetime(value) -> datetime | None:
@@ -315,7 +318,8 @@ def parse(doc, mode: str, catalog, phases=None) -> NodeFilterConfig:
                                 errors=[f"unknown mode {mode!r}; nothing is filtered"])
     try:
         raw = _load(doc)
-    except (_Invalid, ValueError, TypeError) as e:
+    except (_Invalid, ValueError, TypeError, RecursionError) as e:
+        # RecursionError: nesting within the size cap can still be too deep to decode.
         return NodeFilterConfig(mode=mode, ok=False, errors=[f"unreadable rules: {e}"])
     if raw is None:
         return NodeFilterConfig(mode=mode)

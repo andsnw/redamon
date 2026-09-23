@@ -567,7 +567,7 @@ export default function GraphPage() {
     setDeepLinkSheet(null)
     setTableViewMode('nodeFilters')
   }, [])
-  const { status: nodeFilterStatus, refresh: refreshNodeFilterStatus } = useNodeFilterStatus(projectId)
+  const { status: nodeFilterStatus, refresh: refreshNodeFilterStatus } = useNodeFilterStatus(projectId, refetchGraph)
   // Unseen-row badges. The active tab is whichever table is on screen, so a tab
   // the user is reading stops counting as unseen while they read it.
   const {

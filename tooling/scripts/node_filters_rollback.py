@@ -52,7 +52,13 @@ def _scope(project_id: str | None) -> str:
 
 
 def rollback(driver, project_id: str | None, dry_run: bool, out=print) -> dict:
-    """Per-project counts of rule mutes found, and released unless `dry_run`."""
+    """Per-project counts of rule mutes found, and released unless `dry_run`.
+
+    `project_id=None` means every project; a blank id is refused, never read
+    as "every project" (an unset shell variable must not widen the release).
+    """
+    if project_id is not None and not project_id.strip():
+        raise ValueError("a blank project id; pass --all to mean every project")
     params = {"prefix": RULE_PREFIX}
     if project_id:
         params["pid"] = project_id
@@ -77,6 +83,8 @@ def main(argv=None) -> int:
     target.add_argument("--all", action="store_true", help="every project")
     ap.add_argument("--dry-run", action="store_true", help="count, change nothing")
     args = ap.parse_args(argv)
+    if args.project is not None and not args.project.strip():
+        ap.error("--project is blank (an unset variable?); pass --all to mean every project")
 
     from neo4j import GraphDatabase
 

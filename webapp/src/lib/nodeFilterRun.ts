@@ -17,6 +17,7 @@
  *    project, so a run that has not checked in within the TTL is marked failed
  *    the next time anyone asks.
  */
+import { Prisma } from '@prisma/client'
 import prisma from '@/lib/prisma'
 
 export const NODE_FILTER_RUN_STATUSES = ['running', 'completed', 'failed', 'stopped'] as const
@@ -101,11 +102,29 @@ export interface NewNodeFilterRun {
   rules: unknown
 }
 
+const SERIALIZATION_RETRIES = 3
+
 /**
  * Create the run, refusing when one is already live, in ONE serializable
  * transaction so two concurrent Apply clicks cannot both start one.
+ *
+ * Postgres resolves such a race by aborting one of the two transactions with
+ * a serialization failure (P2034), not by letting it see the other's run. The
+ * retry does see it, so the loser gets RunAlreadyLiveError (a 409) instead of
+ * a raw database error (a 500).
  */
 export async function createNodeFilterRun(input: NewNodeFilterRun): Promise<{ id: string }> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await createRunOnce(input)
+    } catch (e) {
+      const serialization = e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2034'
+      if (!serialization || attempt >= SERIALIZATION_RETRIES) throw e
+    }
+  }
+}
+
+function createRunOnce(input: NewNodeFilterRun): Promise<{ id: string }> {
   return prisma.$transaction(async tx => {
     const now = Date.now()
     const running = await tx.nodeFilterRun.findMany({

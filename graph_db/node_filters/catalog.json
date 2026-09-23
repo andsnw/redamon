@@ -110,7 +110,6 @@
     "string_length": 256,
     "document_bytes": 65536,
     "glob_stars": 16,
-    "match_length": 2048,
     "max_days": 36500,
     "name_length": 80
   },

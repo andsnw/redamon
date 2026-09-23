@@ -50,6 +50,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     after: {
       runId, status, error, revision: run.revision, target: run.target,
       effectiveUser: run.actorUserId, totals: stats?.totals ?? null,
+      // false when the run had already ended (swept as agent_lost): the row
+      // keeps that verdict, and the audit must not read as if this one won.
+      recorded: updated.count === 1,
     },
     source: 'system',
   })

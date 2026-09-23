@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
 import { readJsonBody } from '@/lib/jsonBody'
 import { requireProjectOwner, graphTriage, realActorUserId } from '@/lib/triageClient'
+import { describeNodeFilterWriter } from '@/lib/nodeFilterRun'
 
 /**
  * POST /api/triage/unmute - restore suppressed findings.
@@ -40,6 +41,16 @@ export async function POST(request: NextRequest) {
   }
   if (wanted.length > MAX_KEYS) {
     return NextResponse.json({ error: `at most ${MAX_KEYS} keys per request` }, { status: 400 })
+  }
+
+  // A running apply read the exemptions when it started, so a finding unmuted
+  // now would be muted again when its page comes up. Refused until it ends.
+  const applying = await describeNodeFilterWriter(caller.projectId)
+  if (applying) {
+    return NextResponse.json(
+      { error: `Cannot unmute while ${applying}. Try again when it finishes.` },
+      { status: 409 },
+    )
   }
 
   const result = await graphTriage('unmute_many', caller, { keys: [...new Set(wanted)] })

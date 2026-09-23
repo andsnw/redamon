@@ -9,6 +9,8 @@
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 const h = vi.hoisted(() => ({
   runFindUnique: vi.fn(),
@@ -121,6 +123,26 @@ describe('heartbeat', () => {
   })
 })
 
+describe('the agent\'s own bodies (contracts/run_callbacks.json)', () => {
+  // agentic/tests/test_node_filter_runs.py pins these as what the agent sends.
+  // Replaying them here is what proves the two sides still agree.
+  const contract = JSON.parse(readFileSync(
+    join(__dirname, '../../../../lib/nodeFilters/contracts/run_callbacks.json'), 'utf8'))
+
+  test('its heartbeat records the progress and its finish records the verdict and the counts', async () => {
+    const beat = await (await heartbeat(req(MASTER, contract.heartbeat), params)).json()
+    expect(beat).toEqual({ status: 'running', abort: false })
+    expect(h.runUpdate.mock.calls[0][0].data.stats).toEqual({ progress: contract.heartbeat.progress })
+
+    const done = await (await finish(req(MASTER, contract.finish), params)).json()
+    expect(done).toEqual({ ok: true, status: contract.finish.status })
+    expect(h.runUpdateMany.mock.calls[0][0].data).toMatchObject({
+      status: contract.finish.status, error: contract.finish.error, stats: contract.finish.stats,
+    })
+    expect(h.audit.mock.calls[0][0].after.totals).toEqual(contract.finish.stats.totals)
+  })
+})
+
 describe('finish', () => {
   test('is conditional on the run still running, and audited with the real actor', async () => {
     const stats = { totals: { muted: 12 } }
@@ -137,6 +159,14 @@ describe('finish', () => {
   test('a run already swept keeps its verdict', async () => {
     h.runUpdateMany.mockResolvedValue({ count: 0 })
     expect((await (await finish(req(MASTER, { status: 'completed' }), params)).json()).ok).toBe(false)
+  })
+
+  test('finish_audits_unrecorded_verdict: a finish that changed nothing is audited as not recorded', async () => {
+    // The run was swept to failed (agent_lost) before the agent reported. The
+    // audit row used to say "completed" while the run row says failed.
+    h.runUpdateMany.mockResolvedValue({ count: 0 })
+    await finish(req(MASTER, { status: 'completed', stats: { totals: { muted: 3 } } }), params)
+    expect(h.audit.mock.calls[0][0].after).toMatchObject({ status: 'completed', recorded: false })
   })
 
   test('an unknown status is recorded as failed', async () => {

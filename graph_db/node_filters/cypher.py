@@ -80,10 +80,25 @@ RETURN n.{key} AS key,
     return query, params
 
 
+def _lock(carry: str) -> str:
+    """Take the node's write lock before its mute state and guards are read.
+
+    Neo4j evaluates a WHERE under read committed, BEFORE a SET locks the node,
+    so a person's mute or a verdict committed in between would be overwritten.
+    With the lock held, the checks that follow see the latest committed state
+    and nothing can change it until this write commits. Net effect: none.
+    """
+    return f"""SET n._node_filter_lock = true
+REMOVE n._node_filter_lock
+WITH {carry}"""
+
+
 def mute_query(kind: dict) -> str:
     label, key = ident(kind["graph_label"]), ident(kind["key"])
     return f"""UNWIND $rows AS row
 MATCH (n:{label} {{{key}: row.key, user_id: $uid, project_id: $pid}})
+WHERE NOT n:Muted
+{_lock('n, row')}
 WHERE NOT n:Muted
   AND {GUARD_WRITE_CHECK}
 SET n:Muted, n.muted = true, n.muted_at = datetime(),
@@ -98,6 +113,10 @@ def restamp_query(kind: dict) -> str:
 MATCH (n:{label}:Muted {{{key}: row.key, user_id: $uid, project_id: $pid}})
 WHERE coalesce(n.muted_by, '') STARTS WITH '{RULE_PREFIX}'
   AND n.muted_by <> row.muted_by
+{_lock('n, row')}
+WHERE n:Muted
+  AND coalesce(n.muted_by, '') STARTS WITH '{RULE_PREFIX}'
+  AND n.muted_by <> row.muted_by
   AND {GUARD_WRITE_CHECK}
 SET n.muted_by = row.muted_by, n.muted_reason = row.reason
 RETURN count(n) AS n"""
@@ -109,5 +128,7 @@ def unmute_query(kind: dict) -> str:
     return f"""UNWIND $keys AS key
 MATCH (n:{label}:Muted {{{key}: key, user_id: $uid, project_id: $pid}})
 WHERE coalesce(n.muted_by, '') STARTS WITH '{RULE_PREFIX}'
+{_lock('n')}
+WHERE n:Muted AND coalesce(n.muted_by, '') STARTS WITH '{RULE_PREFIX}'
 REMOVE n:Muted, n.muted, n.muted_at, n.muted_by, n.muted_reason
 RETURN count(n) AS n"""

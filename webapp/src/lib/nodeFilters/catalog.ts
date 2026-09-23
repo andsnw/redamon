@@ -54,7 +54,6 @@ export interface NodeFilterCatalog {
     string_length: number
     document_bytes: number
     glob_stars: number
-    match_length: number
     max_days: number
     name_length: number
   }

@@ -15,10 +15,8 @@ import ipaddress
 import re
 from datetime import datetime, timedelta, timezone
 
-from .model import LIMITS, NodeFilterConfig, parse_datetime
+from .model import NodeFilterConfig, parse_datetime
 from .normalize import field_value, inputs_of
-
-_MAX = LIMITS["match_length"]
 
 
 def is_missing(value) -> bool:
@@ -27,7 +25,10 @@ def is_missing(value) -> bool:
 
 
 def _text(value) -> str:
-    return str(value)[:_MAX].lower()
+    # The whole value. Cutting it short flips the answer of `not_contains`,
+    # `ends_with` and end-anchored globs whenever the needle lies past the cut,
+    # and buys nothing: every text operator here is linear in the value.
+    return str(value).lower()
 
 
 def _as_list(value):
@@ -108,7 +109,7 @@ def prepare(ftype: str, raw, ranks: dict | None = None):
     """A node's value for one field, normalised ONCE per node.
 
     Every rule that tests the field then compares against this, instead of
-    lowercasing, truncating or parsing the same value again for each of up to
+    lowercasing or parsing the same value again for each of up to
     forty rules. The shape depends on the type; the first element is always
     whether the value counts as missing.
     """

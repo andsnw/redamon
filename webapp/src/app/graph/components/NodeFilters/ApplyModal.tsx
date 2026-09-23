@@ -28,6 +28,24 @@ interface Readiness {
   activeVersion: { id: string; label: string } | null
 }
 
+const BUSY_RETRY_MS = 750
+const BUSY_RETRIES = 30
+
+/**
+ * The modal's preview, waiting out a 429. The page's own debounced preview is
+ * often still running when Apply opens, and the route allows one per project;
+ * read as a failure, that would claim the agent is down.
+ */
+async function previewWhenFree(
+  projectId: string, mode: NodeFilterMode, rules: NodeFilterDoc, isCancelled: () => boolean,
+) {
+  for (let attempt = 0; ; attempt++) {
+    const result = await fetchPreview(projectId, mode, rules, { withRemediations: true })
+    if (result.status !== 429 || attempt >= BUSY_RETRIES || isCancelled()) return result
+    await new Promise(resolve => setTimeout(resolve, BUSY_RETRY_MS))
+  }
+}
+
 /** Why "current graph" is not offered right now, or null when it is. */
 export function currentGraphBlocker(opts: {
   isViewingPastVersion: boolean
@@ -71,7 +89,7 @@ export function ApplyModal({
     const base = `/api/projects/${encodeURIComponent(projectId)}/node-filters`
     Promise.all([
       fetch(`${base}/apply`).then(r => (r.ok ? r.json() : { busy: 'the graph state could not be verified', activeVersion: null })),
-      fetchPreview(projectId, mode, rules, { withRemediations: true }).catch(() => ({ status: 0, body: null })),
+      previewWhenFree(projectId, mode, rules, () => cancelled).catch(() => ({ status: 0, body: null })),
     ]).then(([ready, prev]) => {
       if (cancelled) return
       setReadiness(ready)

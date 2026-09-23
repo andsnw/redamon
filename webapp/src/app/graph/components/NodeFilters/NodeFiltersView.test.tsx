@@ -22,7 +22,8 @@ vi.mock('@/components/ui', () => ({
     <input type="checkbox" aria-label={label} checked={checked} disabled={disabled}
       onChange={e => onChange(e.target.checked)} />
   ),
-  Modal: ({ isOpen, children }: { isOpen: boolean; children: ReactNode }) => (isOpen ? <div>{children}</div> : null),
+  Modal: ({ isOpen, children, footer }: { isOpen: boolean; children: ReactNode; footer?: ReactNode }) =>
+    (isOpen ? <div>{children}{footer}</div> : null),
 }))
 
 import { NodeFiltersView } from './NodeFiltersView'
@@ -60,6 +61,9 @@ beforeEach(() => {
     }
     if (url.endsWith('/preview')) return reply(PREVIEW)
     if (url.endsWith('/disarm')) return reply({ armed: false })
+    if (url.endsWith('/apply') && method === 'GET') return reply({ busy: null, activeVersion: STATE.activeVersion })
+    if (url.endsWith('/apply') && method === 'POST') return reply({ runId: 'run1', armed: true }, 202)
+    if (url.includes('/runs/')) return reply({ id: 'run1', status: 'running', stats: null })
     return reply({}, 404)
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -128,6 +132,22 @@ describe('NodeFiltersView', () => {
     })
   })
 
+  test('conflict_dialog_dismiss_discards_edits: closing the conflict dialog keeps the edits', async () => {
+    // Escape, the X and Cancel all resolve the dialog as "no". That used to mean
+    // "reload theirs", so dismissing it threw every unsaved edit away.
+    putStatus = 409
+    confirm.mockResolvedValue(false)
+    view()
+    await screen.findByText('Save')
+    fireEvent.click(screen.getByLabelText('Filter Nuclei'))
+    fireEvent.click(screen.getByText('Save'))
+    await waitFor(() => expect(confirm).toHaveBeenCalled())
+    await waitFor(() => expect(fetchMock.mock.calls.filter(c => (c[1]?.method ?? 'GET') === 'GET'
+      && String(c[0]).endsWith('/node-filters')).length).toBe(2))
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+    expect((screen.getByLabelText('Filter Nuclei') as HTMLInputElement).checked).toBe(false)
+  })
+
   test('an invalid rule blocks Save and Apply and is marked', async () => {
     view()
     const name = await screen.findByDisplayValue('Informational templates')
@@ -145,6 +165,20 @@ describe('NodeFiltersView', () => {
   test('a link from Muted Nodes opens the rule\'s kind', async () => {
     view({ focus: { kind: 'secret' } })
     expect(await screen.findByRole('heading', { name: 'Secrets' })).toBeInTheDocument()
+  })
+
+  test('apply targets the version on screen, not the one the server calls active', async () => {
+    // The page shows v5 while the server has since moved to v7 (another tab
+    // activated it). Sending v7 would let the server's "only the active
+    // version" check pass and apply to a graph the operator is not looking at.
+    view({ viewedVersionId: 'v5' })
+    fireEvent.click(await screen.findByText('Apply…'))
+    const confirmApply = await screen.findByRole('button', { name: 'Apply' })
+    await waitFor(() => expect((confirmApply as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(confirmApply)
+    await waitFor(() => expect(fetchMock.mock.calls.some(c => c[1]?.method === 'POST' && String(c[0]).endsWith('/apply'))).toBe(true))
+    const post = fetchMock.mock.calls.find(c => c[1]?.method === 'POST' && String(c[0]).endsWith('/apply'))!
+    expect(JSON.parse(post[1].body)).toMatchObject({ versionId: 'v5', revision: 3 })
   })
 
   test('switching to allowlist while armed asks first', async () => {

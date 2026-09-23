@@ -4,10 +4,10 @@
  * Load, edit and save a project's node-filter rules.
  *
  * The draft is local until Save. A save sends the revision it was loaded at,
- * and a 409 means someone saved in between: the caller offers Reload or
- * Overwrite (a save with `force`).
+ * and a 409 means someone saved in between: the caller offers Overwrite (a
+ * save with `force`) or keeps the draft over a refreshed saved copy.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EMPTY_NODE_FILTER_DOC, type NodeFilterDoc, type NodeFilterMode } from '@/lib/nodeFilters/model'
 import { allErrors, validateNodeFilters, type NodeFilterValidation } from '@/lib/nodeFilters/validate'
 import { sameDoc } from './draft'
@@ -55,13 +55,21 @@ export function useNodeFilters(projectId: string | null) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<{ status: number; message: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  // The view stays mounted across a project switch, so an answer is applied
+  // only if it is the latest load AND still for the project on screen.
+  const loadSeq = useRef(0)
+  const currentProject = useRef(projectId)
+  currentProject.current = projectId
 
   const load = useCallback(async (keepDraft = false) => {
     if (!projectId) return
+    const seq = ++loadSeq.current
+    const stale = () => seq !== loadSeq.current || currentProject.current !== projectId
     setLoading(true)
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/node-filters`)
       const body = await res.json().catch(() => ({}))
+      if (stale()) return
       if (!res.ok) {
         setError({ status: res.status, message: body.error || `Node filters: ${res.status}` })
         return
@@ -73,13 +81,19 @@ export function useNodeFilters(projectId: string | null) {
         setDraft(body.rules ?? EMPTY_NODE_FILTER_DOC)
       }
     } catch (e) {
-      setError({ status: 0, message: e instanceof Error ? e.message : 'Could not load the node filters' })
+      if (!stale()) setError({ status: 0, message: e instanceof Error ? e.message : 'Could not load the node filters' })
     } finally {
-      setLoading(false)
+      if (!stale()) setLoading(false)
     }
   }, [projectId])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    // Never show the previous project's rules while this one loads.
+    setSaved(null)
+    setDraftMode('denylist')
+    setDraft(EMPTY_NODE_FILTER_DOC)
+    void load()
+  }, [load])
 
   const dirty = useMemo(
     () => !!saved && (saved.mode !== draftMode || !sameDoc(saved.rules, draft)),
@@ -102,6 +116,8 @@ export function useNodeFilters(projectId: string | null) {
       const body = await res.json().catch(() => ({}))
       if (res.status === 409) return { ok: false, conflict: true, currentRevision: body.currentRevision }
       if (!res.ok) return { ok: false, conflict: false, error: body.error || `Save failed: ${res.status}`, errors: body.errors }
+      // Saved, but the operator has moved to another project meanwhile.
+      if (currentProject.current !== projectId) return { ok: true, revision: body.revision }
       await load(true)
       setSaved(prev => (prev ? { ...prev, mode: draftMode, rules: draft, revision: body.revision, exists: true } : prev))
       return { ok: true, revision: body.revision }

@@ -45,6 +45,11 @@ function get(obj: Record<string, unknown>, key: string, fallback: unknown): unkn
   return Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : fallback
 }
 
+/** A catalog entry by a client-supplied name: `constructor` is not a field. */
+function own<T>(table: Record<string, T>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined
+}
+
 export function validRuleName(name: unknown, maxLength = NODE_FILTER_CATALOG.limits.name_length): boolean {
   if (typeof name !== 'string') return false
   if (name.length < 1 || [...name].length > maxLength) return false
@@ -116,7 +121,7 @@ function num(value: unknown, what: string): number {
 function checkCondition(raw: unknown, kind: CatalogKind, catalog: NodeFilterCatalog, where: string): void {
   if (!isObject(raw)) throw new Invalid(`${where}: a condition must be an object`)
   const name = raw.field
-  const fdef = typeof name === 'string' ? kind.fields[name] : undefined
+  const fdef = typeof name === 'string' ? own(kind.fields, name) : undefined
   if (!fdef) throw new Invalid(`${where}: unknown field ${JSON.stringify(name)}`)
   const op = raw.op
   if (typeof op !== 'string' || !catalog.operators[fdef.type].includes(op)) {
@@ -234,16 +239,12 @@ export function validateNodeFilters(
     return fail(`unknown mode ${JSON.stringify(mode)}; nothing is filtered`)
   }
   if (rules === undefined || rules === null) return out
-  let doc: unknown = rules
+  const doc: unknown = rules
   if (documentBytes(doc) > catalog.limits.document_bytes) return fail('the rule document is larger than 64 KB')
-  if (typeof doc === 'string') {
-    try {
-      doc = JSON.parse(doc)
-    } catch (e) {
-      return fail(`unreadable rules: ${e instanceof Error ? e.message : 'invalid JSON'}`)
-    }
-    if (doc === null) return out
-  }
+  // The engine also parses a JSON string, but the webapp stores what it
+  // validates: a string would be saved as an empty document by coerceDoc, or
+  // raw by an import, where the UI shows no rules and the scan sweep runs them.
+  if (typeof doc === 'string') return fail('the rules must be a JSON object, not a string')
   if (!isObject(doc) || get(doc, 'version', 1) !== 1) return fail('the rules must be a version 1 document')
   const kinds = get(doc, 'kinds', {})
   if (!isObject(kinds)) return fail('`kinds` must be an object')
@@ -251,7 +252,7 @@ export function validateNodeFilters(
   const phases = new Set(catalog.enabled_phases)
   const active: string[] = []
   for (const [kindId, entry] of Object.entries(kinds)) {
-    const kind = catalog.kinds[kindId]
+    const kind = own(catalog.kinds, kindId)
     if (!kind) { out.errors.push(`unknown kind "${kindId}": ignored`); continue }
     if (!phases.has(kind.phase)) { out.errors.push(`kind "${kindId}" cannot be filtered yet: ignored`); continue }
     if (!isObject(entry)) { out.errors.push(`${kindId}: must be an object: ignored`); continue }

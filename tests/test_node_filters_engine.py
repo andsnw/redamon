@@ -223,6 +223,19 @@ class TestFailClosed(unittest.TestCase):
         self.assertFalse(parse(big, "denylist", CAT).ok)
         self.assertFalse(parse(json.dumps(big), "denylist", CAT).ok)
 
+    def test_parse_raises_on_overflow_and_recursion(self):
+        # parse() promises never to raise. A number too big for a float raised
+        # OverflowError, and a deeply nested string document RecursionError:
+        # a 500 on a preview, a failed sweep at scan time.
+        huge = doc("vuln.nuclei", rule(conds=[{"field": "cvss", "op": "gt", "value": 10 ** 400}]))
+        cfg = parse(huge, "denylist", CAT)
+        self.assertFalse(cfg.kinds["vuln.nuclei"].active)
+        self.assertTrue(cfg.kinds["vuln.nuclei"].errors)
+        # 60 KB: under the 64 KB cap, so it is the nesting that must be caught.
+        nested = "[" * 30_000 + "]" * 30_000
+        self.assertLess(len(nested), LIMITS["document_bytes"])
+        self.assertFalse(parse(nested, "denylist", CAT).ok)
+
     def test_an_unknown_mode_filters_nothing(self):
         self.assertFalse(parse(doc("vuln.nuclei", self.GOOD), "maybe", CAT).ok)
 
@@ -263,6 +276,21 @@ class TestOperators(unittest.TestCase):
         self.assertTrue(one(self.N, c("between", [4, 6.9]), 4))
         self.assertFalse(one(self.N, c("between", [4, 6.9]), 7))
         self.assertFalse(one(self.N, c("gt", 1), "high"))
+
+    def test_long_text_truncation_flips_negative_operators(self):
+        # Text was cut to 2,048 characters before every comparison. A needle
+        # past the cut made `not_contains` match (a denylist muted a finding it
+        # should not) and `contains` / `ends_with` miss (an allowlist muted
+        # what it should have kept).
+        long_output = "x" * 3000 + " VULNERABLE: CVE-2024-0001"
+        nse = "vuln.nmap_nse"
+        c = lambda op, v: {"field": "output", "op": op, "value": v}  # noqa: E731
+        self.assertFalse(one(nse, c("not_contains", "vulnerable"), long_output))
+        self.assertTrue(one(nse, c("contains", "vulnerable"), long_output))
+        self.assertTrue(one(nse, c("ends_with", "cve-2024-0001"), long_output))
+        self.assertTrue(one(nse, c("glob", "*vulnerable*"), long_output))
+        self.assertTrue(one(nse, c("glob", "x*cve-202?-0001"), long_output))
+        self.assertFalse(one(nse, c("not_glob", "*vulnerable*"), long_output))
 
     def test_ordinal(self):
         c = lambda op, v: {"field": "severity", "op": op, "value": v}  # noqa: E731
@@ -329,10 +357,6 @@ class TestOperators(unittest.TestCase):
         start = time.monotonic()
         self.assertFalse(one(self.N, c, "a" * 2048))
         self.assertLess(time.monotonic() - start, 1.0)
-
-    def test_values_are_truncated_before_matching(self):
-        c = {"field": "template_id", "op": "ends_with", "value": "tail"}
-        self.assertFalse(one(self.N, c, "x" * 5000 + "tail"))
 
     def test_cidr_v4_and_v6(self):
         c = {"field": "matched_ip", "op": "in_cidr", "value": ["192.0.2.0/24", "2001:db8::/32"]}
@@ -567,6 +591,23 @@ class TestTheCypherBuilder(unittest.TestCase):
         self.assertIn("n.triage_proof IS NULL", q)
         self.assertIn("NOT EXISTS { MATCH (:ChainFinding)-[:CONFIRMS]->(n) }", q)
         self.assertIn("{`id`: row.key, user_id: $uid, project_id: $pid}", q)
+
+    def test_guard_check_before_lock_race(self):
+        # Neo4j reads a WHERE under read committed, before the SET takes the
+        # node's write lock. A person's mute or a verdict committed in between
+        # was overwritten. The writes now lock the node first, then check.
+        for q in (mute_query(self.NUCLEI), restamp_query(self.NUCLEI)):
+            lock = q.index("SET n._node_filter_lock = true")
+            self.assertLess(lock, q.index("REMOVE n._node_filter_lock"))
+            self.assertLess(lock, q.index("coalesce(n.triage_source, '') <> 'human'"))
+            self.assertLess(lock, q.index("n.muted_by = row.muted_by"))
+        self.assertLess(mute_query(self.NUCLEI).index("SET n._node_filter_lock"),
+                        mute_query(self.NUCLEI).rindex("NOT n:Muted"))
+        # The unmute too: a person re-muting a rule-muted node in between would
+        # otherwise lose that mute to this REMOVE.
+        q = unmute_query(self.NUCLEI)
+        self.assertLess(q.index("SET n._node_filter_lock"), q.rindex("STARTS WITH 'rule:'"))
+        self.assertLess(q.rindex("STARTS WITH 'rule:'"), q.index("REMOVE n:Muted"))
 
     def test_the_unmute_write_only_releases_rule_mutes(self):
         q = unmute_query(self.NUCLEI)

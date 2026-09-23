@@ -40,10 +40,10 @@ const RULES = {
   },
 }
 
-async function bundle(nodeFilter: unknown, exemptions: unknown) {
+async function bundle(nodeFilter: unknown, exemptions: unknown, project: Record<string, unknown> = {}) {
   const zip = new JSZip()
   zip.file('manifest.json', JSON.stringify({ version: '1', projectName: 'Imported' }))
-  zip.file('project.json', JSON.stringify({ id: 'old-project', userId: 'old-owner', name: 'Imported' }))
+  zip.file('project.json', JSON.stringify({ id: 'old-project', userId: 'old-owner', name: 'Imported', ...project }))
   if (nodeFilter) zip.file('node-filters/node-filters.json', JSON.stringify(nodeFilter))
   if (exemptions) zip.file('node-filters/node-filter-exemptions.json', JSON.stringify(exemptions))
   const buf = await zip.generateAsync({ type: 'uint8array' })
@@ -60,6 +60,23 @@ beforeEach(() => {
 })
 
 describe('importing node filters', () => {
+  test('import_nested_relation_writes: project.json cannot write node filters or any other relation', async () => {
+    // Prisma's create accepts nested relation writes. Passed through, a crafted
+    // project.json would arm unvalidated rules, or plant a run that never goes
+    // stale and blocks every scan of the project for good.
+    await POST(await bundle(null, null, {
+      nodeFilter: { create: { applyToScans: true, mode: 'denylist', rules: { version: 1, kinds: {} } } },
+      nodeFilterRuns: { create: { status: 'running', heartbeatAt: '2099-01-01T00:00:00Z', target: 'current',
+        versionId: '', revision: 1, mode: 'denylist', rules: {}, actorUserId: 'x' } },
+      nodeFilterExemptions: { create: [{ label: 'IP', nodeKey: '192.0.2.10', createdBy: 'x' }] },
+      triageRuns: { create: [{}] },
+      notAColumn: 'x',
+      targetDomain: 'example.com',
+    }))
+    const data = mockProjectCreate.mock.calls[0][0].data
+    expect(data).toEqual({ name: 'Imported', targetDomain: 'example.com', userId: 'new-owner' })
+  })
+
   test('the rules arrive disarmed, under the new owner', async () => {
     const res = await POST(await bundle({ mode: 'denylist', rules: RULES, revision: 7 }, null))
     const body = await res.json()

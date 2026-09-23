@@ -724,7 +724,7 @@ class TestBatchUnmute(unittest.TestCase):
                                       "muted_by": "rule:vuln.nuclei/abc123"}])
         result = client.unmute_findings(UID, PID, ["v1", "v1", "", None])
         self.assertEqual(client.params[-1]["keys"], ["v1"])
-        self.assertIn("(n.id = key OR n.finding_id = key)", client.last)
+        self.assertIn("(n.id IN $keys OR n.finding_id IN $keys)", client.last)
         self.assertIn("n.user_id = $user_id AND n.project_id = $project_id", client.last)
         self.assertIn("REMOVE n:Muted, n.muted, n.muted_at, n.muted_by, n.muted_reason",
                       client.last)

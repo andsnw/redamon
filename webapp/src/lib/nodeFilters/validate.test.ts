@@ -88,3 +88,33 @@ describe('helpers', () => {
     expect(countActiveRules('allowlist', doc)).toEqual({ rules: 0, kinds: 0 })
   })
 })
+
+describe('documents the webapp must refuse', () => {
+  const DOC = { version: 1, kinds: { 'vuln.nuclei': { enabled: true, action: 'mute', rules: [
+    { id: 'k3f9a2', name: 'Info', enabled: true, all: [{ field: 'severity', op: 'in', value: ['info'] }] },
+  ] } } }
+
+  test('string_rules_document: a JSON string is refused, not parsed', () => {
+    // A PUT stored it as an empty document (coerceDoc(string)), silently wiping
+    // the rules; an import stored it raw, where the UI showed no rules but the
+    // scan sweep parsed and applied them.
+    const verdict = validateNodeFilters('denylist', JSON.stringify(DOC))
+    expect(verdict.ok).toBe(false)
+    expect(verdict.errors[0]).toMatch(/must be a JSON object/)
+  })
+
+  test('prototype_key_field_names: inherited names are unknown fields, not a crash', () => {
+    for (const field of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      const doc = { version: 1, kinds: { 'vuln.nuclei': { enabled: true, action: 'mute', rules: [
+        { id: 'k3f9a2', name: 'Info', enabled: true, all: [{ field, op: 'in', value: ['x'] }] },
+      ] } } }
+      const verdict = validateNodeFilters('denylist', doc)
+      expect(verdict.kindErrors['vuln.nuclei'][0], field).toMatch(/unknown field/)
+      expect(verdict.activeKinds).toEqual([])
+    }
+    for (const kind of ['constructor', '__proto__', 'toString']) {
+      const verdict = validateNodeFilters('denylist', { version: 1, kinds: JSON.parse(`{"${kind}": {"enabled": true}}`) })
+      expect(verdict.errors[0], kind).toMatch(/unknown kind/)
+    }
+  })
+})

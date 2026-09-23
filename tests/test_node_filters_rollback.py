@@ -69,6 +69,17 @@ class TestRollback(unittest.TestCase):
         rb.rollback(drv, None, dry_run=False, out=lambda *_: None)
         self.assertEqual(len(queries), 1)
 
+    def test_blank_project_id_widens_to_every_project(self):
+        # `--project "$PID"` with PID unset used to pass argparse, read as "no
+        # project" and release the rule mutes of EVERY project.
+        for blank in ("", "   "):
+            with self.assertRaises(SystemExit):
+                rb.main(["--project", blank])
+            drv, queries = driver({"p1": 1, "p2": 1})
+            with self.assertRaises(ValueError):
+                rb.rollback(drv, blank, dry_run=False, out=lambda *_: None)
+            self.assertEqual(queries, [])
+
     def test_it_must_be_told_which_projects(self):
         with self.assertRaises(SystemExit):
             rb.main([])

@@ -189,6 +189,39 @@ class TestFetchNodeFilters:
         with pytest.raises(RuntimeError):
             self._fetch({}, status=500)
 
+    def test_the_webapp_body_arms_a_sweep_with_its_rules_and_exemptions(self):
+        # The file is the GET body the webapp route test pins, so a shape change
+        # on either side fails one of the two. Without it, a renamed field reads
+        # here as "not armed" and scans stop filtering without a word.
+        contract = json.loads((PROJECT_ROOT / 'webapp/src/lib/nodeFilters/contracts/project_get.json')
+                              .read_text(encoding='utf-8'))
+        node_filter, _get = self._fetch(contract)
+
+        calls = []
+
+        class Client:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def apply_node_filters(self, uid, pid, config, **kw):
+                calls.append((config, kw))
+                return {'ok': True, 'mode': config['mode'], 'totals': {}, 'kinds': {}}
+
+        out = nfs.run_node_filter_sweep('u1', 'p1', '2026-09-23T10:00:00+00:00', ['nuclei'],
+                                        fetch=lambda _pid: node_filter, client_factory=Client,
+                                        log=lambda *_: None)
+        assert 'skipped' not in out and 'error' not in out
+        (config, kw), = calls
+        assert kw['exemptions'] == [('Vulnerability', 'v1'), ('Secret', 's9')]
+
+        from graph_db.node_filters.catalog import load_catalog
+        from graph_db.node_filters.model import parse
+        parsed = parse(config['rules'], config['mode'], load_catalog())
+        assert parsed.ok and parsed.active_kinds() == ['vuln.nuclei'], parsed.errors
+
 
 @pytest.fixture
 def recon_main(monkeypatch, tmp_path):

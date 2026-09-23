@@ -7,6 +7,8 @@ What is pinned:
     reports how it ended; the stats it reports carry counts, never finding text;
   - the endpoints refuse a weak key, a malformed run id and a duplicate start.
 """
+import json
+import os
 import sys
 import threading
 import unittest
@@ -176,6 +178,51 @@ class FakeResponse:
 
     def json(self):
         return self._body
+
+
+RUN_CALLBACKS_CONTRACT = (Path(__file__).resolve().parents[2]
+                          / "webapp/src/lib/nodeFilters/contracts/run_callbacks.json")
+
+
+class TestRunClientResources(unittest.TestCase):
+    def test_run_client_http_pool_leak(self):
+        # Every apply built an httpx.Client and never closed it: one leaked
+        # connection pool per apply, for the life of the agent.
+        pool = mock.Mock()
+        pool.get.return_value = FakeResponse(404)
+        pool.post.return_value = FakeResponse(200)
+        with mock.patch.object(nfr.httpx, "Client", return_value=pool):
+            nfr.run_apply("run1", lambda: FakeGraph())
+        pool.close.assert_called_once_with()
+
+    def test_a_client_it_was_handed_is_left_open(self):
+        http = mock.Mock()
+        http.get.return_value = FakeResponse(200, RUN)
+        http.post.return_value = FakeResponse(200, {"abort": False})
+        nfr.run_apply("run1", lambda: FakeGraph(),
+                      run_client=nfr.NodeFilterRunClient("run1", http=http))
+        http.close.assert_not_called()
+
+
+class TestWebappContract(unittest.TestCase):
+    def test_the_bodies_sent_to_the_webapp_are_the_ones_its_routes_replay(self):
+        # nodeFilterRuns.routes.test.ts posts this same file to the heartbeat and
+        # finish routes. If the agent's bodies drift from what those routes read,
+        # a run's progress and final counts are silently dropped.
+        # Regenerate with NODE_FILTER_CONTRACT_WRITE=1 after a deliberate change.
+        http = mock.Mock()
+        http.get.return_value = FakeResponse(200, RUN)
+        http.post.return_value = FakeResponse(200, {"status": "running", "abort": False})
+        ticks = iter(range(0, 10_000, 31))  # every clock read is one heartbeat interval later
+        client = nfr.NodeFilterRunClient("run1", http=http, clock=lambda: next(ticks))
+
+        self.assertEqual(nfr.run_apply("run1", lambda: FakeGraph(), run_client=client), "completed")
+        sent = {call.args[0].rsplit("/", 1)[-1]: call.kwargs["json"] for call in http.post.call_args_list}
+        self.assertEqual(set(sent), {"heartbeat", "finish"})
+
+        if os.environ.get("NODE_FILTER_CONTRACT_WRITE") == "1":
+            RUN_CALLBACKS_CONTRACT.write_text(json.dumps(sent, indent=2, sort_keys=True) + "\n")
+        self.assertEqual(sent, json.loads(RUN_CALLBACKS_CONTRACT.read_text()))
 
 
 class TestHeartbeat(unittest.TestCase):

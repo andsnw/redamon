@@ -58,14 +58,30 @@ export function MutedNodesTable({ projectId, onOpenRule }: MutedNodesTableProps)
   const [exporting, setExporting] = useState(false)
   const requestRef = useRef(0)
 
+  // The page keeps this table mounted across a project switch. Filters and the
+  // page belong to the project they were set on (a rule id means nothing in
+  // another project), so they reset before the new project's first request.
+  const [shownProject, setShownProject] = useState(projectId)
+  if (shownProject !== projectId) {
+    setShownProject(projectId)
+    setFilters(EMPTY_FILTERS)
+    setSearchDraft('')
+    setOffset(0)
+    setFacets(null)
+    setSelected(new Set())
+  }
+
   // The search box is debounced so typing does not fire a graph query per key.
+  // Only a real change resets the page: this also runs on mount, where an
+  // unconditional reset bounced a page turned in the first 350 ms back to 1.
   useEffect(() => {
+    if (searchDraft === filters.search) return
     const t = setTimeout(() => {
-      setFilters(f => (f.search === searchDraft ? f : { ...f, search: searchDraft }))
+      setFilters(f => ({ ...f, search: searchDraft }))
       setOffset(0)
     }, 350)
     return () => clearTimeout(t)
-  }, [searchDraft])
+  }, [searchDraft, filters.search])
 
   const load = useCallback(async () => {
     if (!projectId) return
@@ -78,6 +94,13 @@ export function MutedNodesTable({ projectId, onOpenRule }: MutedNodesTableProps)
       if (!res.ok) throw new Error(body.error || `Muted Nodes: ${res.status}`)
       // An older, slower response must not overwrite a newer filter's result.
       if (request !== requestRef.current) return
+      const count = Number(body.total ?? 0)
+      if ((body.findings ?? []).length === 0 && offset > 0) {
+        // The page emptied (its rows were unmuted): go to the last page that
+        // still has rows, rather than an empty table with no pager to leave by.
+        setOffset(count > 0 ? Math.floor((count - 1) / PAGE_SIZE) * PAGE_SIZE : 0)
+        return
+      }
       setRows(body.findings ?? [])
       setTotal(body.total ?? 0)
       if (body.facets) setFacets(body.facets)

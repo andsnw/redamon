@@ -4,7 +4,8 @@
  * Start an apply and follow it until it ends.
  *
  * The run is polled every two seconds while it is `running`; the server sweeps
- * a run whose agent died to `failed`, so polling always ends.
+ * a run whose agent died to `failed`, and a run that is gone stops the polling,
+ * so it always ends.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { NodeFilterRunSummary } from './useNodeFilters'
@@ -38,6 +39,12 @@ export function useApplyRun(projectId: string | null, initialRunId: string | nul
             onFinishedRef.current(body)
             return
           }
+        } else if (res.status === 404 || res.status === 401 || res.status === 403) {
+          // Gone for good (a deleted project, or no longer ours to see). Only
+          // a 5xx or a network error is worth another poll.
+          setRun(null)
+          setRunId(null)
+          return
         }
       } catch {
         // A blip; the next poll tries again.

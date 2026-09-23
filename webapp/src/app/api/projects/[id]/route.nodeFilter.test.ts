@@ -39,9 +39,16 @@ vi.mock('@/lib/access', async () => {
   return { ...actual, requireEffectiveUser: () => mockGetEffectiveUser() }
 })
 
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { GET, PUT } from './route'
 
 const RULES = { version: 1, kinds: { 'vuln.nuclei': { enabled: true, action: 'mute', rules: [] } } }
+const CONTRACT_RULES = { version: 1, kinds: { 'vuln.nuclei': { enabled: true, action: 'mute', rules: [
+  { id: 'k3f9a2', name: 'Informational templates', enabled: true,
+    all: [{ field: 'severity', op: 'in', value: ['info'] }] },
+] } } }
+const PROJECT_GET_CONTRACT = join(__dirname, '../../../../lib/nodeFilters/contracts/project_get.json')
 const params = { params: Promise.resolve({ id: 'proj-1' }) }
 
 function wireProject() {
@@ -122,6 +129,28 @@ describe('GET hands node filters to service callers only', () => {
     expect(body.nodeFilterExemptions).toBeUndefined()
     const include = mockProjectFindUnique.mock.calls.find(([a]) => !a?.select)?.[0].include
     expect(include.nodeFilter).toBeUndefined()
+  })
+
+  test('the service body is the contract the recon sweep parses', async () => {
+    // recon/tests/test_node_filter_scan_sweep.py feeds this same file to
+    // fetch_node_filters. A shape change here that recon does not follow reads
+    // there as "not armed", and every scan silently stops filtering.
+    // Regenerate with NODE_FILTER_CONTRACT_WRITE=1 after a deliberate change.
+    mockIsScanner.mockReturnValue(true)
+    mockProjectFindUnique.mockResolvedValue({
+      id: 'proj-1', userId: 'owner', user: { id: 'owner' }, authProfile: null,
+      nodeFilter: {
+        projectId: 'proj-1', mode: 'denylist', applyToScans: true, rules: CONTRACT_RULES,
+        revision: 4, updatedBy: 'owner', updatedAt: new Date(),
+      },
+      nodeFilterExemptions: [{ label: 'Vulnerability', nodeKey: 'v1' }, { label: 'Secret', nodeKey: 's9' }],
+    })
+    const body = await (await get()).json()
+    const wire = { nodeFilter: body.nodeFilter }
+    if (process.env.NODE_FILTER_CONTRACT_WRITE === '1') {
+      writeFileSync(PROJECT_GET_CONTRACT, JSON.stringify(wire, null, 2) + '\n')
+    }
+    expect(wire).toEqual(JSON.parse(readFileSync(PROJECT_GET_CONTRACT, 'utf8')))
   })
 
   test('a project with no filter row reads as null for a service caller', async () => {

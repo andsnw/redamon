@@ -359,12 +359,14 @@ class TriageMixin:
         clean = sorted({str(k) for k in (keys or []) if k})[:MAX_UNMUTE_BATCH]
         if not clean:
             return {"unmuted": 0, "items": []}
+        # One pass over the muted nodes with IN, not a pass per key: an OR on two
+        # properties is served by no index, and rule mutes make the set large.
         query = f"""
-        UNWIND $keys AS key
         MATCH (n:Muted)
-        WHERE (n.id = key OR n.finding_id = key)
-          AND n.user_id = $user_id AND n.project_id = $project_id
-        WITH n, key, coalesce(n.muted_by, '') AS was
+        WHERE n.user_id = $user_id AND n.project_id = $project_id
+          AND (n.id IN $keys OR n.finding_id IN $keys)
+        WITH n, CASE WHEN n.id IN $keys THEN n.id ELSE n.finding_id END AS key,
+             coalesce(n.muted_by, '') AS was
         REMOVE n:Muted, n.muted, n.muted_at, n.muted_by, n.muted_reason
         RETURN key, {_FUNCTIONAL_LABEL} AS label, was AS muted_by
         """

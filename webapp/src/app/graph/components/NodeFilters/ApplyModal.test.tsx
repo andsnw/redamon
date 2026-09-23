@@ -73,6 +73,23 @@ describe('ApplyModal', () => {
     expect(JSON.parse(previewCall[1].body).withRemediations).toBe(true)
   })
 
+  test('preview_busy_reads_as_agent_down: a preview still running is waited for, not called unreachable', async () => {
+    // The page's own debounced preview is often still running when Apply is
+    // opened; the route answers 429 until it ends. That is not an outage, and
+    // must not take "current graph" away.
+    let previews = 0
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith('/node-filters/apply')) return reply({ busy: null, activeVersion: { id: 'v7', label: 'Scan 7' } })
+      previews += 1
+      return previews === 1 ? reply({ error: 'A preview is already running' }, 429) : reply(PREVIEW)
+    })
+    open()
+    expect(await screen.findByText(/Mutes 60 nodes now/, {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(screen.queryByText(/Cannot reach the agent/)).toBeNull()
+    expect((screen.getByDisplayValue('both') as HTMLInputElement).checked).toBe(true)
+    expect(previews).toBe(2)
+  })
+
   test('a past version allows New scans only, and says why', async () => {
     wire()
     const onConfirm = open({ isViewingPastVersion: true, viewedVersionLabel: 'Scan 3' })

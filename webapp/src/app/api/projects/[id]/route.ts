@@ -12,6 +12,7 @@ import { isInternalRequest, isScannerRequest } from '@/lib/session'
 import { requireEffectiveUser, requireProjectAccess } from '@/lib/access'
 import { toAuthProfileMetadata } from '@/lib/authProfile'
 import { callGraphTriage } from '@/lib/triageClient'
+import { pickProjectColumns } from '@/lib/projectColumns'
 
 // Path to output directories (fallback for local deletion)
 const RECON_OUTPUT_PATH = process.env.RECON_OUTPUT_PATH || '/home/samuele/Progetti didattici/RedAmon/recon/output'
@@ -27,8 +28,6 @@ const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://loc
 interface RouteParams {
   params: Promise<{ id: string }>
 }
-
-const PROJECT_SCALAR_COLUMNS = new Set<string>(Object.keys(Prisma.ProjectScalarFieldEnum))
 
 // GET /api/projects/[id] - Get project with all params
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -180,14 +179,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       ...rawUpdate
     } = body
 
-    // Only Project COLUMNS may be written here. Prisma accepts nested relation
-    // writes, so a relation key in this whole-row body (`nodeFilter`,
-    // `nodeFilterRuns`, `scanJobs`, ...) would be a mass-assignment path that
-    // skips the relation's own route: its validation, its revision check and
-    // its audit row. Anything that is not a scalar column is dropped.
-    const updateData: Record<string, any> = Object.fromEntries(
-      Object.entries(rawUpdate ?? {}).filter(([key]) => PROJECT_SCALAR_COLUMNS.has(key)),
-    )
+    // Only Project COLUMNS may be written here: a relation key in this whole-row
+    // body would skip the relation's own route, its validation, its revision
+    // check and its audit row.
+    const updateData: Record<string, any> = pickProjectColumns(rawUpdate)
 
     // Sanitize string inputs that are used as hostnames/IPs (trailing spaces break DNS)
     if (typeof updateData.targetDomain === 'string') {

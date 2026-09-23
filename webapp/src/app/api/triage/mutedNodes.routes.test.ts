@@ -39,6 +39,8 @@ vi.mock('@/lib/agentAuth', () => ({
   internalKeyHeaders: (b: Record<string, string> = {}) => ({ ...b, 'x-internal-key': 'k' }),
 }))
 vi.mock('@/lib/audit', () => ({ writeAudit: (e: unknown) => mockAudit(e) }))
+const mockNodeFilterWriter = vi.fn()
+vi.mock('@/lib/nodeFilterRun', () => ({ describeNodeFilterWriter: (...a: unknown[]) => mockNodeFilterWriter(...a) }))
 
 import { GET as getMuted } from './muted/route'
 import { POST as postUnmute } from './unmute/route'
@@ -79,6 +81,7 @@ beforeEach(() => {
   mockFilterFind.mockResolvedValue({ rules: DOC })
   mockSession.mockResolvedValue({ userId: 'admin-bob', role: 'admin' })
   mockExemptionUpsert.mockResolvedValue({})
+  mockNodeFilterWriter.mockResolvedValue(null)
 })
 
 describe('GET /api/triage/muted', () => {
@@ -193,6 +196,19 @@ describe('POST /api/triage/unmute', () => {
       projectId: PROJECT, label: 'MalPackageFinding', nodeKey: 'f9',
       createdBy: OWNER, realActorUserId: 'admin-bob',
     })
+  })
+
+  test('unmute_during_live_apply: refused while an apply run is live, before the graph is touched', async () => {
+    // A running apply holds the exemptions it read at its start. A node
+    // unmuted now, before the sweep reaches its page, would be muted again by
+    // that sweep, silently undoing what the operator just did.
+    mockNodeFilterWriter.mockResolvedValue('node filters are being applied to the graph')
+    const res = await postUnmute(post(URL, { projectId: PROJECT, keys: ['v1'] }))
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/node filters are being applied/)
+    expect(mockNodeFilterWriter).toHaveBeenCalledWith(PROJECT)
+    expect(mockAgentFetch).not.toHaveBeenCalled()
+    expect(mockExemptionUpsert).not.toHaveBeenCalled()
   })
 
   test('the audit names the effective user and the real actor', async () => {

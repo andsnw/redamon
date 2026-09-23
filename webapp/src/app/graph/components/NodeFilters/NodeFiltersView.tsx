@@ -99,15 +99,18 @@ export function NodeFiltersView({
     if (result.ok) return result.revision
     if (result.conflict) {
       const overwrite = await confirm(
-        'Someone saved these rules since you opened them. Overwrite their version with yours, or reload theirs and lose your changes?',
+        'Someone saved these rules since you opened them. Overwrite their version with yours, or keep editing: '
+          + 'your changes stay on screen, and Discard replaces them with theirs.',
         'The rules changed elsewhere',
-        { confirmLabel: 'Overwrite', cancelLabel: 'Reload' },
+        { confirmLabel: 'Overwrite', cancelLabel: 'Keep editing' },
       )
       if (overwrite) {
         const forced = await nf.save(true)
         return forced.ok ? forced.revision : null
       }
-      await nf.load()
+      // Escape and the close button land here too, so this must never lose the
+      // edits: only the saved copy underneath is refreshed.
+      await nf.load(true)
       return null
     }
     await alertError([result.error, ...(result.errors ?? [])].join('\n'), 'Save failed')

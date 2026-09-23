@@ -132,6 +132,60 @@ describe('MutedNodesTable', () => {
     await waitFor(() => expect(toast.warning).toHaveBeenCalledWith('a filter rule may mute it again'))
   })
 
+  test('unmute_empties_last_page: unmuting every row on the last page steps back to one with rows', async () => {
+    // The reload kept the old offset, past the new end: an empty table, the
+    // "nothing muted" state, and no pager to get back with.
+    let unmuted = false
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        unmuted = true
+        return reply({ unmuted: 1, items: [{ key: 'v51' }], exempted: 1 })
+      }
+      const onSecondPage = String(url).includes('offset=50')
+      if (!unmuted) return reply({ total: 51, findings: [onSecondPage ? row({ id: 'v51', name: 'the last one' }) : row()] })
+      return reply({ total: 50, findings: onSecondPage ? [] : [row()] })
+    })
+    render(<MutedNodesTable projectId="p1" />)
+    await screen.findByText(/1 of 2/)
+    fireEvent.click(screen.getByLabelText('Next page'))
+    await screen.findByText('the last one')
+    fireEvent.click(screen.getAllByText('Unmute')[0])
+    await waitFor(() => expect(unmuted).toBe(true))
+    await waitFor(() => expect(String(fetchMock.mock.calls.at(-1)![0])).toContain('offset=0'))
+    expect(await screen.findByText('tech-detect:nginx')).toBeInTheDocument()
+    expect(screen.queryByText('Nothing is muted in this project.')).toBeNull()
+  })
+
+  test('search_debounce_resets_paging: paging right after the table opens is not bounced back', async () => {
+    // The debounce ran once on mount and reset the offset 350 ms later, with no
+    // search typed: a page turned in that window snapped back to page 1.
+    fetchMock.mockReturnValue(reply({ total: 120, findings: [row()] }))
+    render(<MutedNodesTable projectId="p1" />)
+    await screen.findByText(/1 of 3/)
+    fireEvent.click(screen.getByLabelText('Next page'))
+    await new Promise(resolve => setTimeout(resolve, 500))
+    expect(String(fetchMock.mock.calls.at(-1)![0])).toContain('offset=50')
+    expect(screen.getByText(/2 of 3/)).toBeInTheDocument()
+  })
+
+  test('filters_survive_project_switch: another project opens unfiltered, on its first page', async () => {
+    fetchMock.mockReturnValue(reply({
+      total: 120, findings: [row()],
+      facets: { total: 120, by_person: 0, labels: { Vulnerability: 100, Secret: 20 }, rules: [] },
+    }))
+    const { rerender } = render(<MutedNodesTable projectId="p1" />)
+    await screen.findByText(/1 of 3/)
+    fireEvent.change(screen.getByLabelText('Kind'), { target: { value: 'Secret' } })
+    await waitFor(() => expect(String(fetchMock.mock.calls.at(-1)![0])).toContain('label=Secret'))
+    fireEvent.click(screen.getByLabelText('Next page'))
+    await waitFor(() => expect(String(fetchMock.mock.calls.at(-1)![0])).toContain('offset=50'))
+
+    rerender(<MutedNodesTable projectId="p2" />)
+    await waitFor(() => expect(fetchMock.mock.calls.some(c => String(c[0]).includes('projectId=p2'))).toBe(true))
+    const forP2 = fetchMock.mock.calls.map(c => String(c[0])).filter(u => u.includes('projectId=p2'))
+    expect(forP2.every(u => u.includes('offset=0') && !u.includes('label='))).toBe(true)
+  })
+
   test('pages forward', async () => {
     fetchMock.mockReturnValue(reply({ total: 120, findings: [row()] }))
     render(<MutedNodesTable projectId="p1" />)

@@ -185,11 +185,43 @@ class LiveNodeFilterCase(unittest.TestCase):
         self.assertFalse(st["high-1"][0])
         self.assertFalse(st["info-human"][0])
 
+    def test_a_guard_set_after_the_projection_still_stops_the_mute_write(self):
+        # The sweep reads a page, decides, then writes. A person can judge a
+        # finding, or the agent prove it, in between; the write must re-check.
+        from graph_db.node_filters.catalog import load_catalog
+        from graph_db.node_filters.cypher import mute_query
+
+        u, p = self.uid, self.pid
+        with self.driver.session() as s:
+            s.run("MATCH (v:Vulnerability {id: 'info-1', user_id: $u, project_id: $p}) "
+                  "SET v.triage_source = 'human'", u=u, p=p)
+            s.run("MATCH (v:Vulnerability {id: 'info-2', user_id: $u, project_id: $p}) "
+                  "SET v.triage_status = 'confirmed'", u=u, p=p)
+            s.run("MATCH (v:Vulnerability {id: 'info-old', user_id: $u, project_id: $p}) "
+                  "SET v.triage_proof = 'poc.txt'", u=u, p=p)
+            rows = [{"key": k, "muted_by": "rule:vuln.nuclei/k3f9a2", "reason": "Filter rule: x"}
+                    for k in ("info-1", "info-2", "info-old", "info-proven")]
+            written = s.run(mute_query(load_catalog().kinds["vuln.nuclei"]),
+                            rows=rows, uid=u, pid=p).single()["n"]
+            # The control: the same write on an unguarded node does mute it, so a
+            # query that wrote nothing at all could not pass this test.
+            control = s.run(mute_query(load_catalog().kinds["vuln.nuclei"]),
+                            rows=[{**rows[0], "key": "high-1"}], uid=u, pid=p).single()["n"]
+        self.assertEqual(written, 0)
+        self.assertEqual(control, 1)
+        st = self.state()
+        self.assertFalse(any(st[k][0] for k in ("info-1", "info-2", "info-old", "info-proven")))
+
     def test_the_sweep_never_writes_updated_at(self):
         before = self.updated_ats()
         self.sweep(cfg(INFO))
         self.sweep(cfg({**INFO, "enabled": False}))
         self.assertEqual(self.updated_ats(), before)
+        # Nor leaves the write lock's scratch property behind.
+        with self.driver.session() as s:
+            left = s.run("MATCH (n) WHERE n.user_id = $u AND n._node_filter_lock IS NOT NULL "
+                         "RETURN count(n) AS c", u=self.uid).single()["c"]
+        self.assertEqual(left, 0)
 
     # --- guards ------------------------------------------------------------
 
@@ -268,6 +300,60 @@ class LiveNodeFilterCase(unittest.TestCase):
         self.assertFalse(st["info-1"][0] or st["info-person"][0])
         # The other project's same-id finding is still muted.
         self.assertTrue(self.state(self.pid2)["info-person"][0])
+
+    def test_batch_unmute_scans_muted_nodes_once_per_key(self):
+        # The query matched `(n:Muted)` once PER KEY with an OR the index cannot
+        # serve, so a 500-key unmute read the whole database's muted set 500
+        # times. Rule mutes make that set large. Its cost must not grow with
+        # the number of keys.
+        with self.driver.session() as s:
+            s.run("UNWIND range(0, 299) AS i "
+                  "CREATE (:Vulnerability:Muted {id: 'bulk-' + toString(i), user_id: $u, project_id: $p, "
+                  "severity: 'info', source: 'nuclei', muted: true, muted_by: 'rule:vuln.nuclei/k3f9a2'})",
+                  u=self.uid, p=self.pid)
+        profiled = _Profiling(self.driver)
+        self.client.driver = profiled
+        try:
+            one = self.client.unmute_findings(self.uid, self.pid, ["bulk-0"])
+            many = self.client.unmute_findings(self.uid, self.pid, [f"bulk-{i}" for i in range(1, 300)])
+        finally:
+            self.client.driver = self.driver
+        self.assertEqual((one["unmuted"], many["unmuted"]), (1, 299))
+        hits_one, hits_many = profiled.hits
+        self.assertLess(hits_many, 10 * hits_one, (hits_one, hits_many))
+
+
+class _Profiling:
+    """A driver whose sessions PROFILE every query and keep its total db hits."""
+
+    def __init__(self, driver):
+        self._driver = driver
+        self.hits = []
+
+    def session(self):
+        return _ProfilingSession(self._driver.session(), self.hits)
+
+
+class _ProfilingSession:
+    def __init__(self, session, hits):
+        self._session, self._hits = session, hits
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self._session.close()
+        return False
+
+    def run(self, query, **params):
+        result = self._session.run("PROFILE " + query, **params)
+        rows = list(result)
+        self._hits.append(_db_hits(result.consume().profile))
+        return rows
+
+
+def _db_hits(plan) -> int:
+    return int(plan.get("dbHits", 0)) + sum(_db_hits(c) for c in plan.get("children", []))
 
 
 if __name__ == "__main__":

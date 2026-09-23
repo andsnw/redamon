@@ -105,6 +105,7 @@ class NodeFilterRunClient:
 
     def __init__(self, run_id: str, http=None, clock=time.monotonic):
         self.run_id = run_id
+        self._owns_http = http is None
         self._http = http or httpx.Client(timeout=15.0)
         self._clock = clock
         self._last_beat = clock()
@@ -152,6 +153,11 @@ class NodeFilterRunClient:
         except Exception as e:  # noqa: BLE001 - the heartbeat TTL releases the project
             logger.error("node-filter run %s could not report its end: %s", self.run_id, e)
 
+    def close(self) -> None:
+        """Release the connection pool this client opened (never one it was handed)."""
+        if self._owns_http:
+            self._http.close()
+
 
 def run_apply(run_id: str, graph_client_factory, run_client=None, log_event=None) -> str:
     """The background body of one apply. Returns the status it finished with."""
@@ -185,6 +191,8 @@ def run_apply(run_id: str, graph_client_factory, run_client=None, log_event=None
     finally:
         if report:
             rc.finish(status, stats, error)
+        if run_client is None:
+            rc.close()
         with _runs_lock:
             _active_runs.discard(run_id)
     return status

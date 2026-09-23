@@ -13,6 +13,7 @@ import { orchestratorFetch } from '@/lib/orchestrator'
 import { envelopeForKind } from '@/lib/jobQueue'
 import { allErrors, validateNodeFilters } from '@/lib/nodeFilters/validate'
 import { MUTEABLE_FINDING_LABELS } from '@/lib/mcp/findingLabels'
+import { pickProjectColumns } from '@/lib/projectColumns'
 
 const MUTEABLE_LABELS = new Set<string>(MUTEABLE_FINDING_LABELS)
 
@@ -194,8 +195,12 @@ export async function POST(request: NextRequest) {
       roeDocumentDataBase64,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       roeEnabled: _roeEnabledLegacy,
-      ...projectFields
+      ...bundleFields
     } = projectData
+    // Columns only: the bundle is untrusted, and a relation key in it would be
+    // a nested write past that relation's own import checks (node filters
+    // arriving armed, a run that never goes stale). Export writes columns only.
+    const projectFields = pickProjectColumns(bundleFields)
 
     // Restore binary RoE document from base64 encoding
     if (roeDocumentDataBase64 && typeof roeDocumentDataBase64 === 'string') {
@@ -234,11 +239,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Create new project under the specified user
+    // The bundle's column values are not type-checked here (they never were);
+    // pickProjectColumns has already removed everything that is not a column.
     const newProject = await prisma.project.create({
-      data: {
-        ...projectFields,
-        userId,
-      },
+      data: { ...projectFields, userId } as Prisma.ProjectUncheckedCreateInput,
     })
 
     // The authorization records travel with the project. `recordedVia: import`
