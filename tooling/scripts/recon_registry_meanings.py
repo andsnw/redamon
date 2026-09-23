@@ -52,6 +52,11 @@ OVERRIDES: dict[str, str] = {
         "The preset last applied to this project, recorded so the UI can show which one it "
         "came from. Written by the apply path, not configured directly."
     ),
+    "loadedPreset": (
+        "The name of the preset last loaded into this project and a fingerprint of the "
+        "settings it produced. The UI shows the preset as applied only while the saved "
+        "settings still match the fingerprint. Written by the load path, not configured directly."
+    ),
     "mcpKaliExecEnabled": (
         "Whether MCP tokens on this project may run shell commands in the Kali sandbox. It "
         "decides what a credential can do rather than how the pipeline scans, so it is "

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { Save, X, Loader2, Download, ShieldAlert, Zap, Bookmark, FolderOpen, List, GitBranch, Play } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { Save, X, Loader2, Download, ShieldAlert, Zap, Bookmark, FolderOpen, List, GitBranch, Play, Check } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import type { Project } from '@prisma/client'
@@ -83,7 +83,14 @@ import { SavePresetModal } from './SavePresetModal'
 import { UserPresetDrawer } from './UserPresetDrawer'
 import { getPresetById, type ReconPreset } from '@/lib/recon-presets'
 import { resolveIpModeForPreset } from '@/lib/recon-presets/targeting'
-import { PRESET_EXCLUDED_FIELDS, stripExcludedOnApply } from '@/lib/project-preset-utils'
+import {
+  applyPresetSettings,
+  appliedPresetName,
+  pickPresetFields,
+  presetFingerprint,
+  type LoadedPreset,
+} from '@/lib/project-preset-utils'
+import { useUpdateProject } from '@/hooks/useProjects'
 
 const WorkflowView = dynamic(
   () => import('./WorkflowView/WorkflowView').then(m => ({ default: m.WorkflowView })),
@@ -155,7 +162,32 @@ const TAB_GROUPS = [
 
 type TabId = typeof TAB_GROUPS[number]['tabs'][number]['id']
 
-const RECON_TAB_IDS = new Set<string>(['preset', 'target', 'discovery', 'port', 'http', 'resource', 'jsrecon', 'vuln', 'cve', 'security'])
+/** A preset picked in the built-in list, or one of the user's saved presets. */
+type PresetSource =
+  | { kind: 'builtin'; preset: ReconPreset }
+  | { kind: 'user'; id: string; name: string }
+
+function PresetLoadWarning({ saves }: { saves: boolean }) {
+  return (
+    <>
+      <p>
+        The current project settings will be <strong>discarded</strong> and replaced with the
+        preset&apos;s. Every setting the preset does not define goes back to its default.
+      </p>
+      <p>
+        Not changed: the project name and description, the target and scope, the Rules of
+        Engagement, uploaded files, and credentials.
+      </p>
+      <p>
+        {saves
+          ? 'The project is saved as soon as you confirm.'
+          : 'Nothing is stored until you create the project.'}
+      </p>
+    </>
+  )
+}
+
+const RECON_TAB_IDS = new Set<string>(['preset', 'target','discovery', 'port', 'http', 'resource', 'jsrecon', 'vuln', 'cve', 'security'])
 // All valid tab ids, for validating a `?tab=` deep-link.
 const ALL_TAB_IDS = new Set<string>(TAB_GROUPS.flatMap(g => g.tabs.map(t => t.id)))
 
@@ -254,9 +286,12 @@ export function ProjectForm({
   mode,
   projectIdFromRoute,
 }: ProjectFormProps) {
-  const { alertError, alertWarning } = useAlertModal()
+  const { alertError, alertWarning, confirm: confirmModal, dangerConfirm } = useAlertModal()
   const toast = useToast()
   const router = useRouter()
+  // Saves a loaded preset. The mutation (not a bare fetch) so the cached project
+  // is invalidated and a later visit is not seeded with the pre-preset settings.
+  const presetSaveMutation = useUpdateProject()
   const [activeTab, setActiveTab] = useState<TabId>('target')
   const [viewMode, setViewMode] = useState<'tabs' | 'workflow'>('workflow')
   // A section anchor waiting to be scrolled to, e.g. arriving from an Other
@@ -273,8 +308,17 @@ export function ProjectForm({
   // (see the defaults effect below). Drives the Update/Save button + the
   // unsaved-changes guard. Applying a preset mutates formData, so it naturally
   // marks the form dirty -- fixing the "preset applied but never saved" footgun.
-  const { isDirty, setBaseline } = useDirtyState(formData)
+  const { isDirty, baseline, setBaseline } = useDirtyState(formData)
   const { guardedNavigate } = useUnsavedChangesGuard(isDirty)
+
+  // The loaded preset's name, while the settings still match it. Edit mode reads
+  // the SAVED state, so an edit only hides it once Update Settings writes it; a
+  // create form has nothing saved yet, so it reads the live form.
+  const presetBadgeSource = mode === 'edit' ? baseline : formData
+  const loadedPresetName = useMemo(
+    () => appliedPresetName(presetBadgeSource as unknown as Record<string, unknown>),
+    [presetBadgeSource],
+  )
 
   // Body wrapper ref -- used to pin log drawer top/bottom to the main content area
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -533,91 +577,107 @@ export function ProjectForm({
     setFormData(prev => ({ ...prev, ...fields }))
   }
 
-  const applyPreset = useCallback(async (preset: ReconPreset) => {
-    // Apply ONLY this preset's settings on a clean backend-defaults baseline, so the
-    // resulting recon config never depends on whichever preset was selected before
-    // (no merge-from-previous-state - that made disabled tools "stick" across presets).
-    // /api/projects/defaults carries no target-identity keys (name, targetDomain, IPs,
-    // RoE), so the spread base `...prev` preserves everything the user entered; the
-    // defaults reset every recon-tool field to its baseline; the preset then overrides
-    // only the fields it explicitly declares. Mirrors the user-preset load path.
-    let defaults: Record<string, unknown> = {}
+  /**
+   * Load a preset: confirm, replace every preset-owned setting, and in edit mode
+   * save straight away so the project never sits on a loaded-but-unsaved preset.
+   *
+   * Built-in and user presets share this one path on purpose. Two handlers is how
+   * one of them ended up guarded and the other not.
+   *
+   * Only the preset fields are saved. Unsaved edits elsewhere (a target being
+   * typed, an RoE field) stay unsaved: the confirmation promised to replace
+   * settings, not to commit whatever else is in the form.
+   */
+  const loadPreset = async (source: PresetSource): Promise<void> => {
+    const presetName = source.kind === 'builtin' ? source.preset.name : source.name
+    const saves = mode === 'edit' && Boolean(projectId)
+    const ask = saves ? dangerConfirm : confirmModal
+    const confirmed = await ask(<PresetLoadWarning saves={saves} />, `Load preset "${presetName}"?`, {
+      confirmLabel: saves ? 'Replace and save' : 'Replace settings',
+      size: 'default',
+    })
+    if (!confirmed) return
+
+    let presetSettings: Record<string, unknown>
+    let backendDefaults: Record<string, unknown>
     try {
-      const res = await fetch('/api/projects/defaults')
-      if (res.ok) defaults = await res.json()
+      ;[presetSettings, backendDefaults] = await Promise.all([
+        source.kind === 'builtin'
+          ? Promise.resolve({ ...source.preset.parameters, reconPresetId: source.preset.id })
+          : fetch(`/api/presets/${source.id}`).then(async r => {
+              if (!r.ok) throw new Error('Failed to fetch preset')
+              return ((await r.json()).settings ?? {}) as Record<string, unknown>
+            }),
+        // Unavailable defaults are not fatal: the Prisma defaults cover every field.
+        fetch('/api/projects/defaults')
+          .then(r => (r.ok ? r.json() : {}))
+          .catch(() => ({})),
+      ])
     } catch {
-      // Defaults unavailable: fall back to a plain merge so applying still works.
+      toast.error(`Failed to load preset "${presetName}"`)
+      return
     }
-    setFormData(prev => {
-      const p = prev as Record<string, unknown>
-      const d = defaults as Record<string, unknown>
-      // Start from the current form and reset every EXISTING field to its backend
-      // default. ONLY touch keys already present in the form: the /defaults blob also
-      // carries recon/agent settings that are NOT Project columns (e.g.
-      // takeoverCnameValidationEnabled), and writing those back makes the project
-      // update fail with a Prisma "Unknown argument" error.
-      const next: Record<string, unknown> = { ...p }
-      for (const key of Object.keys(p)) {
-        if (key in d) next[key] = d[key]
-      }
-      // Apply ONLY this preset's settings (all keys here are valid Project columns).
-      Object.assign(next, preset.parameters)
-      // A preset defines recon-tool config ONLY. Resetting to defaults must NOT reset
-      // things presets never own: target identity and files, the engagement's limits
-      // and its record, or the user's LLM model choice. PRESET_EXCLUDED_FIELDS is a
-      // registry query for the engagement half, so reclassifying a field moves this
-      // boundary with it - the `key.startsWith('roe')` loop that used to sit here was
-      // a string match on a column NAME, and those names outlived their meaning.
-      for (const key of PRESET_EXCLUDED_FIELDS) next[key] = p[key]
-      next.agentOpenaiModel = p.agentOpenaiModel
-      next.aiPipelineModel = p.aiPipelineModel
-      // Drive Start-from-IP from the preset's declared target type. ipMode is a
-      // user-owned identity field (PRESET_EXCLUDED_FIELDS restored it to p above),
-      // so this metadata-driven flip is the ONLY place a preset can set the mode.
-      // Non-destructive: the now-hidden side (targetDomain / targetIps) is left
-      // intact so switching back does not lose what the user typed. resolve()
-      // returns undefined (leave as-is) in edit mode and for 'both' presets.
-      const currentTargetMode = prev.ipMode ? 'ip' : prev.domainBatchMode ? 'batch' : 'domain'
-      const resolvedIpMode = resolveIpModeForPreset(preset.targetProfile, mode, currentTargetMode)
+
+    const next = applyPresetSettings(
+      formData as unknown as Record<string, unknown>,
+      presetSettings,
+      backendDefaults,
+    ) as unknown as ProjectFormData
+
+    if (source.kind === 'builtin') {
+      // A built-in preset declares the kind of target it is for, and that is the
+      // only way a preset can move ipMode (a scope field, never a preset field).
+      // Non-destructive: the hidden side (targetDomain / targetIps) is left as
+      // typed. resolve() returns undefined in edit mode and for 'both' presets.
+      const currentTargetMode = formData.ipMode ? 'ip' : formData.domainBatchMode ? 'batch' : 'domain'
+      const resolvedIpMode = resolveIpModeForPreset(source.preset.targetProfile, mode, currentTargetMode)
       if (resolvedIpMode !== undefined) {
         next.ipMode = resolvedIpMode
-        // Switching to IP targeting cannot leave a batch flagged as well, or the
-        // project would claim two mutually exclusive modes.
+        // IP targeting cannot leave a batch flagged too: the modes are exclusive.
         if (resolvedIpMode) next.domainBatchMode = false
       }
-      return next as ProjectFormData
-    })
-    setAppliedPreset(preset)
-    setIsPresetModalOpen(false)
-    toast.success(`Recon preset "${preset.name}" applied`, 'Preset Applied')
-  }, [toast, mode])
-
-  const handleLoadUserPreset = useCallback((settings: Record<string, unknown>) => {
-    // Only apply keys that already exist in the form: the merged settings can carry
-    // backend-default keys that aren't Project columns (e.g. takeoverCnameValidationEnabled),
-    // which would make the project update fail. reconPresetId is kept (handled below).
-    //
-    // stripExcludedOnApply is the half that protects the presets people ALREADY
-    // saved. Until this shipped, a user preset captured 37 engagement columns -
-    // every limit and the client's contact details - and this handler applied any
-    // of them that existed in the form, so loading a preset from project A
-    // overwrote project B's rate ceiling and exclusion list with A's.
-    const safe = stripExcludedOnApply(settings)
-    setFormData(prev => {
-      const p = prev as Record<string, unknown>
-      const next: Record<string, unknown> = { ...p }
-      for (const key of Object.keys(safe)) {
-        if (key in p) next[key] = safe[key]
-      }
-      return next as ProjectFormData
-    })
-    // Sync recon preset badge
-    if (settings.reconPresetId) {
-      setAppliedPreset(getPresetById(settings.reconPresetId as string) ?? null)
-    } else {
-      setAppliedPreset(null)
     }
-  }, [])
+
+    const loadedPreset: LoadedPreset = {
+      name: presetName,
+      fingerprint: presetFingerprint(next as unknown as Record<string, unknown>),
+    }
+    next.loadedPreset = loadedPreset as unknown as ProjectFormData['loadedPreset']
+
+    setFormData(next)
+    const presetId = presetSettings.reconPresetId
+    setAppliedPreset(typeof presetId === 'string' ? getPresetById(presetId) ?? null : null)
+    setIsPresetModalOpen(false)
+    setIsUserPresetDrawerOpen(false)
+
+    if (!saves || !projectId) {
+      toast.success(`Preset "${presetName}" loaded`, 'Preset Loaded')
+      return
+    }
+
+    const saved: Record<string, unknown> = {
+      ...pickPresetFields(next as unknown as Record<string, unknown>),
+      loadedPreset,
+    }
+    const invalid = validateProjectForm(next as unknown as Record<string, unknown>)
+      .filter(e => e.field in saved)
+    if (invalid.length > 0) {
+      alertWarning(
+        `Preset "${presetName}" was loaded but NOT saved, because it has invalid values:\n`
+        + invalid.map(e => `- ${e.message}`).join('\n')
+        + '\n\nFix them, then click Update Settings.'
+      )
+      return
+    }
+    try {
+      await presetSaveMutation.mutateAsync({ projectId, data: saved as Partial<Project> })
+      setBaseline(prev => ({ ...prev, ...saved }) as ProjectFormData)
+      toast.success(`Preset "${presetName}" loaded and saved`, 'Preset Loaded')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save project'
+      alertError(`Preset "${presetName}" was loaded but NOT saved: ${message}\n\nClick Update Settings to retry.`)
+    }
+  }
 
   // On save (create only), confirm an LLM provider exists before the model gate.
   // Without a provider the model picker can't load any models, so route the user
@@ -861,9 +921,6 @@ export function ProjectForm({
             target={mode === 'create' ? 'projectsNew' : 'projectSettings'}
             title={mode === 'create' ? 'Open Creating a Project wiki page' : 'Open Project Settings Reference wiki page'}
           />
-          {appliedPreset && (
-            <span className={styles.presetBadge}>Started from: {appliedPreset.name}</span>
-          )}
         </h1>
         <div className={styles.actions}>
           {mode === 'edit' && projectId ? (
@@ -913,7 +970,7 @@ export function ProjectForm({
             className="secondaryButton"
             onClick={() => setIsUserPresetDrawerOpen(true)}
             disabled={isSubmitting || isLoadingDefaults}
-            title="Load a previously saved preset to apply all its settings to this project (target and subdomain fields are preserved)"
+            title="Replace this project's settings with a saved preset. Asks first, and saves the project straight away. The target, RoE, uploaded files and credentials are kept"
           >
             <FolderOpen size={14} />
             Load Preset
@@ -923,7 +980,7 @@ export function ProjectForm({
             className="secondaryButton"
             onClick={() => setIsSavePresetModalOpen(true)}
             disabled={isSubmitting || isLoadingDefaults}
-            title="Save the current project settings as a reusable preset (everything except target domain, subdomains, and IP list)"
+            title="Save every project setting as a reusable preset. Not included: the name, the target and scope, the RoE, uploaded files and credentials"
           >
             <Bookmark size={14} />
             Save as Preset
@@ -1048,6 +1105,18 @@ export function ProjectForm({
                 )}
               </div>
             ))}
+            {loadedPresetName && (
+              <div
+                className={styles.presetApplied}
+                title={`The project's settings match the "${loadedPresetName}" preset. Changing a setting and saving removes this.`}
+              >
+                <span className={styles.tabGroupLabel}>Preset applied</span>
+                <span className={styles.presetAppliedName}>
+                  <Check size={13} strokeWidth={3} />
+                  <span>{loadedPresetName}</span>
+                </span>
+              </div>
+            )}
           </div>
           </div>
 
@@ -1202,8 +1271,8 @@ export function ProjectForm({
       <ReconPresetModal
         isOpen={isPresetModalOpen}
         onClose={() => setIsPresetModalOpen(false)}
-        onSelect={applyPreset}
-        onLoadUserPreset={handleLoadUserPreset}
+        onSelect={(preset) => loadPreset({ kind: 'builtin', preset })}
+        onLoadUserPreset={(preset) => loadPreset({ kind: 'user', ...preset })}
         currentPresetId={appliedPreset?.id}
         userId={userId}
         model={(formData.agentOpenaiModel as string) || 'claude-opus-4-6'}
@@ -1213,7 +1282,12 @@ export function ProjectForm({
       <SavePresetModal
         isOpen={isSavePresetModalOpen}
         onClose={() => setIsSavePresetModalOpen(false)}
-        formData={formData as unknown as Record<string, unknown>}
+        // The applied built-in preset lives in appliedPreset until the project is
+        // saved, so it is folded in here or the preset would lose its badge.
+        formData={{
+          ...(formData as unknown as Record<string, unknown>),
+          reconPresetId: appliedPreset?.id ?? formData.reconPresetId ?? null,
+        }}
         userId={userId}
       />
 
@@ -1221,7 +1295,7 @@ export function ProjectForm({
       <UserPresetDrawer
         isOpen={isUserPresetDrawerOpen}
         onClose={() => setIsUserPresetDrawerOpen(false)}
-        onLoad={handleLoadUserPreset}
+        onLoad={(preset) => loadPreset({ kind: 'user', ...preset })}
         userId={userId}
       />
 

@@ -90,6 +90,7 @@ TOOL_PREFIXES: list[tuple[str, str]] = [
     ("updateGraphDb", "pipeline"),
     ("useBruteforceForSubdomains", "pipeline"),
     ("reconPresetId", "project"),
+    ("loadedPreset", "project"),
     ("verifyDomainOwnership", "targeting"),
     ("ownership", "targeting"),
     ("targetGuardrail", "targeting"),
@@ -334,6 +335,7 @@ NEVER: dict[str, tuple[str, str]] = {
     "activationStartedAt": ("internal", "version-activation lock flag"),
     "activationVersionId": ("internal", "version-activation lock flag"),
     "reconPresetId": ("internal", "app-written state machine"),
+    "loadedPreset": ("internal", "app-written state machine"),
     "mcpKaliExecEnabled": ("escalation", "a token granting itself shell access"),
     "cypherfixGithubToken": ("secret", "a stored credential"),
 }

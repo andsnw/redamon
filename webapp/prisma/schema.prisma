@@ -426,6 +426,8 @@ model Project {
 
   // ========== RECON PRESET ==========
   reconPresetId               String?  @map("recon_preset_id")
+  /// { name, fingerprint } of the preset last loaded; the UI shows its badge while the saved settings still match the fingerprint
+  loadedPreset                Json?    @map("loaded_preset")
 
   // ========== SCAN MODULES ==========
   scanModules                 String[] @default(["domain_discovery", "port_scan", "http_probe", "resource_enum", "vuln_scan"]) @map("scan_modules")

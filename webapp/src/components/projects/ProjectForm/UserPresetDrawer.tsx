@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X, Trash2, Loader2, FolderOpen } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { useToast } from '@/components/ui'
+import { useAlertModal, useToast } from '@/components/ui'
 import styles from './UserPresetDrawer.module.css'
 
 interface PresetListItem {
@@ -16,41 +16,37 @@ interface PresetListItem {
 interface UserPresetDrawerProps {
   isOpen: boolean
   onClose: () => void
-  onLoad: (settings: Record<string, unknown>) => void
+  /** Confirms, applies and (in edit mode) saves. Settles once that is done or declined. */
+  onLoad: (preset: { id: string; name: string }) => Promise<void>
   userId: string | null | undefined
 }
 
 export function UserPresetDrawer({ isOpen, onClose, onLoad, userId }: UserPresetDrawerProps) {
   const toast = useToast()
+  const { dangerConfirm } = useAlertModal()
   const [presets, setPresets] = useState<PresetListItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [loadingPresetId, setLoadingPresetId] = useState<string | null>(null)
   const [deletingPresetId, setDeletingPresetId] = useState<string | null>(null)
-  const [defaults, setDefaults] = useState<Record<string, unknown> | null>(null)
 
-  // Fetch presets + defaults when drawer opens
   useEffect(() => {
     if (!isOpen || !userId) return
 
     setIsLoading(true)
-    Promise.all([
-      fetch(`/api/presets?userId=${userId}`).then(r => r.ok ? r.json() : []),
-      defaults ? Promise.resolve(defaults) : fetch('/api/projects/defaults').then(r => r.ok ? r.json() : {}),
-    ])
-      .then(([presetList, fetchedDefaults]) => {
-        setPresets(presetList)
-        if (!defaults) setDefaults(fetchedDefaults)
-      })
+    fetch(`/api/presets?userId=${userId}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setPresets)
       .catch(() => {
         toast.error('Failed to load presets')
       })
       .finally(() => setIsLoading(false))
   }, [isOpen, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Close on Escape
+  // Close on Escape, unless a load owns the confirmation dialog: its own Escape
+  // cancels it, and closing the drawer too would lose the user's place.
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') onClose()
-  }, [onClose])
+    if (e.key === 'Escape' && !loadingPresetId) onClose()
+  }, [onClose, loadingPresetId])
 
   useEffect(() => {
     if (isOpen) {
@@ -66,27 +62,17 @@ export function UserPresetDrawer({ isOpen, onClose, onLoad, userId }: UserPreset
   const handleLoad = async (preset: PresetListItem) => {
     setLoadingPresetId(preset.id)
     try {
-      const res = await fetch(`/api/presets/${preset.id}`)
-      if (!res.ok) throw new Error('Failed to fetch preset')
-
-      const fullPreset = await res.json()
-      const presetSettings = fullPreset.settings as Record<string, unknown>
-
-      // Merge: defaults fill missing fields, preset overrides what it has
-      const merged = { ...(defaults || {}), ...presetSettings }
-
-      onLoad(merged)
-      toast.success(`Preset "${preset.name}" loaded`, 'Preset Loaded')
-      onClose()
-    } catch {
-      toast.error('Failed to load preset')
+      await onLoad({ id: preset.id, name: preset.name })
     } finally {
       setLoadingPresetId(null)
     }
   }
 
   const handleDelete = async (preset: PresetListItem) => {
-    if (!confirm(`Delete preset "${preset.name}"?`)) return
+    const confirmed = await dangerConfirm(`Delete preset "${preset.name}"?`, 'Delete Preset', {
+      confirmLabel: 'Delete',
+    })
+    if (!confirmed) return
 
     setDeletingPresetId(preset.id)
     try {
@@ -111,7 +97,7 @@ export function UserPresetDrawer({ isOpen, onClose, onLoad, userId }: UserPreset
 
   const drawer = (
     <>
-      <div className={styles.drawerOverlay} onClick={onClose} />
+      <div className={styles.drawerOverlay} onClick={() => { if (!loadingPresetId) onClose() }} />
 
       <div className={styles.drawer} onClick={(e) => e.stopPropagation()}>
         <div className={styles.drawerHeader}>
@@ -159,7 +145,7 @@ export function UserPresetDrawer({ isOpen, onClose, onLoad, userId }: UserPreset
                     type="button"
                     className={styles.loadButton}
                     onClick={() => handleLoad(preset)}
-                    disabled={loadingPresetId === preset.id}
+                    disabled={loadingPresetId !== null}
                   >
                     {loadingPresetId === preset.id ? (
                       <>

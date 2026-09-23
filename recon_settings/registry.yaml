@@ -5223,6 +5223,21 @@ fields:
     governor: { model: budget, family: osint_result, floor: 100 }
     meaning: >-
       Maximum subdomains taken from a knockpy run.
+  loadedPreset:
+    tool: project
+    runtime_key: null
+    unit: none
+    phase: standalone
+    traffic: none
+    roe_capped: false
+    mcp: never
+    deny_reason: internal
+    group: internal
+    meaning: >-
+      The name of the preset last loaded into this project and a fingerprint of the
+      settings it produced. The UI shows the preset as applied only while the saved
+      settings still match the fingerprint. Written by the load path, not configured
+      directly.
   masscanAiPortCatalogEnabled:
     tool: masscan
     runtime_key: "MASSCAN_AI_PORT_CATALOG_ENABLED"

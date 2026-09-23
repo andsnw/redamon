@@ -368,6 +368,7 @@ describe('T16 exactly the documented columns are closed', () => {
     activationStartedAt: 'internal',
     activationVersionId: 'internal',
     reconPresetId: 'internal',
+    loadedPreset: 'internal',
     mcpKaliExecEnabled: 'escalation',
     cypherfixGithubToken: 'secret',
     // Written only by an endpoint that also places the file on disk. Opening

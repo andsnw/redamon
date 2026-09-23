@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal/Modal'
-import { extractPresetSettings } from '@/lib/project-preset-utils'
+import { extractPresetSettings, PRESET_FIELD_KEYS } from '@/lib/project-preset-utils'
 import { useToast, WikiInfoButton } from '@/components/ui'
 import styles from './ProjectForm.module.css'
 
@@ -96,6 +96,10 @@ export function SavePresetModal({ isOpen, onClose, formData, userId }: SavePrese
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+          Saves all {PRESET_FIELD_KEYS.length} project settings. Not included: the name and
+          description, the target and scope, the Rules of Engagement, uploaded files and credentials.
+        </p>
         <div>
           <label className={`${styles.fieldLabel} ${styles.fieldLabelRequired}`}>
             Name

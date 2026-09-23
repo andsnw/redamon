@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.18.0] - 2026-09-23
+
+### Added
+
+- **Loading a preset asks first, then saves.** Picking a built-in or a saved preset opens a confirmation that the project's current settings will be discarded and replaced. On confirm every setting takes the preset's value or goes back to its default, and on an existing project the result is saved straight away, with no Update Settings needed. On a new project it is saved with the project.
+- **"Preset applied" badge.** The right end of the project settings tab bar shows the loaded preset's name with a check mark while the saved settings still match it. Changing any preset setting and saving it (form, workflow toggle or MCP) removes it; the target, RoE and name are not preset settings and do not. Recorded in a new `loadedPreset` column (name + settings fingerprint). It replaces the "Started from" label.
+
+### Changed
+
+- **A saved preset now holds every setting**: the whole settings registry (630 of 715 columns) minus what belongs to one project: name and description, target and scope (including domain-ownership verification, the target guardrail and the other scans' targets), the RoE, uploaded files, credentials, and the row's own id, owner and timestamps. The Save as Preset dialog states the count.
+- Deleting a preset uses the app's confirmation dialog instead of the browser's.
+
+### Fixed
+
+- **A preset saved from an existing project captured the project row itself**: `id`, `userId`, the timestamps and the CypherFix GitHub token. Loading it into another project made that project's next save try to rewrite its primary key. These are dropped on save and ignored on load, so presets saved earlier are safe to load.
+- **A preset saved on the New Project form missed about 50 settings** (SQLi/SSRF/RCE/path traversal, TruffleHog, CypherFix, supply chain, `katanaScope`, ...) because `/api/projects/defaults` does not return them. They are now captured at their default.
+- **Loading a preset left those same settings at the previous values**, and dropped any preset value the form did not already hold. Every preset setting is now applied or reset.
+
 ## [6.17.0] - 2026-09-22
 
 ### Added

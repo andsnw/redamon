@@ -7120,6 +7120,24 @@
    "type": "int",
    "unit": "count"
   },
+  "loadedPreset": {
+   "default": null,
+   "deny_reason": "internal",
+   "form_section": "TargetSection",
+   "group": "internal",
+   "has_default": false,
+   "mcp": "never",
+   "meaning": "The name of the preset last loaded into this project and a fingerprint of the settings it produced. The UI shows the preset as applied only while the saved settings still match the fingerprint. Written by the load path, not configured directly.",
+   "optional": true,
+   "phase": "standalone",
+   "prisma_type": "Json",
+   "roe_capped": false,
+   "runtime_key": null,
+   "tool": "project",
+   "traffic": "none",
+   "type": "json",
+   "unit": "none"
+  },
   "masscanAiPortCatalogEnabled": {
    "default": true,
    "form_section": "MasscanSection",

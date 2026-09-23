@@ -6,7 +6,7 @@ import { icons } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { Modal } from '@/components/ui/Modal/Modal'
-import { useToast, WikiInfoButton } from '@/components/ui'
+import { useAlertModal, useToast, WikiInfoButton } from '@/components/ui'
 import { RECON_PRESETS, type ReconPreset } from '@/lib/recon-presets'
 import { matchesTargetFilter, type TargetFilter } from '@/lib/recon-presets/targeting'
 import { GeneratePresetModal } from './GeneratePresetModal'
@@ -22,8 +22,9 @@ interface PresetListItem {
 interface ReconPresetDrawerProps {
   isOpen: boolean
   onClose: () => void
-  onSelect: (preset: ReconPreset) => void
-  onLoadUserPreset: (settings: Record<string, unknown>) => void
+  /** Confirms, applies and (in edit mode) saves. Settles once that is done or declined. */
+  onSelect: (preset: ReconPreset) => Promise<void>
+  onLoadUserPreset: (preset: { id: string; name: string }) => Promise<void>
   currentPresetId?: string
   userId: string | null | undefined
   model: string
@@ -130,6 +131,7 @@ export function ReconPresetModal({
   model,
 }: ReconPresetDrawerProps) {
   const toast = useToast()
+  const { dangerConfirm } = useAlertModal()
   const [detailPreset, setDetailPreset] = useState<ReconPreset | null>(null)
   const [activeView, setActiveView] = useState<'builtin' | 'user'>('builtin')
   // Filter built-in presets by the kind of target they suit. Answers the common
@@ -139,7 +141,7 @@ export function ReconPresetModal({
   // --- My Presets state ---
   const [userPresets, setUserPresets] = useState<PresetListItem[]>([])
   const [isLoadingPresets, setIsLoadingPresets] = useState(false)
-  const [defaults, setDefaults] = useState<Record<string, unknown> | null>(null)
+  // The preset (built-in or user) whose load is in progress, confirmation included.
   const [loadingPresetId, setLoadingPresetId] = useState<string | null>(null)
   const [deletingPresetId, setDeletingPresetId] = useState<string | null>(null)
 
@@ -151,16 +153,9 @@ export function ReconPresetModal({
     if (!isOpen || activeView !== 'user' || !userId) return
 
     setIsLoadingPresets(true)
-    Promise.all([
-      fetch(`/api/presets?userId=${userId}`).then((r) => (r.ok ? r.json() : [])),
-      defaults
-        ? Promise.resolve(defaults)
-        : fetch('/api/projects/defaults').then((r) => (r.ok ? r.json() : {})),
-    ])
-      .then(([presetList, fetchedDefaults]) => {
-        setUserPresets(presetList)
-        if (!defaults) setDefaults(fetchedDefaults)
-      })
+    fetch(`/api/presets?userId=${userId}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setUserPresets)
       .catch(() => toast.error('Failed to load presets'))
       .finally(() => setIsLoadingPresets(false))
   }, [isOpen, activeView, userId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -170,6 +165,9 @@ export function ReconPresetModal({
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (isGenerateModalOpen) return // let GeneratePresetModal handle it
+        // A load in progress owns the confirmation dialog, whose own Escape
+        // cancels it. Closing the drawer too would lose the user's place.
+        if (loadingPresetId) return
         if (detailPreset) {
           setDetailPreset(null)
         } else {
@@ -177,7 +175,7 @@ export function ReconPresetModal({
         }
       }
     },
-    [detailPreset, onClose, isGenerateModalOpen],
+    [detailPreset, onClose, isGenerateModalOpen, loadingPresetId],
   )
 
   useEffect(() => {
@@ -191,31 +189,21 @@ export function ReconPresetModal({
     }
   }, [isOpen, handleKeyDown])
 
-  // --- User preset actions ---
-  const handleLoadUserPreset = async (preset: PresetListItem) => {
-    setLoadingPresetId(preset.id)
+  const runLoad = async (id: string, load: () => Promise<void>) => {
+    setLoadingPresetId(id)
     try {
-      const res = await fetch(`/api/presets/${preset.id}`)
-      if (!res.ok) throw new Error('Failed to fetch preset')
-
-      const fullPreset = await res.json()
-      const presetSettings = fullPreset.settings as Record<string, unknown>
-
-      // Merge: defaults fill missing fields, preset overrides what it has
-      const merged = { ...(defaults || {}), ...presetSettings }
-
-      onLoadUserPreset(merged)
-      toast.success(`Preset "${preset.name}" loaded`, 'Preset Loaded')
-      onClose()
-    } catch {
-      toast.error('Failed to load preset')
+      await load()
     } finally {
       setLoadingPresetId(null)
     }
   }
 
+  // --- User preset actions ---
   const handleDeleteUserPreset = async (preset: PresetListItem) => {
-    if (!confirm(`Delete preset "${preset.name}"?`)) return
+    const confirmed = await dangerConfirm(`Delete preset "${preset.name}"?`, 'Delete Preset', {
+      confirmLabel: 'Delete',
+    })
+    if (!confirmed) return
 
     setDeletingPresetId(preset.id)
     try {
@@ -360,13 +348,18 @@ export function ReconPresetModal({
                     <button
                       type="button"
                       className={`${styles.selectButton} ${isApplied ? styles.selectButtonApplied : ''}`}
-                      onClick={() => !isApplied && onSelect(preset)}
-                      disabled={isApplied}
+                      onClick={() => !isApplied && runLoad(preset.id, () => onSelect(preset))}
+                      disabled={isApplied || loadingPresetId !== null}
                     >
                       {isApplied ? (
                         <>
                           <Check size={12} />
                           Applied
+                        </>
+                      ) : loadingPresetId === preset.id ? (
+                        <>
+                          <Loader2 size={12} className={styles.spinner} />
+                          Loading...
                         </>
                       ) : (
                         'Select'
@@ -424,8 +417,8 @@ export function ReconPresetModal({
                       <button
                         type="button"
                         className={styles.selectButton}
-                        onClick={() => handleLoadUserPreset(preset)}
-                        disabled={loadingPresetId === preset.id}
+                        onClick={() => runLoad(preset.id, () => onLoadUserPreset({ id: preset.id, name: preset.name }))}
+                        disabled={loadingPresetId !== null}
                       >
                         {loadingPresetId === preset.id ? (
                           <>

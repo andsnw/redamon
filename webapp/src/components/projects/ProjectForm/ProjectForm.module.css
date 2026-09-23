@@ -51,6 +51,7 @@
 }
 
 .tabsWrapper {
+  position: relative;
   border-bottom: 1px solid var(--border-default);
   background: var(--bg-primary);
   width: 100%;
@@ -281,25 +282,61 @@
   margin-right: -7px;
 }
 
-.presetBadge {
-  display: inline-flex;
-  align-items: center;
-  margin-left: var(--space-2);
-  padding: 2px 8px;
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.2);
-  border-radius: var(--radius-sm);
-  font-size: 10px;
-  font-weight: var(--font-medium);
-  color: rgba(34, 197, 94, 0.9);
-  letter-spacing: 0.2px;
-  vertical-align: middle;
+/* The loaded preset, while the saved settings still match it. It sits in the free
+   margin right of the centred tab row when the window is wide enough to have one,
+   and joins the end of the row otherwise. */
+.presetApplied {
+  position: absolute;
+  right: var(--space-4);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 220px;
+  padding: 4px 10px;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: var(--radius-default);
+  background: rgba(34, 197, 94, 0.08);
 }
 
-:global([data-theme="light"]) .presetBadge {
-  background: #fff;
+.presetAppliedName {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: var(--font-semibold);
+  color: rgba(34, 197, 94, 0.95);
+}
+
+.presetAppliedName > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presetAppliedName > svg {
+  flex-shrink: 0;
+}
+
+@media (max-width: 1700px) {
+  .presetApplied {
+    position: static;
+    transform: none;
+    align-self: center;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+}
+
+:global([data-theme="light"]) .presetApplied {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+:global([data-theme="light"]) .presetAppliedName {
   color: #15803d;
-  border-color: rgba(34, 197, 94, 0.3);
 }
 
 .content {
