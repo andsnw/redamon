@@ -254,8 +254,7 @@
 .low      { color: var(--severity-low, #3fb950); }
 .info     { color: var(--text-tertiary); }
 
-.muteButton,
-.unmuteButton {
+.muteButton {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -274,39 +273,9 @@
   border-color: var(--border-strong);
 }
 
-.unmuteButton:hover:not(:disabled) {
-  color: var(--severity-low, #3fb950);
-  border-color: var(--severity-low, #3fb950);
-}
-
-.muteButton:disabled,
-.unmuteButton:disabled {
+.muteButton:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-.mutedSection {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.mutedHeading {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-}
-
-.mutedNote {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
-
-/* Muted rows are visible but visibly out of the working set. */
-.mutedRow td {
-  opacity: 0.72;
 }
 
 .empty {

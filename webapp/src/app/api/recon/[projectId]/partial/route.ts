@@ -5,6 +5,7 @@ import { recordScanStart } from '@/lib/scanTimeline'
 import prisma from '@/lib/prisma'
 import { orchestratorFetch } from '@/lib/orchestrator'
 import { assertGraphNotActivating } from '@/lib/activationLock'
+import { describeNodeFilterWriter } from '@/lib/nodeFilterRun'
 import { normalizeOrchestratorStartError } from '@/lib/orchestratorError'
 
 const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'
@@ -24,6 +25,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // start while a version activation is swapping it.
     const activating = await assertGraphNotActivating(projectId)
     if (activating) return activating
+    // Nor while node filters are being applied: the apply and the scan would
+    // race for the same findings' mute state.
+    const applying = await describeNodeFilterWriter(projectId)
+    if (applying) {
+      return NextResponse.json(
+        { error: `Cannot start a partial recon while ${applying}. Try again when it finishes.` },
+        { status: 409 },
+      )
+    }
 
     const body = await request.json()
 

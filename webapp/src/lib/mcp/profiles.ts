@@ -384,7 +384,7 @@ export const PROFILE_ONBOARDING: Record<ProfileId, ProfileOnboarding> = {
     leansOn: [
       { tool: 'list_remediations', why: 'the fixes are already written and grouped; deriving your own from raw findings duplicates that work badly' },
       { tool: 'list_findings', why: 'supplies the affected assets and the ranking that decides ticket priority' },
-      { tool: 'list_muted_findings', why: 'a muted finding is one a human already decided not to fix, so it must not become a ticket' },
+      { tool: 'list_muted_findings', why: 'a finding a person muted is one they decided not to fix, so it must not become a ticket; a rule mute is project policy, not that decision' },
     ],
     ignore: [
       'Exploitation and validation. Somebody else proves it; you schedule the fix.',
@@ -415,7 +415,7 @@ export const PROFILE_ONBOARDING: Record<ProfileId, ProfileOnboarding> = {
     ],
     leansOn: [
       { tool: 'list_findings', why: 'already ordered by triage_priority_score and sectioned into ranked, not_triaged, likely_false_positive and resolved' },
-      { tool: 'list_muted_findings', why: 'shows what a human already suppressed, and why, so your verdicts do not contradict theirs' },
+      { tool: 'list_muted_findings', why: 'shows what a person or a project filter rule suppressed, and why, so your verdicts do not contradict theirs' },
       { tool: 'set_finding_verdict', why: 'the only durable write on this surface, and the entire point of this job' },
     ],
     ignore: [
@@ -480,7 +480,7 @@ export const PROFILE_ONBOARDING: Record<ProfileId, ProfileOnboarding> = {
     leansOn: [
       { tool: 'list_scan_versions', why: 'the audit trail: point-in-time snapshots with dates, which is what proof of coverage means' },
       { tool: 'graph_summary', why: 'demonstrates what the scan actually reached, rather than asserting coverage' },
-      { tool: 'list_muted_findings', why: 'suppression with a named person and a reason is evidence of a decision, and omitting it looks like concealment' },
+      { tool: 'list_muted_findings', why: 'suppression with a named person and a reason is evidence of a decision, a rule mute is evidence of a policy, and omitting either looks like concealment' },
       { tool: 'compare_scan_versions', why: 'shows the posture moving between two audited points rather than at one' },
     ],
     ignore: [
@@ -489,8 +489,8 @@ export const PROFILE_ONBOARDING: Record<ProfileId, ProfileOnboarding> = {
     ],
     reportAs:
       'Proof of what was scanned and when: the version list with dates, the coverage per node type, ' +
-      'the open findings, and a separate, explicit section for suppressed ones including who ' +
-      'suppressed each and why.',
+      'the open findings, and a separate, explicit section for suppressed ones: those a person ' +
+      'muted, with who and why, and those a project filter rule muted, listed apart under the rule.',
     gotchas: [
       'Muted findings are part of the evidence, not an omission. An audit pack that hides them is worse than one that lists them with their justification.',
       'Only counts read from a settled graph are trustworthy. If the graph was being written while you read, say so rather than quoting the numbers as final.',

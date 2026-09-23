@@ -4,14 +4,16 @@ Two separate things live here, and keeping them separate is the point:
 
 - A **verdict** (`triage_status` and friends) is the classifier's opinion. It
   ranks a finding and never hides it, and the AI can write nothing else.
-- A **mute** is a human decision to suppress a finding as noise. It adds the
+- A **mute** is a decision to suppress a finding as noise. It adds the
   `:Muted` label, which makes the node invisible to every agent query and every
   analytics, report and graph read.
 
-Only a person mutes. `apply_triage_scores` -- the one path a triage run writes
-through -- cannot set `:Muted` no matter what the model returns, so a prompt
-injection in scanner output (`raw_response`, `evidence`) can at worst mislabel a
-verdict a human can overrule.
+A person mutes, or a project's node-filter rule does (`muted_by` starts with
+`rule:`; see `graph_db/mixins/node_filter_mixin.py`). Only the first is a
+judgement of that particular finding. The AI never mutes: `apply_triage_scores`
+-- the one path a triage run writes through -- cannot set `:Muted` no matter
+what the model returns, so a prompt injection in scanner output (`raw_response`,
+`evidence`) can at worst mislabel a verdict a human can overrule.
 
 See `docs/readmes/GRAPH.SCHEMA.md` for the label's schema contract, and
 `graph_db/tenant_filter.py` for how invisibility is enforced.
@@ -53,6 +55,19 @@ _BY_ID = "(n.id = $node_id OR n.finding_id = $node_id)"
 #: mis-type the row. Everything reporting "what kind of finding is this" uses
 #: this instead.
 _FUNCTIONAL_LABEL = "[l IN labels(n) WHERE l <> 'Muted'][0]"
+
+#: A mute written by a node-filter rule rather than a person. Rule mutes carry
+#: `muted_by = 'rule:<kind>/<rule id>'`; a person's mute carries their user id,
+#: which can never start with `rule:`.
+RULE_MUTE_PREFIX = "rule:"
+_RULE_MUTED = f"coalesce(n.muted_by, '') STARTS WITH '{RULE_MUTE_PREFIX}'"
+
+#: The host a finding is about, from the fields the writers actually use.
+_HOST = "coalesce(n.triage_host, n.host, n.hostname, n.target_hostname, '')"
+
+#: Upper bound on one batch unmute. The Muted Nodes table selects at most a page
+#: (50), so this only bounds a hand-crafted request.
+MAX_UNMUTE_BATCH = 500
 
 #: Worst-first ordering, so a capped list keeps the findings that matter. An
 #: unknown or missing severity sorts last rather than being treated as critical.
@@ -189,41 +204,174 @@ class TriageMixin:
             return {"unmuted": False, "label": None}
         return {"unmuted": True, "label": record["label"]}
 
+    @staticmethod
+    def _muted_filter(label=None, muted_via=None, rule=None, search=None,
+                      live_rules=None) -> tuple[str, dict]:
+        """The WHERE clauses and parameters shared by the Muted list and its count.
+
+        Built once so a page and the total it is "N of" can never disagree on
+        what they filter. `label` is interpolated as a label expression, so it is
+        accepted only from MUTEABLE_LABELS; anything else is ignored rather than
+        interpolated. Every other value travels as a parameter.
+        """
+        clauses, params = [], {}
+        if label in MUTEABLE_LABELS:
+            clauses.append(f"n:{label}")
+        if muted_via == "person":
+            clauses.append(f"NOT {_RULE_MUTED}")
+        elif muted_via == "rule":
+            clauses.append(_RULE_MUTED)
+        elif muted_via == "deleted_rule":
+            # "Deleted" is relative to the rule document, which lives in
+            # Postgres, so the caller names the rules that still exist.
+            clauses.append(f"{_RULE_MUTED} AND NOT n.muted_by IN $live_rules")
+            params["live_rules"] = [str(r) for r in (live_rules or [])][:2000]
+        if rule:
+            clauses.append("n.muted_by = $rule")
+            params["rule"] = str(rule)[:200]
+        if search:
+            clauses.append(
+                "(toLower(coalesce(n.name, n.title, n.detector_name, n.secret_type, n.type, '')) CONTAINS $search"
+                " OR toLower(coalesce(n.id, n.finding_id, '')) CONTAINS $search"
+                f" OR toLower({_HOST}) CONTAINS $search"
+                " OR toLower(coalesce(n.muted_reason, '')) CONTAINS $search)")
+            params["search"] = str(search).strip().lower()[:200]
+        where = "".join(f"\n          AND {c}" for c in clauses)
+        return where, params
+
     def list_muted(self, user_id: str, project_id: str,
-                   limit: int | None = None) -> list:
-        """Every suppressed finding in the project.
+                   limit: int | None = None, offset: int | None = None,
+                   label: str | None = None, muted_via: str | None = None,
+                   rule: str | None = None, search: str | None = None,
+                   order: str | None = None, live_rules=None) -> list:
+        """Every suppressed finding in the project, one page at a time.
 
         The ONLY query in the codebase that deliberately matches `:Muted`. It is
-        reachable exclusively from the webapp's Muted-table endpoint over the
-        internal API; the agent cannot reach it, and `scope_query` refuses any
-        agent query that so much as names the label.
+        reachable exclusively from the webapp's Muted Nodes endpoint and the MCP
+        muted-findings tool over the internal API; the agent cannot reach it,
+        and `scope_query` refuses any agent query that so much as names the label.
 
-        `limit` is OPTIONAL and defaults to no clause at all, so the Muted table
-        in the UI keeps counting every row exactly as before. A caller that
-        cannot afford an unbounded transfer - the MCP surface, which has no cap
-        on this path - passes one and reports its own result as partial.
+        With no arguments it returns every row, newest mute first, as it always
+        did. A page is `offset`/`limit`; `count_muted` with the same filters is
+        the total that page is "N of".
+
+        `order='person_first'` puts an operator's own mutes ahead of rule mutes.
+        A capped reader (MCP, 2,000 rows) uses it so a bulk rule apply cannot
+        push the mutes that ARE a person's judgement out of its window.
+
+        Sorted on `datetime(toString(n.muted_at))`, not `n.muted_at`: a version
+        activation or an import restores timestamps as ISO strings, and Cypher
+        orders every string after every datetime, so restored mutes would sort
+        as a block regardless of when they happened.
         """
-        limit_clause = "\n        LIMIT $limit" if limit else ""
+        where, params = self._muted_filter(label, muted_via, rule, search, live_rules)
+        first = f"CASE WHEN {_RULE_MUTED} THEN 1 ELSE 0 END, " if order == "person_first" else ""
+        page = ""
+        if offset:
+            page += "\n        SKIP $offset"
+            params["offset"] = max(0, int(offset))
+        if limit:
+            page += "\n        LIMIT $limit"
+            params["limit"] = max(1, int(limit))
+        query = f"""
+        MATCH (n:Muted)
+        WHERE n.user_id = $user_id AND n.project_id = $project_id{where}
+        RETURN coalesce(n.id, n.finding_id)        AS id,
+               {_FUNCTIONAL_LABEL}                 AS label,
+               coalesce(n.name, n.title, n.detector_name, n.secret_type, n.type, '') AS name,
+               coalesce(n.severity, '')            AS severity,
+               coalesce(n.source, '')              AS source,
+               {_HOST}                             AS host,
+               toString(n.muted_at)                AS muted_at,
+               coalesce(n.muted_by, '')            AS muted_by,
+               CASE WHEN {_RULE_MUTED} THEN 'rule' ELSE 'person' END AS muted_via,
+               coalesce(n.muted_reason, '')        AS muted_reason,
+               toString(n.stale_since)             AS stale_since,
+               coalesce(n.triage_status, 'unreviewed') AS triage_status,
+               n.triage_reason                     AS triage_reason
+        ORDER BY {first}datetime(toString(n.muted_at)) DESC, coalesce(n.id, n.finding_id){page}
+        """
+        params.update(user_id=user_id, project_id=project_id)
+        with self.driver.session() as session:
+            return [dict(r) for r in session.run(query, **params)]
+
+    def count_muted(self, user_id: str, project_id: str,
+                    label: str | None = None, muted_via: str | None = None,
+                    rule: str | None = None, search: str | None = None,
+                    live_rules=None) -> int:
+        """How many muted findings match the same filters as `list_muted`."""
+        where, params = self._muted_filter(label, muted_via, rule, search, live_rules)
+        query = f"""
+        MATCH (n:Muted)
+        WHERE n.user_id = $user_id AND n.project_id = $project_id{where}
+        RETURN count(n) AS total
+        """
+        params.update(user_id=user_id, project_id=project_id)
+        with self.driver.session() as session:
+            record = session.run(query, **params).single()
+        return int(record["total"]) if record else 0
+
+    def muted_facets(self, user_id: str, project_id: str) -> dict:
+        """Counts per functional label and per `muted_by`, for the Muted Nodes filters.
+
+        Per-rule counts are also the review surface for rule drift: a rule that
+        hides thousands of findings, or none, is visible here without paging.
+        People are collapsed into one bucket; the Kind and Rule menus do not
+        name individual operators.
+        """
         query = f"""
         MATCH (n:Muted)
         WHERE n.user_id = $user_id AND n.project_id = $project_id
-        RETURN coalesce(n.id, n.finding_id)        AS id,
-               {_FUNCTIONAL_LABEL}                 AS label,
-               coalesce(n.name, n.detector_name, n.secret_type, n.type, '') AS name,
-               coalesce(n.severity, '')            AS severity,
-               coalesce(n.source, '')              AS source,
-               toString(n.muted_at)                AS muted_at,
-               coalesce(n.muted_by, '')            AS muted_by,
-               coalesce(n.muted_reason, '')        AS muted_reason,
-               coalesce(n.triage_status, 'unreviewed') AS triage_status,
-               n.triage_reason                     AS triage_reason
-        ORDER BY n.muted_at DESC{limit_clause}
+        WITH {_FUNCTIONAL_LABEL} AS label,
+             CASE WHEN {_RULE_MUTED} THEN n.muted_by ELSE '' END AS rule,
+             CASE WHEN {_RULE_MUTED} THEN coalesce(n.muted_reason, '') ELSE '' END AS reason
+        RETURN label, rule, head(collect(reason)) AS reason, count(*) AS c
         """
-        params = {"user_id": user_id, "project_id": project_id}
-        if limit:
-            params["limit"] = int(limit)
+        labels: dict = {}
+        rules: dict = {}
+        person = 0
+        total = 0
         with self.driver.session() as session:
-            return [dict(r) for r in session.run(query, **params)]
+            for r in session.run(query, user_id=user_id, project_id=project_id):
+                c = int(r["c"] or 0)
+                total += c
+                labels[r["label"]] = labels.get(r["label"], 0) + c
+                if r["rule"]:
+                    entry = rules.setdefault(r["rule"], {"count": 0, "reason": r["reason"] or ""})
+                    entry["count"] += c
+                else:
+                    person += c
+        return {
+            "total": total,
+            "by_person": person,
+            "labels": labels,
+            "rules": [{"muted_by": k, **v} for k, v in sorted(rules.items())],
+        }
+
+    def unmute_findings(self, user_id: str, project_id: str, keys) -> dict:
+        """Unmute several findings in one write, whoever muted them.
+
+        Returns what was actually unmuted, as `{key, label, muted_by}` rows: the
+        caller records an exemption per row (so no rule mutes it again) and the
+        audit names what each one had been muted by. A key that matched nothing
+        is absent from the result, never reported as done.
+        """
+        clean = sorted({str(k) for k in (keys or []) if k})[:MAX_UNMUTE_BATCH]
+        if not clean:
+            return {"unmuted": 0, "items": []}
+        query = f"""
+        UNWIND $keys AS key
+        MATCH (n:Muted)
+        WHERE (n.id = key OR n.finding_id = key)
+          AND n.user_id = $user_id AND n.project_id = $project_id
+        WITH n, key, coalesce(n.muted_by, '') AS was
+        REMOVE n:Muted, n.muted, n.muted_at, n.muted_by, n.muted_reason
+        RETURN key, {_FUNCTIONAL_LABEL} AS label, was AS muted_by
+        """
+        with self.driver.session() as session:
+            items = [dict(r) for r in session.run(
+                query, keys=clean, user_id=user_id, project_id=project_id)]
+        return {"unmuted": len(items), "items": items}
 
     def list_triage_findings(self, user_id: str, project_id: str, limit: int = 2000) -> list:
         """Every finding in triage scope that is NOT muted, for the Priority Board.
@@ -577,7 +725,7 @@ class TriageMixin:
         A verdict delegated through an access token is STILL `'human'`, and
         writing a third value there would be actively wrong. It is the closed
         two-value set four other behaviours branch on: the ingest-then-prune
-        keep predicate is `(n:Muted OR coalesce(n.triage_source,'') = 'human')`,
+        keep predicate keeps an operator mute OR `coalesce(n.triage_source,'') = 'human'`,
         so a third value makes the finding prune-eligible and a re-scan DELETES
         it; the publish guard re-reads the same equality, so a later AI run
         overwrites the verdict; `finding_state` tests

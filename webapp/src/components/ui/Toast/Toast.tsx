@@ -14,12 +14,19 @@ import styles from './Toast.module.css'
 
 type ToastType = 'success' | 'error' | 'warning' | 'info'
 
+interface ToastAction {
+  label: string
+  onClick: () => void
+}
+
 interface Toast {
   id: string
   type: ToastType
   title?: string
   message: string
   duration?: number
+  /** One follow-up the message offers, e.g. "View muted". Clicking it dismisses the toast. */
+  action?: ToastAction
 }
 
 interface ToastContextValue {
@@ -180,6 +187,15 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
       <div className={styles.content}>
         {toast.title && <div className={styles.title}>{toast.title}</div>}
         <div className={styles.message}>{toast.message}</div>
+        {toast.action && (
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={() => { toast.action?.onClick(); handleClose() }}
+          >
+            {toast.action.label}
+          </button>
+        )}
       </div>
       <button
         type="button"

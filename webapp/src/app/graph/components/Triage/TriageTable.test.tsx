@@ -11,11 +11,14 @@
  */
 
 import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+
+const mockDangerConfirm = vi.fn()
+const mockAddToast = vi.fn()
 
 vi.mock('@/components/ui', () => ({
-  useAlertModal: () => ({ alertError: vi.fn(), dangerConfirm: vi.fn() }),
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useAlertModal: () => ({ alertError: vi.fn(), dangerConfirm: mockDangerConfirm }),
+  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), addToast: mockAddToast }),
   WikiInfoButton: () => null,
 }))
 vi.mock('@/providers/ProjectProvider', () => ({
@@ -87,5 +90,42 @@ describe('TriageTable factor line', () => {
         : ok({ findings: [{ ...ranked, triage_factors: null }], total: 1 })))
     render(<TriageTable projectId="p1" />)
     expect(await screen.findByText('math only')).toBeInTheDocument()
+  })
+})
+
+
+describe('Priority Board no longer carries the muted list', () => {
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    vi.clearAllMocks()
+  })
+
+  test('opening the board never fetches the muted findings', async () => {
+    // X10: the board loaded EVERY muted row on each visit, which fails once a
+    // filter rule mutes thousands. Muted Nodes pages them instead.
+    const fetchMock = vi.fn((url: string) => ok({ findings: [ranked], total: 1 }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<TriageTable projectId="p1" onViewMuted={vi.fn()} />)
+    await screen.findByText(/real 34%/)
+    const urls = fetchMock.mock.calls.map(c => String(c[0]))
+    expect(urls.some(u => u.includes('/api/triage/muted'))).toBe(false)
+    expect(screen.queryByText(/Show muted/)).toBeNull()
+  })
+
+  test('the mute toast offers a way to the muted list', async () => {
+    const onViewMuted = vi.fn()
+    vi.stubGlobal('fetch', vi.fn((url: string) =>
+      url.includes('/api/triage/mute')
+        ? ok({ muted: true, label: 'Vulnerability' })
+        : ok({ findings: [ranked], total: 1 })))
+    mockDangerConfirm.mockResolvedValue(true)
+    render(<TriageTable projectId="p1" onViewMuted={onViewMuted} />)
+    fireEvent.click(await screen.findByTitle(/Hide this finding/))
+    await waitFor(() => expect(mockAddToast).toHaveBeenCalled())
+    const toast = mockAddToast.mock.calls[0][0]
+    expect(toast.action.label).toBe('View muted')
+    toast.action.onClick()
+    expect(onViewMuted).toHaveBeenCalledOnce()
   })
 })

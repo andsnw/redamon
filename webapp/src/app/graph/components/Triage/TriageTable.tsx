@@ -1,21 +1,22 @@
 'use client'
 
 /**
- * Finding triage: verdicts, and the mute / unmute suppression control.
+ * Finding triage: verdicts, and the mute control.
  *
- * Two tables rather than one list with a filter, because they answer different
- * questions. The Findings table is the working set an operator is triaging; the
- * Muted table is the audit trail of what they decided to stop looking at, and it
- * is the ONLY place in the product where a suppressed finding is visible at all.
+ * This is the working set an operator is triaging. What they decided to stop
+ * looking at lives in its own table, Muted Nodes (All Nodes dropdown), which is
+ * the ONLY place in the product where a suppressed finding is visible at all.
  * Everything else -- the graph, the agent, analytics, reports -- has them
- * filtered out, which is the point of the feature.
+ * filtered out, which is the point of the feature. It is paged there because a
+ * node-filter rule can mute thousands of findings, and this board used to load
+ * every muted row on each visit.
  *
  * Mute is deliberately a two-step action with a confirm: it changes what the AI
  * agent can see for the whole project, so it is not a click to make by accident.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, EyeOff, Eye, Check, X } from 'lucide-react'
+import { Loader2, EyeOff, Check, X } from 'lucide-react'
 import { useAlertModal, useToast, WikiInfoButton } from '@/components/ui'
 import { useProject } from '@/providers/ProjectProvider'
 import { useCypherFixTriageWS } from '@/hooks/useCypherFixTriageWS'
@@ -78,19 +79,6 @@ export const SECTION_BLURBS: Record<number, string> = {
   [SECTION_RESOLVED]:
     'Fixed, gone, or a credential that no longer works. Kept so they can come ' +
     'back if a scan finds them again.',
-}
-
-export interface MutedFinding {
-  id: string
-  label: string
-  name: string
-  severity: string
-  source: string
-  muted_at: string | null
-  muted_by: string
-  muted_reason: string
-  triage_status: TriageStatus
-  triage_reason: string | null
 }
 
 export type TriageStatus = 'confirmed' | 'likely_noise' | 'unreviewed'
@@ -227,15 +215,15 @@ function fmtWhen(iso: string | null): string {
 
 interface TriageTableProps {
   projectId: string | null
+  /** Switch the page to Muted Nodes; offered on the toast after a mute. */
+  onViewMuted?: () => void
 }
 
-export function TriageTable({ projectId }: TriageTableProps) {
+export function TriageTable({ projectId, onViewMuted }: TriageTableProps) {
   const [findings, setFindings] = useState<TriageFinding[]>([])
-  const [muted, setMuted] = useState<MutedFinding[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [showMuted, setShowMuted] = useState(false)
   /** Server-side total, which can exceed what the query returned. */
   const [total, setTotal] = useState(0)
   const [tierFilter, setTierFilter] = useState<TriageTier | 'all'>('all')
@@ -252,16 +240,11 @@ export function TriageTable({ projectId }: TriageTableProps) {
     setLoading(true)
     setError(null)
     try {
-      const [f, m] = await Promise.all([
-        fetch(`/api/triage/findings?projectId=${encodeURIComponent(projectId)}`),
-        fetch(`/api/triage/muted?projectId=${encodeURIComponent(projectId)}`),
-      ])
+      const f = await fetch(`/api/triage/findings?projectId=${encodeURIComponent(projectId)}`)
       if (!f.ok) throw new Error((await f.json().catch(() => ({}))).error || `Findings: ${f.status}`)
-      if (!m.ok) throw new Error((await m.json().catch(() => ({}))).error || `Muted: ${m.status}`)
       const findingsBody = await f.json()
       setFindings(findingsBody.findings ?? [])
       setTotal(findingsBody.total ?? (findingsBody.findings ?? []).length)
-      setMuted((await m.json()).findings ?? [])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load Priority Board data')
     } finally {
@@ -347,7 +330,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
         `Mute "${finding.name || finding.id}"?\n\n` +
           'It will be hidden from the graph, from reports, and from the AI agent, ' +
           'which will no longer be able to see or reason about it. You can restore ' +
-          'it from the Muted table at any time.',
+          'it from Muted Nodes (in the All Nodes menu) at any time.',
         'Mute finding',
         { confirmLabel: 'Mute' },
       )
@@ -373,60 +356,21 @@ export function TriageTable({ projectId }: TriageTableProps) {
         if (!res.ok || !body.muted) {
           throw new Error(body.error || 'The finding could not be muted.')
         }
-        // Move it across locally rather than refetching both tables: the graph
-        // write already succeeded, and a round trip here just makes it feel slow.
+        // Drop it locally rather than refetching: the graph write already
+        // succeeded, and a round trip here just makes it feel slow.
         setFindings(prev => prev.filter(f => f.id !== finding.id))
-        setMuted(prev => [
-          {
-            id: finding.id,
-            label: finding.label,
-            name: finding.name,
-            severity: finding.severity,
-            source: finding.source,
-            muted_at: new Date().toISOString(),
-            muted_by: 'you',
-            muted_reason: '',
-            triage_status: finding.triage_status,
-            triage_reason: finding.triage_reason,
-          },
-          ...prev,
-        ])
-        toast.success('Finding muted. It is now hidden from the agent.')
+        toast.addToast({
+          type: 'success',
+          message: 'Finding muted. It is now hidden from the agent.',
+          ...(onViewMuted ? { action: { label: 'View muted', onClick: onViewMuted } } : {}),
+        })
       } catch (e) {
         await alertError(e instanceof Error ? e.message : 'Mute failed', 'Mute finding')
       } finally {
         setBusyId(null)
       }
     },
-    [projectId, dangerConfirm, alertError, toast, load],
-  )
-
-  const unmute = useCallback(
-    async (finding: MutedFinding) => {
-      if (!projectId) return
-      setBusyId(finding.id)
-      try {
-        const res = await fetch('/api/triage/unmute', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId, nodeId: finding.id }),
-        })
-        const body = await res.json().catch(() => ({}))
-        if (!res.ok || !body.unmuted) {
-          throw new Error(body.error || 'The finding could not be restored.')
-        }
-        setMuted(prev => prev.filter(f => f.id !== finding.id))
-        // Refetch the findings side: unmute restores relationships and verdict
-        // fields this component never had, so a locally-built row would be thin.
-        void load()
-        toast.success('Finding restored.')
-      } catch (e) {
-        await alertError(e instanceof Error ? e.message : 'Unmute failed', 'Restore finding')
-      } finally {
-        setBusyId(null)
-      }
-    },
-    [projectId, alertError, toast, load],
+    [projectId, dangerConfirm, alertError, toast, load, onViewMuted],
   )
 
   /**
@@ -536,7 +480,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
     return <div className={styles.empty}>Select a project to rank its findings.</div>
   }
 
-  if (loading && findings.length === 0 && muted.length === 0) {
+  if (loading && findings.length === 0) {
     return (
       <div className={styles.empty}>
         <Loader2 className={styles.spin} size={18} /> Loading findings...
@@ -591,10 +535,11 @@ export function TriageTable({ projectId }: TriageTableProps) {
             hasPreviousRun={latestRunId !== null}
             disabled={!userId || showProgress}
           />
-          <button className={styles.button} onClick={() => setShowMuted(v => !v)}>
-            {showMuted ? <Eye size={14} /> : <EyeOff size={14} />}
-            {showMuted ? 'Hide' : 'Show'} muted ({muted.length})
-          </button>
+          {onViewMuted && (
+            <button className={styles.button} onClick={onViewMuted} title="Open Muted Nodes">
+              <EyeOff size={14} /> Muted
+            </button>
+          )}
         </div>
       </div>
 
@@ -783,64 +728,6 @@ export function TriageTable({ projectId }: TriageTableProps) {
             </div>
           </div>
         ))
-      )}
-
-      {showMuted && (
-        <div className={styles.mutedSection}>
-          <h3 className={styles.mutedHeading}>
-            Muted findings ({muted.length})
-          </h3>
-          <p className={styles.mutedNote}>
-            These are hidden from the graph, from reports and from the AI agent. This table is the
-            only place they are still visible.
-          </p>
-          {muted.length === 0 ? (
-            <div className={styles.empty}>Nothing has been muted in this project.</div>
-          ) : (
-            <div className={styles.tableScroll}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Finding</th>
-                    <th>Type</th>
-                    <th>Severity</th>
-                    <th>Muted</th>
-                    <th>By</th>
-                    <th>Reason</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {muted.map(f => (
-                    <tr key={f.id} className={styles.mutedRow}>
-                      <td className={styles.name}>{f.name || f.id}</td>
-                      <td>{f.label}</td>
-                      <td>
-                        <span className={`${styles.sev} ${styles[(f.severity || '').toLowerCase()] ?? ''}`}>
-                          {f.severity || '-'}
-                        </span>
-                      </td>
-                      <td>{fmtWhen(f.muted_at)}</td>
-                      <td>{f.muted_by || '-'}</td>
-                      <td className={styles.reason}>{f.muted_reason || f.triage_reason || '-'}</td>
-                      <td>
-                        <button
-                          className={styles.unmuteButton}
-                          disabled={busyId === f.id}
-                          onClick={() => void unmute(f)}
-                          title="Make this finding visible again everywhere"
-                        >
-                          {busyId === f.id ? <Loader2 className={styles.spin} size={13} /> : <Eye size={13} />}
-                          Restore
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
       )}
 
       <TriageProgress

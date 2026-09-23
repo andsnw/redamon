@@ -2,7 +2,7 @@
 
 import { memo, useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { CalendarClock, GitCompare, Waypoints, Table2, Terminal, Shield, Search, Download, Loader2, SquareTerminal, Filter, Plus, Trash2, X, ChevronDown, Code, Target, Zap, Flag, Key, Server, Boxes, LockKeyhole, Bug, Network, Mail, ShieldAlert, Package, PackageSearch, History, Layers, Bot, Radiation, Swords, Droplets, ListOrdered } from 'lucide-react'
+import { CalendarClock, GitCompare, Waypoints, Table2, Terminal, Shield, Search, Download, Loader2, SquareTerminal, Filter, Plus, Trash2, X, ChevronDown, Code, Target, Zap, Flag, Key, Server, Boxes, LockKeyhole, Bug, Network, Mail, ShieldAlert, Package, PackageSearch, History, Layers, Bot, Radiation, Swords, Droplets, ListOrdered, EyeOff, SlidersHorizontal } from 'lucide-react'
 import { Toggle } from '@/components/ui'
 import { AUTO_2D_THRESHOLD } from '../GraphCanvas'
 import styles from './ViewTabs.module.css'
@@ -33,6 +33,8 @@ export type TableViewMode =
   | 'reconDelta'
   | 'scanSchedule'
   | 'triage'
+  | 'nodeFilters'
+  | 'muted'
 
 const TABLE_MODE_LABELS: Record<TableViewMode, string> = {
   nodeDetails: 'Node Inspector',
@@ -58,6 +60,8 @@ const TABLE_MODE_LABELS: Record<TableViewMode, string> = {
   reconDelta: 'Recon Delta',
   scanSchedule: 'Scans',
   triage: 'Priority Board',
+  nodeFilters: 'Node Filters',
+  muted: 'Muted Nodes',
 }
 
 /**
@@ -66,7 +70,7 @@ const TABLE_MODE_LABELS: Record<TableViewMode, string> = {
  * real one. Kept as one list because the icon and the label used to compute this
  * separately and drifted apart the moment a tab was added.
  */
-const OWN_TAB_MODES: readonly TableViewMode[] = ['reconDelta', 'scanSchedule', 'triage']
+const OWN_TAB_MODES: readonly TableViewMode[] = ['reconDelta', 'scanSchedule', 'triage', 'nodeFilters']
 
 /** The mode the table dropdown should present itself as. */
 export function dropdownMode(mode: TableViewMode | null | undefined): TableViewMode {
@@ -129,6 +133,34 @@ export interface TunnelStatus {
   chisel: TunnelInfo
 }
 
+/** What the Node Filters tab needs to badge itself; see `/api/projects/[id]/node-filters/status`. */
+export interface NodeFilterStatus {
+  armed: boolean
+  mode: 'denylist' | 'allowlist'
+  activeRules: number
+  activeKinds: number
+  runningApply: boolean
+}
+
+/**
+ * The pill on the Node Filters tab while the rules are armed for new scans.
+ * Deliberately not the red unseen-badge colour: it is a standing state, not
+ * something new to look at.
+ */
+function ArmedBadge({ status }: { status?: NodeFilterStatus | null }) {
+  if (!status?.armed) return null
+  const rules = status.activeRules
+  const kinds = status.activeKinds
+  const title =
+    `${rules} rule${rules === 1 ? '' : 's'} in ${kinds} kind${kinds === 1 ? '' : 's'} ` +
+    `will be applied to the next recon scan (${status.mode})`
+  return (
+    <span className={styles.armedBadge} title={title} aria-label={title}>
+      {rules > 999 ? '999+' : rules}
+    </span>
+  )
+}
+
 interface DataFilterView {
   id: string
   name: string
@@ -164,6 +196,8 @@ interface ViewTabsProps {
   unseenCounts?: Partial<Record<TableViewMode, number>>
   /** Sum of the above, badged on the table tab itself. */
   unseenTotal?: number
+  /** Node Filters armed state, for the pill on its tab. */
+  nodeFilterStatus?: NodeFilterStatus | null
   // JS Recon table controls
   jsReconSearch?: string
   onJsReconSearchChange?: (value: string) => void
@@ -205,6 +239,7 @@ export const ViewTabs = memo(function ViewTabs({
   onTableViewModeChange,
   unseenCounts,
   unseenTotal,
+  nodeFilterStatus,
   jsReconSearch,
   onJsReconSearchChange,
   onJsReconExportCsv,
@@ -226,6 +261,8 @@ export const ViewTabs = memo(function ViewTabs({
   const tableMenuRef = useRef<HTMLDivElement>(null)
 
   const selectedFilter = dataFilters?.find(f => f.id === selectedFilterId)
+  // The dropdown tab is active for every table mode that has no tab of its own.
+  const dropdownActive = activeView === 'table' && !OWN_TAB_MODES.includes(tableViewMode)
   const hasFilters = dataFilters && dataFilters.length > 0
 
   // Close dropdown on outside click
@@ -384,12 +421,24 @@ export const ViewTabs = memo(function ViewTabs({
           <ListOrdered size={14} />
           <span>Priority Board</span>
         </button>
+        <button
+          role="tab"
+          aria-selected={activeView === 'table' && tableViewMode === 'nodeFilters'}
+          className={`${styles.tab} ${activeView === 'table' && tableViewMode === 'nodeFilters' ? styles.tabActive : ''}`}
+          onClick={() => { onTableViewModeChange?.('nodeFilters'); onViewChange('table') }}
+        >
+          <SlidersHorizontal size={14} />
+          <span className={styles.tabLabelWithPill}>
+            Node Filters
+            <ArmedBadge status={nodeFilterStatus} />
+          </span>
+        </button>
 
         <div ref={tableMenuRef} className={styles.tableMenuContainer}>
           <button
             role="tab"
-            aria-selected={activeView === 'table' && tableViewMode !== 'reconDelta' && tableViewMode !== 'scanSchedule' && tableViewMode !== 'triage'}
-            className={`${styles.tab} ${activeView === 'table' && tableViewMode !== 'reconDelta' && tableViewMode !== 'scanSchedule' && tableViewMode !== 'triage' ? styles.tabActive : ''}`}
+            aria-selected={dropdownActive}
+            className={`${styles.tab} ${dropdownActive ? styles.tabActive : ''}`}
             onClick={() => onViewChange('table')}
           >
             {(() => {
@@ -414,6 +463,7 @@ export const ViewTabs = memo(function ViewTabs({
                 : mode === 'supplyChainSca' ? PackageSearch
                 : mode === 'dnsDrift' ? History
                 : mode === 'webCachePoison' ? Droplets
+                : mode === 'muted' ? EyeOff
                 : Table2
               return <Icon size={14} />
             })()}
@@ -441,6 +491,12 @@ export const ViewTabs = memo(function ViewTabs({
               >
                 <Table2 size={12} /> All Nodes
                 <UnseenBadge count={unseenCounts?.all} />
+              </button>
+              <button
+                className={`${styles.tableDropdownItem} ${tableViewMode === 'muted' ? styles.tableDropdownItemActive : ''}`}
+                onClick={() => { onTableViewModeChange?.('muted'); setTableMenuOpen(false); onViewChange('table') }}
+              >
+                <EyeOff size={12} /> Muted Nodes
               </button>
               <button
                 className={`${styles.tableDropdownItem} ${tableViewMode === 'jsRecon' ? styles.tableDropdownItemActive : ''}`}

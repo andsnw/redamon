@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireProjectOwner, callGraphTriage } from '@/lib/triageClient'
+import { readJsonBody } from '@/lib/jsonBody'
 
 /**
  * POST /api/triage/mute - suppress one finding as noise.
@@ -19,8 +20,12 @@ import { requireProjectOwner, callGraphTriage } from '@/lib/triageClient'
  * which is a schema change and is written up as a follow-up.
  */
 export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => ({}))
-  const { projectId, nodeId, reason } = body ?? {}
+  // A plain HTML form cannot send JSON, so a cross-site page cannot drive this.
+  const parsed = await readJsonBody(request)
+  if (parsed instanceof NextResponse) return parsed
+  const { projectId, nodeId, reason } = parsed.body as {
+    projectId?: string; nodeId?: unknown; reason?: unknown
+  }
 
   const caller = await requireProjectOwner(projectId)
   if (caller instanceof NextResponse) return caller

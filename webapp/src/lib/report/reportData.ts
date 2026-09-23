@@ -277,10 +277,17 @@ export interface ReportData {
   graphOverview: {
     totalNodes: number
     nodeCounts: { label: string; count: number }[]
-    /** Findings the operator suppressed as noise. Excluded from every count and
-     *  table in the report; surfaced only as this number, so the reader knows
-     *  the assessment's scope without the noise being reprinted. */
+    /** Findings suppressed as noise. Excluded from every count and table in
+     *  the report; surfaced only as these numbers, so the reader knows the
+     *  assessment's scope without the noise being reprinted. */
     suppressedCount: number
+    /** ...of which a person muted each one: a judgement of that finding. */
+    suppressedByPeople: number
+    /** ...of which a project node-filter rule muted: a policy, not a judgement. */
+    suppressedByRules: number
+    /** The rules behind `suppressedByRules`, largest first. Names are operator
+     *  input and are escaped by the template. */
+    suppressedRules: { name: string; count: number }[]
     subdomainStats: { total: number; resolved: number; uniqueIps: number }
     endpointCoverage: { baseUrls: number; endpoints: number; parameters: number }
     certificateHealth: { total: number; expired: number; expiringSoon: number; selfSigned: number; mismatched: number }
@@ -967,16 +974,44 @@ async function queryGraphOverview(session: any, pid: string) {
   // client deliverable should not carry findings the operator judged noise -- but
   // silently omitting them would misrepresent the assessment's scope. One count
   // line keeps the report honest without reprinting what was suppressed.
+  //
+  // A person's mute and a filter rule's mute are reported apart: only the first
+  // is a judgement of the finding, and a reader must not take a thousand
+  // rule-muted informational findings for a thousand reviewed ones.
   const suppressedRes = await session.run(
-    `MATCH (n:Muted {project_id: $pid}) RETURN count(n) AS total`,
+    `MATCH (n:Muted {project_id: $pid})
+     WITH coalesce(n.muted_by, '') STARTS WITH 'rule:' AS byRule, n
+     RETURN byRule,
+            CASE WHEN byRule THEN coalesce(n.muted_reason, '') ELSE '' END AS reason,
+            count(n) AS total`,
     { pid }
   )
-  const suppressedCount = toNum(suppressedRes.records[0]?.get('total') ?? 0)
+  let suppressedByPeople = 0
+  let suppressedByRules = 0
+  const ruleCounts = new Map<string, number>()
+  for (const r of suppressedRes.records) {
+    const total = toNum(r.get('total') ?? 0)
+    if (r.get('byRule')) {
+      suppressedByRules += total
+      const name = String(r.get('reason') || '').replace(/^Filter rule:\s*/, '') || 'unnamed rule'
+      ruleCounts.set(name, (ruleCounts.get(name) ?? 0) + total)
+    } else {
+      suppressedByPeople += total
+    }
+  }
+  const suppressedCount = suppressedByPeople + suppressedByRules
+  const suppressedRules = [...ruleCounts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10)
 
   return {
     totalNodes: nodeCounts.reduce((s: number, n: { count: number }) => s + n.count, 0),
     nodeCounts,
     suppressedCount,
+    suppressedByPeople,
+    suppressedByRules,
+    suppressedRules,
     subdomainStats: subRec
       ? { total: toNum(subRec.get('total')), resolved: toNum(subRec.get('resolved')), uniqueIps: toNum(subRec.get('uniqueIps')) }
       : { total: 0, resolved: 0, uniqueIps: 0 },

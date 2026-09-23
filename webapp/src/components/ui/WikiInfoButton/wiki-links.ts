@@ -115,6 +115,9 @@ export const SECTION_WIKI: Record<string, { page: string; anchor?: string }> = {
   // the Red Zone tab both point at it, so an operator reaches the same explanation.
   PriorityBoard:     { page: 'Priority-Board' },
   PriorityBoardMute: { page: 'Priority-Board', anchor: 'what-muted-actually-means' },
+  // Node Filters (rule-based mutes) and Muted Nodes (everything muted, by anyone).
+  NodeFilters:      { page: 'Node-Filters' },
+  MutedNodes:       { page: 'Muted-Nodes' },
   VersionManager:   { page: 'Scan-Timeline', anchor: 'version-manager' },
   // Tool sections that have a TOOL_WIKI entry are also exposed here for convenience.
   ...({} as Record<string, { page: string; anchor?: string }>),

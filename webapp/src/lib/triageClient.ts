@@ -19,6 +19,7 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { requireEffectiveUser } from '@/lib/access'
+import { getSession } from '@/lib/session'
 import { agentFetch, AgentUnreachableError } from '@/lib/agentFetch'
 import { internalKeyHeaders } from '@/lib/agentAuth'
 
@@ -62,16 +63,35 @@ export async function requireProjectOwner(
   return { userId: project.userId, projectId: project.id }
 }
 
-export type TriageOp =
-  | 'mute' | 'unmute' | 'list_muted' | 'list_findings' | 'human_verdict'
-  | 'preflight' | 'stop_run'
+/**
+ * The person actually signed in, which differs from the effective user while an
+ * admin acts as someone else. Audit rows record both, so "who really did this"
+ * survives simulation.
+ */
+export async function realActorUserId(): Promise<string | null> {
+  try {
+    const session = await getSession()
+    return session?.userId ?? null
+  } catch {
+    // No request scope (a unit test, a background caller): the audit row then
+    // records the effective user alone, as every route did before.
+    return null
+  }
+}
 
-/** Call the agent's internal `/graph/triage`, where the graph writes live. */
-export async function callGraphTriage(
+export type TriageOp =
+  | 'mute' | 'unmute' | 'unmute_many' | 'list_muted' | 'muted_facets'
+  | 'list_findings' | 'human_verdict' | 'preflight' | 'stop_run'
+
+/**
+ * Call the agent's internal `/graph/triage`, where the graph writes live, and
+ * hand back the status and parsed body for a route that post-processes them.
+ */
+export async function graphTriage(
   op: TriageOp,
   caller: TriageCaller,
   extra: Record<string, unknown> = {},
-): Promise<NextResponse> {
+): Promise<{ status: number; body: Record<string, unknown> }> {
   try {
     const res = await agentFetch('/graph/triage', {
       method: 'POST',
@@ -84,16 +104,26 @@ export async function callGraphTriage(
       }),
     })
     const body = await res.json().catch(() => ({ error: 'invalid response from agent' }))
-    return NextResponse.json(body, { status: res.status })
+    return { status: res.status, body }
   } catch (err) {
     if (err instanceof AgentUnreachableError) {
       // Name the real service. Reporting this as a triage failure sends the
       // operator looking at the graph instead of at a stopped container.
-      return NextResponse.json({ error: err.message }, { status: 503 })
+      return { status: 503, body: { error: err.message } }
     }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'triage request failed' },
-      { status: 500 },
-    )
+    return {
+      status: 500,
+      body: { error: err instanceof Error ? err.message : 'triage request failed' },
+    }
   }
+}
+
+/** `graphTriage`, answered straight back to the browser. */
+export async function callGraphTriage(
+  op: TriageOp,
+  caller: TriageCaller,
+  extra: Record<string, unknown> = {},
+): Promise<NextResponse> {
+  const { status, body } = await graphTriage(op, caller, extra)
+  return NextResponse.json(body, { status })
 }

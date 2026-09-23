@@ -215,7 +215,7 @@ For other tool types, add a `run_<tool_name>(config)` function that:
 8. Updates the graph via the appropriate `update_graph_from_*()` method
 9. Links user-provided inputs to graph nodes (RESOLVES_TO or UserInput PRODUCED)
 
-**Register in `main()`:**
+**Register in `_dispatch()`** (called by `main()`, which sweeps node filters in a `finally` around it):
 ```python
 elif tool_id == "<ToolName>":
     run_<tool_name>(config)
@@ -352,7 +352,7 @@ Each tool's settings section has a header with a Toggle switch. Add a "Run parti
 
 | File | What to change |
 |------|----------------|
-| `recon/partial_recon.py` | Add `run_<tool>(config)` + register in `main()` |
+| `recon/partial_recon.py` | Add `run_<tool>(config)` + register in `_dispatch()` |
 | `webapp/src/lib/recon-types.ts` | Add to `PARTIAL_RECON_SUPPORTED_TOOLS` + `PARTIAL_RECON_PHASE_MAP`, extend `UserTargets` if needed |
 | `webapp/src/components/.../PartialReconModal.tsx` | Add per-type textareas + validation + dropdown for the tool |
 

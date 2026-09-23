@@ -503,3 +503,55 @@
   margin-left: auto;
   flex-shrink: 0;
 }
+
+/* -- Node Filters tab: the armed pill -- */
+
+/* Keeps the pill on the same line as its label when the tab row scrolls. */
+.tabLabelWithPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.armedBadge {
+  composes: badge;
+  background: var(--status-info);
+  color: var(--text-on-accent);
+  flex-shrink: 0;
+}
+
+/* -- Narrow screens -- */
+
+/* The containing block for the dropdown menus when the tab row scrolls; see below. */
+.tabBar {
+  position: relative;
+}
+
+@media (max-width: 900px) {
+  .tabs {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+
+  .tab {
+    flex-shrink: 0;
+  }
+
+  /* A scrolling row clips anything positioned inside it, which would cut the
+     table and surface menus off at the header's bottom edge. With their
+     anchors static, the menus are placed against the tab bar instead, which
+     does not scroll. */
+  .tableMenuContainer,
+  .filterGroupSelect {
+    position: static;
+  }
+
+  .tableDropdownMenu {
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+}

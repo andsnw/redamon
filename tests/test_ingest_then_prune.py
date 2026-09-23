@@ -57,9 +57,17 @@ class TestThePruneItself(unittest.TestCase):
     SRC = source("graph_db/mixins/base_mixin.py")
 
     def test_it_never_deletes_something_a_person_touched(self):
-        """The single most important line in the change."""
-        self.assertIn("n:Muted OR coalesce(n.triage_source, '') = 'human'",
-                      self.SRC)
+        """The single most important line in the change: an operator's mute and
+        a human verdict both keep the finding."""
+        self.assertIn("(n:Muted AND NOT coalesce(n.muted_by, '') STARTS WITH 'rule:')", self.SRC)
+        self.assertIn("OR coalesce(n.triage_source, '') = 'human') AS keep", self.SRC)
+
+    def test_a_rule_mute_is_not_a_person_touching_it(self):
+        """A node-filter rule mute says nothing about THIS finding, so a finding
+        a scanner stopped reporting is pruned even while a rule has it muted.
+        The keep clause must not fall back to a bare `n:Muted`."""
+        body = method_body(self.SRC, "prune_unseen_findings")
+        self.assertNotIn("(n:Muted OR", body)
 
     def test_a_kept_finding_is_stamped_stale_rather_than_left_looking_live(self):
         self.assertIn("SET n.stale_since = coalesce(n.stale_since, datetime())",
@@ -115,8 +123,9 @@ class TestReconPrunesOnlyAfterSuccess(unittest.TestCase):
     def test_it_only_names_recon_s_own_sources(self):
         """A recon run must never prune a GVM or supply-chain finding."""
         self.assertIn("RECON_FINDING_SOURCES", self.SRC)
+        sources = source("recon/helpers/finding_sources.py")
         for foreign in ("gvm", "github_hunt", "osv", "trufflehog"):
-            block = self.SRC[self.SRC.index("RECON_FINDING_SOURCES = ("):]
+            block = sources[sources.index("RECON_FINDING_SOURCES = ("):]
             block = block[:block.index(")")]
             with self.subTest(source=foreign):
                 self.assertNotIn(f'"{foreign}"', block)

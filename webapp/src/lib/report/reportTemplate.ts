@@ -25,6 +25,7 @@ export interface LLMNarratives {
 function esc(s: string | null | undefined): string {
   if (!s) return ''
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function sevColor(severity: string): string {
@@ -713,8 +714,14 @@ function renderScope(data: ReportData, narrative?: string): string {
       <tr><td>Base URLs</td><td>${graphOverview.endpointCoverage.baseUrls}</td></tr>
       <tr><td>Endpoints</td><td>${graphOverview.endpointCoverage.endpoints}</td></tr>
       <tr><td>Parameters</td><td>${graphOverview.endpointCoverage.parameters}</td></tr>
-      ${graphOverview.suppressedCount
-        ? `<tr><td>Suppressed as noise</td><td>${graphOverview.suppressedCount} finding(s) reviewed and excluded from this report</td></tr>`
+      ${graphOverview.suppressedByPeople
+        ? `<tr><td>Suppressed as noise</td><td>${graphOverview.suppressedByPeople} finding(s) reviewed and excluded from this report</td></tr>`
+        : ''}
+      ${graphOverview.suppressedByRules
+        ? `<tr><td>Suppressed by project filter rules</td><td>${graphOverview.suppressedByRules} finding(s) excluded by rule, not reviewed one by one${
+            graphOverview.suppressedRules.length
+              ? ` (${graphOverview.suppressedRules.map(r => `${esc(r.name)}: ${r.count}`).join('; ')})`
+              : ''}</td></tr>`
         : ''}
     </tbody>
   </table>

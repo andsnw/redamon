@@ -211,7 +211,8 @@ const GRAPH_SHAPE = [
   '',
   '**Two states that change what a finding MEANS**, and neither of them means "fixed":',
   '',
-  '- `Muted` - a human suppressed it. It is then invisible to every other read on this surface.',
+  '- `Muted` - a person suppressed it, or a project filter rule did (`muted_via` says which). It is',
+  '  then invisible to every other read on this surface.',
   '- `stale_since` - a later scan stopped reporting it, but a human had touched it, so it was kept.',
 ].join('\n')
 
@@ -304,7 +305,8 @@ const REPORTING = [
   '- **Three buckets you never merge** - "found", "scanned and not found", and "not scanned or could',
   '  not check".',
   '',
-  'Never re-report a muted finding as new: a human already judged it. Never omit a "could not',
+  'Never re-report a muted finding as new: a person judged it, or a project filter rule hid it',
+  'by policy (`muted_via: rule`, which is not a judgement of that finding). Never omit a "could not',
   'verify": a dependency failure is reported as unknown, not dropped to make the list look clean.',
   '',
   'In a security deliverable, a false "all clear" is the worst possible output. It is worse than',
@@ -1106,6 +1108,7 @@ export function renderInlineOnboarding(
     '  "nothing running".',
     '- A dependency failure is not an empty result. Report "could not check" rather than zero.',
     '- Muted findings are invisible to every other read. Check them before calling anything clean.',
+    '- A rule mute (`muted_via: rule`) is project policy, not a person\'s judgement of that finding.',
     '- Truncated results say so. Page, or say the answer is partial.',
     '',
     'AUTHORIZATION. You cannot change what RedAmon points at, and you must not try. You probably',

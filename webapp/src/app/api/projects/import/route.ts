@@ -11,6 +11,10 @@ import path from 'path'
 import { safeBasename } from '@/lib/safePath'
 import { orchestratorFetch } from '@/lib/orchestrator'
 import { envelopeForKind } from '@/lib/jobQueue'
+import { allErrors, validateNodeFilters } from '@/lib/nodeFilters/validate'
+import { MUTEABLE_FINDING_LABELS } from '@/lib/mcp/findingLabels'
+
+const MUTEABLE_LABELS = new Set<string>(MUTEABLE_FINDING_LABELS)
 
 export const maxDuration = 300
 
@@ -384,6 +388,51 @@ export async function POST(request: NextRequest) {
           })
           stats.reports++
         }
+      }
+    }
+
+    // Node filters. They arrive DISARMED: an imported project must never start
+    // muting what its next scan finds before its new owner has looked at the
+    // rules. A document this install's catalog cannot read is left out rather
+    // than stored half-valid.
+    const nodeFilterFile = zip.file('node-filters/node-filters.json')
+    if (nodeFilterFile) {
+      try {
+        const nf = JSON.parse(await nodeFilterFile.async('text'))
+        const verdict = validateNodeFilters(nf?.mode, nf?.rules)
+        if (verdict.ok && allErrors(verdict).length === 0) {
+          await prisma.projectNodeFilter.create({
+            data: {
+              projectId: newProject.id, mode: nf.mode, rules: nf.rules ?? { version: 1, kinds: {} },
+              applyToScans: false, updatedBy: userId,
+            },
+          })
+          ;(stats as Record<string, unknown>).nodeFilters = 'imported (not applied to new scans)'
+        } else {
+          ;(stats as Record<string, unknown>).nodeFilters = `skipped: ${allErrors(verdict)[0] ?? 'invalid rules'}`
+        }
+      } catch (e) {
+        console.warn('Could not import the node filters:', e)
+        ;(stats as Record<string, unknown>).nodeFilters = 'skipped: unreadable'
+      }
+    }
+    const exemptionsFile = zip.file('node-filters/node-filter-exemptions.json')
+    if (exemptionsFile) {
+      try {
+        const rows = JSON.parse(await exemptionsFile.async('text'))
+        const data = (Array.isArray(rows) ? rows : [])
+          .filter((r: { label?: unknown; nodeKey?: unknown }) =>
+            typeof r?.label === 'string' && MUTEABLE_LABELS.has(r.label) &&
+            typeof r?.nodeKey === 'string' && r.nodeKey.length > 0 && r.nodeKey.length <= 300)
+          .map((r: { label: string; nodeKey: string }) => ({
+            projectId: newProject.id, label: r.label, nodeKey: r.nodeKey, createdBy: userId,
+          }))
+        if (data.length > 0) {
+          const created = await prisma.nodeFilterExemption.createMany({ data, skipDuplicates: true })
+          ;(stats as Record<string, number>).nodeFilterExemptions = created.count
+        }
+      } catch (e) {
+        console.warn('Could not import the node-filter exemptions:', e)
       }
     }
 

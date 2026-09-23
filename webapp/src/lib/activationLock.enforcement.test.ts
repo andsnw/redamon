@@ -11,6 +11,7 @@ import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
 
 const h = vi.hoisted(() => ({
+  nodeFilterWriter: vi.fn(async (..._a: unknown[]) => null as string | null),
   activating: vi.fn(),
   isActivating: vi.fn(),
   orchestratorFetch: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock('@/lib/orchestrator', () => ({ orchestratorFetch: (...a: unknown[]) => h
 // "is something already scanning?" is covered in graphWriters.test.ts and
 // startFullScan.test.ts; here the graph is free so only the LOCK can refuse.
 vi.mock('@/lib/graphWriters', () => ({ describeScanWriters: async () => null }))
+vi.mock('@/lib/nodeFilterRun', () => ({ describeNodeFilterWriter: (...a: unknown[]) => h.nodeFilterWriter(...a) }))
 vi.mock('@/lib/prisma', () => ({
   default: {
     project: {
@@ -132,6 +134,14 @@ describe('partial recon start', () => {
     const res = await startPartial(partialReq(), params)
     expect(res.status).toBe(200)
     expect(h.orchestratorFetch).toHaveBeenCalled()
+  })
+
+  test('refused while node filters are being applied to the graph', async () => {
+    h.nodeFilterWriter.mockResolvedValueOnce('node filters are being applied to the graph')
+    const res = await startPartial(partialReq(), params)
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/node filters are being applied/)
+    expect(h.orchestratorFetch).not.toHaveBeenCalled()
   })
 })
 

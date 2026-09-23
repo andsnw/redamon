@@ -9,6 +9,8 @@
  * difference between a badge that means something and one that does not.
  */
 
+import { notMuted } from '@/lib/graphMute'
+
 /**
  * A Cypher label is interpolated, never parameterised - Neo4j has no parameter
  * form for a label. Everything reaching here comes from the registry, so this
@@ -39,12 +41,17 @@ export interface UnseenQuery {
  * One UNION ALL branch per label so each uses its own label scan; a single
  * label-free `MATCH (n)` would read every node in the database, every project
  * included.
+ *
+ * Muted and resolved findings are not counted: the tables these badges sit on
+ * never show them, and a node-filter apply can mute thousands at once, which
+ * would otherwise badge Node Inspector for rows it will never list.
  */
 export function buildLabelCountQuery(labels: readonly string[]): UnseenQuery | null {
   const branches = labels
     .filter(isSafeLabel)
     .map(label => [
       `MATCH (n:${label} {project_id: $pid})`,
+      `WHERE ${notMuted('n')}`,
       `WITH coalesce(n.updated_at, n.last_seen, n.created_at, n.first_seen) AS ts`,
       `WHERE ts IS NOT NULL AND ts > datetime($since)`,
       `RETURN count(*) AS c`,

@@ -247,7 +247,7 @@ class TestNeo4jClientOrchestrator(unittest.TestCase):
         bases = [b.id if isinstance(b, ast.Name) else b.attr for b in cls.bases]
         self.assertEqual(bases,
                          ["BaseMixin", "ReconMixin", "GvmMixin", "SecretMixin", "OsintMixin",
-                          "GraphQLMixin", "CacheMixin", "SupplyChainMixin"])
+                          "GraphQLMixin", "CacheMixin", "SupplyChainMixin", "NodeFilterMixin"])
 
     def test_init_py_unchanged(self):
         src = open(os.path.join(_REPO, "graph_db/__init__.py")).read()

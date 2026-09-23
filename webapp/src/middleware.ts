@@ -65,6 +65,11 @@ const INTERNAL_ALLOWLIST: { method: string; pattern: RegExp }[] = [
   { method: 'POST', pattern: /^\/api\/internal\/triage-runs\/[^/]+\/publish$/ },
   { method: 'POST', pattern: /^\/api\/internal\/triage-runs\/[^/]+\/remediations$/ },
   { method: 'POST', pattern: /^\/api\/internal\/triage-runs\/[^/]+\/finish$/ },
+  // Node-filter apply runs: the agent reads the run it was handed, heartbeats
+  // it and records how it ended. Each route re-checks isInternalRequest.
+  { method: 'GET', pattern: /^\/api\/internal\/node-filter-runs\/[^/]+$/ },
+  { method: 'POST', pattern: /^\/api\/internal\/node-filter-runs\/[^/]+\/heartbeat$/ },
+  { method: 'POST', pattern: /^\/api\/internal\/node-filter-runs\/[^/]+\/finish$/ },
 ]
 
 // Fail-open rollout: default log-only (never blocks), so an omitted route shows

@@ -544,10 +544,10 @@ class TestDispatcherWiring(unittest.TestCase):
     """Verifies partial_recon.main() dispatches GraphqlScan to run_graphqlscan."""
 
     def test_dispatcher_has_graphqlscan_branch(self):
-        """Sanity check: inspecting main() source shows the new dispatch."""
+        """Sanity check: the tool dispatch (`_dispatch`, called by main()) has the branch."""
         import inspect
-        from partial_recon import main
-        src = inspect.getsource(main)
+        from partial_recon import _dispatch
+        src = inspect.getsource(_dispatch)
         self.assertIn('GraphqlScan', src)
         self.assertIn('run_graphqlscan', src)
 

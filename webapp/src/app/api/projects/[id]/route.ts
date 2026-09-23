@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { archiveProjectAuthorizations } from '@/lib/engagementArchive'
 import prisma from '@/lib/prisma'
-import type { Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { unlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
@@ -27,6 +27,8 @@ const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://loc
 interface RouteParams {
   params: Promise<{ id: string }>
 }
+
+const PROJECT_SCALAR_COLUMNS = new Set<string>(Object.keys(Prisma.ProjectScalarFieldEnum))
 
 // GET /api/projects/[id] - Get project with all params
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -57,6 +59,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           }
         },
         authProfile: true,
+        // Node filters travel to recon here, for service callers only: a scan's
+        // end-of-run sweep re-reads them (and the operator's exemptions) at
+        // sweep time. A browser reads them through /node-filters instead.
+        ...(isServiceCaller
+          ? { nodeFilter: true, nodeFilterExemptions: { select: { label: true, nodeKey: true } } }
+          : {}),
       }
     })
 
@@ -70,10 +78,28 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Exclude binary document data from regular responses (use /roe/download instead).
     // The auth profile carries the recorded/entered session: recon and the agent
     // get it whole, a browser only ever gets metadata + hasValue (write-only UI).
-    const { roeDocumentData: _binary, authProfile, ...rest } = project
+    const {
+      roeDocumentData: _binary, authProfile, nodeFilter, nodeFilterExemptions, ...rest
+    } = project as typeof project & {
+      nodeFilter?: { mode: string; applyToScans: boolean; rules: unknown; revision: number } | null
+      nodeFilterExemptions?: { label: string; nodeKey: string }[]
+    }
     const projectWithoutBinary = {
       ...rest,
       authProfile: isServiceCaller ? authProfile : toAuthProfileMetadata(authProfile),
+      ...(isServiceCaller
+        ? {
+            nodeFilter: nodeFilter
+              ? {
+                  mode: nodeFilter.mode,
+                  applyToScans: nodeFilter.applyToScans,
+                  rules: nodeFilter.rules,
+                  revision: nodeFilter.revision,
+                  exemptions: (nodeFilterExemptions ?? []).map(e => [e.label, e.nodeKey]),
+                }
+              : null,
+          }
+        : {}),
     }
 
     // If ?includeSkillContent=true, fetch enabled user skill contents for agent consumption
@@ -151,8 +177,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       userId, createdAt, updatedAt, user,
       authProfile: _authProfile,
       roeEnabled: _roeEnabledDerived,
-      ...updateData
+      ...rawUpdate
     } = body
+
+    // Only Project COLUMNS may be written here. Prisma accepts nested relation
+    // writes, so a relation key in this whole-row body (`nodeFilter`,
+    // `nodeFilterRuns`, `scanJobs`, ...) would be a mass-assignment path that
+    // skips the relation's own route: its validation, its revision check and
+    // its audit row. Anything that is not a scalar column is dropped.
+    const updateData: Record<string, any> = Object.fromEntries(
+      Object.entries(rawUpdate ?? {}).filter(([key]) => PROJECT_SCALAR_COLUMNS.has(key)),
+    )
 
     // Sanitize string inputs that are used as hostnames/IPs (trailing spaces break DNS)
     if (typeof updateData.targetDomain === 'string') {

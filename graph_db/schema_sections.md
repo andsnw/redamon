@@ -332,6 +332,11 @@ Additional properties present on this node type, not yet described:
 - sample (string): redacted sample of matched data
 Additional properties present on this node type, not yet described:
 - matched_text
+JS Recon secret properties (source="js_recon" only):
+- key_type (string): the matching pattern's category
+- confidence (string): high, medium, low
+- validation_status (string): validated, invalid, unvalidated, skipped, incomplete, format_validated, error
+- detection_method (string): "regex"
 
 **Traceroute** - Network route from scanner to target (from GVM)
 - target_ip (string): target IP address
@@ -470,6 +475,22 @@ Web cache poisoning properties (source="cache_poisoning"):
 - poc_link (string), curl_verify (string): reproduction; evidence (string): JSON blob with baseline/poisoned/clean hashes
 - id pattern: `cache_{user_id}_{project_id}_{technique}_{baseurl}_{path}_{vector}` — deterministic, MERGE-safe
 - Typical query: "list confirmed cache poisoning findings" → `MATCH (e:Endpoint)-[:HAS_VULNERABILITY]->(v:Vulnerability {source: 'cache_poisoning'}) WHERE v.confidence_tier = 'Confirmed' RETURN e.url, v.cache_header, v.cache_impact, v.confidence, v.poc_link`
+
+Per-source properties node filters also read (graph_db/node_filters/catalog.yaml):
+- url (string): the probed URL (security_check, origin_discovery)
+- status_code (integer): HTTP status of the probe (security_check, origin_discovery)
+- state (string): nmap_nse script state, "VULNERABLE" or "LIKELY VULNERABLE"
+- output (string): nmap_nse script output, up to 2000 characters
+- port_number (integer): nmap_nse port
+- cve_id (string): nmap_nse CVE id, "" when the script reported none
+- cvss (float): criminalip CVSS score (v3, else v2)
+- confidence_score (float): origin_discovery confidence, 0 to 100
+- origin_discovery_method (string): "subdomain", "cert_san", "favicon_hash", "passive_dns" or "unknown"
+- origin_source (string): where the origin candidate came from ("dns", "crtsh", "shodan", "censys", ...)
+- cdn_fronting (string): the CDN in front of the origin
+- confidence_tier (string): cache_poisoning "Confirmed", "Strong" or "Tentative"
+- ai_owasp_llm_id (string), ai_atlas_technique (string): the OWASP LLM and MITRE ATLAS classification
+- advisory_id (string), purl (string), package_version (string), aliases (list): osv advisory, package and CVE aliases
 
 **CVE / MitreData / Capec** - the PUBLIC NVD+MITRE catalogue. These three are
 GLOBAL reference nodes: one node per CVE for the whole database, shared by every
@@ -749,6 +770,8 @@ Additional properties present on this node type, not yet described:
 Additional properties present on this node type, not yet described:
 - aliases (list[string])
 - soft_error (boolean)
+Incident catalog property node filters read:
+- incident_id (string): set only when the package is in the incident catalog
 
 IMPORTANT for triage: a verdict of "malicious" (advisory_id starting with MAL-) means
 the dependency itself is malware (e.g. a typosquat) - treat it as a critical finding.
@@ -798,6 +821,8 @@ never report an uploaded-SBOM hit as something found on the target.
 Additional properties present on this node type, not yet described:
 - discovered_at (string)
 - sample_urls (list[string])
+Package properties on dependency and framework findings:
+- package_name (string), package_version (string): the package the finding names
 
 1. **JS File nodes** (finding_type='js_file') - Represent each analyzed JavaScript file. All findings from that file are linked to this node.
    - finding_type: 'js_file'

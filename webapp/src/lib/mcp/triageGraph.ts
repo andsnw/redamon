@@ -127,18 +127,22 @@ export async function listTriageFindings(
 }
 
 /**
- * `list_muted`. Note the asymmetry with the above: this op returns NO `total`,
- * so a count is `findings.length`. The mixin applies no limit unless one is
- * asked for, so the cap has to travel WITH the request - capping only the rows
- * this side returns still pulls the whole suppressed set across the wire.
+ * `list_muted`, person-first. The mixin applies no limit unless one is asked
+ * for, so the cap has to travel WITH the request - capping only the rows this
+ * side returns still pulls the whole suppressed set across the wire.
+ *
+ * Person-first because a filter rule can mute thousands of findings in one
+ * apply: newest-first, those would push every mute that IS a person's decision
+ * out of a capped window. `total` is the uncapped count; an agent older than
+ * that field returns none, and the caller falls back to "at least".
  */
 export async function listMutedFindings(
   userId: string,
   projectId: string,
   limit: number
-): Promise<TriageFinding[]> {
-  const body = await callTriage('list_muted', userId, projectId, { limit })
+): Promise<{ findings: TriageFinding[]; total?: number }> {
+  const body = await callTriage('list_muted', userId, projectId, { limit, order: 'person_first' })
   const findings = Array.isArray(body.findings) ? (body.findings as TriageFinding[]) : null
   if (!findings) throw new McpToolError('The muted findings could not be read.', 'agent_failed')
-  return findings
+  return { findings, total: typeof body.total === 'number' ? body.total : undefined }
 }

@@ -36,6 +36,7 @@ import { getGraphSession } from '@/app/api/graph/neo4j'
 import { invalidateCache } from '@/app/api/graph/cache'
 import { acquireActivationLock, releaseActivationLock } from '@/lib/activationLock'
 import { describeLiveGraphWriters } from '@/lib/graphWriters'
+import { describeNodeFilterWriter } from '@/lib/nodeFilterRun'
 
 interface RouteParams {
   params: Promise<{ id: string; versionId: string }>
@@ -82,6 +83,18 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
   const lock = await acquireActivationLock(id, versionId)
   if (!lock.acquired) {
     return NextResponse.json({ error: lock.reason ?? 'Activation is already running' }, { status: 409 })
+  }
+
+  // A node-filter apply can start between the writer check above and the lock:
+  // the apply route checks for an activation only before it creates its run.
+  // Re-checked under the lock so the freeze below never captures a half-applied graph.
+  const applying = await describeNodeFilterWriter(id)
+  if (applying) {
+    await releaseActivationLock(id)
+    return NextResponse.json(
+      { error: `Cannot activate a version while ${applying} for this project. Try again when it finishes.`, busy: applying },
+      { status: 409 }
+    )
   }
 
   const startedAt = Date.now()

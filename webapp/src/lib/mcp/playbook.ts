@@ -299,10 +299,11 @@ export const ONBOARDING_PLAYBOOK: Record<string, PlaybookEntry> = {
     whenToUse:
       'Call this before you ever call a project clean, and before reporting anything as new. Muted ' +
       'findings are invisible to every other read on this surface, so this is the only way to ' +
-      'distinguish "nothing was found" from "a person suppressed it".',
+      'distinguish "nothing was found" from "a person, or a project filter rule, suppressed it".',
     gotchas: [
       'Thirty suppressed criticals change the answer to "is this clean?" entirely. Report them as suppressed rather than omitting or re-raising them.',
-      'A mute is a human judgement with a name and a reason attached. Do not treat it as a mistake to correct, and note that nothing on this surface can unmute.',
+      'A mute with `muted_via: person` is a human judgement with a name and a reason attached. Do not treat it as a mistake to correct, and note that nothing on this surface can unmute.',
+      'A mute with `muted_via: rule` was applied by a project filter rule (`rule_name` says which): it is policy over a whole class of findings, not a judgement of that one. Report rule mutes apart from people\'s, and never as reviewed.',
     ],
     workflowRefs: ['triage-report', 'write-back-verdicts'],
   },
@@ -717,7 +718,7 @@ export const WORKFLOWS: Workflow[] = [
     body: [
       '1. `graph_summary`: what exists, and is the graph settled?',
       '2. `list_findings`: the ranked list, already scored by the product.',
-      '3. `list_muted_findings`: what a human suppressed. Without this you cannot tell "clean" from "hidden".',
+      '3. `list_muted_findings`: what a person or a project filter rule suppressed. Without this you cannot tell "clean" from "hidden".',
       '4. `list_remediations`: the fixes, grouped as they should be ticketed.',
       '5. Report in three buckets that you never merge: found, scanned and not found, and not scanned or could not check.',
     ],

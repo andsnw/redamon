@@ -190,6 +190,27 @@ REMOVE v:Muted, v.muted, v.muted_at, v.muted_by, v.muted_reason
 `Domain`, `Endpoint`, `CVE`, ...) are context: muting one would orphan the real
 findings hanging off it.
 
+### Who muted it: a person, or a node-filter rule
+
+`muted_by` holds the user id of the person who muted the finding, or
+`rule:<kind>/<rule id>` when a [Node Filters](../../redamon.wiki/Node-Filters.md)
+rule did (`rule:<kind>/allowlist` in allowlist mode), with `muted_reason` set to
+`Filter rule: <name>`. The two differ in what they mean and in how they are kept:
+
+- The one sweep that applies rules (`apply_node_filters` in
+  `graph_db/mixins/node_filter_mixin.py`) only mutes, re-attributes or releases
+  RULE mutes. A person's mute is never touched, in either direction, and it
+  never writes `updated_at`.
+- The ingest-then-prune keep predicate is
+  `(n:Muted AND NOT coalesce(n.muted_by,'') STARTS WITH 'rule:') OR coalesce(n.triage_source,'') = 'human'`:
+  a rule mute is not a judgement of that finding, so a stale one is pruned.
+- The rules (`project_node_filters`) and the operator's exemptions
+  (`node_filter_exemptions`: a node someone unmuted, which no rule may mute
+  again) live in Postgres, keyed by project, finding label and natural key, not
+  on the node: the prune, the recon asset clear, version activation and import
+  would each delete a node property. What a rule may match is declared in
+  `graph_db/node_filters/catalog.yaml`.
+
 ### Why add a label instead of swapping it
 
 Adding is what makes unmute lossless and what makes mute survive a re-scan.
@@ -210,9 +231,10 @@ That is safe only because of a containment rule that must hold for every read
 path: **no `labels[0]` consumer ever receives a muted node.** Excluding `:Muted`
 is therefore a correctness requirement, not only a visibility one - a reader that
 forgets the filter both leaks a suppressed finding and may mis-type it as
-`"Muted"`. The one legitimate reader of muted nodes is the Triage page's Muted
-table, which derives the type as `[l IN labels(n) WHERE l <> 'Muted'][0]` and
-never uses `labels[0]`.
+`"Muted"`. The one legitimate reader of muted nodes is the `list_muted` fixed op behind
+Muted Nodes (and the MCP `list_muted_findings` tool), which derives the type as
+`[l IN labels(n) WHERE l <> 'Muted'][0]` and never uses `labels[0]`; the
+node-filter sweep reads them only to reconcile its own rule mutes.
 
 ### Invisibility is enforced at the tenant chokepoint
 
