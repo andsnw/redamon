@@ -410,6 +410,8 @@ class TestReportAndExitCode:
         assert code == 1 and len(sweeps) == 1
 
     def test_a_tool_not_yet_multi_root_is_narrowed_and_says_so(self, pr, monkeypatch, capsys):
+        from recon import partial_recon as module
+        monkeypatch.setattr(module, "_MULTI_ROOT_TOOLS", frozenset())
         code, _, dispatched = _run_main(pr, monkeypatch, {
             "tool_id": "Katana", "domains": ["alpha.test", "beta.test"]}, BATCH_SETTINGS)
         assert code == 0

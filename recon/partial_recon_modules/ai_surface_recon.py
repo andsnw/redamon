@@ -20,7 +20,8 @@ from urllib.parse import urlparse
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.partial_recon_modules.helpers import partial_settings
+from recon.partial_recon_modules.graph_builders import graph_url_scope, url_host
+from recon.partial_recon_modules.helpers import partial_settings, scope_roots
 
 
 def run_ai_surface_recon(config: dict) -> None:
@@ -43,9 +44,11 @@ def run_ai_surface_recon(config: dict) -> None:
     settings = partial_settings(config)
     settings["AI_SURFACE_RECON_ENABLED"] = True  # operator explicitly asked
 
+    roots = scope_roots(config)
     client = Neo4jClient()
     recon_data: dict = {
-        "domain": config.get("domain", ""),
+        "domain": roots[0] if roots else "",
+        "domains": roots,
         "metadata": {"project_id": project_id},
         "resource_enum": {"by_base_url": {}},
         "http_probe": {"by_url": {}},
@@ -54,6 +57,11 @@ def run_ai_surface_recon(config: dict) -> None:
     by_base = recon_data["resource_enum"]["by_base_url"]
 
     with client.driver.session() as session:
+        # AI surfaces are read project-wide; skip those on a host this run does
+        # not cover (a root dropped from the batch, or left unticked).
+        keep = graph_url_scope(session, user_id, project_id, roots,
+                               config.get("domain_groups"), apex_filter=False)
+
         # AI-tagged endpoints (the §3a candidate set)
         ep_rows = session.run(
             """
@@ -69,6 +77,8 @@ def run_ai_surface_recon(config: dict) -> None:
         )
         ep_total = 0
         for row in ep_rows:
+            if row["base_url"] and not keep(url_host(row["base_url"])):
+                continue
             ep_total += 1
             base = row["base_url"] or "unknown"
             path = row["path"] or "/"
@@ -94,7 +104,7 @@ def run_ai_surface_recon(config: dict) -> None:
         )
         for row in host_rows:
             base = row["base_url"]
-            if base:
+            if base and keep(url_host(base)):
                 recon_data["http_probe"]["by_url"][base + "/"] = {
                     "is_ai_framework_detected": True}
 

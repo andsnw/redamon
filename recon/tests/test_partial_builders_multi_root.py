@@ -54,6 +54,25 @@ def _ports(ip):
     return [{"number": n, "protocol": "tcp"} for n in nums]
 
 
+BASEURLS = [
+    # (url, host)
+    ("https://www.alpha.test", "www.alpha.test"),
+    ("https://san-only.alpha.test", "san-only.alpha.test"),   # literal group never listed it
+    ("https://alpha.test", "alpha.test"),                     # apex, included
+    ("https://beta.test", "beta.test"),                       # apex, excluded
+    ("https://api.beta.test:8443", ""),                       # host only in the URL
+    ("https://www.old.test", "www.old.test"),                 # a stale root's host
+    ("http://10.0.9.9:8080", "10.0.9.9"),                     # an IP: under no root
+    ("https://cdn.thirdparty.example", "cdn.thirdparty.example"),
+]
+GRAPH_DOMAINS = ["alpha.test", "beta.test", "gamma.test", "old.test"]
+
+
+class _Result(list):
+    def single(self):
+        return self[0] if self else None
+
+
 class _Session:
     def __init__(self, calls):
         self.calls = calls
@@ -66,8 +85,10 @@ class _Session:
 
     def run(self, cypher, **params):
         self.calls.append((cypher, params))
-        rows = []
-        if "HAS_SUBDOMAIN" in cypher:
+        rows = _Result()
+        if "collect(DISTINCT s.name)" in cypher:
+            rows.append({"subdomains": [sub for root, sub, _ in SUBDOMAINS if root in params["domains"]]})
+        elif "HAS_SUBDOMAIN" in cypher:
             for root, sub, ip in SUBDOMAINS:
                 if root in params["domains"]:
                     rows.append({"root": root, "subdomain": sub, "address": ip, "ip": ip,
@@ -77,6 +98,16 @@ class _Session:
                 ip = APEX_IPS[root]
                 rows.append({"root": root, "address": ip, "ip": ip, "version": "ipv4",
                              "ports": _ports(ip)})
+        elif "RETURN d.name AS name" in cypher:
+            rows.extend({"name": name} for name in GRAPH_DOMAINS)
+        elif "MATCH (b:BaseURL" in cypher and "HAS_ENDPOINT" not in cypher:
+            for url, host in BASEURLS:
+                rows.append({"url": url, "host": host, "status_code": 200,
+                             "content_type": "text/html", "is_cdn": False, "cdn": None, "asn": None})
+        elif "HAS_ENDPOINT" in cypher and "base_url" in cypher:
+            for url, _ in BASEURLS:
+                rows.append({"base_url": url, "endpoints": [{"path": "/x", "method": "GET"}],
+                             "parameters": [{"name": "q"}]})
         return rows
 
 
@@ -202,3 +233,83 @@ class TestReconDataBuilder:
         assert data["dns"]["domain"]["ips"]["ipv4"] == ["10.0.0.1"]
         assert set(data["dns"]["subdomains"]) == {"www.alpha.test", "san-only.alpha.test"}
         assert data["metadata"]["include_root_domain"] is True
+
+
+class TestHttpProbeBuilder:
+    """_build_http_probe_data_from_graph: Katana, Hakrawler, ZAP, Ffuf, Kiterunner."""
+
+    def build(self, **kw):
+        return gb._build_http_probe_data_from_graph(ROOTS, "u1", "p1", domain_groups=GROUPS, **kw)
+
+    def test_baseurls_are_scoped_to_the_run(self, graph):
+        urls = set(self.build()["http_probe"]["by_url"])
+        assert urls == {
+            "https://www.alpha.test",       # listed
+            "https://alpha.test",           # an included apex
+            "https://api.beta.test:8443",   # wildcard group; host parsed from the URL
+            "http://10.0.9.9:8080",         # under no root: kept, as before
+            "https://cdn.thirdparty.example",
+        }
+
+    def test_a_stale_roots_baseurl_is_dropped(self, graph):
+        assert "https://www.old.test" not in self.build()["http_probe"]["by_url"]
+
+    def test_a_literal_groups_unlisted_host_is_dropped(self, graph):
+        assert "https://san-only.alpha.test" not in self.build()["http_probe"]["by_url"]
+
+    def test_an_excluded_apex_is_dropped(self, graph):
+        assert "https://beta.test" not in self.build()["http_probe"]["by_url"]
+
+    def test_the_subdomain_scope_list_is_literal_aware(self, graph):
+        subs = self.build()["subdomains"]
+        assert "san-only.alpha.test" not in subs
+        assert {"www.alpha.test", "api.beta.test", "san-only.beta.test", "mail.gamma.test"} <= set(subs)
+
+    def test_a_legacy_call_keeps_the_single_apex_rule_only(self, graph):
+        data = gb._build_http_probe_data_from_graph("alpha.test", "u1", "p1", include_root_domain=False)
+        urls = set(data["http_probe"]["by_url"])
+        assert "https://alpha.test" not in urls                 # its apex is excluded
+        assert "https://www.old.test" in urls                   # no stale filter without groups
+        assert not any("RETURN d.name AS name" in c for c, _ in graph)
+
+
+class TestGraphqlBuilder:
+    """_build_graphql_data_from_graph: GraphqlScan, WebCachePoison."""
+
+    def build(self, groups=GROUPS):
+        return gb._build_graphql_data_from_graph(ROOTS, "u1", "p1", settings={}, domain_groups=groups)
+
+    def test_a_stale_host_is_dropped_everywhere(self, graph):
+        data = self.build()
+        assert "https://www.old.test" not in data["http_probe"]["by_url"]
+        assert "https://www.old.test" not in data["resource_enum"]["endpoints"]
+        assert "https://www.old.test" not in data["resource_enum"]["parameters"]
+
+    def test_no_apex_rule_is_added(self, graph):
+        # GraphQL scanning never honoured Include Root Domain; it still does not.
+        assert "https://beta.test" in self.build()["http_probe"]["by_url"]
+
+    def test_the_roots_are_recorded(self, graph):
+        data = self.build()
+        assert data["domain"] == "alpha.test" and data["domains"] == ROOTS
+
+    def test_a_legacy_call_is_unfiltered(self, graph):
+        data = gb._build_graphql_data_from_graph("alpha.test", "u1", "p1", settings={})
+        assert "https://www.old.test" in data["http_probe"]["by_url"]
+
+
+class TestGraphUrlScope:
+    def keep(self, graph, **kw):
+        session = _Session(graph)
+        return gb.graph_url_scope(session, "u1", "p1", ROOTS, GROUPS, **kw)
+
+    def test_rules(self, graph):
+        keep = self.keep(graph)
+        assert keep("www.alpha.test") and keep("api.beta.test") and keep("10.0.0.1")
+        assert not keep("www.old.test")          # stale
+        assert not keep("san-only.alpha.test")   # literal, unlisted
+        assert not keep("beta.test")             # excluded apex
+        assert keep("")                          # unattributable: kept
+
+    def test_without_the_apex_rule(self, graph):
+        assert self.keep(graph, apex_filter=False)("beta.test")

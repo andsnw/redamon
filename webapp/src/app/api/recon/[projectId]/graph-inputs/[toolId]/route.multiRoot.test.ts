@@ -171,6 +171,6 @@ describe.each([...PARTIAL_RECON_SUPPORTED_TOOLS])('every supported tool: %s', (t
     const cypher = toolCall()?.[0] ?? ''
     expect(cypher).not.toMatch(/WITH\s+d\s*,/)
     expect(cypher).not.toContain('d.name AS domain')
-    if (cypher.includes(':Domain')) expect(cypher).toContain('d.name IN $domains')
+    if (cypher.includes(':Domain')) expect(cypher).toMatch(/\bIN \$domains\b/)
   })
 })

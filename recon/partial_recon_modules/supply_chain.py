@@ -17,14 +17,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.partial_recon_modules.helpers import _is_valid_url, _scope_partial_urls, partial_settings
+from recon.partial_recon_modules.helpers import _is_valid_url, _scope_partial_urls, partial_settings, scope_roots
 
 
 def run_supply_chain(config: dict) -> None:
     from recon.main_recon_modules.js_recon import run_js_recon
     from recon.main_recon_modules.supply_chain_recon import run_supply_chain_recon
 
-    domain = config["domain"]
+    roots = scope_roots(config)
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
@@ -35,7 +35,7 @@ def run_supply_chain(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Supply-Chain Recon")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # User-provided URLs (same input pattern as JsRecon/Katana).
@@ -72,7 +72,8 @@ def run_supply_chain(config: dict) -> None:
                 print("[!][Partial Recon] Neo4j not reachable, cannot fetch graph inputs")
 
     target_urls, scope_hosts = _scope_partial_urls(
-        target_urls, user_urls, [], settings, domain,
+        target_urls, user_urls, [], settings, roots,
+        domain_groups=config.get("domain_groups"),
     )
 
     has_uploaded = False
@@ -87,7 +88,8 @@ def run_supply_chain(config: dict) -> None:
         sys.exit(1)
 
     combined_result = {
-        "domain": domain,
+        "domain": roots[0] if roots else "",
+        "domains": roots,
         "subdomains": scope_hosts,
         "resource_enum": {"discovered_urls": target_urls},
         "http_probe": {"by_url": {}},

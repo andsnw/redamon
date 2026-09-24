@@ -781,14 +781,19 @@ def _validate_extracted_endpoints(endpoints: list, settings: dict, request_func=
 
 def _extract_subdomains(
     endpoints: list,
-    root_domain: str,
+    root_domain,
     known_subdomains: set,
 ) -> tuple:
     """
     Extract unique subdomains and external domains from JS-discovered endpoints.
 
+    ``root_domain`` is one root, or a list: a partial run over a Domain batch
+    covers several, and a host under any of them is in scope, not external.
+
     Returns (new_subdomains: list, external_domains: list)
     """
+    roots = [root_domain] if isinstance(root_domain, str) else list(root_domain or [])
+    roots = [r.lower() for r in roots if r]
     new_subdomains = set()
     external_domains = {}
 
@@ -805,7 +810,7 @@ def _extract_subdomains(
         if not hostname:
             continue
 
-        if hostname.endswith(f'.{root_domain}') or hostname == root_domain:
+        if any(hostname == root or hostname.endswith(f'.{root}') for root in roots):
             if hostname not in known_subdomains:
                 new_subdomains.add(hostname)
         else:
@@ -1004,8 +1009,10 @@ def run_js_recon(combined_result: dict, settings: dict) -> dict:
             )
             print(f"[+][JsRecon] Endpoint validation: {hittable_count} hittable")
 
-        # 6. Subdomain feedback loop
+        # 6. Subdomain feedback loop. A partial run over a Domain batch carries
+        # every root it covers; a host under any of them is in scope.
         root_domain = combined_result.get('domain', '')
+        scope_roots = [r for r in (combined_result.get('domains') or []) if r] or root_domain
         known_subs = set()
         for sub in combined_result.get('dns', {}).get('subdomains', []):
             if isinstance(sub, dict):
@@ -1033,7 +1040,7 @@ def run_js_recon(combined_result: dict, settings: dict) -> dict:
 
         new_subs, ext_domains = _extract_subdomains(
             all_urls_for_subdomain_check,
-            root_domain,
+            scope_roots,
             known_subs,
         )
         results['discovered_subdomains'] = new_subs
@@ -1049,7 +1056,7 @@ def run_js_recon(combined_result: dict, settings: dict) -> dict:
             from recon.helpers.target_helpers import merge_discovered_hostnames
             merge_discovered_hostnames(
                 combined_result, new_subs, source='js_recon',
-                root_domain=root_domain, settings=settings,
+                root_domain=scope_roots, settings=settings,
             )
 
         # 6. Keep matched_text in output for copy-to-clipboard in the UI

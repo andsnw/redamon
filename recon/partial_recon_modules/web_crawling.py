@@ -7,8 +7,20 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.partial_recon_modules.helpers import _is_valid_url, _is_valid_hostname, _should_include_root_domain, _is_host_in_scope, partial_settings
-from recon.partial_recon_modules.graph_builders import _build_http_probe_data_from_graph
+from recon.partial_recon_modules.helpers import (
+    _is_host_in_scope,
+    _is_valid_hostname,
+    _is_valid_url,
+    _should_include_root_domain,
+    include_root_for,
+    partial_settings,
+    scope_roots,
+)
+from recon.partial_recon_modules.graph_builders import (
+    _build_http_probe_data_from_graph,
+    graph_url_scope,
+    url_host,
+)
 from recon.partial_recon_modules.user_inputs import _create_user_subdomains_in_graph
 from recon.helpers import build_target_urls, extract_targets_from_recon
 from recon.helpers.auth_profile import merge_auth_headers
@@ -29,7 +41,7 @@ def run_katana(config: dict) -> None:
         organize_endpoints,
     )
 
-    domain = config["domain"]
+    roots = scope_roots(config)
 
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
@@ -42,7 +54,7 @@ def run_katana(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Katana Crawling (only)")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Parse user targets -- Katana accepts URLs
@@ -76,13 +88,15 @@ def run_katana(config: dict) -> None:
     if include_graph:
         print(f"[*][Partial Recon] Querying graph for targets (BaseURLs)...")
         recon_data = _build_http_probe_data_from_graph(
-            domain, user_id, project_id,
+            roots, user_id, project_id,
             include_root_domain=_should_include_root_domain(settings),
+            domain_groups=config.get("domain_groups"),
         )
     else:
         print(f"[*][Partial Recon] Skipping graph targets (user opted out)")
         recon_data = {
-            "domain": domain,
+            "domain": roots[0] if roots else "",
+            "domains": roots,
             "subdomains": [],
             "http_probe": {
                 "by_url": {},
@@ -236,7 +250,7 @@ def run_katana(config: dict) -> None:
                             # Generic: create UserInput -> PRODUCED -> BaseURL
                             user_input_id = str(uuid.uuid4())
                             graph_client.create_user_input_node(
-                                domain=domain,
+                                domain=roots,
                                 user_input_data={
                                     "id": user_input_id,
                                     "input_type": "urls",
@@ -293,7 +307,7 @@ def run_hakrawler(config: dict) -> None:
         organize_endpoints,
     )
 
-    domain = config["domain"]
+    roots = scope_roots(config)
 
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
@@ -306,7 +320,7 @@ def run_hakrawler(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Resource Enumeration (Hakrawler)")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Parse user targets -- Hakrawler accepts URLs
@@ -340,13 +354,15 @@ def run_hakrawler(config: dict) -> None:
     if include_graph:
         print(f"[*][Partial Recon] Querying graph for targets (BaseURLs)...")
         recon_data = _build_http_probe_data_from_graph(
-            domain, user_id, project_id,
+            roots, user_id, project_id,
             include_root_domain=_should_include_root_domain(settings),
+            domain_groups=config.get("domain_groups"),
         )
     else:
         print(f"[*][Partial Recon] Skipping graph targets (user opted out)")
         recon_data = {
-            "domain": domain,
+            "domain": roots[0] if roots else "",
+            "domains": roots,
             "subdomains": [],
             "http_probe": {
                 "by_url": {},
@@ -493,7 +509,7 @@ def run_hakrawler(config: dict) -> None:
                             # Generic: create UserInput -> PRODUCED -> BaseURL
                             user_input_id = str(uuid.uuid4())
                             graph_client.create_user_input_node(
-                                domain=domain,
+                                domain=roots,
                                 user_input_data={
                                     "id": user_input_id,
                                     "input_type": "urls",
@@ -548,7 +564,7 @@ def run_zap_ajax_spider_partial(config: dict) -> None:
         merge_zap_ajax_into_by_base_url,
     )
 
-    domain = config["domain"]
+    roots = scope_roots(config)
 
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
@@ -561,7 +577,7 @@ def run_zap_ajax_spider_partial(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Resource Enumeration (ZAP Ajax Spider)")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Parse user targets -- ZAP Ajax Spider accepts URLs
@@ -591,13 +607,17 @@ def run_zap_ajax_spider_partial(config: dict) -> None:
     needs_user_input = bool(user_urls and not url_attach_to)
 
     include_root_domain = _should_include_root_domain(settings)
-    requested_domain = domain.strip(".").lower()
+    groups = config.get("domain_groups")
+    if groups is None:
+        included_roots = set(roots) if include_root_domain else set()
+    else:
+        included_roots = {r for r in roots if include_root_for(r, groups)}
 
     def _host_in_requested_domain_scope(host: str) -> bool:
         # Delegates to the shared helper so IP-mode projects are handled
         # consistently with the rest of the pipeline. The synthetic
         # `ip-targets.<project_id>` pseudo-domain is bypassed in IP mode.
-        return _is_host_in_scope(host, settings, requested_domain, include_root_domain)
+        return _is_host_in_scope(host, settings, roots, included_roots)
 
     def _url_in_requested_domain_scope(url: str, entry_host: str = "") -> bool:
         from urllib.parse import urlparse
@@ -613,10 +633,11 @@ def run_zap_ajax_spider_partial(config: dict) -> None:
     if include_graph:
         print(f"[*][Partial Recon] Querying graph for targets (BaseURLs)...")
         recon_data = _build_http_probe_data_from_graph(
-            domain,
+            roots,
             user_id,
             project_id,
             include_root_domain=include_root_domain,
+            domain_groups=groups,
         )
         by_url = recon_data.get("http_probe", {}).get("by_url", {})
         filtered_by_url = {
@@ -631,12 +652,13 @@ def run_zap_ajax_spider_partial(config: dict) -> None:
     else:
         print(f"[*][Partial Recon] Skipping graph targets (user opted out)")
         recon_data = {
-            "domain": domain,
+            "domain": roots[0] if roots else "",
+            "domains": roots,
             "subdomains": [],
             "http_probe": {
                 "by_url": {},
             },
-            "metadata": {"include_root_domain": include_root_domain},
+            "metadata": {"include_root_domain": bool(roots) and roots[0] in included_roots},
         }
 
     # Inject user-provided URLs into the target list
@@ -832,7 +854,7 @@ def run_zap_ajax_spider_partial(config: dict) -> None:
                             # Generic: create UserInput -> PRODUCED -> BaseURL
                             user_input_id = str(uuid.uuid4())
                             graph_client.create_user_input_node(
-                                domain=domain,
+                                domain=roots,
                                 user_input_data={
                                     "id": user_input_id,
                                     "input_type": "urls",
@@ -889,7 +911,7 @@ def run_ffuf(config: dict) -> None:
         merge_ffuf_into_by_base_url,
     )
 
-    domain = config["domain"]
+    roots = scope_roots(config)
 
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
@@ -902,7 +924,7 @@ def run_ffuf(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Directory Fuzzing (FFuf)")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Parse user targets -- FFuf accepts URLs
@@ -936,13 +958,15 @@ def run_ffuf(config: dict) -> None:
     if include_graph:
         print(f"[*][Partial Recon] Querying graph for targets (BaseURLs)...")
         recon_data = _build_http_probe_data_from_graph(
-            domain, user_id, project_id,
+            roots, user_id, project_id,
             include_root_domain=_should_include_root_domain(settings),
+            domain_groups=config.get("domain_groups"),
         )
     else:
         print(f"[*][Partial Recon] Skipping graph targets (user opted out)")
         recon_data = {
-            "domain": domain,
+            "domain": roots[0] if roots else "",
+            "domains": roots,
             "subdomains": [],
             "http_probe": {
                 "by_url": {},
@@ -1162,7 +1186,7 @@ def run_ffuf(config: dict) -> None:
                         elif needs_user_input:
                             user_input_id = str(uuid.uuid4())
                             graph_client.create_user_input_node(
-                                domain=domain,
+                                domain=roots,
                                 user_input_data={
                                     "id": user_input_id,
                                     "input_type": "urls",
@@ -1481,7 +1505,7 @@ def run_jsluice(config: dict) -> None:
         verify_jsluice_urls,
     )
 
-    domain = config["domain"]
+    roots = scope_roots(config)
 
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
@@ -1494,7 +1518,7 @@ def run_jsluice(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] jsluice JS Analysis (only)")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Parse user targets -- jsluice accepts URLs (same as Katana/Hakrawler)
@@ -1535,6 +1559,8 @@ def run_jsluice(config: dict) -> None:
             if graph_client.verify_connection():
                 driver = graph_client.driver
                 with driver.session() as session:
+                    keep = graph_url_scope(session, user_id, project_id, roots,
+                                           config.get("domain_groups"), apex_filter=False)
                     # Get all endpoint full URLs (baseurl + path) from the graph
                     result = session.run(
                         """
@@ -1545,7 +1571,7 @@ def run_jsluice(config: dict) -> None:
                     )
                     for record in result:
                         url = record["url"]
-                        if url:
+                        if url and keep(url_host(url)):
                             target_urls.append(url)
 
                     # Also add BaseURLs themselves (some may host JS directly)
@@ -1559,7 +1585,9 @@ def run_jsluice(config: dict) -> None:
                     for record in result:
                         url = record["url"]
                         host = record["host"] or ""
-                        if url and url not in target_urls:
+                        if not url or not keep(url_host(url, host)):
+                            continue
+                        if url not in target_urls:
                             target_urls.append(url)
                         if host:
                             target_domains.add(host)
@@ -1582,9 +1610,8 @@ def run_jsluice(config: dict) -> None:
             if host:
                 target_domains.add(host)
 
-    # Also add domain itself to target_domains for scope filtering
-    if domain:
-        target_domains.add(domain)
+    # Also add the roots themselves to target_domains for scope filtering
+    target_domains.update(roots)
 
     if not target_urls:
         print("[!][Partial Recon] No URLs to analyze (graph has no Endpoints/BaseURLs and no valid user URLs provided).")
@@ -1680,7 +1707,8 @@ def run_jsluice(config: dict) -> None:
 
     # Build recon_data for graph update (needs domain + subdomains for scope)
     recon_data = {
-        "domain": domain,
+        "domain": roots[0] if roots else "",
+        "domains": roots,
         "subdomains": [],
     }
 
@@ -1694,11 +1722,12 @@ def run_jsluice(config: dict) -> None:
                     with driver.session() as session:
                         result = session.run(
                             """
-                            MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                            MATCH (d:Domain {user_id: $uid, project_id: $pid})
                                   -[:HAS_SUBDOMAIN]->(s:Subdomain)
+                            WHERE d.name IN $domains
                             RETURN collect(DISTINCT s.name) AS subdomains
                             """,
-                            domain=domain, uid=user_id, pid=project_id,
+                            domains=roots, uid=user_id, pid=project_id,
                         )
                         record = result.single()
                         if record:
@@ -1771,7 +1800,7 @@ def run_jsluice(config: dict) -> None:
                         elif needs_user_input:
                             user_input_id = str(uuid.uuid4())
                             graph_client.create_user_input_node(
-                                domain=domain,
+                                domain=roots,
                                 user_input_data={
                                     "id": user_input_id,
                                     "input_type": "urls",

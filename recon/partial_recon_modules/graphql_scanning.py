@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from recon.partial_recon_modules.graph_builders import _build_graphql_data_from_graph
-from recon.partial_recon_modules.helpers import partial_settings
+from recon.partial_recon_modules.helpers import partial_settings, scope_roots
 
 
 def run_graphqlscan(config: dict) -> None:
@@ -27,7 +27,7 @@ def run_graphqlscan(config: dict) -> None:
     from recon.graphql_scan import run_graphql_scan
     from graph_db import Neo4jClient
 
-    domain = config["domain"]
+    roots = scope_roots(config)
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
@@ -50,7 +50,7 @@ def run_graphqlscan(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] GraphQL Security Scanning")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     if user_urls:
         print(f"[+][Partial Recon] {len(user_urls)} custom endpoint(s) provided"
               + (f" (attach to: {url_attach_to})" if url_attach_to else " (generic UserInput)"))
@@ -59,11 +59,13 @@ def run_graphqlscan(config: dict) -> None:
     include_graph = config.get("include_graph_targets", True)
     if include_graph:
         print(f"[*][Partial Recon] Querying graph for targets (BaseURLs, Endpoints, JS findings)...")
-        recon_data = _build_graphql_data_from_graph(domain, user_id, project_id, settings=settings)
+        recon_data = _build_graphql_data_from_graph(roots, user_id, project_id, settings=settings,
+                                                    domain_groups=config.get("domain_groups"))
     else:
         print(f"[*][Partial Recon] Skipping graph targets (user opted out)")
         recon_data = {
-            "domain": domain,
+            "domain": roots[0] if roots else "",
+            "domains": roots,
             "http_probe": {"by_url": {}},
             "resource_enum": {"endpoints": {}, "parameters": {}, "discovered_urls": []},
             "js_recon": {"findings": []},
@@ -102,7 +104,7 @@ def run_graphqlscan(config: dict) -> None:
         # the Vulnerability/Endpoint nodes don't dangle in the graph. Mirrors the
         # UserInput attach-pattern used by Katana (see web_crawling.run_katana).
         if user_urls:
-            _link_user_urls(graph_client, user_urls, url_attach_to, domain, user_id, project_id)
+            _link_user_urls(graph_client, user_urls, url_attach_to, roots, user_id, project_id)
 
     summary = recon_data.get('graphql_scan', {}).get('summary', {}) or {}
     print(f"\n[+][Partial Recon][GraphQL] Tested {summary.get('endpoints_tested', 0)} endpoint(s), "
@@ -110,7 +112,7 @@ def run_graphqlscan(config: dict) -> None:
           f"{summary.get('vulnerabilities_found', 0)} vulnerabilities found.")
 
 
-def _link_user_urls(graph_client, user_urls, url_attach_to, domain, user_id, project_id):
+def _link_user_urls(graph_client, user_urls, url_attach_to, roots, user_id, project_id):
     """Attach user-provided URLs to either an existing BaseURL (via HAS_USER_INPUT-less
     direct link) or a fresh UserInput node.
     """
@@ -127,7 +129,7 @@ def _link_user_urls(graph_client, user_urls, url_attach_to, domain, user_id, pro
     user_input_id = f"userinput-graphql-{uuid.uuid4().hex[:12]}"
     try:
         graph_client.create_user_input_node(
-            domain=domain,
+            domain=roots,
             user_input_data={
                 "id": user_input_id,
                 "input_type": "url",

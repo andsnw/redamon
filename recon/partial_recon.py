@@ -120,6 +120,9 @@ ALLOWED_SETTINGS_OVERRIDES = frozenset({
 _MULTI_ROOT_TOOLS = frozenset({
     "Tlsx",
     "Nmap", "Httpx", "Naabu", "Masscan", "Shodan", "OsintEnrichment",
+    "Katana", "Hakrawler", "ZapAjaxSpider", "Ffuf", "Jsluice", "Kiterunner", "Arjun",
+    "JsRecon", "SupplyChainRecon", "EndpointAiClassifier", "GraphqlScan",
+    "WebCachePoison", "AiSurfaceRecon",
 })
 
 

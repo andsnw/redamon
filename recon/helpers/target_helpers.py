@@ -400,7 +400,7 @@ def merge_discovered_hostnames(
     combined_result: dict,
     hostnames: list,
     source: str,
-    root_domain: Optional[str] = None,
+    root_domain=None,
     settings: Optional[dict] = None,
     max_injected: Optional[int] = None,
 ) -> dict:
@@ -412,7 +412,8 @@ def merge_discovered_hostnames(
     name here is attacker-influenced. Containment, in order:
 
       1. Apex-suffix allow-list: keep a name only if it equals ``root_domain`` or
-         ends with ``"." + root_domain``. Every other name is recorded in
+         ends with ``"." + root_domain`` (``root_domain`` may be a list of roots,
+         matched one by one). Every other name is recorded in
          ``discovered_external_domains`` and never becomes an active-scan target.
       2. RoE narrowing (``_filter_roe_excluded``) — additive, never sufficient
          on its own (it is off by default).
@@ -447,18 +448,19 @@ def merge_discovered_hostnames(
             external.append({"domain": name, "source": source})
             existing_external.add(name)
 
+    roots = [root_domain] if isinstance(root_domain, str) else list(root_domain or [])
+    roots = [r.strip().lower() for r in roots if isinstance(r, str) and r.strip()]
+
     # Fail closed without an apex to test against.
-    if not root_domain:
+    if not roots:
         for name in candidates:
             _record_external(name)
         return result
 
-    root_domain = root_domain.strip().lower()
-
     # 1. Apex-suffix split.
     in_scope = []
     for name in candidates:
-        if name == root_domain or name.endswith("." + root_domain):
+        if any(name == root or name.endswith("." + root) for root in roots):
             in_scope.append(name)
         else:
             _record_external(name)

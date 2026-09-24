@@ -302,7 +302,8 @@ def _scope_partial_urls(
     user_urls: list,
     graph_subdomains: list,
     settings: dict,
-    domain: str,
+    domain,
+    domain_groups: list = None,
 ) -> tuple:
     """Scope a partial run's URL inputs; returns ``(urls, scope_hosts)``.
 
@@ -312,11 +313,31 @@ def _scope_partial_urls(
     ``scope_hosts`` belongs in ``recon_data["subdomains"]``, the set the graph
     mixins store nodes under (graph_db/mixins/recon/scope.py); left empty there,
     the scope collapses to the apex and every subdomain's results are dropped.
+
+    ``domain`` is the run's roots (or one root). With ``domain_groups`` each
+    root's apex follows its group and a literal batch group keeps only its
+    listed hosts; without, the project-wide Include Root Domain flag applies.
     """
     from urllib.parse import urlparse
 
-    include_root_domain = _should_include_root_domain(settings)
-    requested_domain = (domain or "").strip(".").lower()
+    roots = [domain] if isinstance(domain, str) else list(domain or [])
+    roots = [r for r in roots if r]
+    if domain_groups is None:
+        included = set(roots) if _should_include_root_domain(settings) else set()
+        allowed = {}
+    else:
+        included = {r for r in roots if include_root_for(r, domain_groups)}
+        allowed = {}
+        for root in roots:
+            hosts = allowed_hosts_for(root, domain_groups)
+            if hosts is not None:
+                allowed[root] = hosts
+
+    def _in_scope(host: str) -> bool:
+        if not _is_host_in_scope(host, settings, roots, included):
+            return False
+        hosts = allowed.get(root_for_host(host, roots))
+        return hosts is None or _norm_host(host) in hosts
 
     def _host(url: str) -> str:
         try:
@@ -327,7 +348,7 @@ def _scope_partial_urls(
     urls, hosts, dropped = [], set(), 0
     for url in graph_urls:
         host = _host(url)
-        if not _is_host_in_scope(host, settings, requested_domain, include_root_domain):
+        if not _in_scope(host):
             dropped += 1
             continue
         hosts.add(host)
@@ -340,7 +361,7 @@ def _scope_partial_urls(
         if url not in urls:
             urls.append(url)
     for sub in graph_subdomains:
-        if isinstance(sub, str) and _is_host_in_scope(sub, settings, requested_domain, include_root_domain):
+        if isinstance(sub, str) and _in_scope(sub):
             hosts.add(sub.strip(".").lower())
 
     if dropped:

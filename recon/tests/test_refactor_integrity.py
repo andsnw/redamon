@@ -297,7 +297,7 @@ class TestFunctionSignatures(unittest.TestCase):
         expected = {
             _build_recon_data_from_graph: multi_root,
             _build_port_scan_data_from_graph: multi_root,
-            _build_http_probe_data_from_graph: single_root,
+            _build_http_probe_data_from_graph: multi_root,
             _build_vuln_scan_data_from_graph: single_root,
         }
         for fn, params_expected in expected.items():

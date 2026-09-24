@@ -59,13 +59,32 @@ const SUBDOMAIN_LIST = `${DOMAINS}
   RETURN subdomains, size(subdomains) AS subCount`
 
 // BaseURLs and Endpoints are project-wide: a BaseURL is not tied to a Domain
-// node, and the BaseURL-driven tools read them the same way.
-const BASEURLS = `OPTIONAL MATCH (b:BaseURL {user_id: $uid, project_id: $pid})
+// node. The tools that read them skip a host under a Domain the run does not
+// cover (a root dropped from the batch keeps its node until the next full
+// recon, or one left unticked), so the counts skip it too.
+const hostOfUrl = (url: string) => `split(split(split(${url}, '://')[1], '/')[0], ':')[0]`
+const BASEURL_HOST = `toLower(coalesce(b.host, ${hostOfUrl('b.url')}))`
+
+function notUnderOtherDomain(host: string): string {
+  return `NOT EXISTS {
+    MATCH (od:Domain {user_id: $uid, project_id: $pid})
+    WHERE NOT od.name IN $domains
+      AND (${host} = toLower(od.name) OR ${host} ENDS WITH '.' + toLower(od.name))
+  }`
+}
+
+const SCOPED_BASEURLS = `OPTIONAL MATCH (b:BaseURL {user_id: $uid, project_id: $pid})
+  WHERE ${notUnderOtherDomain(BASEURL_HOST)}`
+
+const SCOPED_ENDPOINTS = `OPTIONAL MATCH (e:Endpoint {user_id: $uid, project_id: $pid})
+  WHERE ${notUnderOtherDomain(`toLower(${hostOfUrl('e.baseurl')})`)}`
+
+const BASEURLS = `${SCOPED_BASEURLS}
   RETURN collect(DISTINCT b.url) AS baseurls`
 
-const BASEURLS_AND_ENDPOINTS = `OPTIONAL MATCH (b:BaseURL {user_id: $uid, project_id: $pid})
+const BASEURLS_AND_ENDPOINTS = `${SCOPED_BASEURLS}
   WITH collect(DISTINCT b.url) AS baseurls
-  OPTIONAL MATCH (e:Endpoint {user_id: $uid, project_id: $pid})
+  ${SCOPED_ENDPOINTS}
   RETURN baseurls, count(DISTINCT e) AS endpointCount`
 
 const baseurlFields = (r: Neo4jRecord | undefined) => {
@@ -133,9 +152,10 @@ const TOOL_QUERIES: Record<string, ToolQuery> = {
   Gau: { cypher: SUBDOMAIN_LIST, respond: subdomainFields },
   ParamSpider: { cypher: SUBDOMAIN_LIST, respond: subdomainFields },
   ZapAjaxSpider: {
-    cypher: `OPTIONAL MATCH (b:BaseURL {user_id: $uid, project_id: $pid})
+    cypher: `${SCOPED_BASEURLS}
       WITH collect(DISTINCT b.url) AS baseurls
-      OPTIONAL MATCH (b2:BaseURL {user_id: $uid, project_id: $pid})-[:HAS_ENDPOINT]->(e:Endpoint)
+      OPTIONAL MATCH (b:BaseURL {user_id: $uid, project_id: $pid})-[:HAS_ENDPOINT]->(e:Endpoint)
+      WHERE ${notUnderOtherDomain(BASEURL_HOST)}
       RETURN baseurls, count(DISTINCT e) AS endpointCount`,
     respond: r => ({
       ...baseurlFields(r),
@@ -144,7 +164,7 @@ const TOOL_QUERIES: Record<string, ToolQuery> = {
     }),
   },
   Arjun: {
-    cypher: `OPTIONAL MATCH (b:BaseURL {user_id: $uid, project_id: $pid})
+    cypher: `${SCOPED_BASEURLS}
       OPTIONAL MATCH (b)-[:HAS_ENDPOINT]->(e:Endpoint {user_id: $uid, project_id: $pid})
       WITH collect(DISTINCT b.url) AS baseurls, count(DISTINCT e) AS endpointCount
       RETURN baseurls, endpointCount`,
@@ -219,9 +239,9 @@ const TOOL_QUERIES: Record<string, ToolQuery> = {
     }),
   },
   GraphqlScan: {
-    cypher: `OPTIONAL MATCH (b:BaseURL {user_id: $uid, project_id: $pid})
+    cypher: `${SCOPED_BASEURLS}
       WITH collect(DISTINCT b.url) AS baseurls
-      OPTIONAL MATCH (e:Endpoint {user_id: $uid, project_id: $pid})
+      ${SCOPED_ENDPOINTS}
       RETURN baseurls, count(DISTINCT e) AS endpointCount,
              count(DISTINCT CASE WHEN e.is_graphql = true THEN e END) AS graphqlEndpointCount`,
     respond: r => ({
@@ -262,9 +282,9 @@ const TOOL_QUERIES: Record<string, ToolQuery> = {
     respond: r => ({ ...subdomainFields(r), existing_baseurls_count: num(r, 'baseurlCount') }),
   },
   AiSurfaceRecon: {
-    cypher: `OPTIONAL MATCH (b:BaseURL {user_id: $uid, project_id: $pid})
+    cypher: `${SCOPED_BASEURLS}
       WITH collect(DISTINCT b.url) AS baseurls
-      OPTIONAL MATCH (e:Endpoint {user_id: $uid, project_id: $pid})
+      ${SCOPED_ENDPOINTS}
       WITH baseurls,
            count(DISTINCT CASE WHEN (e.ai_interface_type IS NOT NULL AND e.ai_interface_type <> 'non-llm') OR e.is_ai_framework_detected = true THEN e END) AS aiEndpoints,
            count(DISTINCT CASE WHEN e.ai_interface_type = 'mcp' THEN e END) AS mcpEndpoints
