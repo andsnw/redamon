@@ -119,6 +119,7 @@ ALLOWED_SETTINGS_OVERRIDES = frozenset({
 # MULTI_ROOT_PARTIAL_TOOLS in webapp/src/lib/recon-types.ts.
 _MULTI_ROOT_TOOLS = frozenset({
     "Tlsx",
+    "Nmap", "Httpx", "Naabu", "Masscan", "Shodan", "OsintEnrichment",
 })
 
 

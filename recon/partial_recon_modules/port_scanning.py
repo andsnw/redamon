@@ -13,7 +13,10 @@ from recon.partial_recon_modules.helpers import (
     _is_valid_hostname,
     _resolve_hostname,
     _should_include_root_domain,
+    host_in_roots,
     partial_settings,
+    root_for_host,
+    scope_roots,
 )
 from recon.partial_recon_modules.graph_builders import (
     _build_recon_data_from_graph,
@@ -36,7 +39,7 @@ def _run_port_scanner(config: dict, tool_id: str, scan_fn, label: str,
     """
     import ipaddress as _ipaddress
 
-    domain = config["domain"]
+    roots = scope_roots(config)
     user_inputs = config.get("user_inputs", [])
 
     user_id = os.environ.get("USER_ID", "")
@@ -50,7 +53,7 @@ def _run_port_scanner(config: dict, tool_id: str, scan_fn, label: str,
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Port Scanning ({label})")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Parse user targets (structured format from new modal, or legacy flat list)
@@ -64,8 +67,10 @@ def _run_port_scanner(config: dict, tool_id: str, scan_fn, label: str,
         # New structured format: {subdomains: [...], ips: [...], ip_attach_to: "..." | null}
         for entry in user_targets.get("subdomains", []):
             entry = entry.strip().lower()
-            if entry and _is_valid_hostname(entry):
+            if entry and _is_valid_hostname(entry) and host_in_roots(entry, roots):
                 user_hostnames.append(entry)
+            elif entry and _is_valid_hostname(entry):
+                print(f"[!][Partial Recon] Skipping subdomain outside the project's domains: {entry}")
             elif entry:
                 print(f"[!][Partial Recon] Skipping invalid subdomain: {entry}")
 
@@ -86,10 +91,10 @@ def _run_port_scanner(config: dict, tool_id: str, scan_fn, label: str,
                 continue
             if _is_ip_or_cidr(entry):
                 user_ips.append(entry)
-            elif _is_valid_hostname(entry):
+            elif _is_valid_hostname(entry) and host_in_roots(entry, roots):
                 user_hostnames.append(entry)
             else:
-                print(f"[!][Partial Recon] Skipping invalid target: {entry}")
+                print(f"[!][Partial Recon] Skipping invalid or out-of-scope target: {entry}")
 
     if user_ips:
         print(f"[+][Partial Recon] Validated {len(user_ips)} custom IPs/CIDRs")
@@ -108,13 +113,15 @@ def _run_port_scanner(config: dict, tool_id: str, scan_fn, label: str,
     if include_graph:
         print(f"[*][Partial Recon] Querying graph for targets (IPs and subdomains)...")
         recon_data = _build_recon_data_from_graph(
-            domain, user_id, project_id,
+            roots, user_id, project_id,
             include_root_domain=_should_include_root_domain(settings),
+            domain_groups=config.get("domain_groups"),
         )
     else:
         print(f"[*][Partial Recon] Skipping graph targets (user opted out)")
         recon_data = {
-            "domain": domain,
+            "domain": roots[0] if roots else "",
+            "domains": roots,
             "dns": {
                 "domain": {"ips": {"ipv4": [], "ipv6": []}, "has_records": False},
                 "subdomains": {},
@@ -162,7 +169,8 @@ def _run_port_scanner(config: dict, tool_id: str, scan_fn, label: str,
                                     """,
                                     name=hostname, uid=user_id, pid=project_id,
                                 )
-                                # MERGE Domain <-> Subdomain relationships
+                                # MERGE Domain <-> Subdomain relationships, on the
+                                # hostname's own root.
                                 session.run(
                                     """
                                     MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
@@ -170,7 +178,8 @@ def _run_port_scanner(config: dict, tool_id: str, scan_fn, label: str,
                                     MERGE (s)-[:BELONGS_TO]->(d)
                                     MERGE (d)-[:HAS_SUBDOMAIN]->(s)
                                     """,
-                                    domain=domain, sub=hostname, uid=user_id, pid=project_id,
+                                    domain=root_for_host(hostname, roots), sub=hostname,
+                                    uid=user_id, pid=project_id,
                                 )
                                 # MERGE IP nodes + RESOLVES_TO relationships
                                 for ip_version in ("ipv4", "ipv6"):
@@ -321,7 +330,7 @@ def _run_port_scanner(config: dict, tool_id: str, scan_fn, label: str,
                             # Generic IPs: create UserInput node NOW (after scan succeeded) and link
                             user_input_id = str(uuid.uuid4())
                             graph_client.create_user_input_node(
-                                domain=domain,
+                                domain=roots,
                                 user_input_data={
                                     "id": user_input_id,
                                     "input_type": "ips",
@@ -399,7 +408,7 @@ def run_nmap(config: dict) -> None:
     from recon.main_recon_modules.nmap_scan import run_nmap_scan
     from recon.main import merge_nmap_into_port_scan
 
-    domain = config["domain"]
+    roots = scope_roots(config)
     user_inputs = config.get("user_inputs", [])
 
     user_id = os.environ.get("USER_ID", "")
@@ -413,7 +422,7 @@ def run_nmap(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Nmap Service Detection + NSE Vuln Scripts")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Parse user targets -- Nmap accepts IPs and Ports
@@ -471,13 +480,15 @@ def run_nmap(config: dict) -> None:
     if include_graph:
         print(f"[*][Partial Recon] Querying graph for targets (IPs, ports, subdomains)...")
         recon_data = _build_port_scan_data_from_graph(
-            domain, user_id, project_id,
+            roots, user_id, project_id,
             include_root_domain=_should_include_root_domain(settings),
+            domain_groups=config.get("domain_groups"),
         )
     else:
         print(f"[*][Partial Recon] Skipping graph targets (user opted out)")
         recon_data = {
-            "domain": domain,
+            "domain": roots[0] if roots else "",
+            "domains": roots,
             "port_scan": {
                 "by_ip": {}, "by_host": {}, "ip_to_hostnames": {},
                 "all_ports": [], "scan_metadata": {"scanners": ["naabu"]}, "summary": {},
@@ -658,7 +669,7 @@ def run_nmap(config: dict) -> None:
                             # Generic IPs: create UserInput NOW (after scan succeeded) and link
                             user_input_id = str(uuid.uuid4())
                             graph_client.create_user_input_node(
-                                domain=domain,
+                                domain=roots,
                                 user_input_data={
                                     "id": user_input_id,
                                     "input_type": "ips",

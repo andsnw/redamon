@@ -40,31 +40,48 @@ def _host_allowed(root: str, host: str, allowed: dict) -> bool:
     return hosts is None or (host or "").strip().lower() in hosts
 
 
-def _build_recon_data_from_graph(domain: str, user_id: str, project_id: str,
-                                 include_root_domain: bool = False) -> dict:
+def _build_recon_data_from_graph(domains, user_id: str, project_id: str,
+                                 include_root_domain: bool = False,
+                                 domain_groups: list = None) -> dict:
     """
     Query Neo4j to build the recon_data dict that run_port_scan expects.
 
     Returns a dict with 'domain' and 'dns' keys matching the structure
     produced by domain_recon.py (domain IPs + subdomain IPs).
 
-    Honors the project's "Include Root Domain" toggle: when False (default),
-    the apex Domain -> IP query is skipped (no apex IPs accumulate in
-    dns.domain), and metadata.include_root_domain=False is stamped on
-    recon_data so extract_targets_from_recon won't add the apex hostname
-    to scan targets. Mirrors the full-pipeline scope rule (recon/main.py
-    parse_target).
+    `domains` is the run's roots (or one root from a caller not yet migrated),
+    scoped per root as in _build_port_scan_data_from_graph: an apex is loaded
+    only when its group includes it, and a literal batch group only its listed
+    hosts. The first root's apex fills dns.domain and another root's apex is a
+    host under dns.subdomains. metadata.include_root_domain describes the first
+    root, so extract_targets_from_recon adds that apex only when in scope.
     """
     from graph_db import Neo4jClient
 
+    roots = _as_roots(domains)
+    apex_roots, allowed = _root_scope(roots, domain_groups, include_root_domain)
+    primary = roots[0] if roots else ""
+
     recon_data = {
-        "domain": domain,
+        "domain": primary,
+        "domains": roots,
         "dns": {
             "domain": {"ips": {"ipv4": [], "ipv6": []}, "has_records": False},
             "subdomains": {},
         },
-        "metadata": {"include_root_domain": include_root_domain},
+        "metadata": {"include_root_domain": primary in apex_roots},
     }
+    if not roots:
+        return recon_data
+
+    def _add_ip(ips: dict, addr: str, version) -> None:
+        bucket = _classify_ip(addr, version)
+        if addr not in ips[bucket]:
+            ips[bucket].append(addr)
+
+    def _dns_entry(host: str) -> dict:
+        return recon_data["dns"]["subdomains"].setdefault(
+            host, {"ips": {"ipv4": [], "ipv6": []}, "has_records": True})
 
     with Neo4jClient() as graph_client:
         if not graph_client.verify_connection():
@@ -73,46 +90,36 @@ def _build_recon_data_from_graph(domain: str, user_id: str, project_id: str,
 
         driver = graph_client.driver
         with driver.session() as session:
-            if include_root_domain:
-                # Query domain -> IP relationships (only when scope includes apex)
+            if apex_roots:
                 result = session.run(
                     """
-                    MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
-                          -[:RESOLVES_TO]->(i:IP)
-                    RETURN i.address AS address, i.version AS version
+                    MATCH (d:Domain {user_id: $uid, project_id: $pid})-[:RESOLVES_TO]->(i:IP)
+                    WHERE d.name IN $apex_roots
+                    RETURN d.name AS root, i.address AS address, i.version AS version
                     """,
-                    domain=domain, uid=user_id, pid=project_id,
+                    apex_roots=apex_roots, uid=user_id, pid=project_id,
                 )
                 for record in result:
-                    addr = record["address"]
-                    bucket = _classify_ip(addr, record["version"])
-                    recon_data["dns"]["domain"]["ips"][bucket].append(addr)
+                    if record["root"] == primary:
+                        _add_ip(recon_data["dns"]["domain"]["ips"], record["address"], record["version"])
+                        recon_data["dns"]["domain"]["has_records"] = True
+                    else:
+                        _add_ip(_dns_entry(record["root"])["ips"], record["address"], record["version"])
 
-                if (recon_data["dns"]["domain"]["ips"]["ipv4"]
-                        or recon_data["dns"]["domain"]["ips"]["ipv6"]):
-                    recon_data["dns"]["domain"]["has_records"] = True
-
-            # Query subdomain -> IP relationships
             result = session.run(
                 """
-                MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                MATCH (d:Domain {user_id: $uid, project_id: $pid})
                       -[:HAS_SUBDOMAIN]->(s:Subdomain)
                       -[:RESOLVES_TO]->(i:IP)
-                RETURN s.name AS subdomain, i.address AS address, i.version AS version
+                WHERE d.name IN $domains
+                RETURN d.name AS root, s.name AS subdomain, i.address AS address, i.version AS version
                 """,
-                domain=domain, uid=user_id, pid=project_id,
+                domains=roots, uid=user_id, pid=project_id,
             )
             for record in result:
-                sub = record["subdomain"]
-                addr = record["address"]
-                bucket = _classify_ip(addr, record["version"])
-
-                if sub not in recon_data["dns"]["subdomains"]:
-                    recon_data["dns"]["subdomains"][sub] = {
-                        "ips": {"ipv4": [], "ipv6": []},
-                        "has_records": True,
-                    }
-                recon_data["dns"]["subdomains"][sub]["ips"][bucket].append(addr)
+                if not _host_allowed(record["root"], record["subdomain"], allowed):
+                    continue
+                _add_ip(_dns_entry(record["subdomain"])["ips"], record["address"], record["version"])
 
     return recon_data
 

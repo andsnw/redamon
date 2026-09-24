@@ -545,14 +545,14 @@ class TestBuildReconDataFromGraph(unittest.TestCase):
                 records = []
                 for d in _domain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query:
                 records = []
                 for d in _subdomain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:
@@ -685,14 +685,14 @@ class TestRunNaabuCidrExpansion(unittest.TestCase):
                 records = []
                 for d in _domain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query:
                 records = []
                 for d in _subdomain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:
@@ -889,14 +889,14 @@ class TestRunNaabuHostnameInputs(unittest.TestCase):
                 records = []
                 for d in _domain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query:
                 records = []
                 for d in _subdomain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:
@@ -1068,14 +1068,14 @@ class TestRunNaabuStructuredTargets(unittest.TestCase):
                 records = []
                 for d in _domain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query:
                 records = []
                 for d in _subdomain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:

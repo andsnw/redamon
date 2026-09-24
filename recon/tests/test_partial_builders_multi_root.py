@@ -165,3 +165,40 @@ class TestPortScanBuilder:
     def test_no_roots_queries_nothing(self, graph):
         data = gb._build_port_scan_data_from_graph([], "u1", "p1", domain_groups=GROUPS)
         assert data["port_scan"]["by_ip"] == {} and graph == []
+
+
+class TestReconDataBuilder:
+    """_build_recon_data_from_graph: Naabu, Masscan, Shodan, OsintEnrichment."""
+
+    def build(self, roots=ROOTS, **kw):
+        return gb._build_recon_data_from_graph(roots, "u1", "p1", domain_groups=GROUPS, **kw)
+
+    def test_every_root_is_loaded(self, graph):
+        subs = self.build()["dns"]["subdomains"]
+        assert "api.beta.test" in subs and "mail.gamma.test" in subs
+        assert "www.old.test" not in subs
+
+    def test_the_apex_follows_each_group(self, graph):
+        data = self.build()
+        assert data["dns"]["domain"]["ips"]["ipv4"] == ["10.0.0.1"]
+        assert data["dns"]["domain"]["has_records"] is True
+        assert data["dns"]["subdomains"]["gamma.test"]["ips"]["ipv4"] == ["10.0.0.3"]
+        assert "beta.test" not in data["dns"]["subdomains"]
+
+    def test_a_literal_group_excludes_an_unlisted_host(self, graph):
+        subs = self.build()["dns"]["subdomains"]
+        assert "www.alpha.test" in subs and "san-only.alpha.test" not in subs
+        assert "san-only.beta.test" in subs
+
+    def test_a_single_root_per_root_call(self, graph):
+        # Shodan and OsintEnrichment build one root at a time.
+        data = self.build(roots=["beta.test"])
+        assert data["domain"] == "beta.test" and data["domains"] == ["beta.test"]
+        assert set(data["dns"]["subdomains"]) == {"api.beta.test", "san-only.beta.test"}
+        assert data["dns"]["domain"]["ips"]["ipv4"] == []   # beta's apex is out of scope
+
+    def test_the_legacy_call_is_unchanged(self, graph):
+        data = gb._build_recon_data_from_graph("alpha.test", "u1", "p1", include_root_domain=True)
+        assert data["dns"]["domain"]["ips"]["ipv4"] == ["10.0.0.1"]
+        assert set(data["dns"]["subdomains"]) == {"www.alpha.test", "san-only.alpha.test"}
+        assert data["metadata"]["include_root_domain"] is True

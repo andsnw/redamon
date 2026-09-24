@@ -1,0 +1,155 @@
+"""OSINT writers: a host found while scanning one root may belong to another.
+
+Every OSINT writer decided "in scope" as "equals or ends with recon_data['domain']"
+and attached in-scope hosts to that one Domain. A partial run over a Domain
+batch (and a full batch run, one group at a time) carries every project root in
+recon_data['domains'], so:
+
+  - a host under another project root becomes that root's Subdomain, never an
+    ExternalDomain;
+  - a host under no root keeps today's out-of-scope branch, linked to the root
+    that was being scanned;
+  - IP mode is unchanged: its synthetic root is no parent of a real name.
+
+Fixture roots are alpha.test / beta.test / gamma.test only.
+
+Run with:
+    python3 -m pytest tests/test_osint_writers_multi_root.py -v
+"""
+import os
+import sys
+import unittest
+from unittest.mock import MagicMock
+
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO)
+
+from graph_db.mixins.osint_mixin import OsintMixin  # noqa: E402
+
+ROOTS = ["alpha.test", "beta.test", "gamma.test"]
+
+
+class _Session:
+    def __init__(self):
+        self.calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def run(self, query, **params):
+        self.calls.append((query, params))
+        result = MagicMock()
+        result.single.return_value = None
+        result.__iter__ = lambda s: iter([])
+        return result
+
+
+class _Writer(OsintMixin):
+    def __init__(self):
+        self.session = _Session()
+        self.driver = MagicMock()
+        self.driver.session.return_value = self.session
+
+    def attached(self):
+        """{subdomain: root} from every Subdomain -> Domain link issued."""
+        return {p["name"]: p["domain"] for q, p in self.session.calls
+                if "HAS_SUBDOMAIN" in q and "name" in p}
+
+    def subdomains_merged(self):
+        return sorted({p["name"] for q, p in self.session.calls
+                       if "MERGE (s:Subdomain" in q and "name" in p})
+
+    def externals(self):
+        return {p["ed_domain"]: p.get("domain") for q, p in self.session.calls
+                if "ExternalDomain" in q and "ed_domain" in p}
+
+
+def _recon(key, payload, domain="alpha.test", roots=ROOTS):
+    return {"domain": domain, "domains": list(roots), key: payload}
+
+
+class TestShodan(unittest.TestCase):
+    PAYLOAD = {
+        "hosts": [],
+        "reverse_dns": {"10.0.2.9": ["mail.beta.test", "cdn.thirdparty.example", "www.alpha.test"]},
+        "domain_dns": {"subdomains": ["dev"]},
+    }
+
+    def test_a_host_under_another_root_joins_that_root(self):
+        w = _Writer()
+        w.update_graph_from_shodan(_recon("shodan", self.PAYLOAD), "u1", "p1")
+        attached = w.attached()
+        self.assertEqual(attached["mail.beta.test"], "beta.test")
+        self.assertEqual(attached["www.alpha.test"], "alpha.test")
+        self.assertNotIn("mail.beta.test", w.externals())
+
+    def test_a_host_under_no_root_stays_external_of_the_scanned_root(self):
+        w = _Writer()
+        w.update_graph_from_shodan(_recon("shodan", self.PAYLOAD), "u1", "p1")
+        self.assertEqual(w.externals(), {"cdn.thirdparty.example": "alpha.test"})
+
+    def test_domain_dns_names_are_built_on_the_scanned_root(self):
+        w = _Writer()
+        w.update_graph_from_shodan(_recon("shodan", self.PAYLOAD, domain="gamma.test"), "u1", "p1")
+        self.assertEqual(w.attached()["dev.gamma.test"], "gamma.test")
+
+    def test_ip_mode_is_unchanged(self):
+        w = _Writer()
+        payload = {"hosts": [], "reverse_dns": {"192.0.2.10": ["host.example.net"]}}
+        w.update_graph_from_shodan(
+            _recon("shodan", payload, domain="ip-targets.p1", roots=["ip-targets.p1"]), "u1", "p1")
+        self.assertEqual(w.attached(), {})
+        self.assertEqual(w.externals(), {"host.example.net": "ip-targets.p1"})
+
+    def test_a_single_root_write_keeps_the_old_scope(self):
+        w = _Writer()
+        recon = {"domain": "alpha.test", "shodan": self.PAYLOAD}   # no `domains`: legacy
+        w.update_graph_from_shodan(recon, "u1", "p1")
+        self.assertIn("mail.beta.test", w.externals())
+        self.assertEqual(w.attached().get("www.alpha.test"), "alpha.test")
+
+
+class TestCensys(unittest.TestCase):
+    def test_rdns_names_join_their_own_root(self):
+        w = _Writer()
+        payload = {"hosts": [{"ip": "10.0.2.9",
+                              "reverse_dns_names": ["a.beta.test", "z.other.example", "b.gamma.test"]}]}
+        w.update_graph_from_censys(_recon("censys", payload), "u1", "p1")
+        self.assertEqual(w.attached(), {"a.beta.test": "beta.test", "b.gamma.test": "gamma.test"})
+
+
+class TestFofa(unittest.TestCase):
+    def test_a_host_with_a_port_joins_its_root(self):
+        w = _Writer()
+        # A FOFA row always has a port; the writer skips a row without one.
+        payload = {"results": [{"ip": "10.0.2.9", "port": 8443, "host": "shop.beta.test:8443"},
+                               {"ip": "10.0.2.8", "port": 443, "host": "elsewhere.example"}]}
+        w.update_graph_from_fofa(_recon("fofa", payload), "u1", "p1")
+        self.assertEqual(w.attached(), {"shop.beta.test": "beta.test"})
+
+
+class TestOtx(unittest.TestCase):
+    def test_passive_dns_splits_in_scope_and_external(self):
+        w = _Writer()
+        payload = {"ip_reports": [{"ip": "10.0.2.9", "passive_dns": [
+            {"hostname": "api.gamma.test", "record_type": "A"},
+            {"hostname": "tracker.example.org", "record_type": "A"},
+        ]}]}
+        w.update_graph_from_otx(_recon("otx", payload), "u1", "p1")
+        self.assertEqual(w.attached(), {"api.gamma.test": "gamma.test"})
+        self.assertEqual(w.externals(), {"tracker.example.org": "alpha.test"})
+
+
+class TestZoomeye(unittest.TestCase):
+    def test_only_names_under_a_root_become_subdomains(self):
+        w = _Writer()
+        payload = {"results": [{"ip": "10.0.2.9", "hostname": "vpn.beta.test", "rdns": "x.example.net"}]}
+        w.update_graph_from_zoomeye(_recon("zoomeye", payload), "u1", "p1")
+        self.assertEqual(w.subdomains_merged(), ["vpn.beta.test"])
+
+
+if __name__ == "__main__":
+    unittest.main()

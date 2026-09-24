@@ -234,6 +234,7 @@ export interface PartialReconParams {
  */
 export const MULTI_ROOT_PARTIAL_TOOLS: ReadonlySet<string> = new Set<string>([
   'Tlsx',
+  'Nmap', 'Httpx', 'Naabu', 'Masscan', 'Shodan', 'OsintEnrichment',
 ])
 
 /** The only settings a partial run may override (the Nuclei checkboxes). The
