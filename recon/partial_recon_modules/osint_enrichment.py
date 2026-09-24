@@ -10,6 +10,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from recon.partial_recon_modules.helpers import (
     STATUS_NO_RESULTS,
     STATUS_OK,
+    STATUS_RATE_LIMITED,
     _classify_ip,
     _is_ip_or_cidr,
     _should_include_root_domain,
@@ -244,16 +245,18 @@ def run_shodan(config: dict) -> dict:
     return run_per_root(roots, _one_root, "Shodan")
 
 
-def run_urlscan(config: dict) -> None:
+def run_urlscan(config: dict) -> dict:
     """
-    Run partial URLScan.io passive enrichment.
+    Run partial URLScan.io passive enrichment, once per root.
 
-    Phase A (discovery): discovers subdomains, IPs, external domains, domain age.
+    URLScan queries one domain per call, so a Domain batch is one pass per root.
+    Phase A (discovery): subdomains, IPs, external domains, domain age.
     Phase B (enrichment): enriches existing BaseURLs with screenshots/endpoints/parameters.
+    A 429 is a rate-limited root (retried once); an empty answer is no_results.
     """
     from recon.main_recon_modules.urlscan_enrich import run_urlscan_discovery_only
 
-    domain = config["domain"]
+    roots = scope_roots(config)
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
@@ -262,34 +265,39 @@ def run_urlscan(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] URLScan.io Passive Enrichment")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Force-enable URLScan for partial recon (user explicitly triggered it)
     settings["URLSCAN_ENABLED"] = True
 
-    # Run URLScan discovery (same function as full pipeline Phase A)
-    urlscan_data = run_urlscan_discovery_only(domain, settings)
+    def _one_root(domain: str) -> str:
+        # Run URLScan discovery (same function as full pipeline Phase A)
+        urlscan_data = run_urlscan_discovery_only(domain, settings)
 
-    if not urlscan_data or urlscan_data.get("results_count", 0) == 0:
-        print(f"[-][Partial Recon] URLScan returned no results for {domain}")
-        return
+        if urlscan_data.get("rate_limited"):
+            print(f"[!][Partial Recon] URLScan rate-limited for {domain}")
+            return STATUS_RATE_LIMITED
+        if not urlscan_data or urlscan_data.get("results_count", 0) == 0:
+            print(f"[-][Partial Recon] URLScan returned no results for {domain}")
+            return STATUS_NO_RESULTS
 
-    print(f"[+][Partial Recon] URLScan returned {urlscan_data.get('results_count', 0)} results")
-    print(f"[+][Partial Recon] Subdomains: {len(urlscan_data.get('subdomains_discovered', []))}")
-    print(f"[+][Partial Recon] IPs: {len(urlscan_data.get('ips_discovered', []))}")
-    print(f"[+][Partial Recon] URLs with paths: {len(urlscan_data.get('urls_with_paths', []))}")
-    print(f"[+][Partial Recon] External domains: {len(urlscan_data.get('external_domains', []))}")
+        print(f"[+][Partial Recon] URLScan returned {urlscan_data.get('results_count', 0)} results")
+        print(f"[+][Partial Recon] Subdomains: {len(urlscan_data.get('subdomains_discovered', []))}")
+        print(f"[+][Partial Recon] IPs: {len(urlscan_data.get('ips_discovered', []))}")
+        print(f"[+][Partial Recon] URLs with paths: {len(urlscan_data.get('urls_with_paths', []))}")
+        print(f"[+][Partial Recon] External domains: {len(urlscan_data.get('external_domains', []))}")
 
-    # Build combined_result structure expected by graph update methods
-    combined_result = {
-        "domain": domain,
-        "urlscan": urlscan_data,
-    }
+        # `domains` keeps every root of the run so the writers attach a host
+        # found under another root to that root, not as an external domain.
+        combined_result = {
+            "domain": domain,
+            "domains": list(roots),
+            "urlscan": urlscan_data,
+        }
 
-    # Update the graph database
-    print(f"[*][Partial Recon] Updating graph database...")
-    try:
+        # Update the graph database
+        print(f"[*][Partial Recon] Updating graph database...")
         from graph_db import Neo4jClient
         with Neo4jClient() as graph_client:
             if graph_client.verify_connection():
@@ -310,24 +318,23 @@ def run_urlscan(config: dict) -> None:
                 print(f"[+][Partial Recon] Enrichment graph update: {json.dumps(enrichment_stats, default=str)}")
             else:
                 print("[!][Partial Recon] Neo4j not reachable, graph not updated")
-    except Exception as e:
-        print(f"[!][Partial Recon] Graph update failed: {e}")
-        raise
+        return STATUS_OK
 
-    print(f"\n[+][Partial Recon] URLScan enrichment completed successfully")
+    return run_per_root(roots, _one_root, "Urlscan")
 
 
-def run_uncover(config: dict) -> None:
+def run_uncover(config: dict) -> dict:
     """
-    Run partial Uncover multi-engine target expansion.
+    Run partial Uncover multi-engine target expansion, once per root.
 
     Queries Shodan, Censys, FOFA, ZoomEye, Netlas, CriminalIP, and other
     search engines to discover additional IPs, subdomains, ports, and URLs
-    associated with the target domain.
+    associated with each root. Uncover exposes no rate-limit signal, so an
+    empty answer maps to no_results.
     """
     from recon.main_recon_modules.uncover_enrich import run_uncover_expansion
 
-    domain = config["domain"]
+    roots = scope_roots(config)
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
@@ -336,7 +343,7 @@ def run_uncover(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Uncover Multi-Engine Expansion")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Force-enable Uncover for partial recon (user explicitly triggered it)
@@ -380,29 +387,27 @@ def run_uncover(config: dict) -> None:
         except Exception as e:
             print(f"[!][Partial Recon] Could not load user API keys: {e}")
 
-    # Build minimal combined_result structure expected by run_uncover_expansion
-    combined_result = {
-        "domain": domain,
-    }
+    def _one_root(domain: str) -> str:
+        # `domains` keeps every root so the writer attaches a host under another
+        # root to that root; a bare IP or URL falls back to the queried root.
+        combined_result = {"domain": domain, "domains": list(roots)}
 
-    # Run Uncover expansion (same function as full pipeline)
-    uncover_data = run_uncover_expansion(combined_result, settings)
+        # Run Uncover expansion (same function as full pipeline)
+        uncover_data = run_uncover_expansion(combined_result, settings)
 
-    if not uncover_data:
-        print(f"[-][Partial Recon] Uncover returned no results for {domain}")
-        return
+        if not uncover_data:
+            print(f"[-][Partial Recon] Uncover returned no results for {domain}")
+            return STATUS_NO_RESULTS
 
-    print(f"[+][Partial Recon] Uncover returned {uncover_data.get('total_deduped', 0)} deduplicated results")
-    print(f"[+][Partial Recon] Hosts: {len(uncover_data.get('hosts', []))}")
-    print(f"[+][Partial Recon] IPs: {len(uncover_data.get('ips', []))}")
-    print(f"[+][Partial Recon] URLs: {len(uncover_data.get('urls', []))}")
+        print(f"[+][Partial Recon] Uncover returned {uncover_data.get('total_deduped', 0)} deduplicated results")
+        print(f"[+][Partial Recon] Hosts: {len(uncover_data.get('hosts', []))}")
+        print(f"[+][Partial Recon] IPs: {len(uncover_data.get('ips', []))}")
+        print(f"[+][Partial Recon] URLs: {len(uncover_data.get('urls', []))}")
 
-    # Build combined_result structure expected by graph update method
-    combined_result["uncover"] = uncover_data
+        combined_result["uncover"] = uncover_data
 
-    # Update the graph database
-    print(f"[*][Partial Recon] Updating graph database...")
-    try:
+        # Update the graph database
+        print(f"[*][Partial Recon] Updating graph database...")
         from graph_db import Neo4jClient
         with Neo4jClient() as graph_client:
             if graph_client.verify_connection():
@@ -415,11 +420,9 @@ def run_uncover(config: dict) -> None:
                 print(f"[+][Partial Recon] Stats: {json.dumps(stats, default=str)}")
             else:
                 print("[!][Partial Recon] Neo4j not reachable, graph not updated")
-    except Exception as e:
-        print(f"[!][Partial Recon] Graph update failed: {e}")
-        raise
+        return STATUS_OK
 
-    print(f"\n[+][Partial Recon] Uncover expansion completed successfully")
+    return run_per_root(roots, _one_root, "Uncover")
 
 
 def run_osint_enrichment(config: dict) -> dict:

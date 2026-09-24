@@ -481,6 +481,10 @@ class OsintMixin:
             return stats
 
         domain = recon_data.get("domain", "")
+        # `domain` is the root this pass looked up; a host under any of the run's
+        # roots is in scope and joins its own root, and no root's apex is a Subdomain.
+        roots = scope_roots(recon_data)
+        apexes = {r.lower() for r in roots}
 
         with self.driver.session() as session:
 
@@ -496,11 +500,11 @@ class OsintMixin:
                 country = entry.get("country", "")
 
                 # Create/update subdomain or external domain node
-                if subdomain and subdomain != domain and subdomain not in seen_subs:
+                if subdomain and subdomain.lower() not in apexes and subdomain not in seen_subs:
                     seen_subs.add(subdomain)
-                    is_in_scope = domain and (subdomain == domain or subdomain.endswith("." + domain))
+                    root = root_for_host(subdomain, roots)
                     try:
-                        if is_in_scope:
+                        if root:
                             session.run(
                                 """
                                 MERGE (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
@@ -511,7 +515,7 @@ class OsintMixin:
                                 MERGE (d)-[:HAS_SUBDOMAIN]->(s)
                                 MERGE (s)-[:BELONGS_TO]->(d)
                                 """,
-                                domain=domain, subdomain=subdomain,
+                                domain=root, subdomain=subdomain,
                                 uid=user_id, pid=project_id
                             )
                             stats["subdomains_created"] += 1
@@ -555,8 +559,8 @@ class OsintMixin:
                     except Exception as e:
                         stats["errors"].append(f"IP {ip}: {e}")
 
-                # Link subdomain -> IP (deduplicate the pair, skip root domain)
-                if subdomain and ip and subdomain != domain:
+                # Link subdomain -> IP (deduplicate the pair, skip any root apex)
+                if subdomain and ip and subdomain.lower() not in apexes:
                     link_key = (subdomain, ip)
                     if link_key not in seen_sub_ip_links:
                         seen_sub_ip_links.add(link_key)
@@ -2286,7 +2290,9 @@ class OsintMixin:
             "urls_created": 0,
             "relationships_created": 0, "errors": [],
         }
-        domain = recon_data.get("domain", "") or ""
+        roots = scope_roots(recon_data)
+        # An IP or a URL under no root falls back to the first root's Domain.
+        domain = roots[0] if roots else ""
         try:
             uncover = recon_data.get("uncover") or {}
             hosts = uncover.get("hosts") or []
@@ -2319,7 +2325,8 @@ class OsintMixin:
                             sources=sources, total_raw=total_raw, total_deduped=total_deduped,
                         )
                         stats["subdomains_created"] += 1
-                        if domain:
+                        host_root = root_for_host(hostname, roots) or domain
+                        if host_root:
                             session.run(
                                 """
                                 MATCH (s:Subdomain {name: $name, user_id: $user_id, project_id: $project_id})
@@ -2327,7 +2334,7 @@ class OsintMixin:
                                 MERGE (s)-[:BELONGS_TO]->(d)
                                 MERGE (d)-[:HAS_SUBDOMAIN]->(s)
                                 """,
-                                name=hostname, domain=domain,
+                                name=hostname, domain=host_root,
                                 user_id=user_id, project_id=project_id,
                             )
                             stats["relationships_created"] += 2

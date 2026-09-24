@@ -239,6 +239,7 @@ export const MULTI_ROOT_PARTIAL_TOOLS: ReadonlySet<string> = new Set<string>([
   'JsRecon', 'SupplyChainRecon', 'EndpointAiClassifier', 'GraphqlScan',
   'WebCachePoison', 'AiSurfaceRecon',
   'Nuclei', 'SecurityChecks', 'SubdomainTakeover', 'VhostSni', 'OriginDiscovery',
+  'SubdomainDiscovery', 'Urlscan', 'Uncover', 'Gau', 'ParamSpider',
 ])
 
 /** The only settings a partial run may override (the Nuclei checkboxes). The

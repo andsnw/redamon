@@ -5,21 +5,28 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.partial_recon_modules.helpers import _resolve_hostname
+from recon.partial_recon_modules.helpers import _resolve_hostname, root_for_host, scope_roots
 
 
-def _create_user_subdomains_in_graph(domain: str, subdomains: list, user_id: str, project_id: str) -> None:
-    """Create Subdomain nodes in the graph for user-provided subdomains (MERGE, no duplicates)."""
+def _create_user_subdomains_in_graph(domain, subdomains: list, user_id: str, project_id: str) -> None:
+    """Create Subdomain nodes in the graph for user-provided subdomains (MERGE, no duplicates).
+
+    `domain` is one root, or the run's roots (a list): each subdomain then
+    attaches to the root it sits under, so a batch does not hang every host off
+    the first root's Domain.
+    """
     from graph_db import Neo4jClient
+    roots = scope_roots({"domains": domain}) if isinstance(domain, list) else [domain]
     with Neo4jClient() as graph_client:
         if not graph_client.verify_connection():
             return
         driver = graph_client.driver
         with driver.session() as session:
             for sub in subdomains:
+                root = root_for_host(sub, roots) or roots[0]
                 # Resolve the subdomain to get IPs
                 ips = _resolve_hostname(sub)
-                # Create Subdomain node attached to Domain
+                # Create Subdomain node attached to its root's Domain
                 session.run(
                     """
                     MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
@@ -28,7 +35,7 @@ def _create_user_subdomains_in_graph(domain: str, subdomains: list, user_id: str
                                   s.updated_at = datetime()
                     MERGE (d)-[:HAS_SUBDOMAIN]->(s)
                     """,
-                    domain=domain, sub=sub, uid=user_id, pid=project_id,
+                    domain=root, sub=sub, uid=user_id, pid=project_id,
                 )
                 # Create IP nodes and RESOLVES_TO relationships
                 for bucket in ("ipv4", "ipv6"):

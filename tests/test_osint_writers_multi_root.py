@@ -151,5 +151,46 @@ class TestZoomeye(unittest.TestCase):
         self.assertEqual(w.subdomains_merged(), ["vpn.beta.test"])
 
 
+class TestUrlscanDiscovery(unittest.TestCase):
+    PAYLOAD = {
+        "results_count": 3,
+        "entries": [
+            {"domain": "api.beta.test", "ip": "10.0.2.9"},   # under a batch root
+            {"domain": "gamma.test", "ip": "10.0.3.9"},       # an apex, never a Subdomain
+            {"domain": "cdn.thirdparty.example", "ip": "10.9.9.9"},  # external
+        ],
+    }
+
+    @staticmethod
+    def _attached(w):
+        """{subdomain: root} for urlscan's HAS_SUBDOMAIN link (param `subdomain`)."""
+        return {p["subdomain"]: p["domain"] for q, p in w.session.calls
+                if "HAS_SUBDOMAIN" in q and "subdomain" in p}
+
+    def test_a_host_under_another_root_joins_that_root(self):
+        w = _Writer()
+        w.update_graph_from_urlscan_discovery(_recon("urlscan", self.PAYLOAD, domain="alpha.test"), "u1", "p1")
+        self.assertEqual(self._attached(w).get("api.beta.test"), "beta.test")
+
+    def test_a_root_apex_is_not_made_a_subdomain(self):
+        w = _Writer()
+        w.update_graph_from_urlscan_discovery(_recon("urlscan", self.PAYLOAD, domain="alpha.test"), "u1", "p1")
+        self.assertNotIn("gamma.test", self._attached(w))
+        self.assertNotIn("gamma.test", w.externals())   # an apex is neither
+
+    def test_a_host_under_no_root_is_external(self):
+        w = _Writer()
+        w.update_graph_from_urlscan_discovery(_recon("urlscan", self.PAYLOAD, domain="alpha.test"), "u1", "p1")
+        self.assertIn("cdn.thirdparty.example", w.externals())
+
+
+class TestUncover(unittest.TestCase):
+    def test_a_host_joins_its_own_root(self):
+        w = _Writer()
+        payload = {"hosts": ["shop.beta.test", "www.alpha.test"], "ips": [], "urls": []}
+        w.update_graph_from_uncover(_recon("uncover", payload, domain="alpha.test"), "u1", "p1")
+        self.assertEqual(w.attached(), {"shop.beta.test": "beta.test", "www.alpha.test": "alpha.test"})
+
+
 if __name__ == "__main__":
     unittest.main()

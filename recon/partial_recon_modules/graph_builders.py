@@ -98,6 +98,49 @@ def url_host(url: str, host: str = "") -> str:
         return ""
 
 
+def graph_target_hosts(user_id: str, project_id: str, domains, domain_groups,
+                       include_root_domain: bool = False, include_graph: bool = True) -> list:
+    """The in-scope hosts to hand a passive URL source (Gau, ParamSpider) for a
+    whole run.
+
+    Each root's apex is a target when its group includes it (always for a
+    wildcard or single-domain root, matching today's single-root behaviour),
+    plus every Subdomain under the run's roots, dropping the hosts a literal
+    group never listed. With the graph unreachable, only the apexes are
+    returned. A caller not yet migrated (a single string) keeps its one root.
+    """
+    from graph_db import Neo4jClient
+
+    roots = _as_roots(domains)
+    _apex_roots, allowed = _root_scope(roots, domain_groups, include_root_domain)
+    hosts = set()
+    for root in roots:
+        # A wildcard/single root has no allowed set: its apex is always a target,
+        # as today. A literal group lists its apex only when it wrote ".".
+        if root not in allowed or root.lower() in allowed[root]:
+            hosts.add(root)
+    if not include_graph or not roots:
+        return sorted(hosts)
+
+    with Neo4jClient() as graph_client:
+        if not graph_client.verify_connection():
+            print("[!][Partial Recon] Neo4j not reachable, cannot fetch graph subdomains")
+            return sorted(hosts)
+        with graph_client.driver.session() as session:
+            result = session.run(
+                """
+                MATCH (d:Domain {user_id: $uid, project_id: $pid})-[:HAS_SUBDOMAIN]->(s:Subdomain)
+                WHERE d.name IN $domains
+                RETURN d.name AS root, s.name AS sub
+                """,
+                domains=roots, uid=user_id, pid=project_id,
+            )
+            for record in result:
+                if _host_allowed(record["root"], record["sub"], allowed):
+                    hosts.add(record["sub"])
+    return sorted(hosts)
+
+
 def _build_recon_data_from_graph(domains, user_id: str, project_id: str,
                                  include_root_domain: bool = False,
                                  domain_groups: list = None) -> dict:

@@ -124,6 +124,7 @@ _MULTI_ROOT_TOOLS = frozenset({
     "JsRecon", "SupplyChainRecon", "EndpointAiClassifier", "GraphqlScan",
     "WebCachePoison", "AiSurfaceRecon",
     "Nuclei", "SecurityChecks", "SubdomainTakeover", "VhostSni", "OriginDiscovery",
+    "SubdomainDiscovery", "Urlscan", "Uncover", "Gau", "ParamSpider",
 })
 
 

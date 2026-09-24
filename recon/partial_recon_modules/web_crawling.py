@@ -12,12 +12,14 @@ from recon.partial_recon_modules.helpers import (
     _is_valid_hostname,
     _is_valid_url,
     _should_include_root_domain,
+    host_in_roots,
     include_root_for,
     partial_settings,
     scope_roots,
 )
 from recon.partial_recon_modules.graph_builders import (
     _build_http_probe_data_from_graph,
+    graph_target_hosts,
     graph_url_scope,
     url_host,
 )
@@ -1246,7 +1248,8 @@ def run_gau(config: dict) -> None:
         merge_gau_into_by_base_url,
     )
 
-    domain = config["domain"]
+    roots = scope_roots(config)
+    domain = roots[0] if roots else ""
 
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
@@ -1259,10 +1262,10 @@ def run_gau(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] GAU Passive URL Discovery")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
-    # Parse user targets -- GAU accepts subdomains
+    # Parse user targets -- GAU accepts subdomains under any root
     user_targets = config.get("user_targets") or {}
     user_subdomains = []
 
@@ -1270,7 +1273,7 @@ def run_gau(config: dict) -> None:
         for entry in user_targets.get("subdomains", []):
             entry = entry.strip().lower()
             if entry and _is_valid_hostname(entry):
-                if entry == domain or entry.endswith("." + domain):
+                if host_in_roots(entry, roots):
                     user_subdomains.append(entry)
                 else:
                     print(f"[!][Partial Recon] Skipping subdomain outside scope: {entry}")
@@ -1280,38 +1283,15 @@ def run_gau(config: dict) -> None:
     if user_subdomains:
         print(f"[+][Partial Recon] Validated {len(user_subdomains)} custom subdomains")
 
-    # Build target_domains from graph subdomains + user subdomains
+    # Build target_domains: every in-scope host across the run's roots, plus the
+    # user's subdomains. A literal batch group contributes only its listed hosts.
     include_graph = config.get("include_graph_targets", True)
-    target_domains = set()
-
-    if include_graph:
-        print(f"[*][Partial Recon] Querying graph for target subdomains...")
-        from graph_db import Neo4jClient
-        with Neo4jClient() as graph_client:
-            if graph_client.verify_connection():
-                driver = graph_client.driver
-                with driver.session() as session:
-                    # Get all subdomains from graph
-                    result = session.run(
-                        """
-                        MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
-                              -[:HAS_SUBDOMAIN]->(s:Subdomain)
-                        RETURN collect(DISTINCT s.name) AS subdomains
-                        """,
-                        domain=domain, uid=user_id, pid=project_id,
-                    )
-                    record = result.single()
-                    if record and record["subdomains"]:
-                        target_domains.update(record["subdomains"])
-            else:
-                print("[!][Partial Recon] Neo4j not reachable, cannot fetch graph subdomains")
-    else:
+    if not include_graph:
         print(f"[*][Partial Recon] Skipping graph targets (user opted out)")
-
-    # Always include the root domain
-    target_domains.add(domain)
-
-    # Add user-provided subdomains
+    target_domains = set(graph_target_hosts(
+        user_id, project_id, roots, config.get("domain_groups"),
+        include_root_domain=_should_include_root_domain(settings), include_graph=include_graph,
+    ))
     for sub in user_subdomains:
         target_domains.add(sub)
 
@@ -1367,7 +1347,7 @@ def run_gau(config: dict) -> None:
         print("[!][Partial Recon] GAU found no URLs. No archives available for these domains.")
         # Still update graph with user subdomains if provided
         if user_subdomains:
-            _create_user_subdomains_in_graph(domain, user_subdomains, user_id, project_id)
+            _create_user_subdomains_in_graph(roots, user_subdomains, user_id, project_id)
         print(f"\n[+][Partial Recon] GAU completed (no results)")
         return
 
@@ -1440,6 +1420,7 @@ def run_gau(config: dict) -> None:
     # Build resource_enum result structure (same shape as full pipeline)
     recon_data = {
         "domain": domain,
+        "domains": roots,
         "subdomains": all_subdomains,
         "resource_enum": {
             "by_base_url": by_base_url,
@@ -1475,7 +1456,7 @@ def run_gau(config: dict) -> None:
 
                 # Create Subdomain nodes for user-provided subdomains
                 if user_subdomains:
-                    _create_user_subdomains_in_graph(domain, user_subdomains, user_id, project_id)
+                    _create_user_subdomains_in_graph(roots, user_subdomains, user_id, project_id)
 
                 print(f"[+][Partial Recon] Graph updated successfully")
                 print(f"[+][Partial Recon] Stats: {json.dumps(stats, default=str)}")

@@ -4981,8 +4981,8 @@ class TestRunUrlscan(unittest.TestCase):
         self.assertIn("urlscan", recon_data)
         self.assertEqual(recon_data["urlscan"]["results_count"], 3)
 
-    def test_urlscan_graph_update_error_raises(self):
-        """URLScan re-raises graph update errors."""
+    def test_urlscan_graph_update_error_fails_the_root_without_raising(self):
+        """A graph-update error fails that root only; the per-root loop swallows it."""
         config = {"domain": "example.com"}
 
         mock_settings = MagicMock()
@@ -5018,8 +5018,8 @@ class TestRunUrlscan(unittest.TestCase):
             import importlib
             import partial_recon as pr
             importlib.reload(pr)
-            with self.assertRaises(Exception):
-                pr.run_urlscan(config)
+            statuses = pr.run_urlscan(config)
+            self.assertTrue(statuses["example.com"].startswith("failed:"))
         finally:
             for name, mod in saved.items():
                 if mod is None:
@@ -5148,8 +5148,8 @@ class TestRunUncover(unittest.TestCase):
         self.assertEqual(len(recon_data["uncover"]["hosts"]), 2)
         self.assertEqual(len(recon_data["uncover"]["ips"]), 2)
 
-    def test_uncover_graph_update_error_raises(self):
-        """Uncover re-raises graph update errors."""
+    def test_uncover_graph_update_error_fails_the_root_without_raising(self):
+        """A graph-update error fails that root only; the per-root loop swallows it."""
         mock_settings = MagicMock()
         mock_settings.return_value = {
             "UNCOVER_ENABLED": False,
@@ -5196,8 +5196,8 @@ class TestRunUncover(unittest.TestCase):
             import importlib
             import partial_recon as pr
             importlib.reload(pr)
-            with self.assertRaises(Exception):
-                pr.run_uncover({"domain": "example.com"})
+            statuses = pr.run_uncover({"domain": "example.com"})
+            self.assertTrue(statuses["example.com"].startswith("failed:"))
         finally:
             for name, mod in saved.items():
                 if mod is None:
