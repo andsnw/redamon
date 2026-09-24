@@ -485,8 +485,9 @@ def _build_http_probe_data_from_graph(domains, user_id: str, project_id: str,
     return recon_data
 
 
-def _build_vuln_scan_data_from_graph(domain: str, user_id: str, project_id: str,
-                                     include_root_domain: bool = False) -> dict:
+def _build_vuln_scan_data_from_graph(domains, user_id: str, project_id: str,
+                                     include_root_domain: bool = False,
+                                     domain_groups: list = None) -> dict:
     """
     Query Neo4j to build the recon_data dict that run_vuln_scan expects.
 
@@ -494,21 +495,27 @@ def _build_vuln_scan_data_from_graph(domain: str, user_id: str, project_id: str,
     'resource_enum' keys. The vuln_scan module uses extract_targets_from_recon()
     (needs dns) and build_target_urls() (prefers resource_enum > http_probe).
 
-    Honors include_root_domain (default False): apex Domain query skipped,
-    apex BaseURLs filtered from http_probe.by_url, and metadata flag stamped
-    so extract_targets_from_recon excludes the apex hostname. Mirrors the
-    full-pipeline scope rule.
+    `domains` is the run's roots, scoped per root like the other builders: an
+    apex only when its group includes it, a literal group's listed hosts only,
+    and BaseURLs/Endpoints filtered by graph_url_scope (a host under a Domain
+    this run does not cover, or an excluded apex, is dropped). The first root's
+    apex fills dns.domain; another root's apex is a dns.subdomains host.
     """
     from graph_db import Neo4jClient
 
+    roots = _as_roots(domains)
+    apex_roots, allowed = _root_scope(roots, domain_groups, include_root_domain)
+    primary = roots[0] if roots else ""
+
     recon_data = {
-        "domain": domain,
+        "domain": primary,
+        "domains": roots,
         "subdomains": [],
         "dns": {
             "domain": {"ips": {"ipv4": [], "ipv6": []}, "has_records": False},
             "subdomains": {},
         },
-        "metadata": {"include_root_domain": include_root_domain},
+        "metadata": {"include_root_domain": primary in apex_roots},
         "http_probe": {
             "by_url": {},
         },
@@ -520,6 +527,8 @@ def _build_vuln_scan_data_from_graph(domain: str, user_id: str, project_id: str,
             "discovered_urls": [],
         },
     }
+    if not roots:
+        return recon_data
 
     def _hydrate_ip_metadata(addr: str, is_cdn, cdn_name, asn) -> None:
         """Populate port_scan.by_ip with CDN/ASN metadata so collect_cdn_ips
@@ -541,6 +550,15 @@ def _build_vuln_scan_data_from_graph(domain: str, user_id: str, project_id: str,
         if asn and not entry["asn"]:
             entry["asn"] = asn
 
+    def _add_ip(ips: dict, addr: str, version) -> None:
+        bucket = _classify_ip(addr, version)
+        if addr not in ips[bucket]:
+            ips[bucket].append(addr)
+
+    def _dns_entry(host: str) -> dict:
+        return recon_data["dns"]["subdomains"].setdefault(
+            host, {"ips": {"ipv4": [], "ipv6": []}, "has_records": True})
+
     with Neo4jClient() as graph_client:
         if not graph_client.verify_connection():
             print("[!][Partial Recon] Neo4j not reachable, cannot fetch graph inputs")
@@ -548,71 +566,68 @@ def _build_vuln_scan_data_from_graph(domain: str, user_id: str, project_id: str,
 
         driver = graph_client.driver
         with driver.session() as session:
-            # 1) Domain -> IP relationships (for extract_targets_from_recon).
-            # Skipped entirely when scope excludes the apex.
-            if include_root_domain:
+            # 1) Apex Domain -> IP, only for the roots whose group includes it.
+            if apex_roots:
                 result = session.run(
                     """
-                    MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
-                          -[:RESOLVES_TO]->(i:IP)
-                    RETURN i.address AS address, i.version AS version,
+                    MATCH (d:Domain {user_id: $uid, project_id: $pid})-[:RESOLVES_TO]->(i:IP)
+                    WHERE d.name IN $apex_roots
+                    RETURN d.name AS root, i.address AS address, i.version AS version,
                            i.is_cdn AS is_cdn, i.cdn_name AS cdn_name, i.asn AS asn
                     """,
-                    domain=domain, uid=user_id, pid=project_id,
+                    apex_roots=apex_roots, uid=user_id, pid=project_id,
                 )
                 for record in result:
                     addr = record["address"]
-                    bucket = _classify_ip(addr, record["version"])
-                    recon_data["dns"]["domain"]["ips"][bucket].append(addr)
+                    if record["root"] == primary:
+                        _add_ip(recon_data["dns"]["domain"]["ips"], addr, record["version"])
+                        recon_data["dns"]["domain"]["has_records"] = True
+                    else:
+                        _add_ip(_dns_entry(record["root"])["ips"], addr, record["version"])
                     _hydrate_ip_metadata(addr, record["is_cdn"], record["cdn_name"], record["asn"])
-
-                if (recon_data["dns"]["domain"]["ips"]["ipv4"]
-                        or recon_data["dns"]["domain"]["ips"]["ipv6"]):
-                    recon_data["dns"]["domain"]["has_records"] = True
 
             # 2) Subdomain -> IP relationships
             result = session.run(
                 """
-                MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                MATCH (d:Domain {user_id: $uid, project_id: $pid})
                       -[:HAS_SUBDOMAIN]->(s:Subdomain)
                       -[:RESOLVES_TO]->(i:IP)
-                RETURN s.name AS subdomain, i.address AS address, i.version AS version,
+                WHERE d.name IN $domains
+                RETURN d.name AS root, s.name AS subdomain, i.address AS address, i.version AS version,
                        i.is_cdn AS is_cdn, i.cdn_name AS cdn_name, i.asn AS asn
                 """,
-                domain=domain, uid=user_id, pid=project_id,
+                domains=roots, uid=user_id, pid=project_id,
             )
-            subdomain_set = set()
             for record in result:
-                sub = record["subdomain"]
+                if not _host_allowed(record["root"], record["subdomain"], allowed):
+                    continue
                 addr = record["address"]
-                bucket = _classify_ip(addr, record["version"])
-                subdomain_set.add(sub)
-
-                if sub not in recon_data["dns"]["subdomains"]:
-                    recon_data["dns"]["subdomains"][sub] = {
-                        "ips": {"ipv4": [], "ipv6": []},
-                        "has_records": True,
-                    }
-                recon_data["dns"]["subdomains"][sub]["ips"][bucket].append(addr)
+                _add_ip(_dns_entry(record["subdomain"])["ips"], addr, record["version"])
                 _hydrate_ip_metadata(addr, record["is_cdn"], record["cdn_name"], record["asn"])
 
             # Also get subdomains without IPs for the subdomains list
             result = session.run(
                 """
-                MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                MATCH (d:Domain {user_id: $uid, project_id: $pid})
                       -[:HAS_SUBDOMAIN]->(s:Subdomain)
+                WHERE d.name IN $domains
                 RETURN collect(DISTINCT s.name) AS subdomains
                 """,
-                domain=domain, uid=user_id, pid=project_id,
+                domains=roots, uid=user_id, pid=project_id,
             )
             record = result.single()
             if record:
-                recon_data["subdomains"] = record["subdomains"] or []
+                recon_data["subdomains"] = [
+                    sub for sub in record["subdomains"] or []
+                    if _host_allowed(root_for_host(sub, roots), sub, allowed)
+                ]
 
             # 3) BaseURL nodes (for build_target_urls http_probe fallback)
             #    Also fetch is_cdn / cdn / asn so the CDN prefilter in
             #    run_security_checks (collect_cdn_ips, collect_asn_cdn_ips)
             #    can suppress findings on httpx-flagged CDN edges.
+            keep = graph_url_scope(session, user_id, project_id, roots, domain_groups,
+                                   include_root_domain=include_root_domain)
             result = session.run(
                 """
                 MATCH (b:BaseURL {user_id: $uid, project_id: $pid})
@@ -622,23 +637,14 @@ def _build_vuln_scan_data_from_graph(domain: str, user_id: str, project_id: str,
                 """,
                 uid=user_id, pid=project_id,
             )
-            from urllib.parse import urlparse as _urlparse_v
             for record in result:
                 url = record["url"]
                 status_code = record["status_code"]
                 if status_code is not None and int(status_code) >= 500:
                     continue
                 host = record["host"] or ""
-                # Skip apex BaseURLs when scope excludes the root domain.
-                if not include_root_domain:
-                    bu_host = host.lower()
-                    if not bu_host:
-                        try:
-                            bu_host = (_urlparse_v(url).hostname or "").lower()
-                        except Exception:
-                            bu_host = ""
-                    if bu_host == domain.lower():
-                        continue
+                if not keep(url_host(url, host)):
+                    continue
                 is_cdn = bool(record["is_cdn"])
                 # Resolve host -> first IP so collect_cdn_ips can map URL flag
                 # to an IP. dns.subdomains was populated above.
@@ -684,14 +690,14 @@ def _build_vuln_scan_data_from_graph(domain: str, user_id: str, project_id: str,
                 MATCH (b:BaseURL {user_id: $uid, project_id: $pid})
                       -[:HAS_ENDPOINT]->(e:Endpoint)
                 WHERE e.full_url IS NOT NULL
-                RETURN e.full_url AS url
+                RETURN e.full_url AS url, e.baseurl AS baseurl
                 """,
                 uid=user_id, pid=project_id,
             )
             discovered_urls = []
             for record in result:
                 url = record["url"]
-                if url:
+                if url and keep(url_host(record["baseurl"] or url)):
                     discovered_urls.append(url)
             recon_data["resource_enum"]["discovered_urls"] = discovered_urls
 

@@ -157,6 +157,31 @@ describe('failure and SubdomainDiscovery', () => {
   })
 })
 
+describe('vuln tools count only the run roots', () => {
+  test.each(['Nuclei', 'SecurityChecks'])('%s skips BaseURLs under a Domain the run does not cover', async (toolId) => {
+    multiRoot.add(toolId)
+    await call(toolId)
+    const cypher = toolCall()?.[0] ?? ''
+    expect(cypher).toMatch(/MATCH \(b:BaseURL \{user_id: \$uid, project_id: \$pid\}\)\s+WHERE NOT EXISTS/)
+    expect(cypher).toContain('NOT od.name IN $domains')
+  })
+
+  test('Nuclei skips Endpoints under a Domain the run does not cover', async () => {
+    multiRoot.add('Nuclei')
+    await call('Nuclei')
+    expect(toolCall()?.[0]).toMatch(/MATCH \(e:Endpoint \{user_id: \$uid, project_id: \$pid\}\)\s+WHERE NOT EXISTS/)
+  })
+
+  test('OriginDiscovery counts fronted hosts under the run roots only', async () => {
+    multiRoot.add('OriginDiscovery')
+    await call('OriginDiscovery')
+    const cypher = toolCall()?.[0] ?? ''
+    expect(cypher).toContain('(fd:Domain {user_id: $uid, project_id: $pid})-[:HAS_SUBDOMAIN]->(fs:Subdomain)')
+    expect(cypher).toContain('fd.name IN $domains')
+    expect(cypher).not.toMatch(/MATCH \(fs:Subdomain \{/)
+  })
+})
+
 describe.each([...PARTIAL_RECON_SUPPORTED_TOOLS])('every supported tool: %s', (toolId) => {
   test('has a graph branch that returns the roots', async () => {
     const body = await (await call(toolId)).json()

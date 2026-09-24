@@ -123,6 +123,7 @@ _MULTI_ROOT_TOOLS = frozenset({
     "Katana", "Hakrawler", "ZapAjaxSpider", "Ffuf", "Jsluice", "Kiterunner", "Arjun",
     "JsRecon", "SupplyChainRecon", "EndpointAiClassifier", "GraphqlScan",
     "WebCachePoison", "AiSurfaceRecon",
+    "Nuclei", "SecurityChecks", "SubdomainTakeover", "VhostSni", "OriginDiscovery",
 })
 
 

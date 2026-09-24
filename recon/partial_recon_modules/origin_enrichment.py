@@ -14,12 +14,15 @@ from recon.partial_recon_modules.helpers import (
     _is_valid_hostname,
     _resolve_hostname,
     _should_include_root_domain,
+    host_in_roots,
     partial_settings,
+    root_for_host,
+    scope_roots,
 )
 from recon.partial_recon_modules.graph_builders import _build_vuln_scan_data_from_graph
 
 
-def _inject_graph_fronted_hosts(by_url: dict, domain: str, user_id: str, project_id: str) -> None:
+def _inject_graph_fronted_hosts(by_url: dict, roots: list, user_id: str, project_id: str) -> None:
     """Mark CDN-fronted Subdomains from the graph as fronted http_probe entries.
 
     Fronted = the host resolves to a CDN IP (i.is_cdn) or one of its Endpoints
@@ -33,11 +36,12 @@ def _inject_graph_fronted_hosts(by_url: dict, domain: str, user_id: str, project
         with client.driver.session() as session:
             result = session.run(
                 """
-                MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                MATCH (d:Domain {user_id: $uid, project_id: $pid})
                       -[:HAS_SUBDOMAIN]->(s:Subdomain)
-                WHERE EXISTS { (s)-[:RESOLVES_TO]->(ci:IP) WHERE ci.is_cdn = true }
+                WHERE d.name IN $domains
+                  AND (EXISTS { (s)-[:RESOLVES_TO]->(ci:IP) WHERE ci.is_cdn = true }
                    OR EXISTS { (s)-[:HAS_BASE_URL|HAS_BASEURL]->(:BaseURL)-[:HAS_ENDPOINT]->(ep:Endpoint)
-                               WHERE ep.is_cdn = true OR ep.favicon_hash IS NOT NULL }
+                               WHERE ep.is_cdn = true OR ep.favicon_hash IS NOT NULL })
                 OPTIONAL MATCH (s)-[:HAS_BASE_URL|HAS_BASEURL]->(:BaseURL)-[:HAS_ENDPOINT]->(e:Endpoint)
                 OPTIONAL MATCH (s)-[:RESOLVES_TO]->(i:IP)
                 RETURN s.name AS host,
@@ -45,7 +49,7 @@ def _inject_graph_fronted_hosts(by_url: dict, domain: str, user_id: str, project
                        head([x IN collect(DISTINCT e.cdn) WHERE x IS NOT NULL]) AS cdn,
                        head(collect(DISTINCT i.address)) AS ip
                 """,
-                domain=domain, uid=user_id, pid=project_id,
+                domains=roots, uid=user_id, pid=project_id,
             )
             count = 0
             for record in result:
@@ -70,7 +74,7 @@ def _inject_graph_fronted_hosts(by_url: dict, domain: str, user_id: str, project
 def run_origin_discovery(config: dict) -> None:
     from recon.main_recon_modules.origin_discovery import run_origin_discovery_enrichment
 
-    domain = config["domain"]
+    roots = scope_roots(config)
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
@@ -81,7 +85,7 @@ def run_origin_discovery(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Origin Discovery")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # --- validate the one manual input type: Subdomain (IP is graph-only) ---
@@ -94,7 +98,7 @@ def run_origin_discovery(config: dict) -> None:
         if not _is_valid_hostname(entry):
             print(f"[!][Partial Recon] Skipping invalid hostname: {entry}")
             continue
-        if entry.endswith("." + domain) or entry == domain:
+        if host_in_roots(entry, roots):
             user_subdomains.append(entry)
         else:
             print(f"[!][Partial Recon] Skipping out-of-scope subdomain: {entry}")
@@ -107,15 +111,17 @@ def run_origin_discovery(config: dict) -> None:
     if include_graph:
         print(f"[*][Partial Recon] Querying graph for CDN-fronted hosts...")
         recon_data = _build_vuln_scan_data_from_graph(
-            domain, user_id, project_id,
+            roots, user_id, project_id,
             include_root_domain=_should_include_root_domain(settings),
+            domain_groups=config.get("domain_groups"),
         )
     else:
         print(f"[*][Partial Recon] Skipping graph targets (user opted out)")
         # Stamp the apex-scope flag identically to the full pipeline even on the
         # graph-off branch, so a manually-entered apex is scoped correctly.
         recon_data = {
-            "domain": domain,
+            "domain": roots[0] if roots else "",
+            "domains": roots,
             "subdomains": [],
             "dns": {"domain": {"ips": {"ipv4": [], "ipv6": []}, "has_records": False}, "subdomains": {}},
             "metadata": {"include_root_domain": _should_include_root_domain(settings)},
@@ -132,7 +138,7 @@ def run_origin_discovery(config: dict) -> None:
     # the modal's fronted_count guard matches the tool's behavior. Never-raise.
     if include_graph:
         try:
-            _inject_graph_fronted_hosts(recon_data["http_probe"]["by_url"], domain, user_id, project_id)
+            _inject_graph_fronted_hosts(recon_data["http_probe"]["by_url"], roots, user_id, project_id)
         except Exception as e:
             print(f"[!][Partial Recon] Could not load fronted hosts from graph: {e}")
 

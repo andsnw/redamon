@@ -92,12 +92,13 @@ class _Session:
             for root, sub, ip in SUBDOMAINS:
                 if root in params["domains"]:
                     rows.append({"root": root, "subdomain": sub, "address": ip, "ip": ip,
-                                 "version": "ipv4", "ports": _ports(ip)})
+                                 "version": "ipv4", "ports": _ports(ip),
+                                 "is_cdn": None, "cdn_name": None, "asn": None})
         elif "RESOLVES_TO" in cypher:
             for root in params["apex_roots"]:
                 ip = APEX_IPS[root]
                 rows.append({"root": root, "address": ip, "ip": ip, "version": "ipv4",
-                             "ports": _ports(ip)})
+                             "ports": _ports(ip), "is_cdn": None, "cdn_name": None, "asn": None})
         elif "RETURN d.name AS name" in cypher:
             rows.extend({"name": name} for name in GRAPH_DOMAINS)
         elif "MATCH (b:BaseURL" in cypher and "HAS_ENDPOINT" not in cypher:
@@ -108,6 +109,9 @@ class _Session:
             for url, _ in BASEURLS:
                 rows.append({"base_url": url, "endpoints": [{"path": "/x", "method": "GET"}],
                              "parameters": [{"name": "q"}]})
+        elif "HAS_ENDPOINT" in cypher and "e.full_url" in cypher:
+            for url, _ in BASEURLS:
+                rows.append({"url": url + "/e?a=1", "baseurl": url})
         return rows
 
 
@@ -313,3 +317,35 @@ class TestGraphUrlScope:
 
     def test_without_the_apex_rule(self, graph):
         assert self.keep(graph, apex_filter=False)("beta.test")
+
+
+class TestVulnScanBuilder:
+    """_build_vuln_scan_data_from_graph: Nuclei, SecurityChecks, SubdomainTakeover,
+    VhostSni, OriginDiscovery."""
+
+    def build(self, **kw):
+        return gb._build_vuln_scan_data_from_graph(ROOTS, "u1", "p1", domain_groups=GROUPS, **kw)
+
+    def test_every_root_and_the_apex_per_group(self, graph):
+        data = self.build()
+        assert data["dns"]["domain"]["ips"]["ipv4"] == ["10.0.0.1"]          # alpha apex included
+        assert data["dns"]["subdomains"]["gamma.test"]["ips"]["ipv4"] == ["10.0.0.3"]
+        assert "beta.test" not in data["dns"]["subdomains"]                  # beta apex excluded
+        assert {"www.alpha.test", "api.beta.test", "mail.gamma.test"} <= set(data["dns"]["subdomains"])
+
+    def test_a_literal_group_excludes_its_unlisted_host(self, graph):
+        data = self.build()
+        assert "san-only.alpha.test" not in data["dns"]["subdomains"]
+        assert "san-only.alpha.test" not in data["subdomains"]
+
+    def test_baseurls_and_discovered_urls_are_scoped(self, graph):
+        data = self.build()
+        assert "https://www.old.test" not in data["http_probe"]["by_url"]
+        assert "https://beta.test" not in data["http_probe"]["by_url"]        # excluded apex
+        assert "https://api.beta.test:8443" in data["http_probe"]["by_url"]
+        assert not any("old.test" in u for u in data["resource_enum"]["discovered_urls"])
+
+    def test_the_roots_are_recorded(self, graph):
+        data = self.build()
+        assert data["domain"] == "alpha.test" and data["domains"] == ROOTS
+        assert data["metadata"]["include_root_domain"] is True               # alpha (primary) apex in scope

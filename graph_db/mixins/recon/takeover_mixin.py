@@ -38,6 +38,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from graph_db.mixins.recon.scope import root_for_host, scope_roots
+
 
 class TakeoverMixin:
     def update_graph_from_subdomain_takeover(
@@ -58,11 +60,13 @@ class TakeoverMixin:
         if not findings:
             return stats
 
-        target_domain = (
-            recon_data.get("domain")
-            or recon_data.get("metadata", {}).get("target", "")
-            or ""
-        ).strip().lower()
+        # The write may cover several roots (a batch partial run, or the full
+        # pipeline's per-group write); a finding attaches to the root its host
+        # sits under.
+        roots = scope_roots(recon_data)
+        if not roots:
+            target = (recon_data.get("metadata", {}).get("target") or "").strip()
+            roots = [target] if target else []
 
         with self.driver.session() as session:
             for finding in findings:
@@ -158,7 +162,7 @@ class TakeoverMixin:
                         stats["relationships_created"] += 1
                         attached = True
 
-                    if not attached and target_domain and hostname == target_domain:
+                    if not attached and hostname in {r.lower() for r in roots}:
                         rel = session.run(
                             """
                             MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
@@ -166,7 +170,7 @@ class TakeoverMixin:
                             MERGE (d)-[:HAS_VULNERABILITY]->(v)
                             RETURN count(*) AS matched
                             """,
-                            domain=target_domain, uid=user_id, pid=project_id, id=vuln_id,
+                            domain=root_for_host(hostname, roots), uid=user_id, pid=project_id, id=vuln_id,
                         )
                         if rel.single()["matched"] > 0:
                             stats["relationships_created"] += 1

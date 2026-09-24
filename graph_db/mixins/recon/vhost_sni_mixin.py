@@ -48,6 +48,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from graph_db.mixins.recon.scope import root_for_host, scope_roots
+
 
 class VhostSniMixin:
     def update_graph_from_vhost_sni(
@@ -75,11 +77,12 @@ class VhostSniMixin:
         if not findings and not by_ip and not discovered_baseurls:
             return stats
 
-        target_domain = (
-            recon_data.get("domain")
-            or recon_data.get("metadata", {}).get("target", "")
-            or ""
-        ).strip().lower()
+        # Several roots may be in scope (a batch partial run, or a full per-group
+        # write); a hostname is a child of whichever root it sits under.
+        roots = scope_roots(recon_data)
+        if not roots:
+            target = (recon_data.get("metadata", {}).get("target") or "").strip()
+            roots = [target] if target else []
 
         # Which address each discovered_baseurls entry was served from; the URL
         # carries its own port but no IP, and section 3 needs one to reach the
@@ -199,7 +202,7 @@ class VhostSniMixin:
                     }
                     sub_props = {k: v for k, v in sub_props.items() if v is not None}
 
-                    is_child = _is_child_of(hostname, target_domain)
+                    is_child = _is_child_of(hostname, roots)
 
                     if is_child:
                         session.run(
@@ -268,7 +271,7 @@ class VhostSniMixin:
                             MERGE (d)-[:HAS_SUBDOMAIN]->(s)
                             RETURN count(d) AS matched
                             """,
-                            domain=target_domain, hostname=hostname,
+                            domain=root_for_host(hostname, roots), hostname=hostname,
                             uid=user_id, pid=project_id,
                         )
                         if res_d.single()["matched"] > 0:
@@ -315,15 +318,15 @@ class VhostSniMixin:
                         )
                         stats["relationships_created"] += 1
 
-                    # Attach to Domain too, when the hostname IS the apex.
-                    if target_domain and hostname == target_domain:
+                    # Attach to Domain too, when the hostname IS one of the apexes.
+                    if hostname in {r.lower() for r in roots}:
                         session.run(
                             """
                             MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
                             MATCH (v:Vulnerability {id: $id, user_id: $uid, project_id: $pid})
                             MERGE (d)-[:HAS_VULNERABILITY]->(v)
                             """,
-                            domain=target_domain, uid=user_id, pid=project_id, id=vuln_id,
+                            domain=root_for_host(hostname, roots), uid=user_id, pid=project_id, id=vuln_id,
                         )
                         stats["relationships_created"] += 1
                 except Exception as e:
@@ -340,7 +343,7 @@ class VhostSniMixin:
                     # Same rule as the findings above: an in-scope host owns its
                     # URL even when this run saw no finding for it, so the URL
                     # never lands in the graph with nobody pointing at it.
-                    if _is_child_of(hostname, target_domain):
+                    if _is_child_of(hostname, roots):
                         session.run(
                             """
                             MERGE (s:Subdomain {name: $host, user_id: $uid,
@@ -431,12 +434,14 @@ def _build_url(hostname: str, port, scheme: str) -> str:
     return f"{scheme}://{hostname}:{port_i}"
 
 
-def _is_child_of(hostname: str, target_domain: str) -> bool:
-    """True only for a real child of the engagement's domain. A bare endswith
-    would also claim 'notexample.com' as part of 'example.com'."""
-    if not hostname or not target_domain:
+def _is_child_of(hostname: str, target_domain) -> bool:
+    """True only for a real child of an in-scope root. A bare endswith would
+    also claim 'notexample.com' as part of 'example.com'. ``target_domain`` is
+    one root or a list of them (a batch covers several)."""
+    if not hostname:
         return False
-    return hostname.endswith("." + target_domain)
+    roots = [target_domain] if isinstance(target_domain, str) else list(target_domain or [])
+    return any(root and hostname.endswith("." + root) for root in roots)
 
 
 def _extract_hostname(url: str) -> str:

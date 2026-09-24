@@ -1283,6 +1283,9 @@ def run_domain_recon(target: str, bruteforce: bool = False,
             "project_id": PROJECT_ID,
             "filtered_mode": filtered_mode,
             "wildcard_mode": bool(target_info.get("wildcard_mode")),
+            # Keys a domain-level finding (SPF, DMARC...) on its root, so a
+            # batch's roots do not share one Vulnerability node (vuln_mixin).
+            "domain_batch": bool(_batch_groups()),
             "subdomain_filter": full_subdomains if filtered_mode else [],
             "anonymous_mode": False,
             "bruteforce_mode": bruteforce if not filtered_mode else False,

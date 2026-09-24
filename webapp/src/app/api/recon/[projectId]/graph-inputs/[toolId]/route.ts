@@ -194,7 +194,7 @@ const TOOL_QUERIES: Record<string, ToolQuery> = {
       OPTIONAL MATCH (d)-[:RESOLVES_TO]->(di:IP)
       WITH collect(DISTINCT s.name) AS subdomains,
            count(DISTINCT i) + count(DISTINCT di) AS ipCount
-      OPTIONAL MATCH (b:BaseURL {user_id: $uid, project_id: $pid})
+      ${SCOPED_BASEURLS}
       WITH subdomains, ipCount, collect(DISTINCT b.url) AS baseurls
       RETURN subdomains, size(subdomains) AS subCount, ipCount, baseurls`,
     respond: r => ({
@@ -228,9 +228,9 @@ const TOOL_QUERIES: Record<string, ToolQuery> = {
     cypher: `${DOMAINS}
       OPTIONAL MATCH (d)-[:HAS_SUBDOMAIN]->(s:Subdomain)
       WITH count(DISTINCT s) AS subCount
-      OPTIONAL MATCH (b:BaseURL {user_id: $uid, project_id: $pid})
+      ${SCOPED_BASEURLS}
       WITH subCount, collect(DISTINCT b.url) AS baseurls
-      OPTIONAL MATCH (e:Endpoint {user_id: $uid, project_id: $pid})
+      ${SCOPED_ENDPOINTS}
       RETURN subCount, baseurls, count(DISTINCT e) AS endpointCount`,
     respond: r => ({
       existing_subdomains_count: num(r, 'subCount'),
@@ -306,10 +306,11 @@ const TOOL_QUERIES: Record<string, ToolQuery> = {
     cypher: `${DOMAINS}
       OPTIONAL MATCH (d)-[:HAS_SUBDOMAIN]->(s:Subdomain)
       WITH collect(DISTINCT s.name) AS subdomains
-      OPTIONAL MATCH (fs:Subdomain {user_id: $uid, project_id: $pid})
-      WHERE EXISTS { (fs)-[:RESOLVES_TO]->(ci:IP) WHERE ci.is_cdn = true }
+      OPTIONAL MATCH (fd:Domain {user_id: $uid, project_id: $pid})-[:HAS_SUBDOMAIN]->(fs:Subdomain)
+      WHERE fd.name IN $domains
+        AND (EXISTS { (fs)-[:RESOLVES_TO]->(ci:IP) WHERE ci.is_cdn = true }
          OR EXISTS { (fs)-[:HAS_BASE_URL|HAS_BASEURL]->(:BaseURL)-[:HAS_ENDPOINT]->(ep:Endpoint)
-                     WHERE ep.is_cdn = true OR ep.favicon_hash IS NOT NULL }
+                     WHERE ep.is_cdn = true OR ep.favicon_hash IS NOT NULL })
       RETURN subdomains, size(subdomains) AS subCount, count(DISTINCT fs) AS frontedCount`,
     respond: r => ({ ...subdomainFields(r), fronted_count: num(r, 'frontedCount') }),
   },

@@ -41,11 +41,10 @@ def build_host_scope(recon_data: dict) -> set:
     scope |= {_normalize_host(ip) for ip in metadata.get("expanded_ips") or []}
     scope.discard("")
 
-    # Bare-domain scan with no subdomains discovered: the apex is the scope.
+    # Bare-domain scan with no subdomains discovered: the apexes are the scope.
     if not scope:
-        domain = _normalize_host(recon_data.get("domain", ""))
-        if domain:
-            scope.add(domain)
+        scope = {_normalize_host(r) for r in scope_roots(recon_data)}
+        scope.discard("")
     return scope
 
 
