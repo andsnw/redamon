@@ -6,14 +6,20 @@
  * would not run as written, and a stale `revision` (409: someone saved in
  * between; resend with `force: true` to overwrite, which is audited as such).
  * PUT never arms or disarms: that is Apply's and Disarm's job.
+ *
+ * A PUT that loads a preset also carries `loadedPreset` ({ name, fingerprint },
+ * or null to clear it). An ordinary save omits it and leaves the record alone:
+ * the header only badges the name while the rules still hash to the fingerprint.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import prisma from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
 import { readJsonBody } from '@/lib/jsonBody'
 import { requireProjectOwner, realActorUserId } from '@/lib/triageClient'
 import { allErrors, validateNodeFilters } from '@/lib/nodeFilters/validate'
 import { coerceDoc } from '@/lib/nodeFilters/model'
+import { parseLoadedPresetInput } from '@/lib/nodeFilters/presets'
 import {
   RUN_SELECT, activeVersion, diffSummary, exemptionCounts, loadNodeFilter,
 } from '@/lib/nodeFilters/server'
@@ -61,6 +67,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   const { mode, rules, revision, force } = parsed.body as {
     mode?: unknown; rules?: unknown; revision?: unknown; force?: unknown
   }
+  const presetGiven = 'loadedPreset' in parsed.body
+  const preset = presetGiven ? parseLoadedPresetInput(parsed.body.loadedPreset) : null
+  if (preset && !preset.ok) return NextResponse.json({ error: preset.error }, { status: 400 })
+  const presetData = preset?.ok
+    ? {
+        loadedPreset: preset.value === null
+          ? Prisma.DbNull
+          : { name: preset.value.name, fingerprint: preset.value.fingerprint },
+      }
+    : {}
   const verdict = validateNodeFilters(mode, rules)
   const errors = allErrors(verdict)
   if (!verdict.ok || errors.length > 0) {
@@ -84,7 +100,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     if (!before.exists) {
       await prisma.projectNodeFilter.create({
-        data: { projectId: caller.projectId, mode: mode as string, rules: doc as never, revision: 1, updatedBy: caller.userId },
+        data: {
+          projectId: caller.projectId, mode: mode as string, rules: doc as never, revision: 1,
+          updatedBy: caller.userId, ...presetData,
+        },
       })
       nextRevision = 1
     } else {
@@ -92,7 +111,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       // cannot both land: the loser gets the same 409 as a stale page.
       const updated = await prisma.projectNodeFilter.updateMany({
         where: { projectId: caller.projectId, ...(forced ? {} : { revision: before.revision }) },
-        data: { mode: mode as string, rules: doc as never, revision: { increment: 1 }, updatedBy: caller.userId },
+        data: {
+          mode: mode as string, rules: doc as never, revision: { increment: 1 },
+          updatedBy: caller.userId, ...presetData,
+        },
       })
       if (updated.count !== 1) {
         return NextResponse.json({ error: 'The rules changed elsewhere since you loaded them.' }, { status: 409 })
@@ -116,7 +138,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     targetType: 'project',
     targetId: caller.projectId,
     before: { revision: before.revision, mode: before.mode },
-    after: { revision: nextRevision, mode, forced, realActorUserId: realActor, ...diffSummary(before.rules, doc) },
+    after: {
+      revision: nextRevision, mode, forced, realActorUserId: realActor, ...diffSummary(before.rules, doc),
+      ...(preset?.ok && preset.value ? { presetLoaded: preset.value.name } : {}),
+    },
     source: 'ui',
   })
   if (before.mode !== mode) {

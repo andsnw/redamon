@@ -10,10 +10,12 @@ import type { ReactNode } from 'react'
 
 const confirm = vi.fn()
 const alertError = vi.fn()
+const alertWarning = vi.fn()
+const dangerConfirm = vi.fn()
 const toast = { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }
 
 vi.mock('@/components/ui', () => ({
-  useAlertModal: () => ({ confirm, alertError }),
+  useAlertModal: () => ({ confirm, alertError, alertWarning, dangerConfirm }),
   useToast: () => toast,
   WikiInfoButton: () => null,
   Toggle: ({ checked, onChange, disabled, 'aria-label': label }: {
@@ -34,7 +36,14 @@ const STATE = {
   mode: 'denylist', applyToScans: true, revision: 3, exists: true,
   rules: { version: 1, kinds: { 'vuln.nuclei': { enabled: true, action: 'mute', rules: [RULE] } } },
   exemptionCounts: { Vulnerability: 2 }, activeVersion: { id: 'v7', label: 'Scan 7' },
-  lastRun: null, lastCompleted: null, liveRunId: null,
+  lastRun: null, lastCompleted: null, liveRunId: null, loadedPreset: null,
+}
+const PRESET_RULE = { id: 'p7q8r9', name: 'Low severity noise', enabled: true,
+                      all: [{ field: 'severity', op: 'in', value: ['low'] }] }
+const PRESET = {
+  id: 'preset1', name: 'Quiet perimeter', description: 'Mutes the low noise', mode: 'denylist',
+  counts: { rules: 1, kinds: 1 }, createdAt: '2026-09-24T10:00:00Z', updatedAt: '2026-09-24T10:00:00Z',
+  rules: { version: 1, kinds: { 'vuln.nuclei': { enabled: true, action: 'mute', rules: [PRESET_RULE] } } },
 }
 const PREVIEW = {
   ok: true, partial: false, totals: { scanned: 1930, to_mute: 412, to_unmute: 0 },
@@ -50,15 +59,24 @@ function reply(body: unknown, status = 200) {
 
 let fetchMock: ReturnType<typeof vi.fn>
 let putStatus = 200
+let putErrors: string[] | null = null
 
 beforeEach(() => {
   putStatus = 200
+  putErrors = null
   fetchMock = vi.fn((url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     if (url.endsWith('/node-filters') && method === 'GET') return reply(STATE)
     if (url.endsWith('/node-filters') && method === 'PUT') {
+      if (putErrors) return reply({ error: 'The rules are not valid.', errors: putErrors }, 400)
       return putStatus === 200 ? reply({ ok: true, revision: 4 }) : reply({ error: 'changed', currentRevision: 5 }, putStatus)
     }
+    if (url.endsWith('/api/mute-rule-presets') && method === 'GET') {
+      const { rules: _omitted, ...summary } = PRESET
+      return reply([summary])
+    }
+    if (url.endsWith('/api/mute-rule-presets') && method === 'POST') return reply({ ...PRESET, id: 'new' }, 201)
+    if (url.endsWith('/api/mute-rule-presets/preset1')) return reply(PRESET)
     if (url.endsWith('/preview')) return reply(PREVIEW)
     if (url.endsWith('/disarm')) return reply({ armed: false })
     if (url.endsWith('/apply') && method === 'GET') return reply({ busy: null, activeVersion: STATE.activeVersion })
@@ -187,5 +205,84 @@ describe('NodeFiltersView', () => {
     fireEvent.click(await screen.findByText('Allowlist: keep only what matches'))
     await waitFor(() => expect(confirm).toHaveBeenCalled())
     expect(screen.queryByText('Unsaved changes')).toBeNull()
+  })
+
+  describe('presets', () => {
+    const putBodies = () => fetchMock.mock.calls
+      .filter(([u, i]) => String(u).endsWith('/node-filters') && i?.method === 'PUT')
+      .map(([, i]) => JSON.parse(String(i.body)))
+
+    async function openMenuItem(label: string) {
+      fireEvent.click(await screen.findByRole('button', { name: /Presets/ }))
+      fireEvent.click(screen.getByRole('menuitem', { name: label }))
+    }
+
+    test('the Presets menu offers save, load and manage', async () => {
+      view()
+      fireEvent.click(await screen.findByRole('button', { name: /Presets/ }))
+      expect(screen.getByRole('menuitem', { name: 'Save as preset…' })).toBeTruthy()
+      expect(screen.getByRole('menuitem', { name: 'Load preset…' })).toBeTruthy()
+      expect(screen.getByRole('menuitem', { name: 'Manage presets…' })).toBeTruthy()
+    })
+
+    test('Save as preset posts the rules on screen with the name', async () => {
+      view()
+      await openMenuItem('Save as preset…')
+      fireEvent.change(screen.getByPlaceholderText(/Quiet external perimeter/), { target: { value: 'My preset' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save preset' }))
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Preset "My preset" saved.', 'Mute rules'))
+      const post = fetchMock.mock.calls.find(([u, i]) => String(u).endsWith('/api/mute-rule-presets') && i?.method === 'POST')!
+      const body = JSON.parse(String(post[1].body))
+      expect(body).toMatchObject({ name: 'My preset', mode: 'denylist' })
+      expect(body.rules.kinds['vuln.nuclei'].rules[0].id).toBe(RULE.id)
+    })
+
+    test('loading asks first, saves the preset with its record, and badges its name', async () => {
+      confirm.mockResolvedValue(true)
+      view()
+      await openMenuItem('Load preset…')
+      fireEvent.click(await screen.findByRole('button', { name: 'Load' }))
+
+      await waitFor(() => expect(putBodies()).toHaveLength(1))
+      const [body] = putBodies()
+      expect(body.revision).toBe(3)
+      expect(body.rules.kinds['vuln.nuclei'].rules[0].id).toBe(PRESET_RULE.id)
+      expect(body.loadedPreset.name).toBe('Quiet perimeter')
+      // armed: the confirmation must say the next scan uses the preset
+      expect(String(confirm.mock.calls[0][0])).toMatch(/active on new scans/)
+      expect(await screen.findByTitle(/match the "Quiet perimeter" preset/)).toBeTruthy()
+    })
+
+    test('declining the confirmation changes nothing', async () => {
+      confirm.mockResolvedValue(false)
+      view()
+      await openMenuItem('Load preset…')
+      fireEvent.click(await screen.findByRole('button', { name: 'Load' }))
+      await waitFor(() => expect(confirm).toHaveBeenCalled())
+      expect(putBodies()).toHaveLength(0)
+      expect(screen.queryByTitle(/preset\. Changing/)).toBeNull()
+    })
+
+    test('badge_hides_on_edit: turning a kind off after a load removes the preset name', async () => {
+      confirm.mockResolvedValue(true)
+      view()
+      await openMenuItem('Load preset…')
+      fireEvent.click(await screen.findByRole('button', { name: 'Load' }))
+      expect(await screen.findByTitle(/match the "Quiet perimeter" preset/)).toBeTruthy()
+
+      fireEvent.click(screen.getByLabelText('Filter Nuclei'))
+      expect(screen.queryByTitle(/match the "Quiet perimeter" preset/)).toBeNull()
+    })
+
+    test('a preset whose rules no longer validate is loaded but NOT saved, and says why', async () => {
+      confirm.mockResolvedValue(true)
+      putErrors = ['vuln.nuclei rule 1 condition 1: unknown field "old_field"']
+      view()
+      await openMenuItem('Load preset…')
+      fireEvent.click(await screen.findByRole('button', { name: 'Load' }))
+      await waitFor(() => expect(alertWarning).toHaveBeenCalled())
+      expect(String(alertWarning.mock.calls[0][0])).toMatch(/loaded but NOT saved[\s\S]*old_field/)
+      expect(await screen.findByText('Unsaved changes')).toBeTruthy()
+    })
   })
 })

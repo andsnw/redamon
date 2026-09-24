@@ -10,18 +10,25 @@
  *
  * The rules are edited as a draft and saved explicitly; Apply saves them and
  * then applies to the current graph, arms them for new scans, or both.
+ *
+ * A preset is a saved mode + rules document. Loading one replaces the rules
+ * and saves them; the header badges its name while the rules still match it.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { Check, Loader2, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { useAlertModal, useToast, WikiInfoButton } from '@/components/ui'
 import { NODE_FILTER_CATALOG, enabledKinds } from '@/lib/nodeFilters/catalog'
-import type { NodeFilterMode } from '@/lib/nodeFilters/model'
+import type { NodeFilterDoc, NodeFilterMode } from '@/lib/nodeFilters/model'
+import type { MuteRulesPresetSummary } from '@/lib/nodeFilters/presets'
 import { countActiveRules } from '@/lib/nodeFilters/validate'
 import { ApplyModal } from './ApplyModal'
 import { ArmedStatus } from './ArmedStatus'
 import { KindPanel } from './KindPanel'
 import { KindRail, LOCKED_ID } from './KindRail'
 import { ModeToggle } from './ModeToggle'
+import { PresetListModal, type PresetListMode } from './PresetListModal'
+import { PresetMenu } from './PresetMenu'
+import { PresetSaveModal } from './PresetSaveModal'
 import { useApplyRun, type ApplyTarget } from './useApplyRun'
 import { useNodeFilters, type NodeFilterRunSummary } from './useNodeFilters'
 import { usePreview } from './usePreview'
@@ -58,11 +65,13 @@ export function NodeFiltersView({
   const catalog = NODE_FILTER_CATALOG
   const kinds = useMemo(() => enabledKinds(catalog), [catalog])
   const nf = useNodeFilters(projectId)
-  const { confirm, alertError } = useAlertModal()
+  const { confirm, alertError, alertWarning } = useAlertModal()
   const toast = useToast()
   const [selected, setSelected] = useState<string>(focus?.kind ?? kinds[0]?.id ?? LOCKED_ID)
   const [applyOpen, setApplyOpen] = useState(false)
   const [busyAction, setBusyAction] = useState(false)
+  const [presetSaveOpen, setPresetSaveOpen] = useState(false)
+  const [presetList, setPresetList] = useState<PresetListMode | null>(null)
 
   useEffect(() => {
     if (focus?.kind && catalog.kinds[focus.kind]) setSelected(focus.kind)
@@ -174,6 +183,59 @@ export function NodeFiltersView({
     }
   }, [projectId, nf, toast, alertError, onStatusChange])
 
+  const loadPreset = useCallback(async (summary: MuteRulesPresetSummary): Promise<boolean> => {
+    const res = await fetch(`/api/mute-rule-presets/${encodeURIComponent(summary.id)}`)
+    if (!res.ok) {
+      await alertError(`The preset "${summary.name}" could not be read.`, 'Load preset')
+      return false
+    }
+    const preset = await res.json() as { name: string; mode: NodeFilterMode; rules: NodeFilterDoc }
+    const armedNote = saved?.applyToScans
+      ? preset.mode === 'allowlist'
+        ? ' These rules are active on new scans, so the next scan mutes in ALLOWLIST mode: '
+          + 'every finding of an active kind that no rule keeps.'
+        : ' These rules are active on new scans, so the next scan mutes by the preset.'
+      : ''
+    const ok = await confirm(
+      `Replace the rules and the mode with the preset "${preset.name}" and save them?`
+        + (nf.dirty ? ' Your unsaved changes are lost.' : '')
+        + armedNote
+        + ' The current graph does not change until you Apply.',
+      'Load preset',
+      { confirmLabel: 'Load and save' },
+    )
+    if (!ok) return false
+
+    const next = { name: preset.name, mode: preset.mode, rules: preset.rules }
+    let result = await nf.applyPreset(next)
+    if (!result.ok && result.conflict) {
+      const overwrite = await confirm(
+        'Someone saved these rules since you opened them. Overwrite their version with the preset, or keep '
+          + 'the preset on screen unsaved: Discard replaces it with theirs.',
+        'The rules changed elsewhere',
+        { confirmLabel: 'Overwrite', cancelLabel: 'Keep unsaved' },
+      )
+      if (!overwrite) {
+        await nf.load(true)
+        return true
+      }
+      result = await nf.applyPreset(next, true)
+    }
+    if (result.ok) {
+      toast.success(`Preset "${preset.name}" loaded and saved.`, 'Mute rules')
+      onStatusChange?.()
+    } else if (!result.conflict) {
+      // Still on screen: a rule can name a field the catalog has since dropped.
+      await alertWarning(
+        `Preset "${preset.name}" was loaded but NOT saved:\n`
+          + [result.error, ...(result.errors ?? [])].join('\n')
+          + '\n\nFix the rules marked in red, then Save.',
+        'Load preset',
+      )
+    }
+    return true
+  }, [saved, nf, confirm, alertError, alertWarning, toast, onStatusChange])
+
   const clearExemptions = useCallback(async (label: string) => {
     if (!projectId) return
     const ok = await confirm(
@@ -239,7 +301,24 @@ export function NodeFiltersView({
           <SlidersHorizontal size={14} />
           <span className={styles.label}>Mode</span>
           <ModeToggle mode={nf.draftMode} onChange={m => void changeMode(m)} disabled={run.running} />
+          <PresetMenu
+            disabled={run.running || nf.saving}
+            saveBlockedReason={nf.errors.length ? 'Fix the rules marked in red first' : null}
+            onSave={() => setPresetSaveOpen(true)}
+            onLoad={() => setPresetList('load')}
+            onManage={() => setPresetList('manage')}
+          />
           <span className={styles.spacer} />
+          {nf.appliedPreset && (
+            <span
+              className={styles.presetApplied}
+              title={`The rules match the "${nf.appliedPreset}" preset. Changing a rule or the mode removes this.`}
+            >
+              <span className={styles.presetAppliedLabel}>Preset</span>
+              <Check size={12} strokeWidth={3} />
+              <span className={styles.presetAppliedName}>{nf.appliedPreset}</span>
+            </span>
+          )}
           {nf.dirty && <span className={styles.dirty}>Unsaved changes</span>}
           {nf.dirty && (
             <button type="button" className={styles.button} onClick={nf.discard} disabled={nf.saving}>Discard</button>
@@ -371,6 +450,19 @@ export function NodeFiltersView({
         isViewingPastVersion={isViewingPastVersion}
         viewedVersionLabel={viewedVersionLabel}
         onConfirm={doApply}
+      />
+      <PresetSaveModal
+        isOpen={presetSaveOpen}
+        onClose={() => setPresetSaveOpen(false)}
+        mode={nf.draftMode}
+        rules={nf.draft}
+        counts={draftCounts}
+      />
+      <PresetListModal
+        isOpen={presetList !== null}
+        mode={presetList ?? 'load'}
+        onClose={() => setPresetList(null)}
+        onLoad={loadPreset}
       />
     </div>
   )

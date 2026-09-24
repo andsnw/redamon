@@ -209,6 +209,36 @@ describe('permission denied renders a reason, not a button that 403s', () => {
     await waitFor(() => expect(screen.getByText(/No MCP access tokens yet/)).toBeTruthy())
     expect(screen.getByText('New token').closest('button')).toBeDisabled()
   })
+
+  test('hovering the disabled button explains why, when viewing another user', async () => {
+    vi.stubGlobal('fetch', mockFetch({ me: { id: 'admin1', role: 'admin' } }))
+    render(<McpTokensTab userId="victim" />)
+
+    await waitFor(() => expect(screen.getByText(/can only be created by its own user/)).toBeTruthy())
+    fireEvent.mouseEnter(screen.getByText('New token').closest('button')!)
+    const tip = await screen.findByRole('tooltip')
+    expect(tip.textContent).toMatch(/account you are logged in with/)
+  })
+
+  test('the owner gets no tooltip on the enabled button', async () => {
+    vi.stubGlobal('fetch', mockFetch({ me: { id: 'owner', role: 'standard' } }))
+    render(<McpTokensTab userId="owner" />)
+
+    await waitFor(() => expect(screen.getByText('New token').closest('button')).not.toBeDisabled())
+    fireEvent.mouseEnter(screen.getByText('New token').closest('button')!)
+    await new Promise(r => setTimeout(r, 300))
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  test('an unresolved session does not claim another user is being viewed', async () => {
+    vi.stubGlobal('fetch', mockFetch({ meStatus: 401 }))
+    render(<McpTokensTab userId="owner" />)
+
+    await waitFor(() => expect(screen.getByText(/No MCP access tokens yet/)).toBeTruthy())
+    fireEvent.mouseEnter(screen.getByText('New token').closest('button')!)
+    await new Promise(r => setTimeout(r, 300))
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
 })
 
 describe('the create form', () => {

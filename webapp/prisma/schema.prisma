@@ -28,6 +28,7 @@ model User {
   attackSkills  UserAttackSkill[]
   chatSkills      UserChatSkill[]
   projectPresets  UserProjectPreset[]
+  muteRulesPresets UserMuteRulesPreset[]
   tradecraftResources UserTradecraftResource[]
   mcpTokens       McpAccessToken[]
   settings        UserSettings?
@@ -2127,6 +2128,8 @@ model ProjectNodeFilter {
   rules        Json     @default("{\"version\":1,\"kinds\":{}}")
   /// Bumped on every save; the stale-write check and "changed since last apply".
   revision     Int      @default(0)
+  /// { name, fingerprint } of the preset last loaded; the header badges its name while the rules still hash to it
+  loadedPreset Json?    @map("loaded_preset")
   updatedBy    String?  @map("updated_by")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -2250,6 +2253,23 @@ model UserProjectPreset {
 
   @@index([userId])
   @@map("user_project_presets")
+}
+
+/// A user's saved Mute Rules configuration, loadable into any project they own.
+model UserMuteRulesPreset {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String   @default("") @db.Text
+  /// denylist | allowlist
+  mode        String   @default("denylist")
+  rules       Json
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("user_mute_rules_presets")
 }
 
 model UserTradecraftResource {

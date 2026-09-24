@@ -13,7 +13,7 @@ import {
   KeyRound, Plus, Loader2, Copy, Check, Trash2, Pencil,
   AlertTriangle, RefreshCw, ShieldAlert, Braces, GraduationCap, MoreVertical,
 } from 'lucide-react'
-import { Menu, MenuItem, useAlertModal, WikiInfoButton } from '@/components/ui'
+import { Menu, MenuItem, Tooltip, useAlertModal, WikiInfoButton } from '@/components/ui'
 import { useDirtyState } from '@/hooks/useDirtyState'
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import {
@@ -191,6 +191,9 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
 
   const canMint = sessionUserId !== null && sessionUserId === userId
+  // Distinct from !canMint: an unresolved session also blocks minting, but
+  // must not claim the operator is looking at someone else's account.
+  const viewingOtherUser = sessionUserId !== null && !canMint
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -450,17 +453,24 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
           <button className={styles.secondaryBtn} onClick={() => void load()} disabled={loading}>
             <RefreshCw size={14} /> Refresh
           </button>
-          <button
-            className={styles.primaryBtn}
-            onClick={() => { closeEdit(); setShowForm(true); resetForm() }}
-            disabled={!canMint || showForm}
+          <Tooltip
+            content="You can only create a token for the account you are logged in with, admins included. To create one for this user, log in as them."
+            position="bottom"
+            maxWidth={280}
+            disabled={!viewingOtherUser}
           >
-            <Plus size={14} /> New token
-          </button>
+            <button
+              className={styles.primaryBtn}
+              onClick={() => { closeEdit(); setShowForm(true); resetForm() }}
+              disabled={!canMint || showForm}
+            >
+              <Plus size={14} /> New token
+            </button>
+          </Tooltip>
         </div>
       </div>
 
-      {sessionUserId !== null && !canMint && (
+      {viewingOtherUser && (
         <div className={styles.noticeBanner}>
           <ShieldAlert size={14} />
           <span>

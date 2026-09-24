@@ -6,9 +6,15 @@
  * The draft is local until Save. A save sends the revision it was loaded at,
  * and a 409 means someone saved in between: the caller offers Overwrite (a
  * save with `force`) or keeps the draft over a refreshed saved copy.
+ *
+ * Loading a preset replaces the draft AND saves it, recording which preset it
+ * was so the header can badge the name while the rules still match it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { EMPTY_NODE_FILTER_DOC, type NodeFilterDoc, type NodeFilterMode } from '@/lib/nodeFilters/model'
+import { EMPTY_NODE_FILTER_DOC, coerceDoc, type NodeFilterDoc, type NodeFilterMode } from '@/lib/nodeFilters/model'
+import {
+  appliedPresetName, muteRulesFingerprint, type LoadedMuteRulesPreset,
+} from '@/lib/nodeFilters/presets'
 import { allErrors, validateNodeFilters, type NodeFilterValidation } from '@/lib/nodeFilters/validate'
 import { sameDoc } from './draft'
 
@@ -35,6 +41,7 @@ export interface NodeFiltersState {
   applyToScans: boolean
   rules: NodeFilterDoc
   revision: number
+  loadedPreset: LoadedMuteRulesPreset | null
   exists: boolean
   exemptionCounts: Record<string, number>
   activeVersion: { id: string; label: string } | null
@@ -47,6 +54,18 @@ export type SaveResult =
   | { ok: true; revision: number }
   | { ok: false; conflict: true; currentRevision?: number }
   | { ok: false; conflict: false; error: string; errors?: string[] }
+
+export interface PresetToLoad {
+  name: string
+  mode: NodeFilterMode
+  rules: NodeFilterDoc
+}
+
+interface SaveBody {
+  mode: NodeFilterMode
+  rules: NodeFilterDoc
+  loadedPreset?: LoadedMuteRulesPreset
+}
 
 export function useNodeFilters(projectId: string | null) {
   const [saved, setSaved] = useState<NodeFiltersState | null>(null)
@@ -104,27 +123,57 @@ export function useNodeFilters(projectId: string | null) {
     () => validateNodeFilters(draftMode, draft), [draftMode, draft])
   const errors = useMemo(() => allErrors(validation), [validation])
 
-  const save = useCallback(async (force = false): Promise<SaveResult> => {
+  // The body is passed in, never read from the draft: a preset load sets the
+  // draft and saves in the same tick, before the new draft is in this closure.
+  const put = useCallback(async (body: SaveBody, force: boolean): Promise<SaveResult> => {
     if (!projectId || !saved) return { ok: false, conflict: false, error: 'Nothing loaded' }
     setSaving(true)
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/node-filters`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: draftMode, rules: draft, revision: saved.revision, ...(force ? { force: true } : {}) }),
+        body: JSON.stringify({ ...body, revision: saved.revision, ...(force ? { force: true } : {}) }),
       })
-      const body = await res.json().catch(() => ({}))
-      if (res.status === 409) return { ok: false, conflict: true, currentRevision: body.currentRevision }
-      if (!res.ok) return { ok: false, conflict: false, error: body.error || `Save failed: ${res.status}`, errors: body.errors }
+      const answer = await res.json().catch(() => ({}))
+      if (res.status === 409) return { ok: false, conflict: true, currentRevision: answer.currentRevision }
+      if (!res.ok) {
+        return { ok: false, conflict: false, error: answer.error || `Save failed: ${res.status}`, errors: answer.errors }
+      }
       // Saved, but the operator has moved to another project meanwhile.
-      if (currentProject.current !== projectId) return { ok: true, revision: body.revision }
+      if (currentProject.current !== projectId) return { ok: true, revision: answer.revision }
       await load(true)
-      setSaved(prev => (prev ? { ...prev, mode: draftMode, rules: draft, revision: body.revision, exists: true } : prev))
-      return { ok: true, revision: body.revision }
+      setSaved(prev => (prev ? {
+        ...prev, mode: body.mode, rules: body.rules, revision: answer.revision, exists: true,
+        ...(body.loadedPreset ? { loadedPreset: body.loadedPreset } : {}),
+      } : prev))
+      return { ok: true, revision: answer.revision }
     } finally {
       setSaving(false)
     }
-  }, [projectId, saved, draftMode, draft, load])
+  }, [projectId, saved, load])
+
+  const save = useCallback(
+    (force = false): Promise<SaveResult> => put({ mode: draftMode, rules: draft }, force),
+    [put, draftMode, draft],
+  )
+
+  /** Replace the draft with a preset and save it, recording the preset. */
+  const applyPreset = useCallback((preset: PresetToLoad, force = false): Promise<SaveResult> => {
+    const rules = coerceDoc(preset.rules)
+    setDraftMode(preset.mode)
+    setDraft(rules)
+    return put({
+      mode: preset.mode,
+      rules,
+      loadedPreset: { name: preset.name, fingerprint: muteRulesFingerprint(preset.mode, rules) },
+    }, force)
+  }, [put])
+
+  /** The loaded preset's name while the draft still matches it exactly. */
+  const appliedPreset = useMemo(
+    () => (saved ? appliedPresetName(saved.loadedPreset, draftMode, draft) : null),
+    [saved, draftMode, draft],
+  )
 
   const discard = useCallback(() => {
     if (!saved) return
@@ -134,6 +183,6 @@ export function useNodeFilters(projectId: string | null) {
 
   return {
     saved, draft, setDraft, draftMode, setDraftMode, loading, error, saving, dirty,
-    validation, errors, load, save, discard,
+    validation, errors, load, save, discard, applyPreset, appliedPreset,
   }
 }

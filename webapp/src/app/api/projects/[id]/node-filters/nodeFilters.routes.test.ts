@@ -11,6 +11,7 @@
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import { Prisma } from '@prisma/client'
 
 const h = vi.hoisted(() => ({
   eff: vi.fn(),
@@ -206,6 +207,49 @@ describe('GET and PUT the rules', () => {
     await putFilters(json('/n', { mode: 'allowlist', rules: RULES, revision: 3 }, 'PUT'), params)
     const actions = h.audit.mock.calls.map(c => c[0].action)
     expect(actions).toEqual(['node_filters.saved', 'node_filters.mode_changed'])
+  })
+})
+
+describe('the loaded preset', () => {
+  const PRESET = { name: 'Quiet perimeter', fingerprint: '1a2b3c' }
+
+  test('a preset load stores the record with the save, and the audit names the preset', async () => {
+    const res = await putFilters(json('/n', { mode: 'denylist', rules: RULES, revision: 3, loadedPreset: PRESET }, 'PUT'), params)
+    expect(res.status).toBe(200)
+    expect(h.filterUpdateMany.mock.calls[0][0].data.loadedPreset).toEqual(PRESET)
+    const saved = h.audit.mock.calls.map(c => c[0]).find(e => e.action === 'node_filters.saved')
+    expect(saved.after.presetLoaded).toBe('Quiet perimeter')
+  })
+
+  test('the first save of a project can carry the record too', async () => {
+    h.filterFind.mockResolvedValue(null)
+    await putFilters(json('/n', { mode: 'denylist', rules: RULES, revision: 0, loadedPreset: PRESET }, 'PUT'), params)
+    expect(h.filterCreate.mock.calls[0][0].data.loadedPreset).toEqual(PRESET)
+  })
+
+  test('an ordinary save leaves the record alone: the badge is decided by the fingerprint', async () => {
+    await putFilters(json('/n', { mode: 'denylist', rules: RULES, revision: 3 }, 'PUT'), params)
+    expect(h.filterUpdateMany.mock.calls[0][0].data).not.toHaveProperty('loadedPreset')
+  })
+
+  test('null clears the record', async () => {
+    await putFilters(json('/n', { mode: 'denylist', rules: RULES, revision: 3, loadedPreset: null }, 'PUT'), params)
+    expect(h.filterUpdateMany.mock.calls[0][0].data.loadedPreset).toBe(Prisma.DbNull)
+  })
+
+  test('a malformed record is a 400 and nothing is saved', async () => {
+    for (const bad of ['x', { name: 'only a name' }, { name: 'A', fingerprint: 'f'.repeat(40) }]) {
+      const res = await putFilters(json('/n', { mode: 'denylist', rules: RULES, revision: 3, loadedPreset: bad }, 'PUT'), params)
+      expect(res.status).toBe(400)
+    }
+    expect(h.filterUpdateMany).not.toHaveBeenCalled()
+  })
+
+  test('GET returns the record, and a project that never loaded one reads null', async () => {
+    h.filterFind.mockResolvedValue({ ...STORED, loadedPreset: PRESET })
+    expect((await (await getFilters(new NextRequest('http://x/n'), params)).json()).loadedPreset).toEqual(PRESET)
+    h.filterFind.mockResolvedValue(STORED)
+    expect((await (await getFilters(new NextRequest('http://x/n'), params)).json()).loadedPreset).toBeNull()
   })
 })
 

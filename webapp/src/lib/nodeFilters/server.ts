@@ -6,6 +6,7 @@
  */
 import prisma from '@/lib/prisma'
 import { EMPTY_NODE_FILTER_DOC, coerceDoc, type NodeFilterDoc, type NodeFilterMode } from './model'
+import { readLoadedPreset, type LoadedMuteRulesPreset } from './presets'
 import { countActiveRules } from './validate'
 import { findLiveNodeFilterRun } from '@/lib/nodeFilterRun'
 
@@ -14,6 +15,7 @@ export interface StoredNodeFilter {
   applyToScans: boolean
   rules: NodeFilterDoc
   revision: number
+  loadedPreset: LoadedMuteRulesPreset | null
   updatedBy: string | null
   updatedAt: string | null
   exists: boolean
@@ -24,7 +26,7 @@ export async function loadNodeFilter(projectId: string): Promise<StoredNodeFilte
   if (!row) {
     return {
       mode: 'denylist', applyToScans: false, rules: EMPTY_NODE_FILTER_DOC, revision: 0,
-      updatedBy: null, updatedAt: null, exists: false,
+      loadedPreset: null, updatedBy: null, updatedAt: null, exists: false,
     }
   }
   return {
@@ -32,6 +34,7 @@ export async function loadNodeFilter(projectId: string): Promise<StoredNodeFilte
     applyToScans: row.applyToScans,
     rules: coerceDoc(row.rules),
     revision: row.revision,
+    loadedPreset: readLoadedPreset(row.loadedPreset),
     updatedBy: row.updatedBy,
     updatedAt: row.updatedAt.toISOString(),
     exists: true,
