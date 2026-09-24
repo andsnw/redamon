@@ -12,6 +12,8 @@ import { safeBasename } from '@/lib/safePath'
 import { orchestratorFetch } from '@/lib/orchestrator'
 import { envelopeForKind } from '@/lib/jobQueue'
 import { allErrors, validateNodeFilters } from '@/lib/nodeFilters/validate'
+import { coerceDoc } from '@/lib/nodeFilters/model'
+import { muteRulesFingerprint, parseLoadedPresetInput, parsePresetText } from '@/lib/nodeFilters/presets'
 import { MUTEABLE_FINDING_LABELS } from '@/lib/mcp/findingLabels'
 import { pickProjectColumns } from '@/lib/projectColumns'
 
@@ -405,10 +407,16 @@ export async function POST(request: NextRequest) {
         const nf = JSON.parse(await nodeFilterFile.async('text'))
         const verdict = validateNodeFilters(nf?.mode, nf?.rules)
         if (verdict.ok && allErrors(verdict).length === 0) {
+          // The archive's fingerprint is kept, not recomputed: it is what the
+          // preset loaded, so the badge still hides if the rules were edited since.
+          const loaded = nf.loadedPreset ? parseLoadedPresetInput(nf.loadedPreset) : null
           await prisma.projectNodeFilter.create({
             data: {
               projectId: newProject.id, mode: nf.mode, rules: nf.rules ?? { version: 1, kinds: {} },
               applyToScans: false, updatedBy: userId,
+              ...(loaded?.ok && loaded.value
+                ? { loadedPreset: { name: loaded.value.name, fingerprint: loaded.value.fingerprint } }
+                : {}),
             },
           })
           ;(stats as Record<string, unknown>).nodeFilters = 'imported (not applied to new scans)'
@@ -452,6 +460,46 @@ export async function POST(request: NextRequest) {
         })
       }
       (stats as Record<string, number>).userPresets = presets.length
+    }
+
+    // Mute Rules presets: each is checked like a save, and one this user already
+    // has (same name, same mode and rules) is skipped, so importing the same
+    // export twice does not pile up copies.
+    const muteRulesPresetsFile = zip.file('presets/user_mute_rules_presets.json')
+    if (muteRulesPresetsFile) {
+      try {
+        const rows = JSON.parse(await muteRulesPresetsFile.async('text'))
+        const existing = await prisma.userMuteRulesPreset.findMany({
+          where: { userId }, select: { name: true, mode: true, rules: true },
+        })
+        const key = (name: string, mode: string, rules: unknown) =>
+          `${name}\u0000${muteRulesFingerprint(mode === 'allowlist' ? 'allowlist' : 'denylist', rules)}`
+        const have = new Set(existing.map(p => key(p.name, p.mode, p.rules)))
+        let imported = 0
+        let skipped = 0
+        for (const row of Array.isArray(rows) ? rows : []) {
+          const text = parsePresetText(row?.name, row?.description)
+          const verdict = validateNodeFilters(row?.mode, row?.rules)
+          if (!text.ok || !verdict.ok || allErrors(verdict).length > 0) {
+            skipped += 1
+            continue
+          }
+          const k = key(text.name, row.mode, row.rules)
+          if (have.has(k)) continue
+          have.add(k)
+          await prisma.userMuteRulesPreset.create({
+            data: {
+              userId, name: text.name, description: text.description, mode: row.mode,
+              rules: coerceDoc(row.rules) as never,
+            },
+          })
+          imported += 1
+        }
+        ;(stats as Record<string, number>).muteRulesPresets = imported
+        if (skipped > 0) (stats as Record<string, number>).muteRulesPresetsSkipped = skipped
+      } catch (e) {
+        console.warn('Could not import the Mute Rules presets:', e)
+      }
     }
 
     // Import Scan Timeline history (plan Section 9). Ids are regenerated and

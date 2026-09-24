@@ -3351,11 +3351,15 @@ async def graph_triage(body: GraphTriageRequest):
                 "total": client.count_triage_findings(body.user_id, body.project_id),
             }
         if body.op == "human_verdict":
+            # Keyed on the channel, not a flag, so no MCP caller can forget it:
+            # on a rule-muted finding a verdict releases the mute, and an
+            # unattended token may not unmute.
             return client.set_human_verdict(
                 body.user_id, body.project_id, body.node_id,
                 body.status or "", body.reason or "",
                 channel=body.source or "app",
-                verdict_by=body.verdict_by or body.user_id)
+                verdict_by=body.verdict_by or body.user_id,
+                refuse_muted=body.source == "mcp")
         if body.op == "preflight":
             return client.triage_preflight(body.user_id, body.project_id)
         # stop_run. Project delete calls this before deleting (X12). A run that
@@ -3421,6 +3425,9 @@ async def graph_triage(body: GraphTriageRequest):
                 **({"status": body.status or "",
                     "channel": body.source or "app"} if body.op == "human_verdict" else {}),
             )
+        elif result.get("reason") == "muted":
+            logger.info("graph/triage human_verdict refused on a muted finding: "
+                        "node_id=%s project=%s", body.node_id, body.project_id)
         else:
             # Matched nothing: a stale node id (version-activate recreates
             # nodes), an asset id, or another tenant's. The caller gets a
@@ -4210,7 +4217,7 @@ async def kali_exec(body: KaliExecRequest):
     The confirmation gate cannot apply here because there is no human, so what
     carries the weight instead is who is allowed to reach this endpoint at all:
 
-        1. MCP_KALI_EXEC_ENABLED     operator, per deployment, default off
+        1. MCP_KALI_EXEC_ENABLED     operator, per deployment, default on
         2. the `kali:exec` scope     user, password-confirmed at mint time
         3. project.mcpKaliExecEnabled a human in the project form, per
            engagement, and DENIED to update_recon_settings so a token can never

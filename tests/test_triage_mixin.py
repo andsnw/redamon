@@ -428,6 +428,45 @@ class TestAHumanVerdictIsNeverOverwritten(unittest.TestCase):
         self.assertEqual(len(client.params[-1]["channel"]), 32)
         self.assertEqual(len(client.params[-1]["verdict_by"]), 128)
 
+    def test_a_ui_verdict_may_still_land_on_a_muted_finding(self):
+        # The person who could unmute it is the one clicking.
+        client = FakeClient(records=[{"label": "Vulnerability"}])
+        client.set_human_verdict(UID, PID, "v1", "confirmed")
+        self.assertIs(client.params[-1]["refuse_muted"], False)
+
+    def test_a_refused_verdict_writes_nothing_and_says_why(self):
+        # A human verdict is a Mute Rules guard: on a rule-muted finding it
+        # releases the mute at the next sweep, so from a delegated caller it
+        # would be an unmute by another name.
+        client = FakeClient(records=[{"label": "Vulnerability", "refused": True}])
+        result = client.set_human_verdict(UID, PID, "v1", "confirmed",
+                                          channel="mcp", refuse_muted=True)
+        self.assertEqual(result, {"updated": False, "reason": "muted",
+                                  "label": "Vulnerability"})
+        self.assertIs(client.params[-1]["refuse_muted"], True)
+
+    def test_the_muted_check_and_the_write_are_one_statement(self):
+        # A read-then-write pair would let a mute land between the two.
+        client = FakeClient(records=[{"label": "Vulnerability", "refused": False}])
+        result = client.set_human_verdict(UID, PID, "v1", "confirmed", refuse_muted=True)
+        self.assertEqual(len(client.queries), 1)
+        query = client.last
+        self.assertIn("($refuse_muted AND n:Muted) AS refused", query)
+        self.assertLess(query.index("AS refused"), query.index("n.triage_source = 'human'"))
+        self.assertTrue(result["updated"])
+
+    def test_the_lock_is_taken_before_the_muted_label_is_read(self):
+        # Under read committed, a label read before the lock can see "not
+        # muted", wait on a mute's lock, then write onto the node that mute
+        # just committed. Proven against a real database in
+        # tests/test_verdict_channel_graph_live.py.
+        client = FakeClient(records=[{"label": "Vulnerability", "refused": False}])
+        client.set_human_verdict(UID, PID, "v1", "confirmed", refuse_muted=True)
+        query = client.last
+        lock = query.index("SET n._verdict_lock = true")
+        self.assertLess(lock, query.index("REMOVE n._verdict_lock"))
+        self.assertLess(query.index("REMOVE n._verdict_lock"), query.index("n:Muted"))
+
 
 class TestApplyTriageScores(unittest.TestCase):
     """The publish write path.

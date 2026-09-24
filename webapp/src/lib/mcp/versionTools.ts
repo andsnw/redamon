@@ -211,6 +211,7 @@ async function captureCurrentSide(projectId: string): Promise<LoadedSide> {
   if (before.activating) throw BUSY('a saved version is being activated')
   if (before.scans.length > 0) throw BUSY('a scan is writing it')
   if (before.agentSession || before.triageRun) throw BUSY('an agent session or triage run is writing it')
+  if (before.muteRulesApply) throw BUSY('Mute Rules are being applied to it')
 
   // Non-blocking: queueing here would leave an abandoned waiter that runs a
   // full graph capture nobody is awaiting, holding a slot the UI also needs.
@@ -225,7 +226,7 @@ async function captureCurrentSide(projectId: string): Promise<LoadedSide> {
 
   const after = await readProjectActivity(projectId)
   if (after.unknown || after.activating || after.scans.length > 0
-      || after.agentSession || after.triageRun) {
+      || after.agentSession || after.triageRun || after.muteRulesApply) {
     throw BUSY('it started being rewritten while it was being read')
   }
 

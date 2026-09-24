@@ -732,6 +732,14 @@ Merge key: `(finding_id, user_id, project_id)`.
 existing nodes L2/L1 touch are `BaseURL` (L2) and, in v2, `GithubRepository` (L1),
 which they **enrich with a `DEPENDS_ON` edge** but never mutate.
 
+**Muting these findings.** `MalPackageFinding` and the OSV `Vulnerability`
+nodes (`source = 'osv'`) can be muted by hand or by the *Malicious packages*
+and *Vulnerable packages (OSV)* kinds of [Mute Rules](../../redamon.wiki/Mute-Rules.md).
+Neither L1 nor L2 sweeps them when it ends, though: the end-of-scan sweep covers
+only recon's own finding sources (`RECON_FINDING_SOURCES`), and `osv` is not one
+of them, even when L2 writes it inside a recon run. Rules for these kinds take
+effect only through "apply to current graph".
+
 ---
 
 ## The Supply-Chain SCA table

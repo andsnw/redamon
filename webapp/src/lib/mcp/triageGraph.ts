@@ -131,7 +131,7 @@ export async function listTriageFindings(
  * for, so the cap has to travel WITH the request - capping only the rows this
  * side returns still pulls the whole suppressed set across the wire.
  *
- * Person-first because a filter rule can mute thousands of findings in one
+ * Person-first because a Mute Rule can mute thousands of findings in one
  * apply: newest-first, those would push every mute that IS a person's decision
  * out of a capped window. `total` is the uncapped count; an agent older than
  * that field returns none, and the caller falls back to "at least".

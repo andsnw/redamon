@@ -211,7 +211,7 @@ const GRAPH_SHAPE = [
   '',
   '**Two states that change what a finding MEANS**, and neither of them means "fixed":',
   '',
-  '- `Muted` - a person suppressed it, or a project filter rule did (`muted_via` says which). It is',
+  '- `Muted` - a person suppressed it, or a Mute Rule did (`muted_via` says which). It is',
   '  then invisible to every other read on this surface.',
   '- `stale_since` - a later scan stopped reporting it, but a human had touched it, so it was kept.',
 ].join('\n')
@@ -305,7 +305,7 @@ const REPORTING = [
   '- **Three buckets you never merge** - "found", "scanned and not found", and "not scanned or could',
   '  not check".',
   '',
-  'Never re-report a muted finding as new: a person judged it, or a project filter rule hid it',
+  'Never re-report a muted finding as new: a person judged it, or a Mute Rule hid it',
   'by policy (`muted_via: rule`, which is not a judgement of that finding). Never omit a "could not',
   'verify": a dependency failure is reported as unknown, not dropped to make the list look clean.',
   '',

@@ -300,7 +300,7 @@ describe('the profile layer', () => {
   })
 
   test('a profile whose leaned-on tool is out of reach names the PERMISSION, not the tool', () => {
-    // pentest leans on kali_exec, which is opt-in and often not ticked. Naming
+    // pentest leans on kali_exec, which an operator may have unticked. Naming
     // the tool here would break the profile-intersect-scopes rule, so the
     // section asks for the permission and lets the "cannot call" list carry the
     // tool names.

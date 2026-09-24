@@ -201,6 +201,13 @@ did (`rule:<kind>/allowlist` in allowlist mode), with `muted_reason` set to
   `graph_db/mixins/node_filter_mixin.py`) only mutes, re-attributes or releases
   RULE mutes. A person's mute is never touched, in either direction, and it
   never writes `updated_at`.
+- A rule never mutes a **guarded** finding: one with `triage_source = 'human'`
+  (a person's verdict, whatever its status), `triage_status = 'confirmed'` or a
+  `triage_proof` (the agent or a triage run proved it), or one a `ChainFinding`
+  points at with `CONFIRMS`. Guards only ever block: a finding that becomes
+  guarded while a rule has it muted is released at the next sweep, and the mute
+  write re-checks them so a verdict set mid-sweep is never hidden
+  (`graph_db/node_filters/guards.py`).
 - The ingest-then-prune keep predicate is
   `(n:Muted AND NOT coalesce(n.muted_by,'') STARTS WITH 'rule:') OR coalesce(n.triage_source,'') = 'human'`:
   a rule mute is not a judgement of that finding, so a stale one is pruned.

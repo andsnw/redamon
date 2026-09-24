@@ -46,6 +46,7 @@ class _FakeTriageClient:
     def __init__(self):
         self.calls = []
         self.verdict_updates = True
+        self.verdict_muted = False
 
     def list_triage_findings(self, user_id, project_id, **kwargs):
         self.calls.append(("list_triage_findings", user_id, project_id, kwargs))
@@ -74,9 +75,12 @@ class _FakeTriageClient:
                           for k in keys]}
 
     def set_human_verdict(self, user_id, project_id, node_id, status, reason,
-                          channel="", verdict_by=""):
+                          channel="", verdict_by="", refuse_muted=False):
         self.calls.append(
-            ("set_human_verdict", node_id, status, reason, channel, verdict_by))
+            ("set_human_verdict", node_id, status, reason, channel, verdict_by,
+             refuse_muted))
+        if self.verdict_muted and refuse_muted:
+            return {"updated": False, "reason": "muted", "label": "Vulnerability"}
         return {"updated": self.verdict_updates, "label": "Vulnerability"}
 
 
@@ -282,6 +286,24 @@ class VerdictProvenanceTests(unittest.IsolatedAsyncioTestCase):
         # decision that was never made.
         self.client.verdict_updates = False
         await api.graph_triage(self._req())
+        self.assertEqual(self.events, [])
+
+    async def test_an_mcp_verdict_refuses_a_muted_finding(self):
+        # A human verdict is a Mute Rules guard, so on a rule-muted finding it
+        # would release the mute: an unmute by another name.
+        await api.graph_triage(self._req(source="mcp"))
+        self.assertIs(self._verdict_call()[6], True)
+
+    async def test_a_browser_verdict_may_land_on_a_muted_finding(self):
+        # The person clicking is the one who could unmute it anyway.
+        await api.graph_triage(self._req())
+        self.assertIs(self._verdict_call()[6], False)
+
+    async def test_a_refused_verdict_is_not_logged_as_one(self):
+        self.client.verdict_muted = True
+        resp = await api.graph_triage(self._req(source="mcp"))
+        self.assertEqual(_body(resp)["reason"], "muted")
+        self.assertFalse(_body(resp)["updated"])
         self.assertEqual(self.events, [])
 
 

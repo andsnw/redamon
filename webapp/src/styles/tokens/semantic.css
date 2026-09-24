@@ -164,6 +164,47 @@
   --table-row-zebra-bg: rgba(255, 255, 255, 0.03);
 
   /* ═══════════════════════════════════════════════════════════════════════════
+     SETTINGS FORMS
+     The one place a settings form's colours are decided (worn via `.formSkin`
+     in ProjectForm.module.css). Three layers, each a distinct shade from the
+     one it sits on: the section card, a group panel one step up from it, and
+     the fields, recessed below both. Text has exactly two inks: `--form-ink`
+     for labels, titles and values, `--form-ink-muted` for descriptions and
+     hints. Colour is reserved for icons, borders and emphasis: the status inks
+     are 400-level here to glow on near-black, 700/800 in light, where amber and
+     green need the 800 to clear 4.5:1 as bold text on their own tint.
+     ═══════════════════════════════════════════════════════════════════════════ */
+  --form-surface: var(--color-gray-900);
+  --form-header-bg: var(--color-gray-850);
+  --form-panel-bg: #222226;
+  --form-panel-border: #2f2f35;
+  --form-divider: #313137;
+
+  --form-field-bg: #0b0b0d;
+  --form-field-border: var(--color-gray-700);
+  --form-field-border-hover: var(--color-gray-600);
+  --form-field-disabled-bg: #131316;
+  --form-focus: var(--color-blue-500);
+  --form-focus-ring: rgba(59, 130, 246, 0.28);
+
+  --form-ink: var(--color-gray-100);
+  --form-ink-muted: var(--color-gray-400);
+  /* Bold inside muted text: one step up from muted, not the white of --form-ink,
+     which glares against the grey prose around it. */
+  --form-ink-emphasis: var(--color-gray-300);
+  --form-ink-faint: var(--color-gray-500);
+
+  --form-info: var(--color-blue-400);
+  --form-success: var(--color-green-400);
+  --form-warning: var(--color-amber-400);
+  --form-danger: var(--color-red-400);
+
+  --form-toggle-off-bg: var(--color-gray-700);
+  --form-toggle-off-border: var(--color-gray-600);
+  --form-toggle-knob: var(--color-gray-300);
+  --form-toggle-on-bg: var(--color-blue-500);
+
+  /* ═══════════════════════════════════════════════════════════════════════════
      INTERACTIVE ELEMENTS
      ═══════════════════════════════════════════════════════════════════════════ */
   --toggle-bg: var(--color-gray-700);

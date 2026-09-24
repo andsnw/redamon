@@ -65,7 +65,9 @@ export const MCP_SCOPES = [
 
 export type McpScope = (typeof MCP_SCOPES)[number]
 
-export const DEFAULT_MCP_SCOPES: McpScope[] = ['recon:read']
+// kali:exec is ticked on a new token so the sandbox works out of the box; the
+// deployment switch and the project toggle still gate every command.
+export const DEFAULT_MCP_SCOPES: McpScope[] = ['recon:read', 'kali:exec']
 
 const SCOPE_SET: ReadonlySet<string> = new Set(MCP_SCOPES)
 

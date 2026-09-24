@@ -12,6 +12,7 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { Prisma } from '@prisma/client'
+import { muteRulesFingerprint } from '@/lib/nodeFilters/presets'
 
 const h = vi.hoisted(() => ({
   eff: vi.fn(),
@@ -216,15 +217,29 @@ describe('the loaded preset', () => {
   test('a preset load stores the record with the save, and the audit names the preset', async () => {
     const res = await putFilters(json('/n', { mode: 'denylist', rules: RULES, revision: 3, loadedPreset: PRESET }, 'PUT'), params)
     expect(res.status).toBe(200)
-    expect(h.filterUpdateMany.mock.calls[0][0].data.loadedPreset).toEqual(PRESET)
+    expect(h.filterUpdateMany.mock.calls[0][0].data.loadedPreset).toEqual({
+      name: 'Quiet perimeter', fingerprint: muteRulesFingerprint('denylist', RULES),
+    })
     const saved = h.audit.mock.calls.map(c => c[0]).find(e => e.action === 'node_filters.saved')
     expect(saved.after.presetLoaded).toBe('Quiet perimeter')
+  })
+
+  test('forged_preset_fingerprint: the stored fingerprint is computed from the saved rules, never taken from the body', async () => {
+    // Trusting the body would let a request badge rules no preset produced, and
+    // any client/server difference in hashing would hide the badge for good.
+    await putFilters(json('/n', { mode: 'allowlist', rules: RULES, revision: 3,
+                                  loadedPreset: { name: 'Quiet perimeter', fingerprint: 'deadbeef' } }, 'PUT'), params)
+    const stored = h.filterUpdateMany.mock.calls[0][0].data.loadedPreset
+    expect(stored.fingerprint).toBe(muteRulesFingerprint('allowlist', RULES))
+    expect(stored.fingerprint).not.toBe('deadbeef')
   })
 
   test('the first save of a project can carry the record too', async () => {
     h.filterFind.mockResolvedValue(null)
     await putFilters(json('/n', { mode: 'denylist', rules: RULES, revision: 0, loadedPreset: PRESET }, 'PUT'), params)
-    expect(h.filterCreate.mock.calls[0][0].data.loadedPreset).toEqual(PRESET)
+    expect(h.filterCreate.mock.calls[0][0].data.loadedPreset).toEqual({
+      name: 'Quiet perimeter', fingerprint: muteRulesFingerprint('denylist', RULES),
+    })
   })
 
   test('an ordinary save leaves the record alone: the badge is decided by the fingerprint', async () => {

@@ -40,8 +40,8 @@ interface Props {
   disabled?: boolean
   /**
    * When set, rows that differ from this profile's recommendation carry a quiet
-   * "modified" tag, and the two never-auto-ticked scopes it recommends are
-   * labelled as such while staying unchecked.
+   * "modified" tag, and the opt-in scopes it recommends are labelled as such
+   * while staying unchecked.
    */
   profile?: ProfileId | null
 }
@@ -152,8 +152,8 @@ export default function ScopeChecklist({ selected, onToggle, disabled = false, p
                 <code className={styles.scopeCode}>{s}</code>
               </span>
             ))}
-            , but a profile never ticks those for you. Command execution and discarding a graph are
-            deliberate choices, not side effects of picking a job.
+            , but a profile never ticks those for you. They are deliberate choices, not side effects
+            of picking a job.
           </span>
         </p>
       )}

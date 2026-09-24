@@ -26,6 +26,8 @@ Everything it creates is scoped to a throwaway tenant and deleted in tearDown.
 """
 import os
 import sys
+import threading
+import time
 import unittest
 import uuid
 
@@ -171,6 +173,71 @@ class LiveVerdictChannelCase(unittest.TestCase):
                 "MATCH (n {id: $id, project_id: $pid}) RETURN labels(n) AS l",
                 id=target, pid=self.pid).single()["l"]
         self.assertIn("Muted", labels)
+
+    def test_a_delegated_verdict_on_a_muted_finding_is_refused_whole(self):
+        # A human verdict is a Mute Rules guard, so on a rule-muted finding it
+        # releases the mute at the next sweep. Refused means NOTHING written:
+        # a half-written verdict would still carry triage_source = 'human'.
+        target = f"m-{self.run_id}-1"
+        out = self.client.set_human_verdict(
+            self.uid, self.pid, target, "likely_noise", "noise", channel="mcp",
+            verdict_by="alice", refuse_muted=True)
+        self.assertEqual(out, {"updated": False, "reason": "muted", "label": "Vulnerability"})
+        p = self._props(target)
+        for key in ("triage_source", "triage_status", "triage_verdict_channel",
+                    "triage_verdict_by", "triaged_at"):
+            self.assertNotIn(key, p)
+
+    def test_refuse_muted_still_records_a_verdict_on_a_visible_finding(self):
+        out = self.client.set_human_verdict(
+            self.uid, self.pid, f"v-{self.run_id}", "confirmed", "", channel="mcp",
+            refuse_muted=True)
+        self.assertEqual(out, {"updated": True, "label": "Vulnerability"})
+        self.assertEqual(self._props(f"v-{self.run_id}")["triage_source"], "human")
+
+    def test_a_mute_committing_mid_verdict_is_seen_not_overwritten(self):
+        # The interleave, made deterministic: an open transaction holds the
+        # node's lock with an uncommitted rule mute, the verdict starts and
+        # waits on that lock, then the mute commits. Without the lock taken
+        # before the label read, the verdict has already read "not muted"
+        # and lands on a rule-muted finding, which the next sweep unmutes.
+        target = f"v-{self.run_id}"
+        s2 = self.driver.session()
+        tx = s2.begin_transaction()
+        try:
+            tx.run("MATCH (n:Vulnerability {id: $id, user_id: $uid, project_id: $pid}) "
+                   "SET n:Muted, n.muted_by = 'rule:vuln.nuclei/abc123'",
+                   id=target, uid=self.uid, pid=self.pid).consume()
+            out = {}
+            t = threading.Thread(target=lambda: out.update(r=self.client.set_human_verdict(
+                self.uid, self.pid, target, "confirmed", "", channel="mcp",
+                refuse_muted=True)))
+            t.start()
+            time.sleep(1.0)
+            self.assertTrue(t.is_alive(), "the verdict did not wait on the mute's lock")
+            tx.commit()
+        finally:
+            s2.close()
+        t.join(15)
+        self.assertEqual(out.get("r"), {"updated": False, "reason": "muted",
+                                        "label": "Vulnerability"})
+        p = self._props(target)
+        self.assertNotIn("triage_source", p)
+        self.assertNotIn("_verdict_lock", p)
+
+    def test_the_lock_leaves_nothing_behind(self):
+        self.client.set_human_verdict(self.uid, self.pid, f"v-{self.run_id}", "confirmed", "")
+        self.client.set_human_verdict(self.uid, self.pid, f"m-{self.run_id}-2", "confirmed", "",
+                                      channel="mcp", refuse_muted=True)
+        with self.driver.session() as s:
+            left = s.run("MATCH (n) WHERE n.project_id = $pid AND n._verdict_lock IS NOT NULL "
+                         "RETURN count(n) AS c", pid=self.pid).single()["c"]
+        self.assertEqual(left, 0)
+
+    def test_refuse_muted_does_not_mask_a_missing_finding(self):
+        out = self.client.set_human_verdict(
+            self.uid, self.pid, "no-such-finding", "confirmed", "", refuse_muted=True)
+        self.assertEqual(out, {"updated": False, "label": None})
 
     # --- ROW 6: the muted cap is opt-in ---------------------------------------
 

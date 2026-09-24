@@ -61,8 +61,9 @@ export function PresetSaveModal({ isOpen, onClose, mode, rules, counts }: Preset
       isOpen={isOpen}
       onClose={onClose}
       title="Save as preset"
-      closeOnOverlayClick={!saving}
-      closeOnEscape={!saving}
+      // As the recon Save as Preset dialog: a stray click must not lose what was typed.
+      closeOnOverlayClick={false}
+      closeOnEscape={false}
       headerActions={<WikiInfoButton target="NodeFilters" />}
       footer={
         <>

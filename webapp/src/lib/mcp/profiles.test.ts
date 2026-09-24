@@ -3,10 +3,10 @@
  *
  * Most of these are safety controls rather than unit tests. Two in particular:
  *
- *  - **no profile auto-ticks `kali:exec` or `recon:overwrite`.** Command
- *    execution at a live target and irreversible graph destruction must never
- *    arrive as a side effect of choosing from a dropdown. This is the single
- *    most important assertion in the feature.
+ *  - **no profile auto-ticks `recon:overwrite`.** Irreversible graph
+ *    destruction must never arrive as a side effect of choosing from a
+ *    dropdown. `kali:exec` is the deliberate opposite: every profile ticks it,
+ *    and the tests below pin that too, so neither direction drifts silently.
  *  - **`profile` is never an authorization input.** It is a label and a starting
  *    point; scopes alone are enforced. A second, weaker authorization path is
  *    the one genuinely dangerous thing this feature could introduce, so the
@@ -24,7 +24,7 @@ import { describe, test, expect, vi } from 'vitest'
 vi.mock('@/lib/prisma', () => ({ default: {} }))
 vi.mock('@/lib/audit', () => ({ writeAudit: vi.fn() }))
 
-import { MCP_SCOPES, isTokenWidening, type McpScope } from '@/lib/mcpAuth'
+import { DEFAULT_MCP_SCOPES, MCP_SCOPES, isTokenWidening, type McpScope } from '@/lib/mcpAuth'
 import { listAdvertisedTools } from './apiReference'
 import {
   DEFAULT_PROFILE,
@@ -97,9 +97,9 @@ describe('the registry', () => {
     }
   })
 
-  test('NO profile auto-ticks kali:exec or recon:overwrite', () => {
-    // The most important assertion in this feature. These two may appear ONLY in
-    // optInScopes, where the form renders them unchecked behind a danger callout.
+  test('NO profile auto-ticks recon:overwrite', () => {
+    // It may appear ONLY in optInScopes, where the form renders it unchecked
+    // behind a danger callout.
     for (const p of PROFILE_LIST) {
       for (const forbidden of NEVER_AUTO_TICKED) {
         expect(
@@ -110,10 +110,28 @@ describe('the registry', () => {
     }
   })
 
-  test('the never-auto-ticked list is exactly the dangerous-by-default pair', () => {
+  test('the never-auto-ticked list is exactly recon:overwrite', () => {
     // Guards against the list being quietly emptied, which would turn the
     // assertion above into a tautology.
-    expect([...NEVER_AUTO_TICKED].sort()).toEqual(['kali:exec', 'recon:overwrite'])
+    expect([...NEVER_AUTO_TICKED]).toEqual(['recon:overwrite'])
+  })
+
+  test('EVERY profile auto-ticks kali:exec, and none offers it as opt-in', () => {
+    // Sandbox access is on by default: a new token reaches the shell unless the
+    // operator unticks it. A profile that dropped it would silently mint tokens
+    // that cannot use the sandbox.
+    for (const p of PROFILE_LIST) {
+      expect(p.recommendedScopes, `${p.id} does not tick kali:exec`).toContain('kali:exec')
+      expect(p.optInScopes, `${p.id} still offers kali:exec as opt-in`).not.toContain('kali:exec')
+    }
+  })
+
+  test('the blank form ticks exactly what Custom recommends', () => {
+    // The create form opens as Custom with DEFAULT_MCP_SCOPES ticked. If the two
+    // differ, an untouched form reads as hand-edited and the first profile pick
+    // asks the operator to confirm discarding choices they never made.
+    expect([...DEFAULT_MCP_SCOPES].sort()).toEqual([...scopesForProfile(DEFAULT_PROFILE)].sort())
+    expect(DEFAULT_MCP_SCOPES).toContain('kali:exec')
   })
 
   test('scopesForProfile returns the recommendation in checklist order', () => {
@@ -125,18 +143,16 @@ describe('the registry', () => {
     }
   })
 
-  test('the profiles that want the dangerous scopes offer them as opt-in', () => {
-    // The table in the plan: pentest and bug_bounty may exec, research may do
-    // both. If one of these loses its opt-in the UI silently stops recommending
-    // a permission the job genuinely needs.
-    expect(PROFILES.bug_bounty.optInScopes).toContain('kali:exec')
-    expect(PROFILES.pentest.optInScopes).toContain('kali:exec')
-    expect(PROFILES.research.optInScopes).toEqual(expect.arrayContaining(['kali:exec', 'recon:overwrite']))
+  test('the profile that wants recon:overwrite offers it as opt-in', () => {
+    // If research loses its opt-in the UI silently stops recommending a
+    // permission the job genuinely needs.
+    expect(PROFILES.research.optInScopes).toContain('recon:overwrite')
   })
 
   test('the read-only profiles grant no write of any kind', () => {
     // Read-only by default wherever the job allows it. These seven jobs never
     // need to change anything, so a write scope appearing here is a regression.
+    // kali:exec is not counted: every profile carries it by design (see above).
     const WRITES: McpScope[] = ['recon:scan', 'recon:queue', 'recon:overwrite', 'recon:settings', 'triage:write']
     for (const id of ['vuln_mgmt', 'inventory', 'compliance', 'reporting', 'threat_intel', 'soc', 'custom'] as const) {
       const granted = PROFILES[id].recommendedScopes.filter(s => WRITES.includes(s))
@@ -312,8 +328,8 @@ describe('the onboarding table', () => {
   })
 
   test('a profile never leans on a tool its own recommendation cannot reach', async () => {
-    // Except through an opt-in scope, which is exactly how pentest reaches the
-    // exec tools: recommended by the profile, ticked only by a human.
+    // An opt-in scope counts as reachable: recommended by the profile, ticked
+    // only by a human.
     const tools = await listAdvertisedTools()
     const scopesOf = new Map(tools.map(t => {
       const meta = t._meta?.['org.redamon/scopes'] as { required: McpScope[] } | undefined
@@ -392,7 +408,7 @@ describe('the published profile table matches the registry', () => {
     expect(labels).toHaveLength(PROFILE_LIST.length)
   })
 
-  test.skipIf(!hasWikiCheckout())('the page names the two permissions no profile may tick', () => {
+  test.skipIf(!hasWikiCheckout())('the page names the permission no profile may tick', () => {
     // The wiki is where an operator learns this guarantee; losing the sentence
     // loses the only published statement of the feature's core safety rule.
     const page = readFileSync(path.join(WIKI_DIR, 'MCP-Server.md'), 'utf8')

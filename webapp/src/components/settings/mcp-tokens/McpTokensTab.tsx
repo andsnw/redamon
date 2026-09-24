@@ -253,9 +253,9 @@ export default function McpTokensTab({ userId, onDirtyChange }: Props) {
    * feature. But it must not silently discard a set the operator hand-tuned, so
    * a divergent selection is confirmed first.
    *
-   * `kali:exec` and `recon:overwrite` are never carried in by this, even for the
-   * profiles that recommend them: `scopesForProfile` returns the recommended set
-   * only, and those two live in `optInScopes`.
+   * The opt-in scopes (`recon:overwrite`, and the engagement writes) are never
+   * carried in by this, even for the profiles that recommend them:
+   * `scopesForProfile` returns the recommended set only.
    */
   const changeProfile = async (next: ProfileId) => {
     const diverged = profileScopeDiff(profile, scopes).modified

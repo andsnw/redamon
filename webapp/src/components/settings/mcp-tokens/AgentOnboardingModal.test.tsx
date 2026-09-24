@@ -93,14 +93,14 @@ describe('it re-seeds when reopened against a different token', () => {
       <AgentOnboardingModal {...props({ initialProfile: 'soc', initialScopes: scopesForProfile('soc') })} />
     )
     await waitFor(() => expect(profileSelect().value).toBe('soc'))
-    fireEvent.click(box('kali:exec'))
-    await waitFor(() => expect(box('kali:exec')).toBeChecked())
+    fireEvent.click(box('triage:write'))
+    await waitFor(() => expect(box('triage:write')).toBeChecked())
 
     rerender(<AgentOnboardingModal {...props({ isOpen: false, initialProfile: 'soc', initialScopes: scopesForProfile('soc') })} />)
     rerender(<AgentOnboardingModal {...props({ initialProfile: 'soc', initialScopes: scopesForProfile('soc') })} />)
 
     await waitFor(() => expect(profileSelect().value).toBe('soc'))
-    expect(box('kali:exec'), 'a preview tick leaked into the next token').not.toBeChecked()
+    expect(box('triage:write'), 'a preview tick leaked into the next token').not.toBeChecked()
   })
 
   test('a generated preview is cleared, so it cannot describe the wrong token', async () => {

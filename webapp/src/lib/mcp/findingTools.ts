@@ -319,7 +319,7 @@ export async function listMuted(
           scannedWindow: MUTED_FETCH_CEILING,
           groupsNote:
             `The groups describe the ${all.length} suppressed findings read, every mute a person ` +
-            `made first; the project has ${total} in all, the rest muted by filter rules.`,
+            `made first; the project has ${total} in all, the rest muted by Mute Rules.`,
         }
       : {}),
     mutedVia: byVia,

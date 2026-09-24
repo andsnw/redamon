@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
-import { ChevronDown, Target, ShieldAlert, AlertTriangle, Globe, Network, Layers, Check, Lock, Plus, Minus, Gauge } from 'lucide-react'
+import { ChevronDown, Target, ShieldAlert, AlertTriangle, Info, Globe, Network, Layers, Check, Lock, Plus, Minus, Gauge } from 'lucide-react'
 import { AiToggleLabel } from '../AiToggleLabel'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import type { Project } from '@prisma/client'
@@ -256,7 +256,7 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
   }
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <Target size={16} />
@@ -283,28 +283,22 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
               purple = IP/Local, mirroring the recon-preset classification chips.
               Locked after creation - ipMode cannot change on an existing project. */}
           <div className={styles.fieldGroup}>
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div className={styles.modeCards}>
               {([
                 {
                   mode: 'domain' as TargetMode,
-                  accent: '#60a5fa',
-                  accentBg: 'rgba(96, 165, 250, 0.12)',
                   icon: <Globe size={20} />,
                   title: 'Single Domain',
                   subtitle: 'One domain or hostname, public or internal (incl. AD)',
                 },
                 {
                   mode: 'ip' as TargetMode,
-                  accent: '#a78bfa',
-                  accentBg: 'rgba(167, 139, 250, 0.12)',
                   icon: <Network size={20} />,
                   title: 'IP / CIDR',
                   subtitle: 'IP addresses or ranges, public or internal',
                 },
                 {
                   mode: 'batch' as TargetMode,
-                  accent: '#34d399',
-                  accentBg: 'rgba(52, 211, 153, 0.12)',
                   icon: <Layers size={20} />,
                   title: 'Domain batch',
                   subtitle: 'A list of hostnames, grouped by domain and scanned in turn',
@@ -315,40 +309,19 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                   <button
                     key={opt.title}
                     type="button"
+                    data-mode={opt.mode}
+                    className={`${styles.modeCard} ${active ? styles.modeCardActive : ''}`}
                     disabled={isLocked}
                     aria-pressed={active}
                     onClick={() => !isLocked && handleTargetModeChange(opt.mode)}
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      textAlign: 'left',
-                      padding: '14px 16px',
-                      borderRadius: '10px',
-                      cursor: isLocked ? 'not-allowed' : 'pointer',
-                      opacity: isLocked && !active ? 0.45 : 1,
-                      border: `2px solid ${active ? opt.accent : 'var(--border-subtle, #333)'}`,
-                      background: active ? opt.accentBg : 'transparent',
-                      color: active ? opt.accent : 'var(--text-secondary, #9ca3af)',
-                      transition: 'border-color 0.15s ease, background 0.15s ease, color 0.15s ease',
-                    }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <span className={styles.modeCardHead}>
                       {opt.icon}
-                      <span style={{ fontSize: '15px', fontWeight: 700 }}>{opt.title}</span>
-                      {active && !isLocked && <Check size={16} style={{ marginLeft: 'auto' }} />}
-                      {isLocked && active && <Lock size={14} style={{ marginLeft: 'auto', opacity: 0.7 }} />}
-                    </div>
-                    <span
-                      style={{
-                        display: 'block',
-                        fontSize: '12px',
-                        lineHeight: 1.4,
-                        color: active ? opt.accent : 'var(--text-tertiary, #6b7280)',
-                        opacity: active ? 0.9 : 1,
-                      }}
-                    >
-                      {opt.subtitle}
+                      <span className={styles.modeCardTitle}>{opt.title}</span>
+                      {active && !isLocked && <Check size={16} className={styles.modeCardMark} />}
+                      {isLocked && active && <Lock size={14} className={styles.modeCardMark} />}
                     </span>
+                    <span className={styles.modeCardSubtitle}>{opt.subtitle}</span>
                   </button>
                 )
               })}
@@ -429,8 +402,8 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
 
           {/* Hard guardrail warning for government/public domains */}
           {hardBlockResult.blocked && (
-            <div className={styles.shodanWarning} style={{ borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.08)' }}>
-              <ShieldAlert size={14} style={{ color: '#ef4444' }} />
+            <div className={`${styles.callout} ${styles.calloutDanger}`}>
+              <ShieldAlert size={16} />
               <span>
                 <strong>Target permanently blocked:</strong> Government, military, educational, and international
                 organization websites (.gov, .mil, .edu, .int, etc.) are always blocked and cannot be used as targets,
@@ -471,57 +444,53 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
               </p>
 
               {batchResult && batchResult.groups.length > 0 && (
-                <div style={{ overflowX: 'auto', marginTop: 'var(--space-3)' }}>
-                  <table className={styles.previewTable} style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                    <thead>
-                      <tr style={{ textAlign: 'left' }}>
-                        <th style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>#</th>
-                        <th style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>Domain</th>
-                        <th style={{ padding: '6px 8px' }}>Hosts</th>
-                        <th style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>Root</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {batchResult.groups.map((g, i) => (
-                        <tr key={g.rootDomain}>
-                          <td className={styles.previewTableMuted} style={{ padding: '6px 8px' }}>{i + 1}</td>
-                          <td style={{ padding: '6px 8px', fontWeight: 600, whiteSpace: 'nowrap' }}>{g.rootDomain}</td>
-                          <td className={styles.previewTableMuted} style={{ padding: '6px 8px' }}>
-                            {g.wildcard && (
-                              <span style={{
-                                display: 'inline-block', marginRight: '6px', padding: '1px 6px',
-                                borderRadius: '10px', fontSize: '10px', fontWeight: 700,
-                                letterSpacing: '0.02em', whiteSpace: 'nowrap',
-                                color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.5)',
-                                background: 'rgba(245, 158, 11, 0.12)',
-                              }}>FULL ENUMERATION</span>
-                            )}
-                            {g.hosts.join(', ')}
-                          </td>
-                          <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
-                            {g.wildcard ? (
-                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={g.prefixes.includes(ROOT_DOMAIN_PREFIX)}
-                                  onChange={(e) => handleGroupRootToggle(g.rootDomain, e.target.checked)}
-                                  aria-label={`Also scan ${g.rootDomain} itself`}
-                                />
-                              </label>
-                            ) : (
-                              <span style={{ color: 'var(--text-tertiary, #6b7280)' }}>&ndash;</span>
-                            )}
-                          </td>
+                <>
+                  <div className={styles.previewTableWrap}>
+                    <table className={styles.previewTable} style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left' }}>
+                          <th style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>#</th>
+                          <th style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>Domain</th>
+                          <th style={{ padding: '6px 8px' }}>Hosts</th>
+                          <th style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>Root</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <p className={styles.fieldHint} style={{ marginTop: 'var(--space-2)' }}>
+                      </thead>
+                      <tbody>
+                        {batchResult.groups.map((g, i) => (
+                          <tr key={g.rootDomain}>
+                            <td className={styles.previewTableMuted} style={{ padding: '6px 8px' }}>{i + 1}</td>
+                            <td style={{ padding: '6px 8px', fontWeight: 600, whiteSpace: 'nowrap' }}>{g.rootDomain}</td>
+                            <td className={styles.previewTableMuted} style={{ padding: '6px 8px' }}>
+                              {g.wildcard && (
+                                <span className={styles.enumBadge}>FULL ENUMERATION</span>
+                              )}
+                              {g.hosts.join(', ')}
+                            </td>
+                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                              {g.wildcard ? (
+                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={g.prefixes.includes(ROOT_DOMAIN_PREFIX)}
+                                    onChange={(e) => handleGroupRootToggle(g.rootDomain, e.target.checked)}
+                                    aria-label={`Also scan ${g.rootDomain} itself`}
+                                  />
+                                </label>
+                              ) : (
+                                <span className={styles.previewTableMuted}>&ndash;</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className={styles.fieldHint}>
                     Groups run top to bottom, one at a time, in a single scan.
                   </p>
                   {wildcardGroupCount > 0 && (
-                    <div className={styles.shodanWarning} style={{ borderColor: 'rgba(245, 158, 11, 0.4)', background: 'rgba(245, 158, 11, 0.08)' }}>
-                      <AlertTriangle size={14} style={{ color: '#f59e0b' }} />
+                    <div className={`${styles.callout} ${styles.calloutWarning}`}>
+                      <AlertTriangle size={16} />
                       <span>
                         <strong>
                           {wildcardGroupCount} domain{wildcardGroupCount === 1 ? '' : 's'} will be
@@ -535,12 +504,12 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                       </span>
                     </div>
                   )}
-                </div>
+                </>
               )}
 
               {batchResult && batchResult.invalid.length > 0 && (
-                <div className={styles.shodanWarning} style={{ borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.08)' }}>
-                  <AlertTriangle size={14} style={{ color: '#ef4444' }} />
+                <div className={`${styles.callout} ${styles.calloutDanger}`}>
+                  <AlertTriangle size={16} />
                   <span>
                     <strong>Not valid hostnames:</strong> {batchResult.invalid.join(', ')}. Each
                     entry needs at least two labels (example.com) and may only
@@ -554,8 +523,8 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
               )}
 
               {batchBlocked && (
-                <div className={styles.shodanWarning} style={{ borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.08)' }}>
-                  <ShieldAlert size={14} style={{ color: '#ef4444' }} />
+                <div className={`${styles.callout} ${styles.calloutDanger}`}>
+                  <ShieldAlert size={16} />
                   <span>
                     <strong>Target permanently blocked: {batchBlocked.domain}.</strong> Government,
                     military, educational and international organization domains are always
@@ -600,20 +569,8 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
               {/* Private/local target detected: public OSINT + subdomain enumeration
                   cannot see RFC1918 space, so warn and point at the internal preset. */}
               {hasLocalIps && (
-                <div
-                  className={styles.shodanWarning}
-                  style={{
-                    marginTop: 'var(--space-2)',
-                    marginBottom: 0,
-                    padding: 'var(--space-3) var(--space-4)',
-                    fontSize: 'var(--text-sm)',
-                    borderWidth: '2px',
-                    borderColor: 'rgba(251, 146, 60, 0.5)',
-                    background: 'rgba(251, 146, 60, 0.12)',
-                    alignItems: 'center',
-                  }}
-                >
-                  <AlertTriangle size={22} style={{ color: '#fb923c' }} />
+                <div className={`${styles.callout} ${styles.calloutWarning}`}>
+                  <AlertTriangle size={16} />
                   <span>
                     <strong>
                       {ipTargetClass === 'mixed'
@@ -631,20 +588,8 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
               )}
 
               {/* Always-on note for IP mode: the domain-only phases don't apply. */}
-              <div
-                className={styles.shodanWarning}
-                style={{
-                  marginTop: 'var(--space-2)',
-                  marginBottom: 0,
-                  padding: 'var(--space-3) var(--space-4)',
-                  fontSize: 'var(--text-sm)',
-                  borderWidth: '1px',
-                  borderColor: 'rgba(96, 165, 250, 0.4)',
-                  background: 'rgba(96, 165, 250, 0.10)',
-                  alignItems: 'center',
-                }}
-              >
-                <AlertTriangle size={20} style={{ color: '#60a5fa' }} />
+              <div className={`${styles.callout} ${styles.calloutInfo}`}>
+                <Info size={16} />
                 <span>
                   <strong>IP mode:</strong> domain-only steps are skipped. Subdomain
                   discovery, WHOIS, DNS/email security and subdomain-takeover checks need a
@@ -699,20 +644,8 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                     : 'Leave empty to discover all subdomains. Enter prefixes without dots (e.g., "www, api, admin").'}
                 </span>
                 {!isLocked && displayPrefixes.trim().length === 0 && (
-                  <div
-                    className={styles.shodanWarning}
-                    style={{
-                      marginTop: 'var(--space-2)',
-                      marginBottom: 0,
-                      padding: 'var(--space-3) var(--space-4)',
-                      fontSize: 'var(--text-sm)',
-                      borderWidth: '2px',
-                      borderColor: 'rgba(251, 146, 60, 0.5)',
-                      background: 'rgba(251, 146, 60, 0.12)',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <AlertTriangle size={22} style={{ color: '#fb923c' }} />
+                  <div className={`${styles.callout} ${styles.calloutWarning}`}>
+                    <AlertTriangle size={16} />
                     <span>
                       <strong>Heads up:</strong> Leaving Subdomain Prefixes empty starts full
                       subdomain enumeration across the entire domain. This will take
@@ -722,20 +655,8 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                   </div>
                 )}
                 {prefixesPresent && (
-                  <div
-                    className={styles.shodanWarning}
-                    style={{
-                      marginTop: 'var(--space-2)',
-                      marginBottom: 0,
-                      padding: 'var(--space-3) var(--space-4)',
-                      fontSize: 'var(--text-sm)',
-                      borderWidth: '2px',
-                      borderColor: 'rgba(96, 165, 250, 0.5)',
-                      background: 'rgba(96, 165, 250, 0.12)',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <AlertTriangle size={22} style={{ color: '#60a5fa' }} />
+                  <div className={`${styles.callout} ${styles.calloutInfo}`}>
+                    <Info size={16} />
                     <span>
                       <strong>Filtered mode:</strong> with explicit prefixes the pipeline scans
                       only the subdomains you listed. <strong>Subdomain Discovery has been
@@ -801,7 +722,7 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                 </div>
                 {data.aiInPipeline && (
                   <>
-                    <div className={styles.fieldRow} style={{ marginTop: 'var(--space-3)' }}>
+                    <div className={styles.fieldRow}>
                       <div className={styles.fieldGroup}>
                         <label className={styles.fieldLabel}>AI Model</label>
                         <ModelPicker
@@ -859,29 +780,9 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                         },
                       ]
                       return (
-                        <div
-                          style={{
-                            marginTop: 'var(--space-4)',
-                            maxHeight: 240,
-                            overflowY: 'auto',
-                            border: '1px solid var(--border-subtle, #2a2a2a)',
-                            borderRadius: 'var(--radius-2, 6px)',
-                            padding: 'var(--space-2, 8px) var(--space-3, 12px)',
-                            background: 'var(--surface-1, transparent)',
-                          }}
-                        >
-                          {aiPipelineHooks.map((hook, idx) => (
-                            <div
-                              key={hook.field}
-                              className={styles.toggleRow}
-                              style={{
-                                gap: 'var(--space-3)',
-                                paddingTop: idx === 0 ? 0 : 'var(--space-2, 8px)',
-                                paddingBottom: 'var(--space-2, 8px)',
-                                borderTop: idx === 0 ? 'none' : '1px solid var(--border-subtle, #222)',
-                                alignItems: 'center',
-                              }}
-                            >
+                        <div className={styles.nestedList}>
+                          {aiPipelineHooks.map((hook) => (
+                            <div key={hook.field} className={styles.toggleRow}>
                               <AiToggleLabel
                                 label={hook.label}
                                 tooltip={hook.description}
@@ -955,7 +856,7 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
               never part of the form's data, so it cannot make the form dirty. */}
           <div className={styles.subSection}>
             <h3 className={styles.subSectionTitle}>
-              <Gauge size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+              <Gauge size={14} />
               Engagement limits
             </h3>
             <p className={styles.sectionDescription}>
@@ -963,16 +864,7 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
               from the API in exactly the same way. Changing one applies to the NEXT scan.
             </p>
 
-            <div
-              className={styles.fieldHint}
-              style={{
-                padding: '8px 10px',
-                borderRadius: 6,
-                borderLeft: `3px solid var(${limitsActive ? '--color-success, #22c55e' : '--color-border, #444'})`,
-                background: 'var(--color-surface-alt, rgba(255,255,255,0.03))',
-                marginBottom: 'var(--space-3)',
-              }}
-            >
+            <div className={`${styles.statusLine} ${limitsActive ? styles.statusLineActive : ''}`}>
               {limitsActive
                 ? `Limits are ACTIVE because ${activeLimits.join(' and ')} ${activeLimits.length === 1 ? 'is' : 'are'} set.`
                 : 'No limits are active: set a rate ceiling, exclude a host, or restrict the ' +
@@ -981,7 +873,7 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                   than merely unconstrained, so the generic line above
                   understates it by exactly the amount that matters. */}
               {data.engagementKind === 'third_party' && !(data.roeGlobalMaxRps > 0) && (
-                <strong style={{ display: 'block', marginTop: 4, color: 'var(--color-danger, #d33)' }}>
+                <strong className={styles.statusLineAlert}>
                   This is a third-party engagement, so a scan will be REFUSED until a
                   request-rate ceiling is set here.
                 </strong>
@@ -1018,38 +910,34 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                 the target domain itself.
               </span>
               {(data.roeExcludedHosts || []).map((host, i) => (
-                <div key={i} className={styles.fieldRow} style={{ alignItems: 'flex-end' }}>
-                  <div className={styles.fieldGroup} style={{ flex: 1 }}>
-                    <input
-                      className="textInput"
-                      value={host}
-                      onChange={(e) => updateExcludedHost(i, e.target.value)}
-                      placeholder="IP or domain"
-                      aria-label={`Excluded host ${i + 1}`}
-                    />
-                  </div>
-                  <div className={styles.fieldGroup} style={{ flex: 1 }}>
-                    <input
-                      className="textInput"
-                      value={(data.roeExcludedHostReasons || [])[i] || ''}
-                      onChange={(e) => updateExcludedReason(i, e.target.value)}
-                      placeholder="Why excluded"
-                      aria-label={`Exclusion reason ${i + 1}`}
-                    />
-                  </div>
+                <div key={i} className={styles.excludedHostRow}>
+                  <input
+                    className="textInput"
+                    value={host}
+                    onChange={(e) => updateExcludedHost(i, e.target.value)}
+                    placeholder="IP or domain"
+                    aria-label={`Excluded host ${i + 1}`}
+                  />
+                  <input
+                    className="textInput"
+                    value={(data.roeExcludedHostReasons || [])[i] || ''}
+                    onChange={(e) => updateExcludedReason(i, e.target.value)}
+                    placeholder="Why excluded"
+                    aria-label={`Exclusion reason ${i + 1}`}
+                  />
                   <button type="button" className="secondaryButton" onClick={() => removeExcludedHost(i)}
-                    style={{ marginBottom: 4 }} aria-label={`Remove excluded host ${i + 1}`}>
+                    aria-label={`Remove excluded host ${i + 1}`}>
                     <Minus size={14} />
                   </button>
                 </div>
               ))}
               <button type="button" className="secondaryButton" onClick={addExcludedHost}
-                style={{ width: 'fit-content', marginTop: 4 }}>
+                style={{ width: 'fit-content', marginTop: 'var(--space-2)' }}>
                 <Plus size={14} /> Add excluded host
               </button>
             </div>
 
-            <div className={styles.toggleRow} style={{ gap: 'var(--space-4)', marginTop: 'var(--space-3)' }}>
+            <div className={styles.toggleRow} style={{ gap: 'var(--space-4)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <span className={styles.toggleLabel}>Restrict scanning to a time window</span>
                 <p className={styles.toggleDescription}>
@@ -1094,14 +982,16 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                 </div>
                 <div className={styles.fieldGroup}>
                   <label className={styles.fieldLabel}>Allowed days</label>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {WEEKDAYS.map(day => (
-                      <label key={day} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-                        <input type="checkbox" checked={(data.roeTimeWindowDays || []).includes(day)}
-                          onChange={() => toggleDay(day)} />
-                        {day.charAt(0).toUpperCase() + day.slice(1, 3)}
-                      </label>
-                    ))}
+                  <div className={styles.dayPicker}>
+                    {WEEKDAYS.map(day => {
+                      const on = (data.roeTimeWindowDays || []).includes(day)
+                      return (
+                        <label key={day} className={`${styles.dayChip} ${on ? styles.dayChipOn : ''}`}>
+                          <input type="checkbox" checked={on} onChange={() => toggleDay(day)} />
+                          {day.charAt(0).toUpperCase() + day.slice(1, 3)}
+                        </label>
+                      )
+                    })}
                   </div>
                 </div>
               </>

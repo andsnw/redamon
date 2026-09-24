@@ -11,19 +11,20 @@
  * command, it is WHO CAN REACH THIS AT ALL.
  *
  *  - THREE independent switches, all of which must be on, each owned by a
- *    different decision-maker so no single compromise turns this on:
- *      1. MCP_KALI_EXEC_ENABLED  - the operator, once per deployment.
+ *    different decision-maker:
+ *      1. MCP_KALI_EXEC_ENABLED  - the operator, once per deployment. Default on.
  *      2. the `kali:exec` scope  - the user, password-confirmed at mint time.
+ *         Ticked by default, so unticking it is what keeps a token off the shell.
  *      3. project.mcpKaliExecEnabled - a human in the project form, per
- *         engagement. DENIED to update_recon_settings by name (reason
- *         'escalation'), so a token can never grant itself this.
+ *         engagement. Default on. DENIED to update_recon_settings by name
+ *         (reason 'escalation'), so a token can never grant itself this.
  *  - THE COMMAND IS AUDITED VERBATIM. With no refusal path left, the audit row
  *    is the ONLY record of what an agent did with the shell, which makes it
  *    more load-bearing than it was, not less.
  *
  * Inside the product `kali_shell` is gated by a human clicking through the
  * DANGEROUS_TOOLS confirmation. An MCP caller has no human and nothing replaces
- * that, which is why all three switches default to off.
+ * that, which is why each switch can still be turned off independently.
  */
 import prisma from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
@@ -33,9 +34,9 @@ import { kaliExec, kaliJobCancel, kaliJobStatus, type KaliJob } from '@/lib/mcp/
 import { enforceRate, type McpContext } from '@/lib/mcp/tools'
 
 /**
- * Default OFF, like MCP_SERVER_ENABLED and for the same reason: a surface that
- * reaches a target must be switched on deliberately, never inherited by
- * upgrading. Enabling the MCP server must not silently enable this too.
+ * The default-on lives in docker-compose.yml (`:-true`), not here: an unset
+ * variable reads as OFF, so a bare `node` run or a test without the env gets no
+ * sandbox.
  */
 export function kaliExecEnabled(): boolean {
   return process.env.MCP_KALI_EXEC_ENABLED === 'true' || process.env.MCP_KALI_EXEC_ENABLED === '1'

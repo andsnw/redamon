@@ -29,6 +29,12 @@
  * unmute to an unattended token removes that bound, and reversing a
  * suppression is the same control operated in the direction that makes hidden
  * findings visible again.
+ *
+ * Which is also why a verdict on a MUTED finding is refused. A human verdict is
+ * one of the Mute Rules guards, so on a rule-muted finding it releases the mute
+ * at the next apply or scan: the same unmute, one step removed. The agent keys
+ * the refusal on the MCP channel and checks it under the node's write lock, in
+ * the same statement as the write.
  */
 import { requireScope } from '@/lib/mcpAuth'
 import { assertMcpProjectAccess } from '@/lib/mcpAuth'
@@ -95,7 +101,16 @@ export async function setFindingVerdict(
     verdict_by: ctx.token.userId,
   })
 
-  // The op answers HTTP 200 in two different failure shapes, and both carry
+  if (body.updated !== true && body.reason === 'muted') {
+    throw new McpToolError(
+      'The verdict was NOT recorded: this finding is muted, and judging a muted finding is left ' +
+      'to a person, in RedAmon. On a finding a Mute Rule muted, a verdict would release the mute. ' +
+      'Nothing was written.',
+      'muted'
+    )
+  }
+
+  // The op answers HTTP 200 in two other failure shapes, and both carry
   // `updated: false`. Reporting either as success would tell a caller its
   // judgement was recorded when nothing was written.
   if (body.updated !== true) {

@@ -374,6 +374,26 @@ Steps A to D are entirely in memory; Step E is the only thing that writes, in
 batches of 500, each row guarded by the `updated_at` it was read at, so a
 finding a scan re-ingested mid-run is skipped and picked up next time.
 
+**Beside Mute Rules.** A triage run and an "apply to current graph" of
+[Mute Rules](../../redamon.wiki/Mute-Rules.md) are both tracked graph writers.
+The triage dialog's preflight (`/api/triage/preflight`) refuses to start a run
+while an apply is running, as it does for every live writer except a scan, and
+an apply refuses to start while a triage run is `running` or `publishing`. The
+run's own authorise call checks only for a version activation and for another
+triage run.
+
+A verdict is also a Mute Rules **guard**. A rule never mutes a finding with
+`triage_source = 'human'`, `triage_status = 'confirmed'` or a `triage_proof`, and
+a rule mute already on one is released by the next apply, or by the next scan
+that finds it again. The collection queries skip muted findings, but
+`apply_triage_scores` and `set_human_verdict` match them, so a confirmation
+published over a finding a rule muted in the meantime releases it the same way.
+The exception is a verdict over MCP: `set_human_verdict(refuse_muted=True)`
+refuses a muted finding, because from an access token that release would be an
+unmute.
+The rule's mute write re-checks the guards, so a verdict set between the
+sweep's read and its write is never hidden.
+
 ### Triage State Model
 
 ```mermaid

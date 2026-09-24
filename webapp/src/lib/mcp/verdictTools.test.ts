@@ -141,6 +141,16 @@ describe('a failed write is never reported as success', () => {
       .rejects.toBeInstanceOf(McpToolError)
   })
 
+  test('a muted finding is refused by name, and the message says whose call it is', async () => {
+    agentReturns({ updated: false, reason: 'muted', label: 'Vulnerability' })
+    const err = await setFindingVerdict(ctx(), 'p1', 'm1', 'likely_noise')
+      .then(() => null, (e: McpToolError) => e)
+    expect(err).toMatchObject({ code: 'muted' })
+    expect(err?.message).toMatch(/NOT recorded: this finding is muted/)
+    expect(err?.message).toMatch(/left to a person/)
+    expect(h.writeAudit).not.toHaveBeenCalled()
+  })
+
   test('nothing is audited when nothing was written', async () => {
     agentReturns({ updated: false, label: null })
     await setFindingVerdict(ctx(), 'p1', 'v1', 'confirmed').catch(() => {})

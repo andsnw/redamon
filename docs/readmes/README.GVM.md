@@ -36,6 +36,8 @@ RedAmon uses GVM in **headless API mode** (no web GUI) to:
 - Save structured JSON results (`scanners/gvm_scan/output/gvm_{projectId}.json`)
 - Update the Neo4j graph with Vulnerability nodes (source="gvm"), CVE nodes, and relationships to IP/Subdomain nodes
 
+**Muting GVM findings.** A GVM finding can be muted by hand on the Priority Board (and unmuted from Muted Nodes), but [Mute Rules](../../redamon.wiki/Mute-Rules.md) do not cover them yet: `gvm` is listed under `unfiltered_sources` in `graph_db/node_filters/catalog.yaml`, pending a GVM kind with its own sweep after the GVM scan. A recon scan's sweep never touches them either, since `gvm` is not a recon finding source.
+
 **Webapp integration:** GVM scans are triggered from the Graph page via a dedicated "GVM Scan" button. The button is only enabled when recon data exists for the project. Logs stream in real-time to a log drawer with 4-phase progress (Loading Recon Data → Connecting to GVM → Scanning IPs → Scanning Hostnames). Results can be downloaded as JSON from the toolbar.
 
 **Architecture:** The scan flow mirrors the recon pipeline: Webapp API → Recon Orchestrator → Docker container (`redamon-vuln-scanner`) → SSE log streaming → graph update.

@@ -1781,3 +1781,488 @@
 .previewTableMuted {
   color: var(--table-cell-fg-muted);
 }
+
+/* =============================================================================
+   Form skin
+   The unified look of a settings form. A section root wears it next to
+   `.section`; a section without it keeps the older look. Every colour comes from
+   the --form-* tokens (semantic.css, light.css), so this block holds geometry
+   and says which token paints what, never a theme-specific value.
+
+   Field rules sit one class above the global .textInput/.textarea/.select
+   rules, so hover, focus and disabled cannot fall back to the global ones,
+   which paint fields in the same shade as the panel they sit in.
+   ============================================================================= */
+
+.formSkin {
+  background: var(--form-surface);
+  border-color: var(--form-panel-border);
+  color: var(--form-ink);
+}
+
+.formSkin .sectionHeader {
+  background: var(--form-header-bg);
+  border-bottom-color: var(--form-panel-border);
+}
+
+.formSkin .sectionHeader:hover {
+  background: color-mix(in srgb, var(--form-ink) 5%, var(--form-header-bg));
+}
+
+.formSkin .sectionTitle {
+  color: var(--form-ink);
+}
+
+.formSkin .sectionIcon {
+  color: var(--form-ink-muted);
+}
+
+.formSkin .sectionDescription {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--form-ink-muted);
+}
+
+.formSkin .fieldLabel,
+.formSkin .toggleLabel {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--form-ink);
+}
+
+.formSkin .fieldLabelRequired::after {
+  color: var(--form-danger);
+}
+
+/* Toggle rows carry labels that are not .toggleLabel (AiToggleLabel inherits),
+   so the row itself sets the size they inherit. */
+.formSkin .toggleRow {
+  gap: var(--space-4);
+  font-size: var(--text-xs);
+  border-bottom-color: var(--form-divider);
+}
+
+.formSkin .fieldHint,
+.formSkin .toggleDescription {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--form-ink-muted);
+}
+
+.formSkin .sectionDescription strong,
+.formSkin .fieldHint strong,
+.formSkin .toggleDescription strong {
+  font-weight: var(--font-semibold);
+  color: var(--form-ink-emphasis);
+}
+
+.formSkin code {
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--form-ink);
+  background: var(--form-field-bg);
+  border: 1px solid var(--form-panel-border);
+  border-radius: 3px;
+}
+
+/* Group panel: one step off the card, with its own border. */
+.formSkin .subSection {
+  padding: var(--space-4);
+  background: var(--form-panel-bg);
+  border: 1px solid var(--form-panel-border);
+}
+
+.formSkin .subSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--form-ink);
+}
+
+.formSkin .subSection .sectionDescription {
+  font-size: var(--text-xs);
+}
+
+/* A panel's title and its explanation are one block, not two gap-separated
+   children. */
+.formSkin .subSectionTitle + .sectionDescription {
+  margin-top: calc(-1 * var(--space-2));
+}
+
+.formSkin .subSectionTitle + .toggleRow {
+  padding-top: 0;
+}
+
+/* ---- Fields ---- */
+
+.formSkin :global(.textInput),
+.formSkin :global(.textarea),
+.formSkin :global(.select),
+.formSkin .modelSelectorInput {
+  background-color: var(--form-field-bg);
+  border-color: var(--form-field-border);
+  color: var(--form-ink);
+}
+
+/* Longhands, not `padding`: a field beside an import or reveal button keeps
+   the wider right padding its wrapper gives it. */
+.formSkin :global(.textInput) {
+  min-height: 32px;
+  padding-block: 6px;
+  padding-left: 10px;
+}
+
+.formSkin :global(.textarea) {
+  padding-block: 8px;
+  padding-left: 10px;
+  line-height: 1.5;
+}
+
+.formSkin :global(.textInput)::placeholder,
+.formSkin :global(.textarea)::placeholder,
+.formSkin .modelSearchInput::placeholder {
+  color: var(--form-ink-faint);
+}
+
+.formSkin :global(.textInput):hover:not(:disabled),
+.formSkin :global(.textarea):hover:not(:disabled),
+.formSkin :global(.select):hover:not(:disabled),
+.formSkin .modelSelectorInput:hover {
+  border-color: var(--form-field-border-hover);
+}
+
+.formSkin :global(.textInput):focus,
+.formSkin :global(.textarea):focus,
+.formSkin :global(.select):focus,
+.formSkin .modelSelectorInputFocused {
+  outline: none;
+  border-color: var(--form-focus);
+  box-shadow: 0 0 0 3px var(--form-focus-ring);
+}
+
+/* Locked, not faded: a 50% ghost of a field made the value unreadable. A flat
+   fill and a dashed edge say "not editable" at full legibility. */
+.formSkin :global(.textInput):disabled,
+.formSkin :global(.textarea):disabled,
+.formSkin :global(.select):disabled {
+  opacity: 1;
+  background-color: var(--form-field-disabled-bg);
+  border-style: dashed;
+  color: var(--form-ink-muted);
+}
+
+.formSkin .modelSelectedText {
+  color: var(--form-ink);
+}
+
+.formSkin input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--form-focus);
+  cursor: pointer;
+}
+
+/* The shared Toggle shows ON only by moving its knob. Here the track fills too,
+   so on and off differ by colour at a glance. */
+.formSkin [role="switch"] {
+  background: var(--form-toggle-off-bg);
+  border-color: var(--form-toggle-off-border);
+}
+
+.formSkin [role="switch"] > span {
+  background: var(--form-toggle-knob);
+}
+
+.formSkin [role="switch"][aria-checked="true"] {
+  background: var(--form-toggle-on-bg);
+  border-color: var(--form-toggle-on-bg);
+}
+
+.formSkin [role="switch"][aria-checked="true"] > span {
+  background: var(--color-white);
+}
+
+.formSkin :global(.secondaryButton) {
+  background: var(--form-field-bg);
+  border-color: var(--form-field-border);
+  color: var(--form-ink);
+}
+
+.formSkin :global(.secondaryButton):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--form-ink) 6%, var(--form-field-bg));
+  border-color: var(--form-field-border-hover);
+}
+
+/* ---- Callout ----
+   One recipe for every notice: a tint of its accent over the field shade, the accent
+   on the edge, the icon and the bold lead-in, and the body in the form's own
+   ink. Painting the whole paragraph in the accent (the .shodanWarning way) is
+   what put amber text inside blue boxes. Works outside .formSkin too, since it
+   reads only global tokens. */
+.callout {
+  --callout-accent: var(--form-info);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--form-ink);
+  background: color-mix(in srgb, var(--callout-accent) 10%, var(--form-field-bg));
+  border: 1px solid color-mix(in srgb, var(--callout-accent) 35%, transparent);
+  border-left: 3px solid var(--callout-accent);
+  border-radius: var(--radius-default);
+}
+
+.callout > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--callout-accent);
+}
+
+.callout strong {
+  font-weight: var(--font-semibold);
+  color: var(--callout-accent);
+}
+
+.calloutInfo {
+  --callout-accent: var(--form-info);
+}
+
+.calloutWarning {
+  --callout-accent: var(--form-warning);
+}
+
+.calloutDanger {
+  --callout-accent: var(--form-danger);
+}
+
+.fieldGroup .callout {
+  margin-top: var(--space-2);
+}
+
+/* ---- Targeting-mode cards ----
+   Idle cards wear the field fill, since they are controls. The picked one takes
+   its mode's accent (blue domain, violet IP, green batch, as on the recon-preset
+   chips) at 400 in dark and 700 in light, where a 400 on a pale tint is ~2.5:1. */
+.modeCards {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 720px) {
+  .modeCards {
+    flex-direction: column;
+  }
+}
+
+.modeCard {
+  --mode-accent: var(--form-info);
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  text-align: left;
+  color: var(--form-ink);
+  background: var(--form-field-bg);
+  border: 1px solid var(--form-field-border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.modeCard[data-mode="ip"] {
+  --mode-accent: var(--color-violet-400);
+}
+
+:global([data-theme="light"]) .modeCard[data-mode="ip"] {
+  --mode-accent: var(--color-violet-700);
+}
+
+.modeCard[data-mode="batch"] {
+  --mode-accent: var(--form-success);
+}
+
+.modeCard:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--form-ink) 4%, var(--form-field-bg));
+  border-color: var(--form-field-border-hover);
+}
+
+.modeCard:focus-visible {
+  outline: 2px solid var(--form-focus);
+  outline-offset: 2px;
+}
+
+/* A global `[disabled] { opacity: 0.5 }` would ghost the locked mode too, and
+   the locked mode is the one card that must stay readable. */
+.modeCard:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.modeCard:disabled:not(.modeCardActive) {
+  opacity: 0.55;
+}
+
+/* An inset ring doubles the border without the 1px -> 2px layout jump. */
+.modeCardActive,
+.modeCardActive:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--mode-accent) 11%, var(--form-field-bg));
+  border-color: var(--mode-accent);
+  box-shadow: inset 0 0 0 1px var(--mode-accent);
+}
+
+.modeCardHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--form-ink-muted);
+}
+
+.modeCardTitle {
+  font-size: 15px;
+  font-weight: var(--font-bold);
+  color: var(--form-ink);
+}
+
+.modeCardActive .modeCardHead,
+.modeCardActive .modeCardTitle {
+  color: var(--mode-accent);
+}
+
+.modeCardMark {
+  margin-left: auto;
+}
+
+.modeCardSubtitle {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--form-ink-muted);
+}
+
+/* ---- Nested list, status line, preview table, chips ---- */
+
+/* A list inside a panel sits recessed like a field, so its rows read as one
+   control rather than more of the panel. */
+.nestedList {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 0 var(--space-3);
+  background: var(--form-field-bg);
+  border: 1px solid var(--form-field-border);
+  border-radius: var(--radius-default);
+}
+
+.nestedList > .toggleRow {
+  gap: var(--space-3);
+}
+
+.statusLine {
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--form-ink-muted);
+  background: var(--form-field-bg);
+  border: 1px solid var(--form-field-border);
+  border-left: 3px solid var(--form-ink-faint);
+  border-radius: var(--radius-default);
+}
+
+.statusLineActive {
+  color: var(--form-ink);
+  border-left-color: var(--form-success);
+}
+
+.statusLineAlert {
+  display: block;
+  margin-top: 4px;
+  font-weight: var(--font-semibold);
+  color: var(--form-danger);
+}
+
+.previewTableWrap {
+  overflow-x: auto;
+  margin-top: var(--space-2);
+  background: var(--form-field-bg);
+  border: 1px solid var(--form-field-border);
+  border-radius: var(--radius-default);
+}
+
+.formSkin .previewTable th {
+  background: var(--form-panel-bg);
+  color: var(--form-ink-muted);
+  border-bottom-color: var(--form-field-border);
+}
+
+.formSkin .previewTable td {
+  color: var(--form-ink);
+  border-bottom-color: var(--form-divider);
+}
+
+.formSkin .previewTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.formSkin .previewTableMuted {
+  color: var(--form-ink-muted);
+}
+
+.enumBadge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: var(--font-bold);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--form-warning);
+  background: color-mix(in srgb, var(--form-warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--form-warning) 45%, transparent);
+  border-radius: 10px;
+}
+
+/* Host, reason, remove. As a .fieldRow the remove button became a 200px-wide
+   grid column of its own. */
+.excludedHostRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-1);
+}
+
+.dayPicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dayChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: var(--text-xs);
+  color: var(--form-ink-muted);
+  background: var(--form-field-bg);
+  border: 1px solid var(--form-field-border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  user-select: none;
+}
+
+.dayChip:hover {
+  border-color: var(--form-field-border-hover);
+}
+
+.dayChipOn,
+.dayChipOn:hover {
+  color: var(--form-ink);
+  background: color-mix(in srgb, var(--form-focus) 12%, var(--form-field-bg));
+  border-color: var(--form-focus);
+}

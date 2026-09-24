@@ -60,14 +60,17 @@ function reply(body: unknown, status = 200) {
 let fetchMock: ReturnType<typeof vi.fn>
 let putStatus = 200
 let putErrors: string[] | null = null
+let putThrows = false
 
 beforeEach(() => {
   putStatus = 200
   putErrors = null
+  putThrows = false
   fetchMock = vi.fn((url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     if (url.endsWith('/node-filters') && method === 'GET') return reply(STATE)
     if (url.endsWith('/node-filters') && method === 'PUT') {
+      if (putThrows) return Promise.reject(new TypeError('Failed to fetch'))
       if (putErrors) return reply({ error: 'The rules are not valid.', errors: putErrors }, 400)
       return putStatus === 200 ? reply({ ok: true, revision: 4 }) : reply({ error: 'changed', currentRevision: 5 }, putStatus)
     }
@@ -283,6 +286,21 @@ describe('NodeFiltersView', () => {
       await waitFor(() => expect(alertWarning).toHaveBeenCalled())
       expect(String(alertWarning.mock.calls[0][0])).toMatch(/loaded but NOT saved[\s\S]*old_field/)
       expect(await screen.findByText('Unsaved changes')).toBeTruthy()
+    })
+
+    test('load_network_failure: a dropped connection is reported and the saved copy re-read, not swallowed', async () => {
+      confirm.mockResolvedValue(true)
+      putThrows = true
+      view()
+      await openMenuItem('Load preset…')
+      const reads = () => fetchMock.mock.calls.filter(([u, i]) => String(u).endsWith('/node-filters') && (i?.method ?? 'GET') === 'GET').length
+      await screen.findByRole('button', { name: 'Load' })
+      const before = reads()
+      fireEvent.click(screen.getByRole('button', { name: 'Load' }))
+      await waitFor(() => expect(alertError).toHaveBeenCalled())
+      expect(String(alertError.mock.calls[0][0])).toMatch(/could not be loaded: Failed to fetch[\s\S]*Check whether/)
+      expect(reads()).toBeGreaterThan(before)
+      expect(toast.success).not.toHaveBeenCalled()
     })
   })
 })

@@ -714,6 +714,16 @@ docker run --rm \
 1. `info.classification.cve-id`
 2. `info.classification.cve`
 
+Nuclei v3 emits `cve-id` as a **lowercase list** (`["cve-2021-41773"]`), so ids
+are matched case-insensitively and stored upper-case (`CVE-2021-41773`); a
+case-sensitive `CVE-` test dropped every CVE. The parser returns each CVE as a
+`{id, cvss, url}` map (below), but the graph writer (`nuclei_cve_ids` in
+`graph_db/mixins/recon/vuln_mixin.py`) stores the `Vulnerability` node's `cves`
+as a flat list of id strings: Neo4j cannot store a map inside a property, and one
+map fails the whole write. That list is what CVE enrichment, reports and the
+Mute Rules CVE fields (`has_cve`, `cve_year`, `cve_ids`) read. Regression tests:
+`recon/tests/test_nuclei_cve_findings_reach_graph.py`.
+
 **Category Classification:**
 
 | Tags Containing | Category |

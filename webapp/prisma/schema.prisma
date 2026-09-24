@@ -1077,11 +1077,13 @@ model Project {
   agentBruteforceSpeed                  Int      @default(5) @map("agent_bruteforce_speed")
   agentGuardrailEnabled                 Boolean  @default(true) @map("agent_guardrail_enabled")
 
-  // Per-project opt-in for kali_exec over the INBOUND MCP server. Default false,
-  // and denied to update_recon_settings by name: a token that could set this
-  // would be granting itself the one capability on that surface which reaches a
-  // live target outside a scan. Only a human in the project form turns it on.
-  mcpKaliExecEnabled                    Boolean  @default(false) @map("mcp_kali_exec_enabled")
+  // Per-project switch for kali_exec over the INBOUND MCP server. On for new
+  // projects so the sandbox works without a detour to the form; the token's
+  // kali:exec permission still decides who may use it. Denied to
+  // update_recon_settings by name: a token that could set this would be granting
+  // itself the one capability on that surface which reaches a live target
+  // outside a scan. Only a human in the project form changes it.
+  mcpKaliExecEnabled                    Boolean  @default(true) @map("mcp_kali_exec_enabled")
 
   // Fireteam (multi-agent) Settings
   fireteamEnabled                       Boolean  @default(true)            @map("fireteam_enabled")

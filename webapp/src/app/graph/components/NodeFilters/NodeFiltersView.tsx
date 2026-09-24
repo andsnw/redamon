@@ -184,56 +184,71 @@ export function NodeFiltersView({
   }, [projectId, nf, toast, alertError, onStatusChange])
 
   const loadPreset = useCallback(async (summary: MuteRulesPresetSummary): Promise<boolean> => {
-    const res = await fetch(`/api/mute-rule-presets/${encodeURIComponent(summary.id)}`)
-    if (!res.ok) {
-      await alertError(`The preset "${summary.name}" could not be read.`, 'Load preset')
-      return false
-    }
-    const preset = await res.json() as { name: string; mode: NodeFilterMode; rules: NodeFilterDoc }
-    const armedNote = saved?.applyToScans
-      ? preset.mode === 'allowlist'
-        ? ' These rules are active on new scans, so the next scan mutes in ALLOWLIST mode: '
-          + 'every finding of an active kind that no rule keeps.'
-        : ' These rules are active on new scans, so the next scan mutes by the preset.'
-      : ''
-    const ok = await confirm(
-      `Replace the rules and the mode with the preset "${preset.name}" and save them?`
-        + (nf.dirty ? ' Your unsaved changes are lost.' : '')
-        + armedNote
-        + ' The current graph does not change until you Apply.',
-      'Load preset',
-      { confirmLabel: 'Load and save' },
-    )
-    if (!ok) return false
-
-    const next = { name: preset.name, mode: preset.mode, rules: preset.rules }
-    let result = await nf.applyPreset(next)
-    if (!result.ok && result.conflict) {
-      const overwrite = await confirm(
-        'Someone saved these rules since you opened them. Overwrite their version with the preset, or keep '
-          + 'the preset on screen unsaved: Discard replaces it with theirs.',
-        'The rules changed elsewhere',
-        { confirmLabel: 'Overwrite', cancelLabel: 'Keep unsaved' },
-      )
-      if (!overwrite) {
-        await nf.load(true)
-        return true
+    // Whether the draft was replaced: the list closes once the preset is on screen.
+    let onScreen = false
+    try {
+      const res = await fetch(`/api/mute-rule-presets/${encodeURIComponent(summary.id)}`)
+      if (!res.ok) {
+        await alertError(`The preset "${summary.name}" could not be read.`, 'Load preset')
+        return false
       }
-      result = await nf.applyPreset(next, true)
-    }
-    if (result.ok) {
-      toast.success(`Preset "${preset.name}" loaded and saved.`, 'Mute rules')
-      onStatusChange?.()
-    } else if (!result.conflict) {
-      // Still on screen: a rule can name a field the catalog has since dropped.
-      await alertWarning(
-        `Preset "${preset.name}" was loaded but NOT saved:\n`
-          + [result.error, ...(result.errors ?? [])].join('\n')
-          + '\n\nFix the rules marked in red, then Save.',
+      const preset = await res.json() as { name: string; mode: NodeFilterMode; rules: NodeFilterDoc }
+      const armedNote = saved?.applyToScans
+        ? preset.mode === 'allowlist'
+          ? ' These rules are active on new scans, so the next scan mutes in ALLOWLIST mode: '
+            + 'every finding of an active kind that no rule keeps.'
+          : ' These rules are active on new scans, so the next scan mutes by the preset.'
+        : ''
+      const ok = await confirm(
+        `Replace the rules and the mode with the preset "${preset.name}" and save them?`
+          + (nf.dirty ? ' Your unsaved changes are lost.' : '')
+          + armedNote
+          + ' The current graph does not change until you Apply.',
+        'Load preset',
+        { confirmLabel: 'Load and save' },
+      )
+      if (!ok) return false
+
+      const next = { name: preset.name, mode: preset.mode, rules: preset.rules }
+      onScreen = true
+      let result = await nf.applyPreset(next)
+      if (!result.ok && result.conflict) {
+        const overwrite = await confirm(
+          'Someone saved these rules since you opened them. Overwrite their version with the preset, or keep '
+            + 'the preset on screen unsaved: Discard replaces it with theirs.',
+          'The rules changed elsewhere',
+          { confirmLabel: 'Overwrite', cancelLabel: 'Keep unsaved' },
+        )
+        if (!overwrite) {
+          await nf.load(true)
+          return true
+        }
+        result = await nf.applyPreset(next, true)
+      }
+      if (result.ok) {
+        toast.success(`Preset "${preset.name}" loaded and saved.`, 'Mute rules')
+        onStatusChange?.()
+      } else if (!result.conflict) {
+        // Still on screen: a rule can name a field the catalog has since dropped.
+        await alertWarning(
+          `Preset "${preset.name}" was loaded but NOT saved:\n`
+            + [result.error, ...(result.errors ?? [])].join('\n')
+            + '\n\nFix the rules marked in red, then Save.',
+          'Load preset',
+        )
+      }
+      return true
+    } catch (e) {
+      // A dropped connection can land after the save committed, so the saved
+      // copy is re-read rather than assumed: the header then says what is true.
+      if (onScreen) await nf.load(true)
+      await alertError(
+        `Preset "${summary.name}" could not be loaded: ${e instanceof Error ? e.message : 'the request failed'}.`
+          + (onScreen ? ' Check whether the rules on screen were saved.' : ''),
         'Load preset',
       )
+      return onScreen
     }
-    return true
   }, [saved, nf, confirm, alertError, alertWarning, toast, onStatusChange])
 
   const clearExemptions = useCallback(async (label: string) => {

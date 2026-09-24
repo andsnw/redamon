@@ -15,6 +15,8 @@ import JSZip from 'jszip'
 const mockProjectCreate = vi.fn()
 const mockFilterCreate = vi.fn()
 const mockExemptionCreateMany = vi.fn()
+const mockPresetFindMany = vi.fn()
+const mockPresetCreate = vi.fn()
 
 vi.mock('@/lib/access', () => ({ requireEffectiveUser: async () => ({ userId: 'new-owner' }) }))
 vi.mock('@/lib/prisma', () => ({
@@ -22,12 +24,17 @@ vi.mock('@/lib/prisma', () => ({
     project: { create: (...a: unknown[]) => mockProjectCreate(...a) },
     projectNodeFilter: { create: (...a: unknown[]) => mockFilterCreate(...a) },
     nodeFilterExemption: { createMany: (...a: unknown[]) => mockExemptionCreateMany(...a) },
+    userMuteRulesPreset: {
+      findMany: (...a: unknown[]) => mockPresetFindMany(...a),
+      create: (...a: unknown[]) => mockPresetCreate(...a),
+    },
   },
 }))
 vi.mock('@/app/api/graph/neo4j', () => ({ getGraphSession: vi.fn() }))
 vi.mock('@/lib/orchestrator', () => ({ orchestratorFetch: vi.fn() }))
 
 import { POST } from './route'
+import { muteRulesFingerprint } from '@/lib/nodeFilters/presets'
 
 const RULES = {
   version: 1,
@@ -40,12 +47,14 @@ const RULES = {
   },
 }
 
-async function bundle(nodeFilter: unknown, exemptions: unknown, project: Record<string, unknown> = {}) {
+async function bundle(nodeFilter: unknown, exemptions: unknown, project: Record<string, unknown> = {},
+                      muteRulesPresets: unknown = null) {
   const zip = new JSZip()
   zip.file('manifest.json', JSON.stringify({ version: '1', projectName: 'Imported' }))
   zip.file('project.json', JSON.stringify({ id: 'old-project', userId: 'old-owner', name: 'Imported', ...project }))
   if (nodeFilter) zip.file('node-filters/node-filters.json', JSON.stringify(nodeFilter))
   if (exemptions) zip.file('node-filters/node-filter-exemptions.json', JSON.stringify(exemptions))
+  if (muteRulesPresets) zip.file('presets/user_mute_rules_presets.json', JSON.stringify(muteRulesPresets))
   const buf = await zip.generateAsync({ type: 'uint8array' })
   const fd = new FormData()
   fd.set('file', new File([buf as BlobPart], 'export.zip', { type: 'application/zip' }))
@@ -57,6 +66,8 @@ beforeEach(() => {
   mockProjectCreate.mockResolvedValue({ id: 'new-project', name: 'Imported' })
   mockFilterCreate.mockResolvedValue({})
   mockExemptionCreateMany.mockImplementation(({ data }: { data: unknown[] }) => Promise.resolve({ count: data.length }))
+  mockPresetFindMany.mockResolvedValue([])
+  mockPresetCreate.mockResolvedValue({})
 })
 
 describe('importing node filters', () => {
@@ -126,5 +137,89 @@ describe('importing node filters', () => {
     expect(res.status).toBe(200)
     expect(mockFilterCreate).not.toHaveBeenCalled()
     expect(mockExemptionCreateMany).not.toHaveBeenCalled()
+  })
+})
+
+describe('importing the loaded preset and the Mute Rules presets', () => {
+  const OTHER_RULES = {
+    version: 1,
+    kinds: { 'secret': { enabled: true, action: 'mute', rules: [
+      { id: 'b7c8d9', name: 'jsluice secrets', enabled: true, all: [{ field: 'source', op: 'in', value: ['jsluice'] }] },
+    ] } },
+  }
+
+  test('the badge record comes along with the archive\'s fingerprint, not a recomputed one', async () => {
+    // Recomputing from the imported rules would badge rules edited after the load.
+    const loadedPreset = { name: 'Quiet perimeter', fingerprint: 'abc123' }
+    await POST(await bundle({ mode: 'denylist', rules: RULES, loadedPreset }, null))
+    expect(mockFilterCreate.mock.calls[0][0].data.loadedPreset).toEqual(loadedPreset)
+  })
+
+  test('a malformed badge record is dropped, and the rules still import', async () => {
+    await POST(await bundle({ mode: 'denylist', rules: RULES, loadedPreset: { name: 'x'.repeat(500), fingerprint: 'f' } }, null))
+    const data = mockFilterCreate.mock.calls[0][0].data
+    expect(data).not.toHaveProperty('loadedPreset')
+    expect(data.rules).toEqual(RULES)
+  })
+
+  test('the presets arrive under the importing user, never the exporter', async () => {
+    const res = await POST(await bundle(null, null, {}, [
+      { name: 'Quiet perimeter', description: 'why', mode: 'denylist', rules: RULES, userId: 'old-owner', id: 'old-id' },
+    ]))
+    expect(mockPresetCreate).toHaveBeenCalledTimes(1)
+    expect(mockPresetCreate.mock.calls[0][0].data).toEqual({
+      userId: 'new-owner', name: 'Quiet perimeter', description: 'why', mode: 'denylist', rules: RULES,
+    })
+    expect((await res.json()).stats.muteRulesPresets).toBe(1)
+  })
+
+  test('a preset this catalog cannot run, or without a name, is skipped and counted', async () => {
+    const bad = { version: 1, kinds: { 'vuln.nuclei': { enabled: true, action: 'mute',
+      rules: [{ id: 'k3f9a2', name: 'x', enabled: true, all: [{ field: 'no_such_field', op: 'in', value: ['a'] }] }] } } }
+    const res = await POST(await bundle(null, null, {}, [
+      { name: 'Broken', mode: 'denylist', rules: bad },
+      { name: '   ', mode: 'denylist', rules: RULES },
+      { name: 'Good', mode: 'denylist', rules: RULES },
+    ]))
+    expect(mockPresetCreate).toHaveBeenCalledTimes(1)
+    expect(mockPresetCreate.mock.calls[0][0].data.name).toBe('Good')
+    const { stats } = await res.json()
+    expect(stats.muteRulesPresets).toBe(1)
+    expect(stats.muteRulesPresetsSkipped).toBe(2)
+  })
+
+  test('import_preset_twice: a preset the user already has, same name and rules, is not duplicated', async () => {
+    mockPresetFindMany.mockResolvedValue([{ name: 'Quiet perimeter', mode: 'denylist', rules: RULES }])
+    await POST(await bundle(null, null, {}, [
+      { name: 'Quiet perimeter', mode: 'denylist', rules: RULES },
+      { name: 'Quiet perimeter', mode: 'denylist', rules: OTHER_RULES },
+      { name: 'Quiet perimeter', mode: 'allowlist', rules: RULES },
+    ]))
+    // Same name but different rules, or a different mode, is a different preset.
+    const made = mockPresetCreate.mock.calls.map(c => [c[0].data.mode, muteRulesFingerprint(c[0].data.mode, c[0].data.rules)])
+    expect(made).toEqual([
+      ['denylist', muteRulesFingerprint('denylist', OTHER_RULES)],
+      ['allowlist', muteRulesFingerprint('allowlist', RULES)],
+    ])
+  })
+
+  test('the same preset twice in one archive is created once', async () => {
+    await POST(await bundle(null, null, {}, [
+      { name: 'Quiet perimeter', mode: 'denylist', rules: RULES },
+      { name: 'Quiet perimeter', mode: 'denylist', rules: RULES },
+    ]))
+    expect(mockPresetCreate).toHaveBeenCalledTimes(1)
+  })
+
+  test('an unreadable presets file does not fail the import', async () => {
+    const zip = new JSZip()
+    zip.file('manifest.json', JSON.stringify({ version: '1', projectName: 'Imported' }))
+    zip.file('project.json', JSON.stringify({ id: 'old-project', name: 'Imported' }))
+    zip.file('presets/user_mute_rules_presets.json', '{not json')
+    const fd = new FormData()
+    fd.set('file', new File([await zip.generateAsync({ type: 'uint8array' }) as BlobPart], 'export.zip'))
+    const res = await POST(new NextRequest('http://localhost:3000/api/projects/import', { method: 'POST', body: fd }))
+    expect(res.status).toBe(200)
+    expect(mockPresetCreate).not.toHaveBeenCalled()
   })
 })

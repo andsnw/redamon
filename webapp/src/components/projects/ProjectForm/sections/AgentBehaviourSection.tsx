@@ -830,7 +830,7 @@ export function AgentBehaviourSection({ data, updateField, detectedHostIp }: Age
                 </p>
               </div>
               <Toggle
-                checked={data.mcpKaliExecEnabled ?? false}
+                checked={data.mcpKaliExecEnabled ?? true}
                 onChange={(checked) => updateField('mcpKaliExecEnabled', checked)}
               />
             </div>

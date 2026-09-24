@@ -10,6 +10,8 @@
  * A PUT that loads a preset also carries `loadedPreset` ({ name, fingerprint },
  * or null to clear it). An ordinary save omits it and leaves the record alone:
  * the header only badges the name while the rules still hash to the fingerprint.
+ * The fingerprint is computed here from the rules being stored, never taken
+ * from the request, so it always describes exactly what was saved.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
@@ -18,8 +20,8 @@ import { writeAudit } from '@/lib/audit'
 import { readJsonBody } from '@/lib/jsonBody'
 import { requireProjectOwner, realActorUserId } from '@/lib/triageClient'
 import { allErrors, validateNodeFilters } from '@/lib/nodeFilters/validate'
-import { coerceDoc } from '@/lib/nodeFilters/model'
-import { parseLoadedPresetInput } from '@/lib/nodeFilters/presets'
+import { coerceDoc, type NodeFilterMode } from '@/lib/nodeFilters/model'
+import { muteRulesFingerprint, parseLoadedPresetInput } from '@/lib/nodeFilters/presets'
 import {
   RUN_SELECT, activeVersion, diffSummary, exemptionCounts, loadNodeFilter,
 } from '@/lib/nodeFilters/server'
@@ -70,13 +72,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   const presetGiven = 'loadedPreset' in parsed.body
   const preset = presetGiven ? parseLoadedPresetInput(parsed.body.loadedPreset) : null
   if (preset && !preset.ok) return NextResponse.json({ error: preset.error }, { status: 400 })
-  const presetData = preset?.ok
-    ? {
-        loadedPreset: preset.value === null
-          ? Prisma.DbNull
-          : { name: preset.value.name, fingerprint: preset.value.fingerprint },
-      }
-    : {}
   const verdict = validateNodeFilters(mode, rules)
   const errors = allErrors(verdict)
   if (!verdict.ok || errors.length > 0) {
@@ -96,6 +91,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 
   const doc = coerceDoc(rules)
+  const presetData = preset?.ok
+    ? {
+        loadedPreset: preset.value === null
+          ? Prisma.DbNull
+          : { name: preset.value.name, fingerprint: muteRulesFingerprint(mode as NodeFilterMode, doc) },
+      }
+    : {}
   let nextRevision: number
   try {
     if (!before.exists) {

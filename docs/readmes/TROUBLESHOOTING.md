@@ -120,3 +120,16 @@ four ways: the working tree must be clean, `git status` must be readable, every
 file in the diverging commits must sit under a RedAmon runtime data directory,
 and no path may contain a traversal. To disable it entirely and always recover
 by hand, set `REDAMON_NO_AUTO_RESET=1`.
+
+## A finding disappeared, or something is refused while mute rules apply
+
+[Mute Rules](../../redamon.wiki/Mute-Rules.md) mute whole classes of findings, and an "apply to current graph" is a tracked graph writer, so both show up as surprises elsewhere.
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| A finding is gone from the Graph Map, the tables, the AI agent and reports | A person or a mute rule muted it. Nothing is deleted | Open **Muted Nodes** (the **▾** menu on the **All Nodes** tab): each row says what muted it. **Unmute** brings it back and exempts it from every rule; or disable the rule and apply to the current graph |
+| `Cannot start a partial recon while mute rules are being applied to the graph` (or the same for a scan, a triage run, a version activation or save, an unmute, the hostname list) | An "apply to current graph" is running, and it excludes every other graph writer on the project | Wait for it: the **Mute Rules** tab shows *Applying… N nodes checked*. A run whose agent stopped answering is treated as lost after 5 minutes |
+| `... while the mute-rule apply state could not be verified` | The webapp could not read the apply state, so it assumes an apply is running | Check that Postgres is healthy (`docker compose ps postgres`), then retry |
+| The rules are active on new scans, but a scan left passive CVEs, OSV advisories or malicious packages unmuted | A scan's end-of-run sweep covers only recon's own finding sources; these come from Shodan, Netlas, CriminalIP and the supply-chain scanner | **Apply… → Current graph** after the scan |
+| A stopped scan left noise the rules should have muted | A stopped scan exits without its end-of-run sweep | **Apply… → Current graph**, or let the next scan finish |
+| A rule-muted finding vanished from Muted Nodes after a scan | The scan no longer reported it, and a rule mute is pruned like any other finding (a person's mute is kept and marked stale) | Nothing to fix. Mute it by hand if it must stay on record |

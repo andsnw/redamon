@@ -15,9 +15,10 @@ so the findings come back everywhere. An operator's own mute (any other
   # every project
   python tooling/scripts/node_filters_rollback.py --all
 
-Idempotent: a second run finds nothing to do. It leaves the three Postgres
-tables (project_node_filters, node_filter_runs, node_filter_exemptions) alone;
-a `db push` of a schema without them drops them, so export them first.
+Idempotent: a second run finds nothing to do. It leaves the four Postgres
+tables (project_node_filters, node_filter_runs, node_filter_exemptions and
+the users' saved presets, user_mute_rules_presets) alone; a `db push` of a
+schema without them drops them, so export them first.
 
 Reads NEO4J_URI, NEO4J_USER and NEO4J_PASSWORD, like every other graph tool.
 """

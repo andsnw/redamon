@@ -248,13 +248,15 @@ describe('the create form', () => {
     fireEvent.click(screen.getByText('New token'))
   }
 
-  test('only recon:read is ticked by default', async () => {
+  test('only recon:read and kali:exec are ticked by default', async () => {
     vi.stubGlobal('fetch', mockFetch({}))
     await openForm()
 
     const read = screen.getByText('recon:read').closest('label')!.querySelector('input')!
+    const exec = screen.getByText('kali:exec').closest('label')!.querySelector('input')!
     const scan = screen.getByText('recon:scan').closest('label')!.querySelector('input')!
     expect(read).toBeChecked()
+    expect(exec).toBeChecked()
     expect(scan).not.toBeChecked()
   })
 
@@ -599,10 +601,10 @@ describe('editing a token', () => {
 
 // --- Agent Profiles ---------------------------------------------------------
 //
-// The safety property the whole feature rests on: a profile ticks permissions
-// on the operator's behalf, and there are two it must NEVER tick. Command
-// execution at a live target and irreversible graph destruction have to be
-// deliberate acts, not side effects of choosing a job from a dropdown.
+// A profile ticks permissions on the operator's behalf. It must NEVER tick
+// recon:overwrite: irreversible graph destruction has to be a deliberate act,
+// not a side effect of choosing a job from a dropdown. kali:exec is the
+// deliberate opposite: every profile ticks it.
 
 describe('the Agent Profile drives the permissions', () => {
   const openForm = async (fetchMock = mockFetch({})) => {
@@ -616,7 +618,7 @@ describe('the Agent Profile drives the permissions', () => {
   const profileSelect = () => screen.getByLabelText('Agent Profile') as HTMLSelectElement
   /**
    * The scope code also appears in the opt-in footnote ("Pentest also suggests
-   * kali:exec"), so a bare code lookup is ambiguous for the three profiles that
+   * project:create"), so a bare code lookup is ambiguous for the profiles that
    * have one. Only a checkbox ROW is a label wrapping an input.
    */
   const box = (scope: McpScope) => {
@@ -628,11 +630,21 @@ describe('the Agent Profile drives the permissions', () => {
 
   const pick = (id: ProfileId) => fireEvent.change(profileSelect(), { target: { value: id } })
 
-  test('defaults to Custom, which ticks only recon:read', async () => {
+  test('defaults to Custom, which ticks only recon:read and kali:exec', async () => {
     await openForm()
     expect(profileSelect().value).toBe('custom')
     expect(box('recon:read')).toBeChecked()
+    expect(box('kali:exec')).toBeChecked()
     expect(box('recon:scan')).not.toBeChecked()
+  })
+
+  test('picking a profile on an untouched form does not ask to discard anything', async () => {
+    // The blank form must match Custom's recommendation exactly, or the first
+    // pick reads as discarding hand-picked permissions.
+    await openForm()
+    pick('asm')
+    await waitFor(() => expect(box('recon:queue')).toBeChecked())
+    expect(h.confirm).not.toHaveBeenCalled()
   })
 
   test('choosing a job re-ticks exactly that job permissions', async () => {
@@ -645,19 +657,20 @@ describe('the Agent Profile drives the permissions', () => {
     expect(box('graph:cypher')).not.toBeChecked()
   })
 
-  test.each(PROFILE_IDS)('%s never auto-ticks kali:exec or recon:overwrite', async id => {
+  test.each(PROFILE_IDS)('%s auto-ticks kali:exec but never recon:overwrite', async id => {
     await openForm()
     pick(id)
     await waitFor(() => expect(profileSelect().value).toBe(id))
-    expect(box('kali:exec'), `${id} auto-ticked kali:exec`).not.toBeChecked()
+    expect(box('kali:exec'), `${id} did not tick kali:exec`).toBeChecked()
     expect(box('recon:overwrite'), `${id} auto-ticked recon:overwrite`).not.toBeChecked()
   })
 
   test('a profile that wants a dangerous scope says so, with the box still clear', async () => {
     await openForm()
-    pick('research') // the only profile recommending BOTH
+    pick('research') // the only profile recommending recon:overwrite
     await waitFor(() => expect(box('recon:settings')).toBeChecked())
-    expect(screen.getAllByText('recommended, tick it yourself')).toHaveLength(2)
+    expect(screen.getAllByText('recommended, tick it yourself')).toHaveLength(1)
+    expect(box('recon:overwrite')).not.toBeChecked()
     expect(screen.getByText(/never ticks those for you/)).toBeTruthy()
   })
 
@@ -666,8 +679,8 @@ describe('the Agent Profile drives the permissions', () => {
     await openForm()
     pick('soc')
     await waitFor(() => expect(box('graph:cypher')).toBeChecked())
-    fireEvent.click(box('kali:exec'))
-    await waitFor(() => expect(box('kali:exec')).toBeChecked())
+    fireEvent.click(box('recon:scan'))
+    await waitFor(() => expect(box('recon:scan')).toBeChecked())
 
     pick('triage')
     await waitFor(() => expect(h.confirm).toHaveBeenCalled())
@@ -679,13 +692,13 @@ describe('the Agent Profile drives the permissions', () => {
     await openForm()
     pick('soc')
     await waitFor(() => expect(box('graph:cypher')).toBeChecked())
-    fireEvent.click(box('kali:exec'))
-    await waitFor(() => expect(box('kali:exec')).toBeChecked())
+    fireEvent.click(box('recon:scan'))
+    await waitFor(() => expect(box('recon:scan')).toBeChecked())
 
     pick('triage')
     // The label moves, the permissions do not: a profile is a label, never a grant.
     await waitFor(() => expect(profileSelect().value).toBe('triage'))
-    expect(box('kali:exec')).toBeChecked()
+    expect(box('recon:scan')).toBeChecked()
     expect(box('triage:write')).not.toBeChecked()
   })
 
@@ -767,7 +780,7 @@ describe('the Agent Profile on an existing token', () => {
     h.confirm.mockResolvedValue(true)
     // Stored as custom with exactly custom's recommendation, so nothing is
     // hand-edited at any point in this flow.
-    await openEditOf({ ...TOKEN, profile: null, scopes: ['recon:read'] })
+    await openEditOf({ ...TOKEN, profile: null, scopes: scopesForProfile('custom') })
 
     fireEvent.change(screen.getByLabelText('Agent Profile'), { target: { value: 'soc' } })
     await waitFor(() => expect((screen.getByLabelText('Agent Profile') as HTMLSelectElement).value).toBe('soc'))
@@ -780,9 +793,11 @@ describe('the Agent Profile on an existing token', () => {
 
   test('a genuine hand-edit in the panel still raises the prompt', async () => {
     h.confirm.mockResolvedValue(true)
-    await openEditOf({ ...TOKEN, profile: null, scopes: ['recon:read'] })
+    await openEditOf({ ...TOKEN, profile: null, scopes: scopesForProfile('custom') })
     fireEvent.change(screen.getByLabelText('Agent Profile'), { target: { value: 'soc' } })
     await waitFor(() => expect((screen.getByLabelText('Agent Profile') as HTMLSelectElement).value).toBe('soc'))
+    // The switch itself was clean; only the tick below may cause the prompt.
+    expect(h.confirm).not.toHaveBeenCalled()
 
     const row = screen.getAllByText('triage:write', { selector: 'code' })
       .map(e => e.closest('label')).find(l => l?.querySelector('input[type=checkbox]'))!

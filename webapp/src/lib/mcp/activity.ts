@@ -24,6 +24,7 @@ import prisma from '@/lib/prisma'
 import { orchestratorFetch } from '@/lib/orchestrator'
 import { isActivationInProgress } from '@/lib/activationLock'
 import { findLiveTriageRun } from '@/lib/triageRun'
+import { findLiveNodeFilterRun } from '@/lib/nodeFilterRun'
 
 const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'
 
@@ -54,6 +55,8 @@ export interface ProjectActivity {
   scans: ActiveScan[]
   agentSession: boolean
   triageRun: boolean
+  /** Mutes and unmutes findings page by page, so counts move while it runs. */
+  muteRulesApply: boolean
   activating: boolean
   /** True when a source could not be read. NEVER reported as "nothing running". */
   unknown: boolean
@@ -103,6 +106,7 @@ export async function readProjectActivity(projectId: string): Promise<ProjectAct
     scans: [],
     agentSession: false,
     triageRun: false,
+    muteRulesApply: false,
     activating: false,
     unknown: false,
   }
@@ -160,6 +164,13 @@ export async function readProjectActivity(projectId: string): Promise<ProjectAct
   } catch (err) {
     console.error('[mcp] triage run state unreadable:', err)
     unreadable('the triage run state could not be read')
+  }
+
+  try {
+    out.muteRulesApply = Boolean(await findLiveNodeFilterRun(projectId))
+  } catch (err) {
+    console.error('[mcp] mute rules apply state unreadable:', err)
+    unreadable('the Mute Rules apply state could not be read')
   }
 
   try {

@@ -717,7 +717,8 @@ class TriageMixin:
 
     def set_human_verdict(self, user_id: str, project_id: str, node_id: str,
                           status: str, reason: str = "",
-                          channel: str = "", verdict_by: str = "") -> dict:
+                          channel: str = "", verdict_by: str = "",
+                          refuse_muted: bool = False) -> dict:
         """Record an operator's own verdict, which the AI may not later overwrite.
 
         Stamping `triage_source = 'human'` is what makes the skip in
@@ -737,6 +738,16 @@ class TriageMixin:
         So the VALUE stays `human` and the CHANNEL is recorded separately.
         `verdict_by` mirrors `muted_by`: without it the node recorded only who
         the verdict was not.
+
+        `refuse_muted` is for a delegated caller. Any `human` verdict is a
+        Mute Rules guard, so on a rule-muted finding it releases the mute at
+        the next apply or sweep: a verdict would be an unmute by another name,
+        and unmuting is reserved for a person.
+
+        The node's write lock is taken BEFORE `n:Muted` is read, the same idiom
+        as `_lock` in graph_db/node_filters/cypher.py. Under read committed a
+        label read without it can see "not muted", then wait on a mute's lock
+        and write the verdict onto the node that mute just committed.
         """
         if status not in VALID_TRIAGE_STATUS:
             return {"updated": False, "reason": f"invalid status {status!r}"}
@@ -744,14 +755,18 @@ class TriageMixin:
         query = f"""
         MATCH (n:{_MUTEABLE})
         WHERE {_BY_ID} AND n.user_id = $user_id AND n.project_id = $project_id
-        SET n.triage_status = $status,
-            n.triage_reason = $reason,
-            n.triage_source = 'human',
-            n.triage_verdict_channel = $channel,
-            n.triage_verdict_by = $verdict_by,
-            n.triage_confidence = 1.0,
-            n.triaged_at = datetime()
-        RETURN {_FUNCTIONAL_LABEL} AS label
+        SET n._verdict_lock = true
+        REMOVE n._verdict_lock
+        WITH n, ($refuse_muted AND n:Muted) AS refused
+        FOREACH (_ IN CASE WHEN refused THEN [] ELSE [1] END |
+            SET n.triage_status = $status,
+                n.triage_reason = $reason,
+                n.triage_source = 'human',
+                n.triage_verdict_channel = $channel,
+                n.triage_verdict_by = $verdict_by,
+                n.triage_confidence = 1.0,
+                n.triaged_at = datetime())
+        RETURN {_FUNCTIONAL_LABEL} AS label, refused
         """
         with self.driver.session() as session:
             record = session.run(
@@ -760,7 +775,11 @@ class TriageMixin:
                 channel=str(channel or "app")[:32],
                 # Defaults to the tenant, which is who a UI verdict is by.
                 verdict_by=str(verdict_by or user_id)[:128],
+                refuse_muted=bool(refuse_muted),
             ).single()
 
-        return {"updated": record is not None,
-                "label": record["label"] if record else None}
+        if record is None:
+            return {"updated": False, "label": None}
+        if record.get("refused"):
+            return {"updated": False, "reason": "muted", "label": record["label"]}
+        return {"updated": True, "label": record["label"]}

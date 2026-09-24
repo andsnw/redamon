@@ -261,6 +261,7 @@ export async function getProjectActivity(ctx: McpContext, projectId: string) {
     scans: activity.scans,
     agentSession: activity.agentSession,
     triageRun: activity.triageRun,
+    muteRulesApply: activity.muteRulesApply,
     activating: activity.activating,
     liveGraphState: liveGraphStateOf(activity),
     canStartFullScan: blocker === null,
@@ -434,8 +435,8 @@ const STATE_WARNING: Record<Exclude<LiveGraphState, 'stable'>, string> = {
     'A scan is writing the live graph right now, so these counts are not settled. ' +
     'Re-check once the state is "stable".',
   agent_writing:
-    'A triage run or an in-app agent session is writing the live graph, so these counts are not ' +
-    'settled. Re-check once the state is "stable".',
+    'A triage run, an in-app agent session or a Mute Rules apply is writing the live graph, so ' +
+    'these counts are not settled. Re-check once the state is "stable".',
   unknown:
     'Whether anything is rewriting the graph could NOT be determined, so these counts cannot be ' +
     'trusted. This is not a report that the graph is settled - treat it as "do not know".',
@@ -452,7 +453,8 @@ export function liveGraphStateOf(activity: ProjectActivity): LiveGraphState {
   if (activity.activating) return 'activating'
   if (activity.unknown) return 'unknown'
   if (activity.scans.length > 0) return 'scan_running'
-  if (activity.agentSession || activity.triageRun) return 'agent_writing'
+  // A Mute Rules apply runs in the agent service, so it is the agent writing.
+  if (activity.agentSession || activity.triageRun || activity.muteRulesApply) return 'agent_writing'
   return 'stable'
 }
 
