@@ -1979,6 +1979,7 @@ class ContainerManager:
             tool_id=tool_id,
             status=PartialReconStatus.STARTING,
             started_at=datetime.now(timezone.utc),
+            roots=list(config.get("domains") or []),
         )
         self.partial_recon_states.setdefault(project_id, {})[run_id] = state
 

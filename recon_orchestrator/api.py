@@ -1249,30 +1249,49 @@ async def start_partial_recon(project_id: str, request: PartialReconStartRequest
     if not container_manager:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
-    # RoE time window + hard guardrail checks (same as full recon), fail-closed.
-    if request.webapp_api_url:
-        project = _fetch_project_for_preflight(project_id)
+    from batch_scope import (
+        PartialScopeError,
+        narrow_partial_roots,
+        partial_project_roots,
+        validate_partial_overrides,
+    )
 
-        domain = request.graph_inputs.get("domain", "")
-        if domain:
-            from hard_guardrail import is_hard_blocked
-            blocked, reason = is_hard_blocked(domain)
+    # The pre-flight is unconditional: the roots come from the project, so a
+    # start that cannot fetch it cannot know what it may scan.
+    if not request.webapp_api_url:
+        raise HTTPException(status_code=400, detail="webapp_api_url is required.")
+    try:
+        overrides = validate_partial_overrides(request.settings_overrides)
+        project = _fetch_project_for_preflight(project_id)
+        roots = narrow_partial_roots(
+            partial_project_roots(project, project_id), request.graph_inputs)
+    except PartialScopeError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+    # Hard guardrail on EVERY root, as for a full recon. IPs are not hard-blocked
+    # (hard_guardrail.is_hard_blocked), and IP mode's root is a synthetic name.
+    if not project.get('ipMode', False):
+        from hard_guardrail import is_hard_blocked
+        for root in roots:
+            blocked, reason = is_hard_blocked(root)
             if blocked:
                 raise HTTPException(status_code=403, detail=f"Hard guardrail: {reason}")
 
-        _check_roe_time_window(project)
+    _check_roe_time_window(project)
 
-    # Note: settings are fetched by the recon container itself via get_settings()
-    # (uses PROJECT_ID + WEBAPP_API_URL env vars, same as main.py)
-
-    # Build the config dict for the partial recon container
+    # Settings, and with them each root's group scope, are fetched by the recon
+    # container itself via get_settings() (PROJECT_ID + WEBAPP_API_URL env vars,
+    # same as main.py). It rebuilds the groups from that validated copy rather
+    # than from anything written here, so the two can never disagree.
     config = {
         "tool_id": request.tool_id,
-        "domain": request.graph_inputs.get("domain", ""),
+        "domains": roots,
+        # Read by the tools not yet migrated to scope_roots().
+        "domain": roots[0],
         "user_inputs": request.user_inputs,
         "user_targets": request.user_targets,
         "include_graph_targets": request.include_graph_targets,
-        "settings_overrides": request.settings_overrides,
+        "settings_overrides": overrides,
         "user_id": request.user_id,
         "webapp_api_url": _spawned_webapp_url(),
     }
@@ -1285,6 +1304,9 @@ async def start_partial_recon(project_id: str, request: PartialReconStartRequest
             recon_path=RECON_PATH,
             custom_templates_path=CUSTOM_TEMPLATES_PATH,
         )
+        logger.info(
+            f"Partial recon run {state.run_id}: project {project_id}, "
+            f"tool {request.tool_id}, roots {', '.join(roots)}")
         return state
     except ValueError as e:
         raise _value_error_http(e)

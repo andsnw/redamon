@@ -31,6 +31,10 @@ import recon.partial_recon_modules.port_scanning as _port_scanning_mod
 import recon.partial_recon_modules.http_probing as _http_probing_mod
 import recon.partial_recon_modules.osint_enrichment as _osint_enrichment_mod
 
+# main() checks each root against the project's settings before dispatching, so
+# a dispatch test needs settings in which example.com is the project's target.
+_EXAMPLE_PROJECT_SETTINGS = {"TARGET_DOMAIN": "example.com", "SUBDOMAIN_LIST": []}
+
 
 class TestLoadConfig(unittest.TestCase):
     """Tests for config loading from JSON file."""
@@ -4431,9 +4435,13 @@ class TestShodanMainDispatcher(unittest.TestCase):
             import importlib
             import partial_recon as pr
             importlib.reload(pr)
-            with patch.object(pr, 'run_shodan') as mock_run:
+            with patch.object(pr, 'run_shodan') as mock_run, \
+                 patch.object(pr, 'get_settings', return_value=dict(_EXAMPLE_PROJECT_SETTINGS)):
                 pr.main()
-                mock_run.assert_called_once_with(config)
+                mock_run.assert_called_once()
+                passed = mock_run.call_args[0][0]
+                self.assertEqual(passed["tool_id"], "Shodan")
+                self.assertEqual(passed["domains"], ["example.com"])
         finally:
             del os.environ["PARTIAL_RECON_CONFIG"]
             os.unlink(config_path)
@@ -5216,9 +5224,13 @@ class TestUncoverMainDispatcher(unittest.TestCase):
             import importlib
             import partial_recon as pr
             importlib.reload(pr)
-            with patch.object(pr, 'run_uncover') as mock_run:
+            with patch.object(pr, 'run_uncover') as mock_run, \
+                 patch.object(pr, 'get_settings', return_value=dict(_EXAMPLE_PROJECT_SETTINGS)):
                 pr.main()
-                mock_run.assert_called_once_with(config)
+                mock_run.assert_called_once()
+                passed = mock_run.call_args[0][0]
+                self.assertEqual(passed["tool_id"], "Uncover")
+                self.assertEqual(passed["domains"], ["example.com"])
         finally:
             del os.environ["PARTIAL_RECON_CONFIG"]
             os.unlink(config_path)
@@ -5502,7 +5514,8 @@ class TestRunVhostSni(unittest.TestCase):
                 import partial_recon as pr
                 importlib.reload(pr)
                 with patch.object(pr, "run_vhost_sni_partial") as mock_runner, \
-                     patch.object(pr, "_cleanup_orphan_user_inputs"):
+                     patch.object(pr, "_cleanup_orphan_user_inputs"), \
+                     patch.object(pr, "get_settings", return_value=dict(_EXAMPLE_PROJECT_SETTINGS)):
                     pr.main()
                 mock_runner.assert_called_once()
                 config_arg = mock_runner.call_args[0][0]
@@ -5522,7 +5535,8 @@ class TestRunVhostSni(unittest.TestCase):
                 import partial_recon as pr
                 importlib.reload(pr)
                 with patch.object(pr, "run_vhost_sni_partial") as mock_runner, \
-                     patch.object(pr, "_cleanup_orphan_user_inputs"):
+                     patch.object(pr, "_cleanup_orphan_user_inputs"), \
+                     patch.object(pr, "get_settings", return_value=dict(_EXAMPLE_PROJECT_SETTINGS)):
                     with self.assertRaises(SystemExit) as cm:
                         pr.main()
                     self.assertEqual(cm.exception.code, 1)

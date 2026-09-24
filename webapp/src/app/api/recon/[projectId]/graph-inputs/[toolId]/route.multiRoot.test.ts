@@ -1,0 +1,176 @@
+/** @vitest-environment node */
+/**
+ * The graph-inputs route on a project with several roots (Domain batch).
+ *
+ * Every branch used to group on the Domain node and read `records[0]`, so the
+ * modal showed, and the run scanned, whichever root Neo4j returned first. The
+ * route now takes the roots from the project row, returns them as `domains`
+ * (with `stale_domains` for Domain nodes the project dropped and
+ * `empty_domains` for roots with no recon data), and counts only over those
+ * roots. A tool not yet able to cover several roots is offered just the first.
+ *
+ * Fixture roots are alpha.test / beta.test / gamma.test only.
+ */
+import { describe, test, expect, vi, beforeEach } from 'vitest'
+
+const { multiRoot } = vi.hoisted(() => ({ multiRoot: new Set<string>() }))
+
+const mockGuard = vi.fn()
+const mockFindUnique = vi.fn()
+const mockRun = vi.fn()
+
+vi.mock('@/lib/access', () => ({ guardProject: (...a: unknown[]) => mockGuard(...a) }))
+vi.mock('@/lib/prisma', () => ({ default: { project: { findUnique: (...a: unknown[]) => mockFindUnique(...a) } } }))
+vi.mock('@/app/api/graph/neo4j', () => ({
+  getGraphSession: () => ({ run: (...a: unknown[]) => mockRun(...a), close: vi.fn() }),
+}))
+vi.mock('@/lib/recon-types', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/recon-types')>()),
+  MULTI_ROOT_PARTIAL_TOOLS: multiRoot,
+}))
+
+import { GET } from './route'
+import { PARTIAL_RECON_SUPPORTED_TOOLS } from '@/lib/recon-types'
+
+function record(fields: Record<string, unknown>) {
+  return { get: (k: string) => fields[k] }
+}
+
+const BATCH = {
+  userId: 'u1', targetDomain: '', ipMode: false, domainBatchMode: true,
+  domainBatchGroups: [
+    { rootDomain: 'gamma.test', prefixes: ['*'] },
+    { rootDomain: 'alpha.test', prefixes: ['www.', '.'] },
+    { rootDomain: 'beta.test', prefixes: ['*'] },
+  ],
+}
+
+/** Domain nodes in the graph: the three roots, plus one the project dropped. */
+let graphDomains: Array<{ name: string; hasData: boolean }> = []
+
+function call(toolId: string) {
+  return GET({} as never, { params: Promise.resolve({ projectId: 'p1', toolId }) })
+}
+
+function toolCall() {
+  return mockRun.mock.calls.find(([cypher]) => !String(cypher).includes('AS hasData')) as
+    [string, Record<string, unknown>] | undefined
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  multiRoot.clear()
+  mockGuard.mockResolvedValue(null)
+  mockFindUnique.mockResolvedValue(BATCH)
+  graphDomains = [
+    { name: 'alpha.test', hasData: true },
+    { name: 'beta.test', hasData: true },
+    { name: 'gamma.test', hasData: false },
+    { name: 'old.test', hasData: true },
+  ]
+  mockRun.mockImplementation(async (cypher: string) => (
+    cypher.includes('AS hasData')
+      ? { records: graphDomains.map(record) }
+      : { records: [record({ subdomains: ['www.alpha.test'], subCount: 1, ipCount: 2, portCount: 3 })] }
+  ))
+})
+
+describe('roots come from the project, not from the graph', () => {
+  test('a multi-root tool is offered every current root, sorted', async () => {
+    multiRoot.add('Tlsx')
+    const body = await (await call('Tlsx')).json()
+    expect(body.domains).toEqual(['alpha.test', 'beta.test', 'gamma.test'])
+    expect(body.domain).toBe('alpha.test')
+  })
+
+  test('a Domain node the project dropped is stale and is not counted', async () => {
+    multiRoot.add('Tlsx')
+    const body = await (await call('Tlsx')).json()
+    expect(body.stale_domains).toEqual(['old.test'])
+    expect(toolCall()?.[1].domains).toEqual(['alpha.test', 'beta.test', 'gamma.test'])
+  })
+
+  test('a root without recon data is reported empty', async () => {
+    multiRoot.add('Tlsx')
+    const body = await (await call('Tlsx')).json()
+    expect(body.empty_domains).toEqual(['gamma.test'])
+  })
+
+  test('a root with no Domain node yet is still offered, as empty', async () => {
+    multiRoot.add('Tlsx')
+    graphDomains = [{ name: 'alpha.test', hasData: true }]
+    const body = await (await call('Tlsx')).json()
+    expect(body.domains).toEqual(['alpha.test', 'beta.test', 'gamma.test'])
+    expect(body.empty_domains).toEqual(['beta.test', 'gamma.test'])
+  })
+
+  test('a tool not yet multi-root is offered only the first root, and counts only it', async () => {
+    const body = await (await call('Tlsx')).json()
+    expect(body.domains).toEqual(['alpha.test'])
+    expect(toolCall()?.[1].domains).toEqual(['alpha.test'])
+  })
+})
+
+describe('single-domain and IP mode', () => {
+  test('a single project keeps its target as stored', async () => {
+    multiRoot.add('Naabu')
+    mockFindUnique.mockResolvedValue({ userId: 'u1', targetDomain: 'Alpha.test', ipMode: false })
+    graphDomains = [{ name: 'Alpha.test', hasData: true }]
+    const body = await (await call('Naabu')).json()
+    expect(body.domains).toEqual(['Alpha.test'])
+    expect(body.stale_domains).toEqual([])
+  })
+
+  test('IP mode returns the synthetic root once a recon has minted it', async () => {
+    mockFindUnique.mockResolvedValue({ userId: 'u1', targetDomain: '', ipMode: true })
+    graphDomains = [{ name: 'ip-targets.p1', hasData: true }]
+    const body = await (await call('Httpx')).json()
+    expect(body.domains).toEqual(['ip-targets.p1'])
+    expect(body.domain).toBe('ip-targets.p1')
+  })
+
+  test('IP mode with no recon yet offers nothing, as before', async () => {
+    mockFindUnique.mockResolvedValue({ userId: 'u1', targetDomain: '', ipMode: true })
+    graphDomains = []
+    const body = await (await call('Httpx')).json()
+    expect(body.domains).toEqual([])
+    expect(body.domain).toBeNull()
+  })
+})
+
+describe('failure and SubdomainDiscovery', () => {
+  test('a Neo4j failure still returns the roots, with zero counts', async () => {
+    multiRoot.add('Naabu')
+    mockRun.mockRejectedValue(new Error('neo4j down'))
+    const res = await call('Naabu')
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.source).toBe('settings')
+    expect(body.domains).toEqual(['alpha.test', 'beta.test', 'gamma.test'])
+    expect(body.existing_ips_count).toBe(0)
+  })
+
+  test('SubdomainDiscovery says which roots may enumerate (wildcard groups only)', async () => {
+    multiRoot.add('SubdomainDiscovery')
+    const body = await (await call('SubdomainDiscovery')).json()
+    expect(body.discovery_domains).toEqual(['beta.test', 'gamma.test'])
+  })
+})
+
+describe.each([...PARTIAL_RECON_SUPPORTED_TOOLS])('every supported tool: %s', (toolId) => {
+  test('has a graph branch that returns the roots', async () => {
+    const body = await (await call(toolId)).json()
+    expect(body.source).toBe('graph')
+    expect(body.domains).toEqual(['alpha.test'])
+    expect(body.stale_domains).toEqual(['old.test'])
+    expect(toolCall()?.[1]).toMatchObject({ uid: 'u1', pid: 'p1', domains: ['alpha.test'] })
+  })
+
+  test('never groups on the Domain node', async () => {
+    await call(toolId)
+    const cypher = toolCall()?.[0] ?? ''
+    expect(cypher).not.toMatch(/WITH\s+d\s*,/)
+    expect(cypher).not.toContain('d.name AS domain')
+    if (cypher.includes(':Domain')) expect(cypher).toContain('d.name IN $domains')
+  })
+})

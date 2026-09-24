@@ -17,19 +17,18 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.partial_recon_modules.helpers import _is_valid_url, _scope_partial_urls
+from recon.partial_recon_modules.helpers import _is_valid_url, _scope_partial_urls, partial_settings
 
 
 def run_supply_chain(config: dict) -> None:
     from recon.main_recon_modules.js_recon import run_js_recon
     from recon.main_recon_modules.supply_chain_recon import run_supply_chain_recon
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
-    settings = get_settings()
+    settings = partial_settings(config)
     # The user explicitly chose this tool, so force-enable both stages.
     settings["JS_RECON_ENABLED"] = True
     settings["SUPPLY_CHAIN_RECON_ENABLED"] = True

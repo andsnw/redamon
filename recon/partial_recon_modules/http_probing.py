@@ -14,6 +14,7 @@ from recon.partial_recon_modules.helpers import (
     _is_valid_url,
     _resolve_hostname,
     _should_include_root_domain,
+    partial_settings,
 )
 from recon.partial_recon_modules.graph_builders import _build_port_scan_data_from_graph
 
@@ -29,7 +30,6 @@ def run_httpx(config: dict) -> None:
     """
     import ipaddress as _ipaddress
     from recon.main_recon_modules.http_probe import run_http_probe as _run_http_probe
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
 
@@ -37,7 +37,7 @@ def run_httpx(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable httpx since the user explicitly chose to run it
     settings['HTTPX_ENABLED'] = True

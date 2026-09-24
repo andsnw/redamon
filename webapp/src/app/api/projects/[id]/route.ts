@@ -455,6 +455,30 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
+/**
+ * Stop every running partial recon of a project. They are run-keyed, so each
+ * one is listed and stopped by id. A partial run over a Domain batch walks up to
+ * fifty roots, long enough to keep writing into a project that no longer exists.
+ */
+async function stopPartialRecons(projectId: string): Promise<void> {
+  try {
+    const res = await orchestratorFetch(`${RECON_ORCHESTRATOR_URL}/recon/${projectId}/partial/all`)
+    if (!res.ok) return
+    const data = await res.json().catch(() => ({}))
+    const runs: Array<{ run_id?: unknown; status?: unknown }> = Array.isArray(data?.runs) ? data.runs : []
+    await Promise.allSettled(
+      runs
+        .filter(run => typeof run?.run_id === 'string' && (run.status === 'running' || run.status === 'starting'))
+        .map(run => orchestratorFetch(
+          `${RECON_ORCHESTRATOR_URL}/recon/${projectId}/partial/${encodeURIComponent(run.run_id as string)}/stop`,
+          { method: 'POST' },
+        )),
+    )
+  } catch (e) {
+    console.warn('Could not stop partial recons before project delete:', e)
+  }
+}
+
 // DELETE /api/projects/[id] - Delete project and all associated data
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
@@ -503,11 +527,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     } catch (e) {
       console.warn('Could not stop a triage run before project delete:', e)
     }
-    // Best-effort stop of each PROJECT-LEVEL scan container. Run-based scans
-    // (partial_recon, ai_attack) are keyed by run-id, not project, so they are not
-    // stopped here; they finish on their own and their orphaned nodes are swept by
-    // the graph read-path reconcile. Still strictly better than the prior behavior
-    // (which stopped nothing).
+    // Best-effort stop of each PROJECT-LEVEL scan container. ai_attack runs are
+    // keyed by run-id, not project, so they are not stopped here; they finish on
+    // their own and their orphaned nodes are swept by the graph read-path
+    // reconcile.
     await Promise.allSettled([
       ...['recon', 'gvm', 'github-hunt', 'supply-chain'].map(kind =>
         orchestratorFetch(`${RECON_ORCHESTRATOR_URL}/${kind}/${id}/stop`, { method: 'POST' }),
@@ -516,6 +539,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       // single project-level stop would leave every source but one running with
       // its project row already gone. stop-all loops the nested state dict.
       orchestratorFetch(`${RECON_ORCHESTRATOR_URL}/trufflehog/${id}/stop-all`, { method: 'POST' }),
+      stopPartialRecons(id),
     ])
 
     // Archive the authorization records BEFORE the delete. Every other Project

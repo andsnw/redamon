@@ -7,7 +7,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.partial_recon_modules.helpers import _classify_ip, _is_ip_or_cidr, _should_include_root_domain
+from recon.partial_recon_modules.helpers import _classify_ip, _is_ip_or_cidr, _should_include_root_domain, partial_settings
 from recon.partial_recon_modules.graph_builders import _build_recon_data_from_graph
 
 
@@ -20,7 +20,6 @@ def run_shodan(config: dict) -> None:
     Users can also provide custom IPs to enrich.
     """
     from recon.main_recon_modules.shodan_enrich import run_shodan_enrichment
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
     user_id = os.environ.get("USER_ID", "")
@@ -28,7 +27,7 @@ def run_shodan(config: dict) -> None:
     include_graph = config.get("include_graph_targets", True)
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Shodan OSINT Enrichment")
@@ -218,14 +217,13 @@ def run_urlscan(config: dict) -> None:
     Phase B (enrichment): enriches existing BaseURLs with screenshots/endpoints/parameters.
     """
     from recon.main_recon_modules.urlscan_enrich import run_urlscan_discovery_only
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] URLScan.io Passive Enrichment")
@@ -293,14 +291,13 @@ def run_uncover(config: dict) -> None:
     associated with the target domain.
     """
     from recon.main_recon_modules.uncover_enrich import run_uncover_expansion
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Uncover Multi-Engine Expansion")
@@ -400,7 +397,6 @@ def run_osint_enrichment(config: dict) -> None:
     """
     import importlib
     from concurrent.futures import ThreadPoolExecutor
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
     user_id = os.environ.get("USER_ID", "")
@@ -408,7 +404,7 @@ def run_osint_enrichment(config: dict) -> None:
     include_graph = config.get("include_graph_targets", True)
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] OSINT Enrichment (multi-tool)")

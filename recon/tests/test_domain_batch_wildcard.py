@@ -13,7 +13,6 @@ nowhere else; it must never become a hostname, because from there it reaches a
 tool argument, a filename and a Cypher MERGE.
 """
 
-import ast
 import re
 import sys
 from pathlib import Path
@@ -23,29 +22,12 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.main import group_discovery_enabled  # noqa: E402
+# batch_groups has no import side effects, unlike recon.main (which loads the
+# project's settings from the webapp at import time).
+from recon.helpers.batch_groups import group_discovery_enabled, parse_target  # noqa: E402
 from recon.project_settings import _parse_domain_batch_groups  # noqa: E402
 
 HOSTNAME_SAFE = re.compile(r'^[a-z0-9.-]+$')
-
-
-def _parse_target():
-    """Load parse_target without importing recon.main.
-
-    recon/main.py calls get_settings() at import time, which reaches for the
-    webapp API. The function under test is pure, so it is lifted out of the AST
-    instead - the alternative is a module-level network call inside the gate.
-    """
-    src = (PROJECT_ROOT / "recon" / "main.py").read_text()
-    fn = next(n for n in ast.parse(src).body
-              if isinstance(n, ast.FunctionDef) and n.name == "parse_target")
-    ns = {"re": re,
-          "_PREFIX_CHARSET": re.compile(r'^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$')}
-    exec(compile(ast.Module(body=[fn], type_ignores=[]), "<parse_target>", "exec"), ns)
-    return ns["parse_target"]
-
-
-parse_target = _parse_target()
 
 
 class TestParseTargetSentinels:

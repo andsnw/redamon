@@ -1,10 +1,217 @@
 import os
 import sys
+import time
 from pathlib import Path
 
 # Add project root to path (for lazy imports in other modules)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+
+# ---------------------------------------------------------------------------
+# Multi-root scope
+#
+# A Domain-batch project has one Domain node per root. The orchestrator decides
+# which roots a run may touch and writes them to config["domains"]; partial_recon
+# .main re-checks them against the container's own settings. Every module reads
+# its roots through scope_roots(), never config["domain"] directly.
+# ---------------------------------------------------------------------------
+
+STATUS_OK = "ok"
+STATUS_NO_RESULTS = "no_results"
+STATUS_RATE_LIMITED = "rate_limited"
+
+# Pacing for the per-root API loops. Module constants rather than a project
+# setting, which keeps the settings cascade out of this change.
+ROOT_PAUSE_S = 2
+RATE_LIMIT_RETRY_DELAY_S = 30
+
+
+def scope_roots(config: dict) -> list:
+    """The roots this run covers: config["domains"], else the legacy single domain."""
+    roots = config.get("domains")
+    if isinstance(roots, list):
+        cleaned = [r for r in roots if isinstance(r, str) and r]
+        if cleaned:
+            return cleaned
+    legacy = config.get("domain")
+    return [legacy] if isinstance(legacy, str) and legacy else []
+
+
+def _norm_host(value) -> str:
+    return str(value or "").strip().strip(".").lower()
+
+
+def root_for_host(host: str, roots: list, ip_mode: bool = False):
+    """The longest root that `host` equals or sits under, or None.
+
+    IP mode has one synthetic root (ip-targets.<project_id>) whose Subdomains
+    are dashed IPs rather than names under it, so every host belongs to it.
+    The root is returned as stored, because it is matched against Domain.name.
+    """
+    h = _norm_host(host)
+    if not h or not roots:
+        return None
+    if ip_mode:
+        return roots[0]
+    best, best_len = None, -1
+    for root in roots:
+        r = _norm_host(root)
+        if r and (h == r or h.endswith("." + r)) and len(r) > best_len:
+            best, best_len = root, len(r)
+    return best
+
+
+def host_in_roots(host: str, roots: list) -> bool:
+    return root_for_host(host, roots) is not None
+
+
+def _group_for(root: str, groups: list):
+    r = _norm_host(root)
+    for group in groups or []:
+        if isinstance(group, dict) and _norm_host(group.get("rootDomain")) == r:
+            return group
+    return None
+
+
+def include_root_for(root: str, groups: list) -> bool:
+    """Is the apex itself a target? True when that root's prefixes carry "."."""
+    from recon.helpers.batch_groups import parse_target
+    group = _group_for(root, groups)
+    if group is None:
+        return False
+    return parse_target(root, list(group.get("prefixes") or []))["include_root_domain"]
+
+
+def allowed_hosts_for(root: str, groups: list):
+    """The exact hosts a LITERAL batch group may scan, or None for "any host under root".
+
+    A batch scans exactly the uploaded hostnames unless the operator wrote a
+    wildcard (project_settings.py, run_domain_group). Single-domain projects are
+    never narrowed here, even with a subdomain prefix list: that is a separate
+    product decision, and today's partial runs scan every Subdomain under them.
+    """
+    from recon.helpers.batch_groups import parse_target
+    group = _group_for(root, groups)
+    if group is None or not group.get("batch"):
+        return None
+    info = parse_target(root, list(group.get("prefixes") or []))
+    if info["wildcard_mode"]:
+        return None
+    return {_norm_host(h) for h in info["full_subdomains"]}
+
+
+def partial_domain_groups(settings: dict, roots: list) -> list:
+    """Scope entries for `roots`, built from the container's own validated settings.
+
+    DOMAIN_BATCH_GROUPS has been through _parse_domain_batch_groups, which also
+    demotes a wildcard on a public suffix to literal. Prefixes carried in the
+    config would skip that, so the groups are always rebuilt from settings.
+    """
+    if settings.get("IP_MODE"):
+        return []
+    wanted = {_norm_host(r) for r in roots}
+    if settings.get("DOMAIN_BATCH_MODE"):
+        merged = {}
+        for group in settings.get("DOMAIN_BATCH_GROUPS") or []:
+            if not isinstance(group, dict):
+                continue
+            root = _norm_host(group.get("rootDomain"))
+            if root not in wanted:
+                continue
+            entry = merged.setdefault(root, {"rootDomain": root, "prefixes": [], "batch": True})
+            for prefix in group.get("prefixes") or []:
+                if prefix not in entry["prefixes"]:
+                    entry["prefixes"].append(prefix)
+        return list(merged.values())
+    target = str(settings.get("TARGET_DOMAIN") or "").strip()
+    if not target or _norm_host(target) not in wanted:
+        return []
+    return [{"rootDomain": target, "prefixes": list(settings.get("SUBDOMAIN_LIST") or []),
+             "batch": False}]
+
+
+def settings_project_roots(settings: dict, project_id: str) -> list:
+    """Every root the project scans according to the container's settings."""
+    if settings.get("IP_MODE"):
+        return [f"ip-targets.{project_id}"]
+    if settings.get("DOMAIN_BATCH_MODE"):
+        roots = []
+        for group in settings.get("DOMAIN_BATCH_GROUPS") or []:
+            root = _norm_host(group.get("rootDomain")) if isinstance(group, dict) else ""
+            if root and root not in roots:
+                roots.append(root)
+        return roots
+    target = str(settings.get("TARGET_DOMAIN") or "").strip()
+    return [target] if target else []
+
+
+def partial_settings(config: dict) -> dict:
+    """The settings partial_recon.main loaded once and checked the roots against.
+
+    A module that re-fetched would scan with settings the refusal never saw. The
+    copy is shallow: modules only reassign top-level keys (force-enabling their
+    own tool). Called outside main (a unit test), it falls back to a fetch.
+    """
+    loaded = config.get("_settings")
+    if loaded is None:
+        from recon.project_settings import get_settings
+        return get_settings()
+    return dict(loaded)
+
+
+def _run_one_root(fn, root: str) -> str:
+    try:
+        result = fn(root)
+    except (Exception, SystemExit) as e:  # noqa: BLE001 - one root must not end the run
+        # The class name only: API client exceptions carry request details
+        # (URLs with keys, headers) in their text.
+        print(f"[!][Partial Recon] {root}: failed ({type(e).__name__})")
+        return f"failed: {type(e).__name__}"
+    if result in (STATUS_NO_RESULTS, STATUS_RATE_LIMITED):
+        return result
+    return STATUS_OK
+
+
+def run_per_root(roots: list, fn, tool: str) -> dict:
+    """Run `fn(root)` once per root and return {root: status}.
+
+    `fn` returns STATUS_NO_RESULTS or STATUS_RATE_LIMITED to say so; anything
+    else is STATUS_OK. A raise or a sys.exit() inside `fn` fails that root only,
+    so the remaining roots still run and partial_recon.main's `finally` (the
+    node-filter sweep) is never skipped. A rate-limited root waits and is
+    retried once.
+    """
+    statuses = {}
+    for index, root in enumerate(roots):
+        if index:
+            time.sleep(ROOT_PAUSE_S)
+        print(f"\n[*][Partial Recon] {tool}: root {index + 1}/{len(roots)}: {root}")
+        status = _run_one_root(fn, root)
+        if status == STATUS_RATE_LIMITED:
+            print(f"[!][Partial Recon] {tool}: {root} was rate limited, "
+                  f"retrying once in {RATE_LIMIT_RETRY_DELAY_S}s")
+            time.sleep(RATE_LIMIT_RETRY_DELAY_S)
+            status = _run_one_root(fn, root)
+        statuses[root] = status
+    return statuses
+
+
+def run_exit_code(statuses: dict) -> int:
+    """0 when at least one root ran (ok or no_results), 1 when nothing did."""
+    return 0 if any(s in (STATUS_OK, STATUS_NO_RESULTS) for s in statuses.values()) else 1
+
+
+def print_run_report(tool: str, statuses: dict, refused: dict) -> None:
+    """The one block every run ends with: what was scanned, and why the rest was not."""
+    scanned = [r for r, s in statuses.items() if s == STATUS_OK]
+    others = [(r, s) for r, s in statuses.items() if s != STATUS_OK]
+    print(f"\n{'=' * 50}")
+    print(f"[*][Partial Recon] Run report: {tool}")
+    print(f"[*][Partial Recon] Roots scanned ({len(scanned)}): {', '.join(scanned) or 'none'}")
+    for root, reason in others + list(refused.items()):
+        print(f"[*][Partial Recon]   {root}: {reason}")
+    print(f"{'=' * 50}\n")
 
 
 def _classify_ip(address: str, version: str = None) -> str:
@@ -144,8 +351,8 @@ def _scope_partial_urls(
 def _is_host_in_scope(
     host: str,
     settings: dict,
-    requested_domain: str = "",
-    include_root_domain: bool = False,
+    requested_domain="",
+    include_root_domain=False,
 ) -> bool:
     """
     Decide whether a hostname is in scope for the current scan.
@@ -166,9 +373,10 @@ def _is_host_in_scope(
          populated by HTTP probe which enforced RoE at probe time, so the
          partial-recon re-filter just acts as a defensive sanity check.
 
-    2. **Domain mode** (default): accept the host if it equals
-       ``requested_domain`` (gated by ``include_root_domain``) or is a
-       subdomain of it (``host.endswith("." + requested_domain)``).
+    2. **Domain mode** (default): ``requested_domain`` is one root or a list
+       of roots. Accept the host if it is a subdomain of any of them, or if it
+       equals a root whose apex is included. ``include_root_domain`` is either
+       a bool for every root or the set of roots whose apex is included.
 
     Empty/None hosts are out of scope.
     """
@@ -239,10 +447,15 @@ def _is_host_in_scope(
             return False
 
     # Domain mode (default)
-    requested = (requested_domain or "").strip(".").lower()
-    if not requested:
+    raw_roots = [requested_domain] if isinstance(requested_domain, str) else list(requested_domain or [])
+    roots = [_norm_host(r) for r in raw_roots if _norm_host(r)]
+    if not roots:
         # No domain configured (degenerate case) — accept anything.
         return True
-    if host == requested:
-        return include_root_domain
-    return host.endswith(f".{requested}")
+    if isinstance(include_root_domain, bool):
+        included = set(roots) if include_root_domain else set()
+    else:
+        included = {_norm_host(r) for r in include_root_domain or ()}
+    if host in roots:
+        return host in included
+    return any(host.endswith(f".{root}") for root in roots)

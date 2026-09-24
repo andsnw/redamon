@@ -7,7 +7,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.partial_recon_modules.helpers import _is_valid_url, _is_valid_hostname, _should_include_root_domain, _is_host_in_scope
+from recon.partial_recon_modules.helpers import _is_valid_url, _is_valid_hostname, _should_include_root_domain, _is_host_in_scope, partial_settings
 from recon.partial_recon_modules.graph_builders import _build_http_probe_data_from_graph
 from recon.partial_recon_modules.user_inputs import _create_user_subdomains_in_graph
 from recon.helpers import build_target_urls, extract_targets_from_recon
@@ -28,7 +28,6 @@ def run_katana(config: dict) -> None:
         pull_katana_docker_image,
         organize_endpoints,
     )
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
 
@@ -36,7 +35,7 @@ def run_katana(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable Katana since the user explicitly chose to run it
     settings['KATANA_ENABLED'] = True
@@ -293,7 +292,6 @@ def run_hakrawler(config: dict) -> None:
         pull_hakrawler_docker_image,
         organize_endpoints,
     )
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
 
@@ -301,7 +299,7 @@ def run_hakrawler(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable Hakrawler since the user explicitly chose to run it
     settings['HAKRAWLER_ENABLED'] = True
@@ -549,7 +547,6 @@ def run_zap_ajax_spider_partial(config: dict) -> None:
         run_zap_ajax_spider,
         merge_zap_ajax_into_by_base_url,
     )
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
 
@@ -557,7 +554,7 @@ def run_zap_ajax_spider_partial(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable ZAP Ajax Spider since the user explicitly chose to run it
     settings["ZAP_AJAX_SPIDER_ENABLED"] = True
@@ -891,7 +888,6 @@ def run_ffuf(config: dict) -> None:
         pull_ffuf_binary_check,
         merge_ffuf_into_by_base_url,
     )
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
 
@@ -899,7 +895,7 @@ def run_ffuf(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable FFuf since the user explicitly chose to run it
     settings['FFUF_ENABLED'] = True
@@ -1225,7 +1221,6 @@ def run_gau(config: dict) -> None:
         detect_gau_methods,
         merge_gau_into_by_base_url,
     )
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
 
@@ -1233,7 +1228,7 @@ def run_gau(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable GAU since the user explicitly chose to run it
     settings['GAU_ENABLED'] = True
@@ -1485,7 +1480,6 @@ def run_jsluice(config: dict) -> None:
         merge_jsluice_into_by_base_url,
         verify_jsluice_urls,
     )
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
 
@@ -1493,7 +1487,7 @@ def run_jsluice(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable jsluice since the user explicitly chose to run it
     settings['JSLUICE_ENABLED'] = True

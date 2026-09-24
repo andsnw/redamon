@@ -379,7 +379,7 @@ class PartialReconStartRequest(BaseModel):
     user_id: str
     webapp_api_url: str
     tool_id: str                              # e.g. "SubdomainDiscovery"
-    graph_inputs: dict                        # e.g. {"domain": "example.com"}
+    graph_inputs: dict                        # e.g. {"domains": ["a.com", "b.com"]}; legacy {"domain": "a.com"}
     user_inputs: list[str] = []               # user-added values (SubdomainDiscovery)
     user_targets: dict | None = None          # structured inputs (Naabu: {subdomains, ips, ip_attach_to})
     include_graph_targets: bool = True        # whether to include existing graph data in scan
@@ -397,6 +397,8 @@ class PartialReconState(BaseModel):
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
     stats: Optional[dict] = None
+    # The project roots this run was started over (the audit record of scope).
+    roots: list[str] = []
     # Last Docker-timestamp emitted to any SSE consumer; used as `since=` on
     # reconnect so re-subscribing to the log stream doesn't replay history.
     last_log_timestamp: Optional[datetime] = None

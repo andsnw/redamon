@@ -1626,6 +1626,10 @@ model ScanJob {
   /// erase the fact that a scan ran.
   authorizationId    String?      @map("authorization_id")
   authorization      EngagementAuthorization? @relation(fields: [authorizationId], references: [id], onDelete: SetNull)
+  /// The project roots the run was started over, as the orchestrator returned
+  /// them. A Domain-batch partial recon can cover several; empty for the kinds
+  /// that do not report theirs.
+  targets            String[]     @default([])
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
 

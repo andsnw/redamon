@@ -12,20 +12,19 @@ import os
 import sys
 import uuid
 
-from recon.partial_recon_modules.helpers import _classify_ip, _is_ip_or_cidr, _should_include_root_domain
+from recon.partial_recon_modules.helpers import _classify_ip, _is_ip_or_cidr, _should_include_root_domain, partial_settings
 from recon.partial_recon_modules.graph_builders import _build_port_scan_data_from_graph
 
 
 def run_tlsx(config: dict) -> None:
     from recon.main_recon_modules.tls_scan import run_tlsx_enrichment
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
     print("[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
     settings['TLSX_ENABLED'] = True  # the user explicitly chose to run tlsx
 
     print(f"\n{'=' * 50}")

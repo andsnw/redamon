@@ -86,6 +86,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       kind: 'partial_recon',
       runId: typeof data?.run_id === 'string' ? data.run_id : '',
       initiatedByUserId: __eff?.userId ?? null,
+      // The scope the orchestrator actually granted, not what the client asked for.
+      targets: Array.isArray(data?.roots)
+        ? data.roots.filter((r: unknown): r is string => typeof r === 'string')
+        : [],
     })
     return NextResponse.json(data)
 

@@ -8,6 +8,7 @@ import type { Project } from '@prisma/client'
 import { validateProjectForm } from '@/lib/validation'
 import { isHardBlockedDomain } from '@/lib/hard-guardrail'
 import { validateDomainBatch } from '@/lib/domainBatch'
+import { ipModeRoot } from '@/lib/partialReconScope'
 import { tabForAnchor } from '@/lib/projectSettingsLinks'
 import { graphScanHref, type ScanModal } from '@/lib/scanModalLink'
 import { useProject } from '@/providers/ProjectProvider'
@@ -860,6 +861,17 @@ export function ProjectForm({
       />
     ) : undefined
 
+  // The roots a partial run covers, as the form holds them. The modal shows them
+  // only when it cannot fetch graph-inputs; the orchestrator decides the scope.
+  const partialReconRoots = useMemo(() => {
+    if (formData.ipMode) return projectId ? [ipModeRoot(projectId)] : []
+    if (formData.domainBatchMode) {
+      return validateDomainBatch(formData.domainBatchHosts || []).groups.map(g => g.rootDomain)
+    }
+    const target = (formData.targetDomain || '').trim()
+    return target ? [target] : []
+  }, [formData.ipMode, formData.domainBatchMode, formData.domainBatchHosts, formData.targetDomain, projectId])
+
   // Partial recon confirm handler
   const handlePartialReconConfirm = useCallback(async (params: PartialReconParams) => {
     if (!projectId) return
@@ -1307,6 +1319,7 @@ export function ProjectForm({
         onConfirm={handlePartialReconConfirm}
         projectId={projectId}
         targetDomain={formData.targetDomain || ''}
+        projectRoots={partialReconRoots}
         subdomainPrefixes={formData.subdomainList as string[] || []}
         isStarting={isPartialReconStarting}
         userId={userId ?? undefined}

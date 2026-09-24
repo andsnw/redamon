@@ -26,6 +26,7 @@ Currently supported tool_ids:
 import os
 import sys
 import json
+import traceback
 from pathlib import Path
 from datetime import datetime
 
@@ -34,12 +35,20 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
+from recon.project_settings import get_settings
+from recon.helpers.roe_scope import _is_roe_excluded
 from recon.partial_recon_modules.helpers import (
     _classify_ip,
     _resolve_hostname,
     _is_ip_or_cidr,
     _is_valid_hostname,
     _is_valid_url,
+    STATUS_OK,
+    partial_domain_groups,
+    print_run_report,
+    run_exit_code,
+    scope_roots,
+    settings_project_roots,
 )
 from recon.partial_recon_modules.graph_builders import (
     _build_recon_data_from_graph,
@@ -93,6 +102,24 @@ from recon.partial_recon_modules.osint_enrichment import (
 )
 
 
+# The only settings a partial run may override, and the only keys the modal
+# sends (the Nuclei checkboxes in PartialReconModal). The modules apply every
+# override they receive, so without this a crafted request could switch off
+# ROE_ENABLED or empty ROE_EXCLUDED_HOSTS for one run. Mirrors
+# PARTIAL_OVERRIDE_KEYS in recon_orchestrator/batch_scope.py, which answers 400.
+ALLOWED_SETTINGS_OVERRIDES = frozenset({
+    "CVE_LOOKUP_ENABLED",
+    "MITRE_ENABLED",
+    "SECURITY_CHECK_ENABLED",
+})
+
+# Tools already taught to cover several roots. Every other tool still scans
+# config["domain"] only, so it is narrowed to one root here and the report says
+# so, rather than claiming roots it never touched. Mirrors
+# MULTI_ROOT_PARTIAL_TOOLS in webapp/src/lib/recon-types.ts.
+_MULTI_ROOT_TOOLS = frozenset()
+
+
 def load_config() -> dict:
     """Load partial recon configuration from JSON file."""
     config_path = os.environ.get("PARTIAL_RECON_CONFIG")
@@ -106,6 +133,104 @@ def load_config() -> dict:
     except Exception as e:
         print(f"[!][Partial] Failed to load config from {config_path}: {e}")
         sys.exit(1)
+
+
+def _allowlist_overrides(overrides) -> dict:
+    """Keep only ALLOWED_SETTINGS_OVERRIDES; log the name of anything dropped."""
+    if not isinstance(overrides, dict):
+        return {}
+    kept = {}
+    for key, value in overrides.items():
+        if key in ALLOWED_SETTINGS_OVERRIDES:
+            kept[key] = value
+        else:
+            print(f"[!][Partial Recon] Ignoring settings override that is not allowed: {key!r}")
+    return kept
+
+
+def _ownership_verified(root: str, settings: dict) -> bool:
+    """The full pipeline's ownership check, failing closed on any error."""
+    try:
+        from recon.main_recon_modules.domain_recon import verify_domain_ownership
+        result = verify_domain_ownership(
+            root,
+            settings.get("OWNERSHIP_TOKEN", ""),
+            settings.get("OWNERSHIP_TXT_PREFIX") or "_redamon-verify",
+        )
+    except Exception as e:  # noqa: BLE001 - an unanswered check is a failed check
+        print(f"[!][Partial Recon] Ownership check for {root} failed ({type(e).__name__})")
+        return False
+    return bool(result.get("verified"))
+
+
+def _refusal_reason(root: str, settings: dict, project_roots: list):
+    """Why the full pipeline would refuse this root, or None.
+
+    The same two per-target checks run_domain_group applies (RoE excluded host,
+    domain ownership), plus one the full pipeline never needs: the root must
+    still be a project target when the container reads the settings.
+    """
+    if root.lower() not in {r.lower() for r in project_roots}:
+        return "refused: no longer a project target"
+    excluded = settings.get("ROE_EXCLUDED_HOSTS") or []
+    if settings.get("ROE_ENABLED") and excluded and _is_roe_excluded(root, excluded):
+        return "refused-roe"
+    if (not settings.get("IP_MODE") and settings.get("VERIFY_DOMAIN_OWNERSHIP")
+            and not _ownership_verified(root, settings)):
+        return "refused-ownership"
+    return None
+
+
+def _prepare_scope(config: dict, settings: dict, project_id: str, tool_id: str):
+    """Refuse roots, narrow unmigrated tools, and write the scope the modules read.
+
+    Returns (refused, not_scanned): {root: reason} for the report.
+    """
+    project_roots = settings_project_roots(settings, project_id)
+    refused, kept = {}, []
+    for root in scope_roots(config):
+        reason = _refusal_reason(root, settings, project_roots)
+        if reason:
+            print(f"[!][Partial Recon] Not scanning {root}: {reason}")
+            refused[root] = reason
+        else:
+            kept.append(root)
+
+    not_scanned = {}
+    if tool_id not in _MULTI_ROOT_TOOLS and len(kept) > 1:
+        for root in kept[1:]:
+            not_scanned[root] = "not scanned: this tool covers one root per run"
+        kept = kept[:1]
+
+    config["domains"] = kept
+    config["domain"] = kept[0] if kept else ""
+    config["domain_groups"] = partial_domain_groups(settings, kept)
+    config["ip_mode"] = bool(settings.get("IP_MODE"))
+    config["batch_mode"] = bool(settings.get("DOMAIN_BATCH_MODE"))
+    config["settings_overrides"] = _allowlist_overrides(config.get("settings_overrides"))
+    config["_settings"] = settings
+    return refused, not_scanned
+
+
+def _run_tool(tool_id: str, config: dict):
+    """Run the tool; return ({root: status}, completed).
+
+    A tool's own sys.exit() or exception fails the run rather than escaping, so
+    the report is still printed. `completed` is False in that case.
+    """
+    roots = scope_roots(config)
+    try:
+        outcome = _dispatch(tool_id, config)
+    except SystemExit as e:
+        if e.code in (0, None):
+            return {root: STATUS_OK for root in roots}, True
+        return {root: "failed: SystemExit" for root in roots}, False
+    except Exception as e:  # noqa: BLE001 - reported below, and the exit code says it failed
+        traceback.print_exc()
+        return {root: f"failed: {type(e).__name__}" for root in roots}, False
+    if isinstance(outcome, dict):
+        return outcome, True
+    return {root: STATUS_OK for root in roots}, True
 
 
 def main():
@@ -130,20 +255,42 @@ def main():
     print(f"[*][Partial Recon] Starting partial recon for tool: {tool_id}")
     print(f"[*][Partial Recon] Timestamp: {datetime.now().isoformat()}")
 
+    user_id = os.environ.get("USER_ID", "")
+    project_id = os.environ.get("PROJECT_ID", "")
+
+    # Loaded ONCE, and handed to the module: the refusal below and the tool must
+    # judge the same settings. get_settings() raises when the webapp is
+    # unreachable, so an unverifiable scope ends the run here.
+    try:
+        settings = get_settings()
+    except Exception as e:  # noqa: BLE001 - fail closed, whatever the cause
+        print(f"[!][Partial Recon] Cannot load the project settings ({type(e).__name__}). "
+              f"Refusing to scan.")
+        sys.exit(1)
+
+    refused, not_scanned = _prepare_scope(config, settings, project_id, tool_id)
+    if not scope_roots(config):
+        print_run_report(tool_id, {}, refused)
+        sys.exit(1)
+    print(f"[*][Partial Recon] Roots: {', '.join(scope_roots(config))}")
+
     # Taken BEFORE the dispatch: everything this job writes is stamped later, so
     # the end-of-job node-filter sweep reaches exactly what it wrote.
     from graph_db.mixins.base_mixin import run_timestamp
     started_at = run_timestamp()
     try:
-        _dispatch(tool_id, config)
+        statuses, completed = _run_tool(tool_id, config)
     finally:
         _apply_node_filters(started_at)
 
     # Clean up orphan UserInput nodes (created but no PRODUCED children)
-    user_id = os.environ.get("USER_ID", "")
-    project_id = os.environ.get("PROJECT_ID", "")
-    if user_id and project_id:
+    if completed and user_id and project_id:
         _cleanup_orphan_user_inputs(user_id, project_id)
+
+    print_run_report(tool_id, {**statuses, **not_scanned}, refused)
+    exit_code = run_exit_code(statuses)
+    if exit_code:
+        sys.exit(exit_code)
 
 
 def _apply_node_filters(started_at):
@@ -165,67 +312,68 @@ def _apply_node_filters(started_at):
         print(f"[!][NODE-FILTER] sweep failed: {e}")
 
 
-def _dispatch(tool_id: str, config: dict) -> None:
+def _dispatch(tool_id: str, config: dict):
+    """Run one tool. Loop tools return {root: status}; the rest return None."""
     if tool_id == "SubdomainDiscovery":
-        run_subdomain_discovery(config)
+        return run_subdomain_discovery(config)
     elif tool_id == "Naabu":
-        run_naabu(config)
+        return run_naabu(config)
     elif tool_id == "Masscan":
-        run_masscan(config)
+        return run_masscan(config)
     elif tool_id == "Nmap":
-        run_nmap(config)
+        return run_nmap(config)
     elif tool_id == "Tlsx":
-        run_tlsx(config)
+        return run_tlsx(config)
     elif tool_id == "Httpx":
-        run_httpx(config)
+        return run_httpx(config)
     elif tool_id == "Katana":
-        run_katana(config)
+        return run_katana(config)
     elif tool_id == "Hakrawler":
-        run_hakrawler(config)
+        return run_hakrawler(config)
     elif tool_id == "ZapAjaxSpider":
-        run_zap_ajax_spider_partial(config)
+        return run_zap_ajax_spider_partial(config)
     elif tool_id == "Gau":
-        run_gau(config)
+        return run_gau(config)
     elif tool_id == "Jsluice":
-        run_jsluice(config)
+        return run_jsluice(config)
     elif tool_id == "Kiterunner":
-        run_kiterunner(config)
+        return run_kiterunner(config)
     elif tool_id == "ParamSpider":
-        run_paramspider(config)
+        return run_paramspider(config)
     elif tool_id == "Ffuf":
-        run_ffuf(config)
+        return run_ffuf(config)
     elif tool_id == "Arjun":
-        run_arjun(config)
+        return run_arjun(config)
     elif tool_id == "EndpointAiClassifier":
-        run_endpoint_ai_classifier(config)
+        return run_endpoint_ai_classifier(config)
     elif tool_id == "AiSurfaceRecon":
-        run_ai_surface_partial(config)
+        return run_ai_surface_partial(config)
     elif tool_id == "JsRecon":
-        run_jsrecon(config)
+        return run_jsrecon(config)
     elif tool_id == "SupplyChainRecon":
-        run_supply_chain(config)
+        return run_supply_chain(config)
     elif tool_id == "GraphqlScan":
-        run_graphqlscan(config)
+        return run_graphqlscan(config)
     elif tool_id == "Nuclei":
-        run_nuclei(config)
+        return run_nuclei(config)
     elif tool_id == "SubdomainTakeover":
-        run_subdomain_takeover_partial(config)
+        return run_subdomain_takeover_partial(config)
     elif tool_id == "VhostSni":
-        run_vhost_sni_partial(config)
+        return run_vhost_sni_partial(config)
     elif tool_id == "WebCachePoison":
-        run_webcachepoison(config)
+        return run_webcachepoison(config)
     elif tool_id == "SecurityChecks":
-        run_security_checks_partial(config)
+        return run_security_checks_partial(config)
     elif tool_id == "Shodan":
-        run_shodan(config)
+        return run_shodan(config)
     elif tool_id == "Urlscan":
-        run_urlscan(config)
+        return run_urlscan(config)
     elif tool_id == "Uncover":
-        run_uncover(config)
+        return run_uncover(config)
     elif tool_id == "OsintEnrichment":
-        run_osint_enrichment(config)
+        return run_osint_enrichment(config)
     elif tool_id == "OriginDiscovery":
-        run_origin_discovery(config)
+        return run_origin_discovery(config)
     else:
         print(f"[!][Partial Recon] Unknown tool_id: {tool_id}")
         sys.exit(1)

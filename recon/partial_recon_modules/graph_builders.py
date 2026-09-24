@@ -635,7 +635,8 @@ def _build_vuln_scan_data_from_graph(domain: str, user_id: str, project_id: str,
     return recon_data
 
 
-def _build_graphql_data_from_graph(domain: str, user_id: str, project_id: str) -> dict:
+def _build_graphql_data_from_graph(domain: str, user_id: str, project_id: str,
+                                   settings: dict = None) -> dict:
     """
     Build recon_data for GraphQL security scanning.
 
@@ -644,12 +645,14 @@ def _build_graphql_data_from_graph(domain: str, user_id: str, project_id: str) -
       - resource_enum.endpoints  ({base_url: [{path, method}]} -- from Endpoint nodes)
       - resource_enum.parameters ({base_url: [{name}]}         -- from Parameter nodes)
       - js_recon.findings        ([{type, path, method}]       -- GraphQL-tagged JsReconFindings)
-    Plus metadata.roe so filter_by_roe() still works.
+    Plus metadata.roe so filter_by_roe() still works. `settings` is the run's
+    preloaded settings (partial_settings); only a direct caller omits it.
     """
     from graph_db import Neo4jClient
-    from recon.project_settings import get_settings
 
-    settings = get_settings()
+    if settings is None:
+        from recon.project_settings import get_settings
+        settings = get_settings()
     recon_data = {
         "domain": domain,
         "http_probe": {"by_url": {}},

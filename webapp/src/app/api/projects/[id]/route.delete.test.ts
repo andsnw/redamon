@@ -110,3 +110,50 @@ test('a failed cancel does not abort the delete (best-effort)', async () => {
   expect(res.status).toBe(200)
   expect(h.projectDelete).toHaveBeenCalled()
 })
+
+describe('running partial recons are stopped too', () => {
+  // They are run-keyed, so there is no project-level stop: each run is listed
+  // and stopped by id. A per-root loop over a Domain batch can otherwise keep
+  // writing for a long time into a project that no longer exists.
+  function withRuns(runs: Array<{ run_id: string; status: string }>) {
+    h.orchestratorFetch.mockImplementation(async (url: string) => (
+      String(url).endsWith('/recon/p1/partial/all')
+        ? { ok: true, json: async () => ({ project_id: 'p1', runs }) }
+        : { ok: true, json: async () => ({ deleted: [] }) }
+    ))
+  }
+
+  test('each running or starting run gets a stop, finished ones do not', async () => {
+    withRuns([
+      { run_id: 'r-running', status: 'running' },
+      { run_id: 'r-done', status: 'completed' },
+      { run_id: 'r-starting', status: 'starting' },
+    ])
+    expect((await DELETE(del(), params('p1'))).status).toBe(200)
+    const stops = h.orchestratorFetch.mock.calls
+      .filter(c => String(c[0]).includes('/partial/') && String(c[0]).endsWith('/stop'))
+      .map(c => [String(c[0]), (c[1] as { method?: string } | undefined)?.method])
+    expect(stops).toEqual([
+      [expect.stringContaining('/recon/p1/partial/r-running/stop'), 'POST'],
+      [expect.stringContaining('/recon/p1/partial/r-starting/stop'), 'POST'],
+    ])
+  })
+
+  test('the stops happen before the project row is deleted', async () => {
+    withRuns([{ run_id: 'r1', status: 'running' }])
+    await DELETE(del(), params('p1'))
+    const stopIdx = h.orchestratorFetch.mock.calls
+      .findIndex(c => String(c[0]).endsWith('/partial/r1/stop'))
+    expect(h.orchestratorFetch.mock.invocationCallOrder[stopIdx])
+      .toBeLessThan(h.projectDelete.mock.invocationCallOrder[0])
+  })
+
+  test('an unreachable orchestrator never blocks the delete', async () => {
+    h.orchestratorFetch.mockImplementation(async (url: string) => {
+      if (String(url).endsWith('/partial/all')) throw new Error('orchestrator down')
+      return { ok: true, json: async () => ({ deleted: [] }) }
+    })
+    expect((await DELETE(del(), params('p1'))).status).toBe(200)
+    expect(h.projectDelete).toHaveBeenCalled()
+  })
+})

@@ -7,7 +7,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.partial_recon_modules.helpers import _is_valid_url, _is_valid_hostname, _should_include_root_domain
+from recon.partial_recon_modules.helpers import _is_valid_url, _is_valid_hostname, _should_include_root_domain, partial_settings
 from recon.partial_recon_modules.graph_builders import _build_http_probe_data_from_graph
 from recon.partial_recon_modules.user_inputs import _create_user_subdomains_in_graph
 from recon.helpers import build_target_urls, extract_targets_from_recon
@@ -27,7 +27,6 @@ def run_paramspider(config: dict) -> None:
         run_paramspider_discovery,
         merge_paramspider_into_by_base_url,
     )
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
 
@@ -35,7 +34,7 @@ def run_paramspider(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable ParamSpider since the user explicitly chose to run it
     settings['PARAMSPIDER_ENABLED'] = True
@@ -199,7 +198,6 @@ def run_kiterunner(config: dict) -> None:
         merge_kiterunner_into_by_base_url,
         detect_kiterunner_methods,
     )
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
 
@@ -207,7 +205,7 @@ def run_kiterunner(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable Kiterunner since the user explicitly chose to run it
     settings['KITERUNNER_ENABLED'] = True
@@ -510,7 +508,6 @@ def run_arjun(config: dict) -> None:
         run_arjun_discovery,
         merge_arjun_into_by_base_url,
     )
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
 
@@ -518,7 +515,7 @@ def run_arjun(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable Arjun since the user explicitly chose to run it
     settings['ARJUN_ENABLED'] = True

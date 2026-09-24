@@ -14,6 +14,7 @@ from recon.partial_recon_modules.helpers import (
     _is_valid_hostname,
     _resolve_hostname,
     _should_include_root_domain,
+    partial_settings,
 )
 from recon.partial_recon_modules.graph_builders import _build_vuln_scan_data_from_graph
 
@@ -68,14 +69,13 @@ def _inject_graph_fronted_hosts(by_url: dict, domain: str, user_id: str, project
 
 def run_origin_discovery(config: dict) -> None:
     from recon.main_recon_modules.origin_discovery import run_origin_discovery_enrichment
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
     # The user explicitly chose to run this tool.
     settings["ORIGIN_DISCOVERY_ENABLED"] = True
 

@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Play, Loader2, ArrowRight, Upload, FileText, Trash2, Info } from 'lucide-react'
 import { Modal, Tooltip, WikiInfoButton } from '@/components/ui'
+import { MULTI_ROOT_PARTIAL_TOOLS } from '@/lib/recon-types'
+import { underAnyRoot } from '@/lib/partialReconScope'
 import type { GraphInputs, PartialReconParams, UserTargets } from '@/lib/recon-types'
 import { SECTION_INPUT_MAP, SECTION_NODE_MAP, SECTION_ENRICH_MAP } from '../nodeMapping'
 import { WORKFLOW_TOOLS } from './workflowDefinition'
@@ -15,6 +17,8 @@ interface PartialReconModalProps {
   onConfirm: (params: PartialReconParams) => void
   projectId?: string
   targetDomain?: string
+  /** The project's roots as the form holds them; shown when graph-inputs cannot be fetched. */
+  projectRoots?: string[]
   subdomainPrefixes?: string[]
   isStarting?: boolean
   userId?: string
@@ -264,13 +268,17 @@ function validatePort(value: string): string | null {
   return null
 }
 
-function validateUrl(value: string, projectDomain?: string): string | null {
+function describeRoots(roots: readonly string[]): string {
+  return roots.length === 1 ? roots[0] : `any of ${roots.join(', ')}`
+}
+
+function validateUrl(value: string, roots: readonly string[]): string | null {
   try {
     const url = new URL(value)
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return `URL must use http or https: ${value}`
     if (!url.hostname) return `URL has no hostname: ${value}`
-    if (projectDomain && !url.hostname.endsWith('.' + projectDomain) && url.hostname !== projectDomain) {
-      return `${url.hostname} is out of scope (not a subdomain of ${projectDomain})`
+    if (roots.length && !underAnyRoot(url.hostname, roots)) {
+      return `${url.hostname} is out of scope (not a subdomain of ${describeRoots(roots)})`
     }
     return null
   } catch {
@@ -278,10 +286,10 @@ function validateUrl(value: string, projectDomain?: string): string | null {
   }
 }
 
-function validateSubdomain(value: string, projectDomain: string): string | null {
+function validateSubdomain(value: string, roots: readonly string[]): string | null {
   if (!HOSTNAME_RE.test(value)) return `Invalid hostname: ${value}`
-  if (projectDomain && !value.endsWith('.' + projectDomain) && value !== projectDomain) {
-    return `${value} is not a subdomain of ${projectDomain}`
+  if (roots.length && !underAnyRoot(value, roots)) {
+    return `${value} is not a subdomain of ${describeRoots(roots)}`
   }
   return null
 }
@@ -317,6 +325,37 @@ const labelStyle = { fontSize: '11px', fontWeight: 600, color: 'var(--text-secon
 const hintStyle = { fontSize: '10px', color: 'var(--text-muted, #64748b)', marginTop: '2px' }
 const errorListStyle = { marginTop: '4px', display: 'flex', flexDirection: 'column' as const, gap: '2px' }
 const errorLineStyle = { fontSize: '10px', color: '#f87171' }
+const noteStyle = {
+  fontSize: '11px', color: 'var(--text-secondary, #94a3b8)', lineHeight: '1.5', padding: '8px 12px',
+  borderRadius: '6px', backgroundColor: 'var(--bg-secondary, #1e293b)',
+  border: '1px solid var(--border-color, #334155)', overflowWrap: 'anywhere' as const,
+}
+const errorBoxStyle = {
+  fontSize: '11px', color: '#f87171', lineHeight: '1.5', padding: '8px 12px', borderRadius: '6px',
+  backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)',
+}
+const linkButtonStyle = {
+  background: 'none', border: 'none', padding: '0 0 0 6px', color: '#60a5fa',
+  cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit',
+}
+
+// A Domain batch can hold 50 roots; past this many the summary collapses.
+const ROOTS_SHOWN = 3
+
+function RootsSummary({ roots }: { roots: readonly string[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const hidden = roots.length - ROOTS_SHOWN
+  return (
+    <span data-testid="partial-recon-roots" style={{ overflowWrap: 'anywhere' }}>
+      {(expanded ? roots : roots.slice(0, ROOTS_SHOWN)).join(', ')}
+      {hidden > 0 && (
+        <button type="button" onClick={() => setExpanded(v => !v)} style={linkButtonStyle}>
+          {expanded ? 'show less' : `+${hidden} more`}
+        </button>
+      )}
+    </span>
+  )
+}
 
 // --- Component ---
 
@@ -327,6 +366,7 @@ export function PartialReconModal({
   onConfirm,
   projectId,
   targetDomain = '',
+  projectRoots,
   subdomainPrefixes = [],
   isStarting = false,
   userId,
@@ -341,6 +381,8 @@ export function PartialReconModal({
   const [customUrls, setCustomUrls] = useState('')
   const [urlAttachTo, setUrlAttachTo] = useState<string | null>(null)
   const [includeGraphTargets, setIncludeGraphTargets] = useState(true)
+  // SubdomainDiscovery: the roots the operator left ticked (null = the default, all).
+  const [discoveryPick, setDiscoveryPick] = useState<string[] | null>(null)
 
   // Nuclei sub-feature toggles (override project settings)
   const [nucleiCveLookup, setNucleiCveLookup] = useState(true)
@@ -353,6 +395,9 @@ export function PartialReconModal({
   const [uploadError, setUploadError] = useState<string | null>(null)
   const jsFileInputRef = useRef<HTMLInputElement>(null)
 
+  // A string, so a fresh projectRoots array on every parent render does not refetch.
+  const formRootsKey = (projectRoots?.length ? projectRoots : (targetDomain ? [targetDomain] : [])).join(',')
+
   useEffect(() => {
     if (!isOpen || !toolId || !projectId) return
     setLoadingInputs(true)
@@ -363,19 +408,28 @@ export function PartialReconModal({
     setCustomUrls('')
     setUrlAttachTo(null)
     setIncludeGraphTargets(true)
+    setDiscoveryPick(null)
     setNucleiCveLookup(true)
     setNucleiMitre(true)
     setNucleiSecurityChecks(true)
     setUploadedJsFiles([])
     setUploadError(null)
+    // Without the route, offer the roots the form holds; the orchestrator
+    // re-derives them from the saved project either way.
+    const formRoots = formRootsKey ? formRootsKey.split(',').sort() : []
+    const offered = MULTI_ROOT_PARTIAL_TOOLS.has(toolId) ? formRoots : formRoots.slice(0, 1)
+    const fallback: GraphInputs = {
+      domain: offered[0] || null, domains: offered, stale_domains: [], empty_domains: [],
+      existing_subdomains_count: 0, existing_ips_count: 0, existing_ports_count: 0, source: 'settings',
+    }
     fetch(`/api/recon/${projectId}/graph-inputs/${toolId}`)
       .then(res => res.ok ? res.json() : null)
       .then((data: GraphInputs | null) => {
-        setGraphInputs(data || { domain: targetDomain || null, existing_subdomains_count: 0, existing_ips_count: 0, existing_ports_count: 0, source: 'settings' })
+        setGraphInputs(data || fallback)
         setLoadingInputs(false)
       })
       .catch(() => {
-        setGraphInputs({ domain: targetDomain || null, existing_subdomains_count: 0, existing_ips_count: 0, existing_ports_count: 0, source: 'settings' })
+        setGraphInputs(fallback)
         setLoadingInputs(false)
       })
     // Fetch existing uploaded JS files for JsRecon
@@ -394,7 +448,7 @@ export function PartialReconModal({
     } else {
       setUserSettings(null)
     }
-  }, [isOpen, toolId, projectId, targetDomain, userId])
+  }, [isOpen, toolId, projectId, formRootsKey, userId])
 
   // JS file upload handlers (JsRecon only)
   const handleJsFileUpload = useCallback(async (file: File) => {
@@ -435,7 +489,33 @@ export function PartialReconModal({
     } catch { /* ignore */ }
   }, [projectId])
 
-  const domain = graphInputs?.domain || targetDomain || ''
+  // The roots this run covers. A route that predates multi-root runs sent only `domain`.
+  const domains = useMemo(
+    () => graphInputs?.domains ?? (graphInputs?.domain ? [graphInputs.domain] : []),
+    [graphInputs],
+  )
+  const domain = domains[0] || ''
+  const staleDomains = graphInputs?.stale_domains ?? []
+  const emptyDomains = graphInputs?.empty_domains ?? []
+  const isSubdomainDiscovery = toolId === 'SubdomainDiscovery'
+  const enumerableDomains = useMemo(
+    () => graphInputs?.discovery_domains ?? domains,
+    [graphInputs?.discovery_domains, domains],
+  )
+  // SubdomainDiscovery runs only on the roots allowed to enumerate that are still
+  // ticked; every other tool covers all of `domains`.
+  const runDomains = useMemo(
+    () => isSubdomainDiscovery
+      ? enumerableDomains.filter(root => discoveryPick === null || discoveryPick.includes(root))
+      : domains,
+    [isSubdomainDiscovery, enumerableDomains, discoveryPick, domains],
+  )
+  const toggleDiscoveryRoot = useCallback((root: string, on: boolean) => {
+    setDiscoveryPick(prev => {
+      const current = prev ?? enumerableDomains
+      return on ? [...new Set([...current, root])] : current.filter(r => r !== root)
+    })
+  }, [enumerableDomains])
   const isPortScanner = toolId === 'Naabu' || toolId === 'Masscan'
   const isNmap = toolId === 'Nmap'
   const isTlsx = toolId === 'Tlsx'
@@ -464,8 +544,8 @@ export function PartialReconModal({
 
   // Subdomain validation
   const subdomainValidation = useMemo(
-    () => validateLines(customSubdomains, v => validateSubdomain(v, domain)),
-    [customSubdomains, domain],
+    () => validateLines(customSubdomains, v => validateSubdomain(v, domains)),
+    [customSubdomains, domains],
   )
 
   // IP validation
@@ -482,8 +562,8 @@ export function PartialReconModal({
 
   // URL validation (resource enum tools: Katana, Hakrawler) -- must be in project scope
   const urlValidation = useMemo(
-    () => validateLines(customUrls, v => validateUrl(v, domain)),
-    [customUrls, domain],
+    () => validateLines(customUrls, v => validateUrl(v, domains)),
+    [customUrls, domains],
   )
 
   const hasValidationErrors = (hasSubdomainInput && subdomainValidation.errors.length > 0)
@@ -503,7 +583,7 @@ export function PartialReconModal({
     const customSubs = customSubdomains
       .split('\n')
       .map(s => s.trim().toLowerCase())
-      .filter(s => s && HOSTNAME_RE.test(s) && (s.endsWith('.' + domain) || s === domain))
+      .filter(s => s && HOSTNAME_RE.test(s) && underAnyRoot(s, domains))
     // Deduplicate, graph first
     const seen = new Set<string>()
     const options: { value: string; label: string; source: string }[] = []
@@ -514,7 +594,7 @@ export function PartialReconModal({
       if (!seen.has(s)) { seen.add(s); options.push({ value: s, label: s, source: 'custom' }) }
     }
     return options
-  }, [graphInputs?.existing_subdomains, customSubdomains, domain])
+  }, [graphInputs?.existing_subdomains, customSubdomains, domains])
 
   // Build dropdown options for URL attachment: existing BaseURLs from graph
   const urlAttachToOptions = useMemo(() => {
@@ -536,7 +616,7 @@ export function PartialReconModal({
   }, [urlAttachToOptions, urlAttachTo])
 
   const handleRun = useCallback(() => {
-    if (!domain || hasValidationErrors) return
+    if (!runDomains.length || hasValidationErrors) return
 
     if (hasUserInputs) {
       const subdomains = hasSubdomainInput ? customSubdomains.split('\n').map(s => s.trim()).filter(Boolean) : []
@@ -563,7 +643,7 @@ export function PartialReconModal({
 
       const params = {
         tool_id: toolId || '',
-        graph_inputs: { domain },
+        graph_inputs: { domains: runDomains },
         user_inputs: [],
         user_targets: userTargets,
         ...(includeGraphTargets ? {} : { include_graph_targets: false }),
@@ -583,13 +663,13 @@ export function PartialReconModal({
 
       onConfirm({
         tool_id: toolId || '',
-        graph_inputs: { domain },
+        graph_inputs: { domains: runDomains },
         user_inputs: [],
         ...(includeGraphTargets ? {} : { include_graph_targets: false }),
         ...nucleiOverrides,
       })
     }
-  }, [domain, hasValidationErrors, hasUserInputs, hasSubdomainInput, hasIpInput, hasPortInput, hasUrlInput, isNmap, toolId, onConfirm, customSubdomains, customIps, ipAttachTo, customPorts, customUrls, urlAttachTo, includeGraphTargets, isNuclei, nucleiCveLookup, nucleiMitre, nucleiSecurityChecks])
+  }, [runDomains, hasValidationErrors, hasUserInputs, hasSubdomainInput, hasIpInput, hasPortInput, hasUrlInput, isNmap, toolId, onConfirm, customSubdomains, customIps, ipAttachTo, customPorts, customUrls, urlAttachTo, includeGraphTargets, isNuclei, nucleiCveLookup, nucleiMitre, nucleiSecurityChecks])
 
   if (!isOpen || !toolId) return null
 
@@ -624,6 +704,38 @@ export function PartialReconModal({
   const shodanNoIps = isShodan && !includeGraphTargets && !customIps.trim()
   const osintNoIps = isOsintEnrichment && !includeGraphTargets && !customIps.trim()
   const originDiscoveryNoFronted = isOriginDiscovery && !loadingInputs && !customSubdomains.trim() && (!includeGraphTargets || (graphInputs?.fronted_count ?? 0) === 0)
+
+  const inputCounts: string | null = (isNmap || isTlsx)
+    ? `(${graphInputs?.existing_ips_count ?? 0} IPs, ${graphInputs?.existing_ports_count ?? 0} ports, ${graphInputs?.existing_subdomains_count ?? 0} subdomains)`
+    : isHttpx
+    ? `(${graphInputs?.existing_subdomains_count ?? 0} subdomains, ${graphInputs?.existing_ports_count ?? 0} ports, ${graphInputs?.existing_baseurls_count ?? 0} existing URLs)`
+    : toolId === 'JsRecon'
+    ? `(${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints${uploadedJsFiles.length ? `, ${uploadedJsFiles.length} uploaded` : ''})`
+    : toolId === 'ZapAjaxSpider'
+    ? `(${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints)`
+    : isNuclei
+    ? `(${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints, ${graphInputs?.existing_subdomains_count ?? 0} Subdomains)`
+    : isGraphql
+    ? `(${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints${graphInputs?.existing_graphql_endpoints_count ? `, ${graphInputs.existing_graphql_endpoints_count} already-flagged GraphQL` : ''})`
+    : isWebCachePoison
+    ? `(${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints)`
+    : isResourceEnum
+    ? `(${graphInputs?.existing_baseurls_count ?? 0} BaseURLs)`
+    : isArjun
+    ? `(${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints)`
+    : isSecurityChecks
+    ? `(${graphInputs?.existing_subdomains_count ?? 0} subdomains, ${graphInputs?.existing_ips_count ?? 0} IPs, ${graphInputs?.existing_baseurls_count ?? 0} BaseURLs)`
+    : isGau || isParamSpider
+    ? `(${graphInputs?.existing_subdomains_count ?? 0} subdomains)`
+    : toolId === 'Naabu'
+    ? `(${graphInputs?.existing_ips_count ?? 0} IPs, ${graphInputs?.existing_subdomains_count ?? 0} subdomains)`
+    : toolId === 'Masscan'
+    ? `(${graphInputs?.existing_ips_count ?? 0} IPs)`
+    : toolId === 'Shodan'
+    ? `(${graphInputs?.existing_ips_count ?? 0} IPs)`
+    : toolId === 'OsintEnrichment'
+    ? `(${graphInputs?.existing_ips_count ?? 0} IPs, ${graphInputs?.existing_subdomains_count ?? 0} subdomains)`
+    : null
 
   return (
     <Modal
@@ -663,37 +775,12 @@ export function PartialReconModal({
               ))}
             </div>
             <div style={{ fontSize: '13px', fontFamily: 'monospace', color: 'var(--text-primary, #e2e8f0)' }}>
-              {loadingInputs ? 'Loading...' : (isNmap || isTlsx)
-                ? `${domain || 'No domain'} (${graphInputs?.existing_ips_count ?? 0} IPs, ${graphInputs?.existing_ports_count ?? 0} ports, ${graphInputs?.existing_subdomains_count ?? 0} subdomains)`
-                : isHttpx
-                ? `${domain || 'No domain'} (${graphInputs?.existing_subdomains_count ?? 0} subdomains, ${graphInputs?.existing_ports_count ?? 0} ports, ${graphInputs?.existing_baseurls_count ?? 0} existing URLs)`
-                : toolId === 'JsRecon'
-                ? `${domain || 'No domain'} (${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints${uploadedJsFiles.length ? `, ${uploadedJsFiles.length} uploaded` : ''})`
-                : toolId === 'ZapAjaxSpider'
-                ? `${domain || 'No domain'} (${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints)`
-                : isNuclei
-                ? `${domain || 'No domain'} (${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints, ${graphInputs?.existing_subdomains_count ?? 0} Subdomains)`
-                : isGraphql
-                ? `${domain || 'No domain'} (${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints${graphInputs?.existing_graphql_endpoints_count ? `, ${graphInputs.existing_graphql_endpoints_count} already-flagged GraphQL` : ''})`
-                : isWebCachePoison
-                ? `${domain || 'No domain'} (${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints)`
-                : isResourceEnum
-                ? `${domain || 'No domain'} (${graphInputs?.existing_baseurls_count ?? 0} BaseURLs)`
-                : isArjun
-                ? `${domain || 'No domain'} (${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints)`
-                : isSecurityChecks
-                ? `${domain || 'No domain'} (${graphInputs?.existing_subdomains_count ?? 0} subdomains, ${graphInputs?.existing_ips_count ?? 0} IPs, ${graphInputs?.existing_baseurls_count ?? 0} BaseURLs)`
-                : isGau || isParamSpider
-                ? `${domain || 'No domain'} (${graphInputs?.existing_subdomains_count ?? 0} subdomains)`
-                : toolId === 'Naabu'
-                ? `${domain || 'No domain'} (${graphInputs?.existing_ips_count ?? 0} IPs, ${graphInputs?.existing_subdomains_count ?? 0} subdomains)`
-                : toolId === 'Masscan'
-                ? `${domain || 'No domain'} (${graphInputs?.existing_ips_count ?? 0} IPs)`
-                : toolId === 'Shodan'
-                ? `${domain || 'No domain'} (${graphInputs?.existing_ips_count ?? 0} IPs)`
-                : toolId === 'OsintEnrichment'
-                ? `${domain || 'No domain'} (${graphInputs?.existing_ips_count ?? 0} IPs, ${graphInputs?.existing_subdomains_count ?? 0} subdomains)`
-                : domain || 'No domain configured'}
+              {loadingInputs ? 'Loading...' : (
+                <>
+                  {domains.length ? <RootsSummary roots={domains} /> : (inputCounts ? 'No domain' : 'No domain configured')}
+                  {inputCounts ? ` ${inputCounts}` : null}
+                </>
+              )}
             </div>
           </div>
 
@@ -733,6 +820,17 @@ export function PartialReconModal({
             </div>
           </div>
         </div>
+
+        {!loadingInputs && staleDomains.length > 0 && (
+          <div style={noteStyle} data-testid="partial-recon-stale">
+            <strong>{staleDomains.join(', ')}</strong>: not in this project any more, not scanned; the next full recon removes {staleDomains.length === 1 ? 'it' : 'them'}.
+          </div>
+        )}
+        {!loadingInputs && emptyDomains.length > 0 && (
+          <div style={noteStyle} data-testid="partial-recon-empty">
+            <strong>{emptyDomains.join(', ')}</strong>: no recon data yet.
+          </div>
+        )}
 
         {/* Tools info */}
         <div style={{ fontSize: '11px', color: 'var(--text-secondary, #94a3b8)', lineHeight: '1.6' }}>
@@ -1157,6 +1255,53 @@ export function PartialReconModal({
           </div>
         )}
 
+        {/* SubdomainDiscovery: which roots to enumerate */}
+        {isSubdomainDiscovery && !loadingInputs && (domains.length > 1 || (domains.length === 1 && enumerableDomains.length === 0)) && (
+          <div>
+            <div style={labelStyle}>Domains to enumerate</div>
+            <div
+              data-testid="partial-recon-discovery-list"
+              style={{
+                maxHeight: '168px', overflowY: 'auto', padding: '6px 8px', borderRadius: '6px',
+                border: '1px solid var(--border-color, #334155)', backgroundColor: 'var(--bg-secondary, #1e293b)',
+                display: 'flex', flexDirection: 'column', gap: '4px',
+              }}
+            >
+              {domains.map(root => {
+                const enumerable = enumerableDomains.includes(root)
+                return (
+                  <label
+                    key={root}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', minWidth: 0,
+                      cursor: enumerable ? 'pointer' : 'default',
+                      color: enumerable ? 'var(--text-primary, #e2e8f0)' : 'var(--text-muted, #64748b)',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={enumerable && (discoveryPick === null || discoveryPick.includes(root))}
+                      disabled={!enumerable}
+                      onChange={e => toggleDiscoveryRoot(root, e.target.checked)}
+                      style={{ accentColor: '#3b82f6', flexShrink: 0 }}
+                    />
+                    <span style={{ fontFamily: 'monospace', overflowWrap: 'anywhere', minWidth: 0 }}>{root}</span>
+                    {!enumerable && <span style={{ fontSize: '10px', whiteSpace: 'nowrap' }}>listed hosts only</span>}
+                  </label>
+                )
+              })}
+            </div>
+            <div style={hintStyle}>A batch domain is enumerated only when its hostname list has a wildcard (*.domain).</div>
+          </div>
+        )}
+        {isSubdomainDiscovery && !loadingInputs && domains.length > 0 && runDomains.length === 0 && (
+          <div style={errorBoxStyle}>
+            {enumerableDomains.length === 0
+              ? 'No domain in this project may be enumerated: a batch domain is enumerated only when its hostname list has a wildcard (*.domain).'
+              : 'Tick at least one domain to enumerate.'}
+          </div>
+        )}
+
         {/* Subdomain prefix warning (SubdomainDiscovery only) */}
         {toolId === 'SubdomainDiscovery' && subdomainPrefixes.length > 0 && (
           <div style={{
@@ -1217,14 +1362,14 @@ export function PartialReconModal({
           <button
             type="button"
             onClick={handleRun}
-            disabled={!domain || isStarting || hasValidationErrors || noTargetsToScan || nmapNoPorts || httpxNoPorts || resourceEnumNoUrls || zapAjaxSpiderNoUrls || arjunNoUrls || webCachePoisonNoUrls || securityChecksNoUrls || shodanNoIps || osintNoIps || originDiscoveryNoFronted}
+            disabled={!runDomains.length || isStarting || hasValidationErrors || noTargetsToScan || nmapNoPorts || httpxNoPorts || resourceEnumNoUrls || zapAjaxSpiderNoUrls || arjunNoUrls || webCachePoisonNoUrls || securityChecksNoUrls || shodanNoIps || osintNoIps || originDiscoveryNoFronted}
             style={{
               padding: '8px 16px', borderRadius: '6px', border: 'none',
               backgroundColor: '#3b82f6', color: '#fff',
-              cursor: !domain || isStarting || hasValidationErrors || noTargetsToScan || nmapNoPorts || httpxNoPorts || resourceEnumNoUrls || zapAjaxSpiderNoUrls || arjunNoUrls || webCachePoisonNoUrls || securityChecksNoUrls || shodanNoIps || osintNoIps || originDiscoveryNoFronted ? 'not-allowed' : 'pointer',
+              cursor: !runDomains.length || isStarting || hasValidationErrors || noTargetsToScan || nmapNoPorts || httpxNoPorts || resourceEnumNoUrls || zapAjaxSpiderNoUrls || arjunNoUrls || webCachePoisonNoUrls || securityChecksNoUrls || shodanNoIps || osintNoIps || originDiscoveryNoFronted ? 'not-allowed' : 'pointer',
               fontSize: '13px',
               display: 'flex', alignItems: 'center', gap: '6px',
-              opacity: !domain || isStarting || hasValidationErrors || noTargetsToScan || nmapNoPorts || httpxNoPorts || resourceEnumNoUrls || zapAjaxSpiderNoUrls || arjunNoUrls || webCachePoisonNoUrls || securityChecksNoUrls || shodanNoIps || osintNoIps || originDiscoveryNoFronted ? 0.5 : 1,
+              opacity: !runDomains.length || isStarting || hasValidationErrors || noTargetsToScan || nmapNoPorts || httpxNoPorts || resourceEnumNoUrls || zapAjaxSpiderNoUrls || arjunNoUrls || webCachePoisonNoUrls || securityChecksNoUrls || shodanNoIps || osintNoIps || originDiscoveryNoFronted ? 0.5 : 1,
             }}
           >
             {isStarting ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={14} />}

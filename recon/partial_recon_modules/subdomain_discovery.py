@@ -7,6 +7,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from recon.partial_recon_modules.helpers import partial_settings
+
 
 def run_subdomain_discovery(config: dict) -> None:
     """
@@ -14,7 +16,6 @@ def run_subdomain_discovery(config: dict) -> None:
     as the full pipeline in domain_recon.py.
     """
     from recon.main_recon_modules.domain_recon import discover_subdomains, resolve_all_dns, run_puredns_resolve
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
     user_inputs = config.get("user_inputs", [])
@@ -25,7 +26,7 @@ def run_subdomain_discovery(config: dict) -> None:
     # Fetch settings via the same API conversion as main.py (camelCase -> UPPER_SNAKE_CASE)
     # This ensures tool toggles and parameters are in the correct format
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Subdomain Discovery")

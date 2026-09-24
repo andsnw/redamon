@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from recon.partial_recon_modules.graph_builders import _build_graphql_data_from_graph
+from recon.partial_recon_modules.helpers import partial_settings
 
 
 def run_graphqlscan(config: dict) -> None:
@@ -24,7 +25,6 @@ def run_graphqlscan(config: dict) -> None:
       - config["include_graph_targets"]: whether to merge graph-derived targets
     """
     from recon.graphql_scan import run_graphql_scan
-    from recon.project_settings import get_settings
     from graph_db import Neo4jClient
 
     domain = config["domain"]
@@ -32,7 +32,7 @@ def run_graphqlscan(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable so DB toggle doesn't override an explicit partial-recon request
     settings['GRAPHQL_SECURITY_ENABLED'] = True
@@ -59,7 +59,7 @@ def run_graphqlscan(config: dict) -> None:
     include_graph = config.get("include_graph_targets", True)
     if include_graph:
         print(f"[*][Partial Recon] Querying graph for targets (BaseURLs, Endpoints, JS findings)...")
-        recon_data = _build_graphql_data_from_graph(domain, user_id, project_id)
+        recon_data = _build_graphql_data_from_graph(domain, user_id, project_id, settings=settings)
     else:
         print(f"[*][Partial Recon] Skipping graph targets (user opted out)")
         recon_data = {

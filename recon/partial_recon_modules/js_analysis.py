@@ -7,7 +7,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.partial_recon_modules.helpers import _is_valid_url, _scope_partial_urls
+from recon.partial_recon_modules.helpers import _is_valid_url, _scope_partial_urls, partial_settings
 
 
 def run_jsrecon(config: dict) -> None:
@@ -24,7 +24,6 @@ def run_jsrecon(config: dict) -> None:
     results into the graph via update_graph_from_js_recon.
     """
     from recon.main_recon_modules.js_recon import run_js_recon
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
 
@@ -32,7 +31,7 @@ def run_jsrecon(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable JS Recon since the user explicitly chose to run it
     settings['JS_RECON_ENABLED'] = True

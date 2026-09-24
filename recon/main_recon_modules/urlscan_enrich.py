@@ -29,6 +29,14 @@ logger = logging.getLogger(__name__)
 URLSCAN_API_BASE = "https://urlscan.io/api/v1"
 
 
+class RateLimitedResults(list):
+    """An empty search result that was a 429, not a real "nothing found".
+
+    Still a list, so every caller that treats it as [] keeps working. Partial
+    recon's per-root loop checks for it to wait and retry the root.
+    """
+
+
 def _urlscan_search(domain: str, api_key: str, max_results: int = 500, key_rotator=None) -> list[dict]:
     """Query URLScan.io Search API for domain results.
 
@@ -68,7 +76,7 @@ def _urlscan_search(domain: str, api_key: str, max_results: int = 500, key_rotat
         elif resp.status_code == 429:
             logger.warning("URLScan rate limit hit")
             print("[!][URLScan] Rate limit hit -- try adding an API key in Global Settings")
-            return []
+            return RateLimitedResults()
         else:
             logger.warning(f"URLScan {resp.status_code}: {resp.text[:200]}")
             print(f"[!][URLScan] API returned {resp.status_code}")
@@ -178,6 +186,7 @@ def run_urlscan_enrichment(combined_result: dict, settings: dict[str, Any]) -> d
             "ips_discovered": [],
             "urls_with_paths": [],
             "entries": [],
+            "rate_limited": isinstance(results, RateLimitedResults),
         }
         return combined_result
 

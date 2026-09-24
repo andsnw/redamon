@@ -13,6 +13,7 @@ from recon.partial_recon_modules.helpers import (
     _is_valid_hostname,
     _resolve_hostname,
     _should_include_root_domain,
+    partial_settings,
 )
 from recon.partial_recon_modules.graph_builders import (
     _build_recon_data_from_graph,
@@ -34,7 +35,6 @@ def _run_port_scanner(config: dict, tool_id: str, scan_fn, label: str,
         normalize_fn: Optional post-scan normalizer -- receives recon_data, mutates in place.
     """
     import ipaddress as _ipaddress
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
     user_inputs = config.get("user_inputs", [])
@@ -43,7 +43,7 @@ def _run_port_scanner(config: dict, tool_id: str, scan_fn, label: str,
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     if pre_settings:
         settings.update(pre_settings)
@@ -398,7 +398,6 @@ def run_nmap(config: dict) -> None:
     import ipaddress as _ipaddress
     from recon.main_recon_modules.nmap_scan import run_nmap_scan
     from recon.main import merge_nmap_into_port_scan
-    from recon.project_settings import get_settings
 
     domain = config["domain"]
     user_inputs = config.get("user_inputs", [])
@@ -407,7 +406,7 @@ def run_nmap(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable Nmap since the user explicitly chose to run it
     settings['NMAP_ENABLED'] = True

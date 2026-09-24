@@ -54,3 +54,61 @@ def host_in_scope(value: str, scope: set) -> bool:
     if not scope:
         return True
     return _normalize_host(value) in scope
+
+
+# ---------------------------------------------------------------------------
+# Project roots. A Domain-batch project has one Domain node per root, and a
+# write can cover several of them: a partial run over the whole batch, or a full
+# run's group, which also carries the other roots (recon/main.py
+# run_domain_batch). Mirrors scope_roots/root_for_host in
+# recon/partial_recon_modules/helpers.py; graph_db must not import recon.
+# ---------------------------------------------------------------------------
+
+def scope_roots(recon_data: dict) -> list:
+    """recon_data["domains"], else the single recon_data["domain"]."""
+    roots = recon_data.get("domains")
+    if isinstance(roots, list):
+        cleaned = [r for r in roots if isinstance(r, str) and r.strip()]
+        if cleaned:
+            return cleaned
+    domain = recon_data.get("domain")
+    return [domain] if isinstance(domain, str) and domain.strip() else []
+
+
+def root_for_host(value: str, roots: list, ip_mode: bool = False):
+    """The longest root that the host of `value` equals or sits under, or None.
+
+    In IP mode every host belongs to the one synthetic root
+    (ip-targets.<project_id>): its Subdomains are dashed IPs, not names under it.
+    The root is returned as stored, since it is matched against Domain.name.
+    """
+    host = _normalize_host(value).strip(".")
+    if not host or not roots:
+        return None
+    if ip_mode:
+        return roots[0]
+    best, best_len = None, -1
+    for root in roots:
+        r = str(root or "").strip().strip(".").lower()
+        if r and (host == r or host.endswith("." + r)) and len(r) > best_len:
+            best, best_len = root, len(r)
+    return best
+
+
+def roots_are_ip_mode(session, roots: list, user_id: str, project_id: str) -> bool:
+    """Whether these roots are IP mode's synthetic root, read from Domain.ip_mode.
+
+    One tenant-keyed lookup per write batch, rather than a flag every caller
+    would have to remember to stamp on recon_data.
+    """
+    if not roots:
+        return False
+    record = session.run(
+        """
+        MATCH (d:Domain {user_id: $uid, project_id: $pid})
+        WHERE d.name IN $roots AND d.ip_mode = true
+        RETURN count(d) > 0 AS ip_mode
+        """,
+        uid=user_id, pid=project_id, roots=list(roots),
+    ).single()
+    return bool(record and record["ip_mode"])

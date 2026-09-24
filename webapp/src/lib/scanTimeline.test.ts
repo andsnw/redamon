@@ -253,6 +253,23 @@ describe('recordScanStart', () => {
     expect(prismaMock.scanJob.create.mock.calls[0][0].data).toMatchObject({ trigger: 'scheduled', scheduleId: 's1' })
   })
 
+  // The audit record of scope: which roots a multi-root partial run covered.
+  test('the roots a run covers are stored as its targets', async () => {
+    prismaMock.scanJob.create.mockResolvedValue({ id: 'j9' })
+    await recordScanStart({
+      projectId: 'p1', kind: 'partial_recon', runId: 'r1',
+      targets: ['alpha.test', 'beta.test', 'gamma.test'],
+    })
+    expect(prismaMock.scanJob.create.mock.calls[0][0].data.targets)
+      .toEqual(['alpha.test', 'beta.test', 'gamma.test'])
+  })
+
+  test('a kind that reports no roots stores an empty list', async () => {
+    prismaMock.scanJob.create.mockResolvedValue({ id: 'j9' })
+    await recordScanStart({ projectId: 'p1', kind: 'gvm' })
+    expect(prismaMock.scanJob.create.mock.calls[0][0].data.targets).toEqual([])
+  })
+
   // History is a side effect of starting a scan; it must never fail the start.
   test('a DB failure never propagates to the caller', async () => {
     prismaMock.scanJob.create.mockRejectedValue(new Error('db down'))

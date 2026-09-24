@@ -77,9 +77,14 @@ class TestTheSweepSitsInAFinally:
         assert '_apply_node_filters' not in _function(src, 'run_domain_batch')
 
     def test_partial_recon(self):
-        main = _function(_source('recon/partial_recon.py'), 'main')
-        assert re.search(r'started_at = run_timestamp\(\)\s+try:\s+_dispatch\(tool_id, config\)\s+'
+        src = _source('recon/partial_recon.py')
+        main = _function(src, 'main')
+        assert re.search(r'started_at = run_timestamp\(\)\s+try:\s+'
+                         r'statuses, completed = _run_tool\(tool_id, config\)\s+'
                          r'finally:\s+_apply_node_filters\(started_at\)', main), main
+        # _run_tool is the only path to the tool, so the dispatch sits inside that try.
+        assert '_dispatch(tool_id, config)' in _function(src, '_run_tool')
+        assert '_dispatch(' not in main
 
 
 class TestTheWrappersNeverRaise:

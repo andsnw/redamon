@@ -242,6 +242,8 @@ export interface CreateScanJobInput {
   settingsHash?: string | null
   /** Which authorization permitted it, from the project's current record. */
   authorizationId?: string | null
+  /** The project roots the run covers, as the orchestrator returned them. */
+  targets?: string[]
 }
 
 export async function createScanJob(input: CreateScanJobInput): Promise<{ id: string }> {
@@ -260,6 +262,7 @@ export async function createScanJob(input: CreateScanJobInput): Promise<{ id: st
       ramReason: input.ramReason ?? null,
       settingsHash: input.settingsHash ?? null,
       authorizationId: input.authorizationId ?? null,
+      targets: input.targets ?? [],
       startedAt: status === 'running' ? new Date() : null,
     },
     select: { id: true },
@@ -278,6 +281,8 @@ export async function recordScanStart(input: {
   runId?: string
   initiatedByUserId?: string | null
   scheduleId?: string | null
+  /** The roots the run covers (partial recon reports them). */
+  targets?: string[]
 }): Promise<void> {
   try {
     await createScanJob({
@@ -285,6 +290,7 @@ export async function recordScanStart(input: {
       versionId: null,
       kind: input.kind,
       runId: input.runId ?? '',
+      targets: input.targets ?? [],
       // These kinds do not version the graph, so there is no mode to record.
       trigger: input.scheduleId ? 'scheduled' : 'manual',
       mode: null,

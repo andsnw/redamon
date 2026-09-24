@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from recon.partial_recon_modules.graph_builders import _build_graphql_data_from_graph
-from recon.partial_recon_modules.helpers import _should_include_root_domain
+from recon.partial_recon_modules.helpers import _should_include_root_domain, partial_settings
 
 
 def run_webcachepoison(config: dict) -> None:
@@ -26,7 +26,6 @@ def run_webcachepoison(config: dict) -> None:
       - config["include_graph_targets"]: whether to merge graph-derived targets
     """
     from recon.cache_scan import run_cache_scan
-    from recon.project_settings import get_settings
     from graph_db import Neo4jClient
 
     domain = config["domain"]
@@ -34,7 +33,7 @@ def run_webcachepoison(config: dict) -> None:
     project_id = os.environ.get("PROJECT_ID", "")
 
     print("[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable so the DB toggle doesn't override an explicit partial-recon run.
     settings["WEB_CACHE_POISON_ENABLED"] = True
@@ -61,7 +60,7 @@ def run_webcachepoison(config: dict) -> None:
     include_graph = config.get("include_graph_targets", True)
     if include_graph:
         print("[*][Partial Recon] Querying graph for targets (BaseURLs, Endpoints)...")
-        recon_data = _build_graphql_data_from_graph(domain, user_id, project_id)
+        recon_data = _build_graphql_data_from_graph(domain, user_id, project_id, settings=settings)
     else:
         print("[*][Partial Recon] Skipping graph targets (user opted out)")
         recon_data = {

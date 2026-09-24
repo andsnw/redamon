@@ -20,9 +20,10 @@ from urllib.parse import urlparse
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from recon.partial_recon_modules.helpers import partial_settings
+
 
 def run_ai_surface_recon(config: dict) -> None:
-    from recon.project_settings import get_settings
     from recon.main_recon_modules.ai_surface_recon import (
         run_ai_surface_recon as run_full,
     )
@@ -39,7 +40,7 @@ def run_ai_surface_recon(config: dict) -> None:
     print(f"[*][AISurfaceRecon] Project: {project_id}")
     print(f"{'=' * 50}\n")
 
-    settings = get_settings()
+    settings = partial_settings(config)
     settings["AI_SURFACE_RECON_ENABLED"] = True  # operator explicitly asked
 
     client = Neo4jClient()
