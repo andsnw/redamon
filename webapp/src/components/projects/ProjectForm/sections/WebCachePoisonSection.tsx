@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type CSSProperties } from 'react'
+import { useState } from 'react'
 import { ChevronDown, DatabaseZap, Play } from 'lucide-react'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import type { Project } from '@prisma/client'
@@ -16,18 +16,11 @@ interface WebCachePoisonSectionProps {
   onRun?: () => void
 }
 
-const codeStyle: CSSProperties = {
-  fontSize: '0.85em',
-  padding: '1px 4px',
-  backgroundColor: 'rgba(255,255,255,0.06)',
-  borderRadius: '3px',
-}
-
 export function WebCachePoisonSection({ data, updateField, onRun }: WebCachePoisonSectionProps) {
   const [isOpen, setIsOpen] = useState(true)
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <DatabaseZap size={16} />
@@ -41,13 +34,7 @@ export function WebCachePoisonSection({ data, updateField, onRun }: WebCachePois
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRun() }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                padding: '3px 8px', borderRadius: '4px',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                color: '#22c55e', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
-              }}
+              className={styles.runPartialButton}
               title="Run Web Cache Poisoning scan"
             >
               <Play size={10} /> Run partial recon
@@ -73,8 +60,8 @@ export function WebCachePoisonSection({ data, updateField, onRun }: WebCachePois
             Runs the <strong>WCVS</strong> breadth engine for wide technique coverage, then a RedAmon-native
             <strong> 5-phase confirmation</strong> (cache oracle, isolated cache-buster, framework hypotheses,
             baseline&rarr;poison&rarr;clean persistence check, confidence scoring). Only findings at or above the
-            confidence threshold become <code style={codeStyle}>Vulnerability</code> nodes with
-            <code style={codeStyle}>source=&quot;cache_poisoning&quot;</code>. Tests use benign canaries and
+            confidence threshold become <code>Vulnerability</code> nodes with
+            <code>source=&quot;cache_poisoning&quot;</code>. Tests use benign canaries and
             isolated cache buckets so the real cache is never poisoned.
           </p>
 
@@ -93,7 +80,7 @@ export function WebCachePoisonSection({ data, updateField, onRun }: WebCachePois
                   <option value="research">research (lab only - enables CPDoS if allowed)</option>
                 </select>
                 <span className={styles.fieldHint}>
-                  <code style={codeStyle}>safe-confirm</code> never sends destructive payloads and always isolates tests.
+                  <code>safe-confirm</code> never sends destructive payloads and always isolates tests.
                 </span>
               </div>
 
@@ -105,7 +92,7 @@ export function WebCachePoisonSection({ data, updateField, onRun }: WebCachePois
                   <div>
                     <div className={styles.toggleLabel}>Framework hypothesis packs</div>
                     <div className={styles.toggleDescription}>
-                      Fire Next.js / Nuxt / Remix-specific vectors (<code style={codeStyle}>x-invoke-status</code>, <code style={codeStyle}>__nextDataReq</code>, <code style={codeStyle}>/_payload.json</code>, <code style={codeStyle}>_data</code>) only when the technology fingerprint matches.
+                      Fire Next.js / Nuxt / Remix-specific vectors (<code>x-invoke-status</code>, <code>__nextDataReq</code>, <code>/_payload.json</code>, <code>_data</code>) only when the technology fingerprint matches.
                     </div>
                   </div>
                   <Toggle
@@ -118,7 +105,7 @@ export function WebCachePoisonSection({ data, updateField, onRun }: WebCachePois
                   <div>
                     <div className={styles.toggleLabel}>Silent-cache detection (frozen-Date)</div>
                     <div className={styles.toggleDescription}>
-                      Catch caches that emit no <code style={codeStyle}>X-Cache</code>/<code style={codeStyle}>Age</code> headers (default Varnish/nginx, hardened CDNs) by fetching twice across a short delay and checking whether the origin <code style={codeStyle}>Date</code> is frozen. Without this, silent caches are skipped.
+                      Catch caches that emit no <code>X-Cache</code>/<code>Age</code> headers (default Varnish/nginx, hardened CDNs) by fetching twice across a short delay and checking whether the origin <code>Date</code> is frozen. Without this, silent caches are skipped.
                     </div>
                   </div>
                   <Toggle
@@ -131,7 +118,7 @@ export function WebCachePoisonSection({ data, updateField, onRun }: WebCachePois
                   <div>
                     <div className={styles.toggleLabel}>Non-reflective (differential) detection</div>
                     <div className={styles.toggleDescription}>
-                      Also confirm poisons that change the response <em>behaviour</em> (a persisted status code, <code style={codeStyle}>Location</code> redirect, or body) with no echoed marker, guarded against false positives by requiring the affected dimension to be stable across two clean baselines. Catches CPDoS status flips and scheme/redirect poisoning. Adds one extra baseline request per vector. On by default.
+                      Also confirm poisons that change the response <em>behaviour</em> (a persisted status code, <code>Location</code> redirect, or body) with no echoed marker, guarded against false positives by requiring the affected dimension to be stable across two clean baselines. Catches CPDoS status flips and scheme/redirect poisoning. Adds one extra baseline request per vector. On by default.
                     </div>
                   </div>
                   <Toggle
@@ -144,7 +131,7 @@ export function WebCachePoisonSection({ data, updateField, onRun }: WebCachePois
                   <div>
                     <div className={styles.toggleLabel}>Web cache deception</div>
                     <div className={styles.toggleDescription}>
-                      Path-confusion tricks (<code style={codeStyle}>/account/x.css</code>) that fool the cache into storing a private page.
+                      Path-confusion tricks (<code>/account/x.css</code>) that fool the cache into storing a private page.
                     </div>
                   </div>
                   <Toggle
@@ -157,7 +144,7 @@ export function WebCachePoisonSection({ data, updateField, onRun }: WebCachePois
                   <div>
                     <div className={styles.toggleLabel}>Allow CPDoS (cache-poisoned DoS)</div>
                     <div className={styles.toggleDescription}>
-                      Oversized-header / meta-char tests that can serve errors to all visitors. Only honored in the <code style={codeStyle}>research</code> profile. Off by default.
+                      Oversized-header / meta-char tests that can serve errors to all visitors. Only honored in the <code>research</code> profile. Off by default.
                     </div>
                   </div>
                   <Toggle

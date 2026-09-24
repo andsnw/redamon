@@ -124,7 +124,7 @@ export function AuthenticationSection({ projectId, mode }: AuthenticationSection
     : 'the token / header value'
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <KeyRound size={16} />
@@ -178,12 +178,7 @@ export function AuthenticationSection({ projectId, mode }: AuthenticationSection
                 <button
                   type="button"
                   onClick={() => setRecordingOpen(true)}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-                    borderRadius: 6, border: '1px solid rgba(224,175,104,0.4)',
-                    background: 'rgba(224,175,104,0.12)', color: '#e0af68', cursor: 'pointer',
-                    fontSize: 12, fontWeight: 500,
-                  }}
+                  className={`${styles.actionButton} ${styles.actionButtonWarning}`}
                 >
                   <Play size={12} /> Record login through the proxy
                 </button>
@@ -215,7 +210,7 @@ export function AuthenticationSection({ projectId, mode }: AuthenticationSection
                       onChange={(e) => { setAuthValue(e.target.value); markDirty() }} />
                     {meta?.hasValue && (
                       <button type="button" onClick={clearValue}
-                        style={{ marginTop: 6, fontSize: 11, color: '#f7768e', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                        className={`${styles.textButton} ${styles.textButtonDanger}`} style={{ marginTop: 6 }}>
                         Clear the stored value
                       </button>
                     )}
@@ -246,12 +241,7 @@ export function AuthenticationSection({ projectId, mode }: AuthenticationSection
                 </div>
 
                 <button type="button" onClick={save} disabled={!dirty || saving}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 6,
-                    border: '1px solid rgba(122,162,247,0.4)', background: dirty ? 'rgba(122,162,247,0.15)' : 'transparent',
-                    color: '#7aa2f7', cursor: dirty && !saving ? 'pointer' : 'not-allowed', fontSize: 12, fontWeight: 500,
-                    opacity: dirty ? 1 : 0.5,
-                  }}>
+                  className={styles.actionButton}>
                   <Save size={12} /> {saving ? 'Saving…' : 'Save'}
                 </button>
               </div>

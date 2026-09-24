@@ -19,7 +19,7 @@ export function CveLookupSection({ data, updateField }: CveLookupSectionProps) {
   const [isOpen, setIsOpen] = useState(true)
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <Database size={16} />
@@ -92,7 +92,7 @@ export function CveLookupSection({ data, updateField }: CveLookupSectionProps) {
                 <h3 className={styles.subSectionTitle}>API Keys</h3>
                 <p className={styles.fieldHint} style={{ marginTop: 0 }}>
                   NVD and Vulners API keys are configured in{' '}
-                  <a href={SETTINGS_KEYS_HREF} style={{ color: 'var(--color-accent)', textDecoration: 'underline' }}>
+                  <a href={SETTINGS_KEYS_HREF}>
                     Global Settings &rarr; Tool API Keys
                   </a>
                   . Keys set there apply to all projects automatically.

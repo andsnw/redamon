@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronDown, Braces, Play } from 'lucide-react'
+import { ChevronDown, Braces, Play, AlertTriangle } from 'lucide-react'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import styles from '../ProjectForm.module.css'
@@ -24,7 +24,7 @@ export function GraphqlScanSection({ data, updateField, projectId, mode, onRun }
   const authType = (data as any).graphqlAuthType ?? ''
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <Braces size={16} />
@@ -38,13 +38,7 @@ export function GraphqlScanSection({ data, updateField, projectId, mode, onRun }
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRun() }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                padding: '3px 8px', borderRadius: '4px',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                color: '#22c55e', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
-              }}
+              className={styles.runPartialButton}
               title="Run GraphQL Security Scanner"
             >
               <Play size={10} /> Run partial recon
@@ -290,14 +284,9 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
         />
         graphql-cop External Scanner
         <span className={styles.badgeActive} style={{ fontSize: '9px' }}>Active</span>
-        <span style={{
-          fontSize: '9px', padding: '1px 6px', borderRadius: '3px',
-          backgroundColor: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', fontWeight: 500,
-        }}>
-          12 checks
-        </span>
+        <span className={styles.metaBadge}>12 checks</span>
         {copEnabled && (
-          <span style={{ fontSize: '9px', color: '#22c55e', fontWeight: 500 }}>ENABLED</span>
+          <span className={styles.stateBadge}>ENABLED</span>
         )}
       </h3>
 
@@ -471,13 +460,12 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
                 />
               </div>
 
-              <div style={{
-                marginTop: '12px', padding: '8px 12px', borderRadius: '4px',
-                backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)',
-                fontSize: '11px', color: '#f87171',
-              }}>
-                <strong>DoS probes below - noisy traffic.</strong> Toggling these off hides their findings
-                but the packets still fly (see note above). Auto-disabled only in stealth mode.
+              <div className={`${styles.callout} ${styles.calloutDanger}`} style={{ marginTop: '12px' }}>
+                <AlertTriangle size={16} />
+                <span>
+                  <strong>DoS probes below - noisy traffic.</strong> Toggling these off hides their findings
+                  but the packets still fly (see note above). Auto-disabled only in stealth mode.
+                </span>
               </div>
 
               <div className={styles.toggleRow}>

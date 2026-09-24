@@ -122,7 +122,7 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
   }
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <FolderSearch size={16} />
@@ -136,13 +136,7 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRun() }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                padding: '3px 8px', borderRadius: '4px',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                color: '#22c55e', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
-              }}
+              className={styles.runPartialButton}
               title="Run FFuf"
             >
               <Play size={10} /> Run partial recon
@@ -237,7 +231,7 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
 
               <div className={styles.fieldGroup}>
                 <label className={styles.fieldLabel}>
-                  Wordlist <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(built-in or upload)</span>
+                  Wordlist <span className={styles.itemMeta} style={{ fontWeight: 400 }}>(built-in or upload)</span>
                 </label>
                 <div
                   style={{
@@ -291,7 +285,7 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
                   />
                   <button
                     type="button"
-                    className="primaryButton"
+                    className="secondaryButton"
                     style={{
                       whiteSpace: 'nowrap',
                       display: 'inline-flex',
@@ -313,9 +307,7 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
                   </button>
                 </div>
                 {uploadError && (
-                  <span className={styles.fieldHint} style={{ color: 'var(--status-error)' }}>
-                    {uploadError}
-                  </span>
+                  <span className={styles.inlineError}>{uploadError}</span>
                 )}
                 {!uploadError && !canUpload && (
                   <span className={styles.fieldHint}>
@@ -334,39 +326,22 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
               {customWordlists.length > 0 && canUpload && (
                 <div className={styles.fieldGroup}>
                   <label className={styles.fieldLabel}>Uploaded Wordlists</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                  <div className={styles.itemList}>
                     {customWordlists.map((wl) => (
                       <div
                         key={wl.name}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: 'var(--space-1) var(--space-2)',
-                          background: 'var(--bg-tertiary)',
-                          borderRadius: 'var(--radius-default)',
-                          fontSize: 'var(--text-xs)',
-                          border: data.ffufWordlist === wl.path ? '1px solid var(--accent-secondary)' : '1px solid var(--border-default)',
-                        }}
+                        className={`${styles.itemRow} ${data.ffufWordlist === wl.path ? styles.itemRowOn : ''}`}
                       >
-                        <span style={{ color: 'var(--text-primary)' }}>
+                        <span>
                           {wl.name}
-                          <span style={{ color: 'var(--text-tertiary)', marginLeft: 'var(--space-2)' }}>
+                          <span className={styles.itemMeta} style={{ marginLeft: 'var(--space-2)' }}>
                             {formatSize(wl.size)}
                           </span>
                         </span>
                         <button
                           type="button"
+                          className={styles.removeButton}
                           onClick={() => handleDelete(wl.name)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            color: 'var(--text-tertiary)',
-                            padding: '2px',
-                            display: 'flex',
-                            alignItems: 'center',
-                          }}
                           title={`Delete ${wl.name}`}
                         >
                           <X size={14} />

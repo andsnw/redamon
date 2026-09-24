@@ -49,7 +49,7 @@ export function SupplyChainReconSection({ data, updateField, onRun }: SupplyChai
   const unknownTokens = unknownEcosystemTokens(storedEcosystems)
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <PackageSearch size={16} />
@@ -63,13 +63,7 @@ export function SupplyChainReconSection({ data, updateField, onRun }: SupplyChai
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRun() }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                padding: '3px 8px', borderRadius: '4px',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                color: '#22c55e', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
-              }}
+              className={styles.runPartialButton}
               title="Run Supply Chain Recon"
             >
               <Play size={10} /> Run partial recon
@@ -139,18 +133,18 @@ export function SupplyChainReconSection({ data, updateField, onRun }: SupplyChai
                   ))}
                 </div>
                 {unknownTokens.length > 0 && (
-                  <span className={styles.fieldHint} style={{ color: 'var(--status-warning)' }}>
+                  <span className={`${styles.fieldHint} ${styles.fieldHintCaution}`}>
                     Not an OSV ecosystem, so nothing can ever match it: {unknownTokens.join(', ')}. It is
                     dropped as soon as you change the selection.
                   </span>
                 )}
                 {selectedEcosystems.length === 0 && unknownTokens.length === 0 && (
-                  <span className={styles.fieldHint} style={{ color: 'var(--status-warning)' }}>
+                  <span className={`${styles.fieldHint} ${styles.fieldHintCaution}`}>
                     Nothing selected, so no filter is applied: every harvested package is reported.
                   </span>
                 )}
                 {selectedEcosystems.length > 0 && !selectedEcosystems.includes(HARVESTED_ECOSYSTEM) && (
-                  <span className={styles.fieldHint} style={{ color: 'var(--status-warning)' }}>
+                  <span className={`${styles.fieldHint} ${styles.fieldHintCaution}`}>
                     This module harvests npm packages only, so with npm unticked nothing it harvests is
                     reported. The retire.js pass is not affected by this filter.
                   </span>
@@ -160,7 +154,7 @@ export function SupplyChainReconSection({ data, updateField, onRun }: SupplyChai
               <div className={styles.toggleRow}>
                 <div style={{ flex: 1, paddingRight: '12px' }}>
                   <span className={styles.toggleLabel}>Deep behavioural analysis (GuardDog)</span>
-                  <p className={styles.toggleDescription} style={{ color: 'var(--status-warning)' }}>
+                  <p className={`${styles.toggleDescription} ${styles.fieldHintCaution}`}>
                     Downloads the package archive of a flagged dependency and inspects it inside a hardened,
                     network-isolated sandbox. This reaches out to public package registries, so it stays off unless
                     you specifically need behavioural evidence.

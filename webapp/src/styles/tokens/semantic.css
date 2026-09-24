@@ -198,6 +198,8 @@
   --form-success: var(--color-green-400);
   --form-warning: var(--color-amber-400);
   --form-danger: var(--color-red-400);
+  --form-passive: var(--color-cyan-400);
+  --form-high: var(--color-orange-400);
 
   --form-toggle-off-bg: var(--color-gray-700);
   --form-toggle-off-border: var(--color-gray-600);

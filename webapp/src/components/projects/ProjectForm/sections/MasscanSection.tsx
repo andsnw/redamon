@@ -20,7 +20,7 @@ export function MasscanSection({ data, updateField, onRun }: MasscanSectionProps
   const [isOpen, setIsOpen] = useState(true)
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <Radar size={16} />
@@ -34,13 +34,7 @@ export function MasscanSection({ data, updateField, onRun }: MasscanSectionProps
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRun() }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                padding: '3px 8px', borderRadius: '4px',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                color: '#22c55e', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
-              }}
+              className={styles.runPartialButton}
               title="Run Masscan Port Scanner"
             >
               <Play size={10} /> Run partial recon

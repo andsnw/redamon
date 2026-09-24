@@ -79,7 +79,7 @@ export function SubdomainDiscoverySection({ data, updateField, onRun }: Subdomai
   }
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <Search size={16} />
@@ -92,19 +92,7 @@ export function SubdomainDiscoverySection({ data, updateField, onRun }: Subdomai
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRun() }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '3px 8px',
-                borderRadius: '4px',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                color: '#22c55e',
-                cursor: 'pointer',
-                fontSize: '11px',
-                fontWeight: 500,
-              }}
+              className={styles.runPartialButton}
               title="Run Subdomain Discovery"
             >
               <Play size={10} /> Run partial recon
@@ -345,7 +333,7 @@ export function SubdomainDiscoverySection({ data, updateField, onRun }: Subdomai
                 <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-2)', opacity: 0.6 }}>
                   <input type="checkbox" checked disabled />
                   <span>Amass Default (~8K entries)</span>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>always active</span>
+                  <span className={styles.itemMeta}>always active</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>

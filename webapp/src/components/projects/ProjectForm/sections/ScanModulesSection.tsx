@@ -75,7 +75,7 @@ export function ScanModulesSection({ data, updateField }: ScanModulesSectionProp
   }
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <Layers size={16} />

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type CSSProperties } from 'react'
+import { useState } from 'react'
 import { ChevronDown, ShieldAlert, Play } from 'lucide-react'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import type { Project } from '@prisma/client'
@@ -17,23 +17,7 @@ interface TakeoverSectionProps {
   onRun?: () => void
 }
 
-// Inline code-snippet style - keeps monospace snippets smaller than surrounding text
-const codeStyle: CSSProperties = {
-  fontSize: '0.85em',
-  padding: '1px 4px',
-  backgroundColor: 'rgba(255,255,255,0.06)',
-  borderRadius: '3px',
-}
-
 const SEVERITY_OPTIONS = ['critical', 'high', 'medium', 'low', 'info']
-
-const SEVERITY_COLORS: Record<string, string> = {
-  critical: '#e53e3e',
-  high: '#dd6b20',
-  medium: '#d69e2e',
-  low: '#38a169',
-  info: '#3182ce',
-}
 
 // Must match recon/helpers/takeover_helpers.py::BADDNS_MODULES.
 // Upstream ships 11 modules; only 10 are CLI-addressable (MTA-STS fails the
@@ -77,7 +61,7 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
   }
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <ShieldAlert size={16} />
@@ -91,13 +75,7 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRun() }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                padding: '3px 8px', borderRadius: '4px',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                color: '#22c55e', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
-              }}
+              className={styles.runPartialButton}
               title="Run Subdomain Takeover"
             >
               <Play size={10} /> Run partial recon
@@ -121,9 +99,9 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
           <p className={styles.sectionDescription}>
             Layered subdomain takeover detection. <strong>Subjack</strong> (DNS-first, high precision)
             validates candidates by resolving CNAME/NS/MX records; <strong>Nuclei takeover templates</strong>
-            (<code style={codeStyle}>http/takeovers/</code> + <code style={codeStyle}>dns/</code>) add HTTP fingerprint coverage against alive URLs.
-            Findings are deduplicated across tools, scored, and written as <code style={codeStyle}>Vulnerability</code> nodes
-            with <code style={codeStyle}>source=&quot;takeover_scan&quot;</code>.
+            (<code>http/takeovers/</code> + <code>dns/</code>) add HTTP fingerprint coverage against alive URLs.
+            Findings are deduplicated across tools, scored, and written as <code>Vulnerability</code> nodes
+            with <code>source=&quot;takeover_scan&quot;</code>.
           </p>
 
           {data.subdomainTakeoverEnabled && (
@@ -149,7 +127,7 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
                   <div>
                     <div className={styles.toggleLabel}>Nuclei takeover templates</div>
                     <div className={styles.toggleDescription}>
-                      Runs <code style={codeStyle}>-t http/takeovers/ -t dns/</code> against alive URLs from httpx. Reuses the existing Nuclei Docker image.
+                      Runs <code>-t http/takeovers/ -t dns/</code> against alive URLs from httpx. Reuses the existing Nuclei Docker image.
                     </div>
                   </div>
                   <Toggle
@@ -162,7 +140,7 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
                   <div>
                     <div className={styles.toggleLabel}>BadDNS</div>
                     <div className={styles.toggleDescription}>
-                      Deep DNS analysis across CNAME / NS / MX / TXT / SPF / DMARC / wildcard / NSEC / zone-transfer modules. Runs in its own isolated Docker image (<code style={codeStyle}>redamon-baddns:latest</code>). Build once with <code style={codeStyle}>docker compose --profile tools build baddns-scanner</code>.
+                      Deep DNS analysis across CNAME / NS / MX / TXT / SPF / DMARC / wildcard / NSEC / zone-transfer modules. Runs in its own isolated Docker image (<code>redamon-baddns:latest</code>). Build once with <code>docker compose --profile tools build baddns-scanner</code>.
                     </div>
                   </div>
                   <Toggle
@@ -196,7 +174,7 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
               {data.baddnsEnabled && (
                 <div className={styles.fieldGroup}>
                   <label className={styles.fieldLabel}>BadDNS modules</label>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <div className={styles.chipGroup}>
                     {BADDNS_MODULE_OPTIONS.map(mod => {
                       const active = (data.baddnsModules ?? []).includes(mod)
                       return (
@@ -210,17 +188,8 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
                               active ? current.filter(m => m !== mod) : [...current, mod],
                             )
                           }}
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: '4px',
-                            border: `1px solid ${active ? '#6366f1' : 'rgba(255,255,255,0.15)'}`,
-                            backgroundColor: active ? 'rgba(99,102,241,0.15)' : 'transparent',
-                            color: active ? '#a5b4fc' : '#a0aec0',
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                          }}
+                          className={`${styles.chip} ${active ? styles.chipOn : ''}`}
+                          style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}
                           title={BADDNS_MODULE_DESCRIPTIONS[mod]}
                         >
                           {mod}
@@ -229,7 +198,7 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
                     })}
                   </div>
                   <div className={styles.fieldHint}>
-                    Module list is passed to <code style={codeStyle}>baddns -m</code>. Hover each for its purpose. Heavy modules like <code style={codeStyle}>nsec</code> and <code style={codeStyle}>zonetransfer</code> can be slow on large targets.
+                    Module list is passed to <code>baddns -m</code>. Hover each for its purpose. Heavy modules like <code>nsec</code> and <code>zonetransfer</code> can be slow on large targets.
                   </div>
                 </div>
               )}
@@ -284,7 +253,7 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
               {/* Severity + scoring */}
               <div className={styles.fieldGroup}>
                 <label className={styles.fieldLabel}>Severity filter (Nuclei takeover templates)</label>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div className={styles.chipGroup}>
                   {SEVERITY_OPTIONS.map(sev => {
                     const active = (data.takeoverSeverity ?? []).includes(sev)
                     return (
@@ -292,16 +261,9 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
                         key={sev}
                         type="button"
                         onClick={() => toggleSeverity(sev)}
-                        style={{
-                          padding: '4px 10px',
-                          borderRadius: '4px',
-                          border: `1px solid ${active ? SEVERITY_COLORS[sev] : 'rgba(255,255,255,0.15)'}`,
-                          backgroundColor: active ? SEVERITY_COLORS[sev] + '33' : 'transparent',
-                          color: active ? SEVERITY_COLORS[sev] : '#a0aec0',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          textTransform: 'capitalize',
-                        }}
+                        data-sev={sev}
+                        className={`${styles.chip} ${styles.sev} ${active ? styles.chipOn : ''}`}
+                        style={{ textTransform: 'capitalize' }}
                       >
                         {sev}
                       </button>
@@ -361,7 +323,7 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
                 <div>
                   <div className={styles.toggleLabel}>Auto-publish manual-review findings</div>
                   <div className={styles.toggleDescription}>
-                    Publish <code style={codeStyle}>manual_review</code> findings to the main findings table (default: kept in a separate review queue with <code style={codeStyle}>severity=&quot;info&quot;</code>).
+                    Publish <code>manual_review</code> findings to the main findings table (default: kept in a separate review queue with <code>severity=&quot;info&quot;</code>).
                   </div>
                 </div>
                 <Toggle

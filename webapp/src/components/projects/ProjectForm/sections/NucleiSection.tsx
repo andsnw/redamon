@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { ChevronDown, Shield, Upload, Trash2, Loader2, FileText, Play, AlertTriangle } from 'lucide-react'
+import { ChevronDown, Shield, Upload, Trash2, Loader2, FileText, Play, Info } from 'lucide-react'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import styles from '../ProjectForm.module.css'
@@ -29,15 +29,6 @@ interface CustomTemplate {
 }
 
 const SEVERITY_OPTIONS = ['critical', 'high', 'medium', 'low', 'info']
-
-const SEVERITY_COLORS: Record<string, string> = {
-  critical: '#e53e3e',
-  high: '#dd6b20',
-  medium: '#d69e2e',
-  low: '#38a169',
-  info: '#3182ce',
-  unknown: '#718096',
-}
 
 export function NucleiSection({ data, updateField, onRun }: NucleiSectionProps) {
   const [isOpen, setIsOpen] = useState(true)
@@ -116,7 +107,7 @@ export function NucleiSection({ data, updateField, onRun }: NucleiSectionProps) 
   }
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <Shield size={16} />
@@ -130,13 +121,7 @@ export function NucleiSection({ data, updateField, onRun }: NucleiSectionProps) 
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRun() }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                padding: '3px 8px', borderRadius: '4px',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                color: '#22c55e', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
-              }}
+              className={styles.runPartialButton}
               title="Run Nuclei"
             >
               <Play size={10} /> Run partial recon
@@ -419,65 +404,46 @@ export function NucleiSection({ data, updateField, onRun }: NucleiSectionProps) 
               />
             </div>
             {/* Custom Templates Manager */}
-            <div style={{ marginTop: '12px', padding: '12px', background: 'var(--bg-secondary, #1a1a2e)', borderRadius: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div className={styles.fieldGroup}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)' }}>
                 <div>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-primary)' }}>Custom Templates</span>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', margin: '2px 0 0' }}>
+                  <span className={styles.fieldLabel}>Custom Templates</span>
+                  <p className={styles.fieldHint}>
                     Upload is global. Check templates to include in this project's scans.
                   </p>
                 </div>
-                <div>
-                  <input
-                    ref={templateFileRef}
-                    type="file"
-                    accept=".yaml,.yml"
-                    style={{ display: 'none' }}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) handleTemplateUpload(file)
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="secondaryButton"
-                    style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', padding: '4px 10px' }}
-                    onClick={() => templateFileRef.current?.click()}
-                    disabled={isUploading}
-                  >
-                    {isUploading ? <Loader2 size={13} className={styles.spin} /> : <Upload size={13} />}
-                    {isUploading ? 'Uploading...' : 'Upload .yaml'}
-                  </button>
-                </div>
+                <input
+                  ref={templateFileRef}
+                  type="file"
+                  accept=".yaml,.yml"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) handleTemplateUpload(file)
+                  }}
+                />
+                <button
+                  type="button"
+                  className="secondaryButton"
+                  onClick={() => templateFileRef.current?.click()}
+                  disabled={isUploading}
+                >
+                  {isUploading ? <Loader2 size={13} className={styles.spin} /> : <Upload size={13} />}
+                  {isUploading ? 'Uploading...' : 'Upload .yaml'}
+                </button>
               </div>
 
-              {uploadError && (
-                <p style={{ fontSize: '0.75rem', color: '#e53e3e', margin: '4px 0 8px' }}>{uploadError}</p>
-              )}
+              {uploadError && <p className={styles.inlineError}>{uploadError}</p>}
 
               {customTemplates.length === 0 ? (
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', fontStyle: 'italic', margin: '8px 0 0' }}>
-                  No custom templates uploaded yet.
-                </p>
+                <p className={styles.itemEmpty}>No custom templates uploaded yet.</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                <div className={styles.itemList}>
                   {customTemplates.map((t) => {
                     const selected = data.nucleiSelectedCustomTemplates ?? []
                     const isChecked = selected.includes(t.path)
                     return (
-                      <div
-                        key={t.path}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '6px 8px',
-                          borderRadius: '6px',
-                          background: isChecked ? 'var(--bg-tertiary, #16162a)' : 'transparent',
-                          fontSize: '0.78rem',
-                          border: isChecked ? '1px solid var(--color-primary, #e53e3e33)' : '1px solid transparent',
-                        }}
-                      >
+                      <div key={t.path} className={`${styles.itemRow} ${isChecked ? styles.itemRowOn : ''}`}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1, cursor: 'pointer' }}>
                           <input
                             type="checkbox"
@@ -490,43 +456,23 @@ export function NucleiSection({ data, updateField, onRun }: NucleiSectionProps) 
                                 updateField('nucleiSelectedCustomTemplates', [...current, t.path])
                               }
                             }}
-                            style={{ accentColor: 'var(--color-primary, #e53e3e)', cursor: 'pointer', flexShrink: 0 }}
                           />
-                          <span
-                            style={{
-                              display: 'inline-block',
-                              padding: '1px 6px',
-                              borderRadius: '3px',
-                              fontSize: '0.7rem',
-                              fontWeight: 600,
-                              color: '#fff',
-                              background: SEVERITY_COLORS[t.severity] || SEVERITY_COLORS.unknown,
-                              flexShrink: 0,
-                            }}
-                          >
+                          <span className={`${styles.sevBadge} ${styles.sev}`} data-sev={t.severity}>
                             {t.severity}
                           </span>
-                          <span style={{ color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {t.id}
                           </span>
                           {t.name && (
-                            <span style={{ color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <span className={styles.itemMeta} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               - {t.name}
                             </span>
                           )}
                         </label>
                         <button
                           type="button"
+                          className={styles.removeButton}
                           onClick={() => handleTemplateDelete(t.path)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            color: 'var(--text-tertiary)',
-                            padding: '2px',
-                            flexShrink: 0,
-                            marginLeft: '8px',
-                          }}
                           title={`Delete ${t.file}`}
                         >
                           <Trash2 size={13} />
@@ -560,8 +506,8 @@ export function NucleiSection({ data, updateField, onRun }: NucleiSectionProps) 
               />
             </div>
             {data.nucleiDastMode && (
-              <div className={styles.shodanWarning}>
-                <AlertTriangle size={14} />
+              <div className={`${styles.callout} ${styles.calloutInfo}`}>
+                <Info size={16} />
                 <div>
                   <strong>How the two passes work.</strong> Pass 1 (detection) runs your full configuration: severities, tags, custom templates, the whole ~8000-template corpus minus what you exclude. Pass 2 (DAST) runs only the ~250 templates under <code>dast/</code> with <code>-dast</code> forced on, and ignores tag/template filters because those filters would empty-intersect with the DAST set and fatal with <em>&ldquo;no templates provided for scan.&rdquo;</em>
                   <br /><br />

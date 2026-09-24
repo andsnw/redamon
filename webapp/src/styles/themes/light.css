@@ -49,6 +49,8 @@
   --form-success: var(--color-green-800);
   --form-warning: var(--color-amber-800);
   --form-danger: var(--color-red-700);
+  --form-passive: var(--color-cyan-800);
+  --form-high: var(--color-orange-800);
   --form-toggle-off-bg: var(--color-gray-400);
   --form-toggle-off-border: var(--color-gray-400);
   --form-toggle-knob: var(--color-white);
@@ -138,6 +140,8 @@
     --form-success: var(--color-green-800);
     --form-warning: var(--color-amber-800);
     --form-danger: var(--color-red-700);
+    --form-passive: var(--color-cyan-800);
+    --form-high: var(--color-orange-800);
     --form-toggle-off-bg: var(--color-gray-400);
     --form-toggle-off-border: var(--color-gray-400);
     --form-toggle-knob: var(--color-white);

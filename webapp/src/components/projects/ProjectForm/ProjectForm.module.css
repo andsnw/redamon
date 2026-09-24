@@ -1794,7 +1794,11 @@
    which paint fields in the same shade as the panel they sit in.
    ============================================================================= */
 
+/* The 12px base is for text that carries no class of its own (a checkbox's
+   label, an inline note), which otherwise inherits the body's 14px and towers
+   over the labelled fields around it. */
 .formSkin {
+  font-size: var(--text-xs);
   background: var(--form-surface);
   border-color: var(--form-panel-border);
   color: var(--form-ink);
@@ -1859,8 +1863,8 @@
 .formSkin code {
   padding: 0 4px;
   font-family: var(--font-mono);
-  font-size: 0.92em;
-  color: var(--form-ink);
+  font-size: 0.85em;
+  color: var(--form-ink-emphasis);
   background: var(--form-field-bg);
   border: 1px solid var(--form-panel-border);
   border-radius: 3px;
@@ -1894,6 +1898,26 @@
 
 .formSkin .subSectionTitle + .toggleRow {
   padding-top: 0;
+}
+
+/* Controls stay level across a row. Each field group lays its label, control
+   and hints on the row's shared tracks (subgrid), so a label that wraps to two
+   lines lowers the whole row rather than only its own input, and every label
+   sits on its control. Four tracks fit label, control, hint and a time
+   estimate. A group with more children keeps its own flow: a subgrid has no
+   implicit rows, so a fifth child would be drawn over the fourth. */
+.formSkin .fieldRow > .fieldGroup {
+  display: grid;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+}
+
+.formSkin .fieldRow > .fieldGroup > .fieldLabel {
+  align-self: end;
+}
+
+.formSkin .fieldRow > .fieldGroup:has(> :nth-child(5)) {
+  display: flex;
 }
 
 /* ---- Fields ---- */
@@ -2265,4 +2289,328 @@
   color: var(--form-ink);
   background: color-mix(in srgb, var(--form-focus) 12%, var(--form-field-bg));
   border-color: var(--form-focus);
+}
+
+/* ---- Skin coverage for the rest of the recon sections ---- */
+
+.formSkin .toggleRowCompact {
+  border-bottom-color: var(--form-divider);
+}
+
+.formSkin .toggleRowCompactLabel {
+  font-size: 11px;
+  color: var(--form-ink-muted);
+}
+
+.formSkin .toggleLabelLg {
+  font-size: var(--text-xs);
+  color: var(--form-ink);
+}
+
+.formSkin .subSectionTitleCollapsible {
+  color: var(--form-ink);
+}
+
+.formSkin .subSectionTitleCollapsible:hover {
+  color: var(--form-ink-muted);
+}
+
+.formSkin .sectionRequirement {
+  font-size: 11px;
+  color: var(--form-ink-muted);
+}
+
+.formSkin .fieldHintWarning {
+  font-size: 11px;
+  color: var(--form-danger);
+}
+
+.formSkin .timeEstimate {
+  color: var(--form-warning);
+}
+
+.formSkin .apiKeyMissing,
+.formSkin .apiKeyMissing:hover {
+  color: var(--form-danger);
+}
+
+.formSkin .nodeInfoIcon,
+.formSkin .nodeInfoIcon:hover {
+  color: var(--form-success);
+}
+
+.formSkin a {
+  color: var(--form-info);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.formSkin :global(.checkboxLabel) {
+  color: var(--form-ink);
+}
+
+.formSkin :global(.checkbox) {
+  background-color: var(--form-field-bg);
+  border-color: var(--form-field-border);
+}
+
+.formSkin :global(.checkbox):checked {
+  background-color: var(--form-focus);
+  border-color: var(--form-focus);
+}
+
+.formSkin input[type="radio"],
+.formSkin input[type="range"] {
+  accent-color: var(--form-focus);
+}
+
+/* Passive/Active tags: the 400-level cyan and red were chosen for the dark
+   header and fall to ~1.8:1 on a light one. The tint stays at 8%: every point
+   of it costs contrast, and at 9px these need the full 4.5:1. */
+.formSkin .badgePassive {
+  color: var(--form-passive);
+  background: color-mix(in srgb, var(--form-passive) 8%, transparent);
+  border-color: color-mix(in srgb, var(--form-passive) 40%, transparent);
+}
+
+.formSkin .badgeActive {
+  color: var(--form-danger);
+  background: color-mix(in srgb, var(--form-danger) 8%, transparent);
+  border-color: color-mix(in srgb, var(--form-danger) 40%, transparent);
+}
+
+/* ---- Buttons ----
+   One tinted-button recipe: the accent as ink and edge over a tint of itself.
+   Disabled drops the colour for neutral grey at full opacity, since a faded
+   tint is unreadable on either theme. */
+.actionButton {
+  --btn-accent: var(--form-info);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--btn-accent);
+  background: color-mix(in srgb, var(--btn-accent) 12%, var(--form-field-bg));
+  border: 1px solid color-mix(in srgb, var(--btn-accent) 45%, transparent);
+  border-radius: var(--radius-default);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.actionButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--btn-accent) 22%, var(--form-field-bg));
+  border-color: var(--btn-accent);
+}
+
+.actionButton:focus-visible {
+  outline: 2px solid var(--btn-accent);
+  outline-offset: 2px;
+}
+
+.actionButton:disabled {
+  opacity: 1;
+  color: var(--form-ink-faint);
+  background: var(--form-field-disabled-bg);
+  border-color: var(--form-field-border);
+  cursor: not-allowed;
+}
+
+.actionButtonSuccess {
+  --btn-accent: var(--form-success);
+}
+
+.actionButtonWarning {
+  --btn-accent: var(--form-warning);
+}
+
+/* The "Run partial recon" button in a tool's section header. */
+.runPartialButton {
+  composes: actionButton actionButtonSuccess;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.textButton {
+  width: fit-content;
+  padding: 0;
+  font-size: 11px;
+  color: var(--form-info);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.textButton:hover {
+  text-decoration: underline;
+}
+
+.textButtonDanger {
+  color: var(--form-danger);
+}
+
+/* Icon-only remove control on a list row. */
+.removeButton {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 2px;
+  color: var(--form-ink-faint);
+  background: none;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.removeButton:hover:not(:disabled) {
+  color: var(--form-danger);
+}
+
+.helpButton {
+  display: inline-flex;
+  padding: 0;
+  color: var(--form-ink-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.helpButton:hover {
+  color: var(--form-ink);
+}
+
+/* ---- Item rows: uploaded files, custom templates ---- */
+
+.itemList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.itemRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: var(--text-xs);
+  color: var(--form-ink);
+  background: var(--form-field-bg);
+  border: 1px solid var(--form-field-border);
+  border-radius: var(--radius-default);
+}
+
+.itemRowOn {
+  background: color-mix(in srgb, var(--form-focus) 10%, var(--form-field-bg));
+  border-color: var(--form-focus);
+}
+
+.itemMeta {
+  color: var(--form-ink-muted);
+}
+
+.itemEmpty {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--form-ink-muted);
+}
+
+.inlineError {
+  font-size: 11px;
+  color: var(--form-danger);
+}
+
+/* Scoped so it out-ranks `.formSkin .fieldHint` when both sit on one element. */
+.formSkin .fieldHintCaution {
+  color: var(--form-warning);
+}
+
+/* ---- Chips and badges ---- */
+
+.chipGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  --chip-accent: var(--form-focus);
+  padding: 4px 10px;
+  font-size: var(--text-xs);
+  color: var(--form-ink-muted);
+  background: var(--form-field-bg);
+  border: 1px solid var(--form-field-border);
+  border-radius: var(--radius-default);
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--form-field-border-hover);
+}
+
+.chipOn,
+.chipOn:hover {
+  font-weight: var(--font-medium);
+  color: var(--chip-accent);
+  background: color-mix(in srgb, var(--chip-accent) 12%, var(--form-field-bg));
+  border-color: var(--chip-accent);
+}
+
+/* Severity colours for a chip or badge carrying data-sev. */
+.sev {
+  --chip-accent: var(--form-ink-muted);
+}
+
+.sev[data-sev="critical"] {
+  --chip-accent: var(--form-danger);
+}
+
+.sev[data-sev="high"] {
+  --chip-accent: var(--form-high);
+}
+
+.sev[data-sev="medium"] {
+  --chip-accent: var(--form-warning);
+}
+
+.sev[data-sev="low"] {
+  --chip-accent: var(--form-success);
+}
+
+.sev[data-sev="info"] {
+  --chip-accent: var(--form-info);
+}
+
+.sevBadge {
+  display: inline-block;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+  text-transform: lowercase;
+  color: var(--chip-accent);
+  background: color-mix(in srgb, var(--chip-accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chip-accent) 40%, transparent);
+  border-radius: 3px;
+}
+
+.metaBadge {
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: var(--font-medium);
+  color: var(--form-ink-muted);
+  background: var(--form-field-bg);
+  border: 1px solid var(--form-field-border);
+  border-radius: 3px;
+}
+
+.stateBadge {
+  font-size: 9px;
+  font-weight: var(--font-semibold);
+  color: var(--form-success);
 }

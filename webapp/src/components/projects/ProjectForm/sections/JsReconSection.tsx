@@ -390,7 +390,7 @@ export function JsReconSection({ data, updateField, projectId, mode, onRun }: Js
   }
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <Search size={16} />
@@ -404,13 +404,7 @@ export function JsReconSection({ data, updateField, projectId, mode, onRun }: Js
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRun() }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                padding: '3px 8px', borderRadius: '4px',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                color: '#22c55e', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
-              }}
+              className={styles.runPartialButton}
               title="Run JS Recon Scanner"
             >
               <Play size={10} /> Run partial recon
@@ -732,7 +726,7 @@ export function JsReconSection({ data, updateField, projectId, mode, onRun }: Js
                       </p>
 
                       {uploadError && (
-                        <p style={{ color: 'var(--error)', fontSize: 'var(--text-xs)', marginBottom: '8px' }}>{uploadError}</p>
+                        <p className={styles.inlineError}>{uploadError}</p>
                       )}
 
                       {CUSTOM_FILE_TYPES.map(({ key, label, accept, hint, guide }) => (
@@ -742,7 +736,7 @@ export function JsReconSection({ data, updateField, projectId, mode, onRun }: Js
                             <button
                               type="button"
                               onClick={() => setGuideModal(key)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 0, display: 'flex' }}
+                              className={styles.helpButton}
                               title={`Format guide for ${label}`}
                             >
                               <HelpCircle size={13} />
@@ -772,15 +766,15 @@ export function JsReconSection({ data, updateField, projectId, mode, onRun }: Js
                             </button>
                             {customFiles[key] && (
                               <>
-                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                                <span className={styles.itemMeta}>
                                   <FileText size={12} style={{ display: 'inline', marginRight: '4px' }} />
                                   {customFiles[key]!.name} ({(customFiles[key]!.size / 1024).toFixed(1)} KB)
                                 </span>
                                 <button
                                   type="button"
-                                  className="secondaryButton"
+                                  className={styles.removeButton}
                                   onClick={() => handleCustomFileDelete(key)}
-                                  style={{ fontSize: 'var(--text-xs)', padding: '4px 6px', color: 'var(--error)' }}
+                                  title={`Delete ${customFiles[key]!.name}`}
                                 >
                                   <Trash2 size={12} />
                                 </button>
@@ -826,18 +820,22 @@ export function JsReconSection({ data, updateField, projectId, mode, onRun }: Js
                   </button>
 
                   {uploadedFiles.length > 0 && (
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                      <p style={{ marginBottom: '4px' }}>{uploadedFiles.length} file(s) uploaded ({(uploadedFiles.reduce((sum, f) => sum + f.size, 0) / 1024).toFixed(0)} KB total)</p>
+                    <div className={styles.itemList}>
+                      <p className={styles.fieldHint}>{uploadedFiles.length} file(s) uploaded ({(uploadedFiles.reduce((sum, f) => sum + f.size, 0) / 1024).toFixed(0)} KB total)</p>
                       {uploadedFiles.map(f => (
-                        <div key={f.name} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0' }}>
-                          <FileText size={11} />
-                          <span>{f.name} ({(f.size / 1024).toFixed(1)} KB)</span>
+                        <div key={f.name} className={styles.itemRow}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                            <FileText size={12} />
+                            {f.name}
+                            <span className={styles.itemMeta}>({(f.size / 1024).toFixed(1)} KB)</span>
+                          </span>
                           <button
                             type="button"
+                            className={styles.removeButton}
                             onClick={() => handleJsFileDelete(f.name)}
-                            style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', padding: '2px' }}
+                            title={`Delete ${f.name}`}
                           >
-                            <Trash2 size={11} />
+                            <Trash2 size={12} />
                           </button>
                         </div>
                       ))}
@@ -881,7 +879,7 @@ export function JsReconSection({ data, updateField, projectId, mode, onRun }: Js
                 marginBottom: '16px',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
-                border: '1px solid var(--border-primary, #2a2a4a)',
+                border: '1px solid var(--border-default)',
               }}>
                 {guide.example}
               </pre>
@@ -911,7 +909,7 @@ export function JsReconSection({ data, updateField, projectId, mode, onRun }: Js
         }
       >
         <div style={{ fontSize: 'var(--text-sm)', lineHeight: '1.6' }}>
-          <p style={{ color: 'var(--error)', marginBottom: '12px', fontWeight: 500 }}>
+          <p style={{ color: 'var(--form-danger)', marginBottom: '12px', fontWeight: 500 }}>
             The file was not uploaded because it does not match the expected format.
           </p>
           <pre style={{
@@ -921,7 +919,7 @@ export function JsReconSection({ data, updateField, projectId, mode, onRun }: Js
             fontSize: 'var(--text-xs)',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
-            border: '1px solid var(--error, #ef4444)',
+            border: '1px solid var(--form-danger)',
           }}>
             {validationError}
           </pre>

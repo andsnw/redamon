@@ -58,7 +58,7 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
   const noKey = (tool: keyof KeyStatus) => !keyStatus || !keyStatus[tool]
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <ShieldCheck size={16} />
@@ -72,13 +72,7 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRun() }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                padding: '3px 8px', borderRadius: '4px',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                color: '#22c55e', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
-              }}
+              className={styles.runPartialButton}
               title="Run OSINT Enrichment"
             >
               <Play size={10} /> Run partial recon
@@ -118,8 +112,8 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                   metadata for discovered IPs. Requires API ID + Secret pair.
                 </p>
                 {noKey('censys') && (
-                  <div className={styles.shodanWarning}>
-                    <Info size={13} />
+                  <div className={`${styles.callout} ${styles.calloutWarning}`}>
+                    <Info size={16} />
                     No Censys API credentials - add API Token &amp; Organization ID in Global Settings to enable.
                   </div>
                 )}
@@ -158,8 +152,8 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                   or discovered IPs. Returns banners, ports, technologies, and TLS certificates.
                 </p>
                 {noKey('fofa') && (
-                  <div className={styles.shodanWarning}>
-                    <Info size={13} />
+                  <div className={`${styles.callout} ${styles.calloutWarning}`}>
+                    <Info size={16} />
                     No FOFA API key - add it in Global Settings to enable.
                   </div>
                 )}
@@ -244,8 +238,8 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                   service banners on discovered IPs and the target domain.
                 </p>
                 {noKey('netlas') && (
-                  <div className={styles.shodanWarning}>
-                    <Info size={13} />
+                  <div className={`${styles.callout} ${styles.calloutWarning}`}>
+                    <Info size={16} />
                     No Netlas API key - add it in Global Settings to enable.
                   </div>
                 )}
@@ -284,8 +278,8 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                   labels for the target domain and discovered IPs. Free tier: 4 req/min. Add an API key in Global Settings to enable.
                 </p>
                 {noKey('virusTotal') && (
-                  <div className={styles.shodanWarning}>
-                    <Info size={13} />
+                  <div className={`${styles.callout} ${styles.calloutWarning}`}>
+                    <Info size={16} />
                     No VirusTotal API key - add it in Global Settings to enable.
                   </div>
                 )}
@@ -324,8 +318,8 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                   technologies associated with discovered IPs and the target domain.
                 </p>
                 {noKey('zoomEye') && (
-                  <div className={styles.shodanWarning}>
-                    <Info size={13} />
+                  <div className={`${styles.callout} ${styles.calloutWarning}`}>
+                    <Info size={16} />
                     No ZoomEye API key - add it in Global Settings to enable.
                   </div>
                 )}
@@ -376,8 +370,8 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                   from Criminal IP threat intelligence platform.
                 </p>
                 {noKey('criminalIp') && (
-                  <div className={styles.shodanWarning}>
-                    <Info size={13} />
+                  <div className={`${styles.callout} ${styles.calloutWarning}`}>
+                    <Info size={16} />
                     No Criminal IP API key - add it in Global Settings to enable.
                   </div>
                 )}
@@ -423,13 +417,7 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onRunUncover() }}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '4px',
-                      padding: '3px 8px', borderRadius: '4px',
-                      border: '1px solid rgba(34, 197, 94, 0.3)',
-                      backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                      color: '#22c55e', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
-                    }}
+                    className={styles.runPartialButton}
                     title="Run Uncover"
                   >
                     <Play size={10} /> Run partial recon

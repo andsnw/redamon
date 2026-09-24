@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type CSSProperties } from 'react'
+import { useState } from 'react'
 import { ChevronDown, Lock, Play } from 'lucide-react'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import type { Project } from '@prisma/client'
@@ -16,18 +16,11 @@ interface TlsxSectionProps {
   onRun?: () => void
 }
 
-const codeStyle: CSSProperties = {
-  fontSize: '0.85em',
-  padding: '1px 4px',
-  backgroundColor: 'rgba(255,255,255,0.06)',
-  borderRadius: '3px',
-}
-
 export function TlsxSection({ data, updateField, onRun }: TlsxSectionProps) {
   const [isOpen, setIsOpen] = useState(true)
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <Lock size={16} />
@@ -41,13 +34,7 @@ export function TlsxSection({ data, updateField, onRun }: TlsxSectionProps) {
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRun() }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                padding: '3px 8px', borderRadius: '4px',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                color: '#22c55e', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
-              }}
+              className={styles.runPartialButton}
               title="Run TLS Certificate Grab"
             >
               <Play size={10} /> Run partial recon
@@ -71,8 +58,8 @@ export function TlsxSection({ data, updateField, onRun }: TlsxSectionProps) {
           <p className={styles.sectionDescription}>
             Grabs the <strong>TLS certificate</strong> on every open non-HTTP port with a single handshake
             (SMTPS 465, IMAPS 993, POP3S 995, LDAPS 636, FTPS 990, and any odd TLS port naabu found) using
-            <code style={codeStyle}> tlsx</code>. Fills the gap left by the HTTP probe, which only grabs certs
-            on the five HTTPS ports it dials. Writes <code style={codeStyle}>Certificate</code> nodes with
+            <code> tlsx</code>. Fills the gap left by the HTTP probe, which only grabs certs
+            on the five HTTPS ports it dials. Writes <code>Certificate</code> nodes with
             issuer / SAN / validity / posture, links them to the IP, and feeds SAN hostnames back into the scan.
             Runs before the HTTP probe so discovered hostnames become probe targets. Default on and quiet.
           </p>
@@ -147,7 +134,7 @@ export function TlsxSection({ data, updateField, onRun }: TlsxSectionProps) {
                     min={1}
                     max={100000}
                   />
-                  <span className={styles.fieldHint}>Hard cap on <code style={codeStyle}>ip:port</code> pairs scanned.</span>
+                  <span className={styles.fieldHint}>Hard cap on <code>ip:port</code> pairs scanned.</span>
                 </div>
                 <div className={styles.fieldGroup}>
                   <label className={styles.fieldLabel}>Max SAN hostnames injected</label>

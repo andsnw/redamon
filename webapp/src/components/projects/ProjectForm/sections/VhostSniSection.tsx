@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type CSSProperties } from 'react'
+import { useState } from 'react'
 import { ChevronDown, Network, Play } from 'lucide-react'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import type { Project } from '@prisma/client'
@@ -15,13 +15,6 @@ interface VhostSniSectionProps {
   onRun?: () => void
 }
 
-const codeStyle: CSSProperties = {
-  fontSize: '0.85em',
-  padding: '1px 4px',
-  backgroundColor: 'rgba(255,255,255,0.06)',
-  borderRadius: '3px',
-}
-
 export function VhostSniSection({ data, updateField, onRun }: VhostSniSectionProps) {
   const [isOpen, setIsOpen] = useState(true)
 
@@ -31,7 +24,7 @@ export function VhostSniSection({ data, updateField, onRun }: VhostSniSectionPro
     .filter(l => l && !l.startsWith('#')).length
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.formSkin}`}>
       <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
         <h2 className={styles.sectionTitle}>
           <Network size={16} />
@@ -45,13 +38,7 @@ export function VhostSniSection({ data, updateField, onRun }: VhostSniSectionPro
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRun() }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                padding: '3px 8px', borderRadius: '4px',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                color: '#22c55e', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
-              }}
+              className={styles.runPartialButton}
               title="Run VHost & SNI Enumeration"
             >
               <Play size={10} /> Run partial recon
@@ -74,10 +61,10 @@ export function VhostSniSection({ data, updateField, onRun }: VhostSniSectionPro
         <div className={styles.sectionContent}>
           <p className={styles.sectionDescription}>
             Discovers <strong>hidden virtual hosts</strong> on every target IP by probing each candidate
-            hostname with two crafted curl requests: an <strong>L7 test</strong> (overrides the HTTP <code style={codeStyle}>Host:</code> header)
-            and an <strong>L4 test</strong> (forces the TLS SNI via <code style={codeStyle}>--resolve</code>).
-            Anomalies versus the bare-IP baseline are emitted as <code style={codeStyle}>Vulnerability</code> nodes
-            with <code style={codeStyle}>source=&quot;vhost_sni_enum&quot;</code>. L7 catches classic Apache/Nginx vhosts.
+            hostname with two crafted curl requests: an <strong>L7 test</strong> (overrides the HTTP <code>Host:</code> header)
+            and an <strong>L4 test</strong> (forces the TLS SNI via <code>--resolve</code>).
+            Anomalies versus the bare-IP baseline are emitted as <code>Vulnerability</code> nodes
+            with <code>source=&quot;vhost_sni_enum&quot;</code>. L7 catches classic Apache/Nginx vhosts.
             L4 catches modern reverse proxies (k8s ingress, Traefik, Cloudflare) that route at the TLS layer.
           </p>
 
@@ -91,7 +78,7 @@ export function VhostSniSection({ data, updateField, onRun }: VhostSniSectionPro
                   <div>
                     <div className={styles.toggleLabel}>L7 test (HTTP Host header)</div>
                     <div className={styles.toggleDescription}>
-                      Sends <code style={codeStyle}>curl -H &quot;Host: candidate&quot; https://IP</code>. Catches classic vhost routing.
+                      Sends <code>curl -H &quot;Host: candidate&quot; https://IP</code>. Catches classic vhost routing.
                     </div>
                   </div>
                   <Toggle
@@ -104,7 +91,7 @@ export function VhostSniSection({ data, updateField, onRun }: VhostSniSectionPro
                   <div>
                     <div className={styles.toggleLabel}>L4 test (TLS SNI)</div>
                     <div className={styles.toggleDescription}>
-                      Sends <code style={codeStyle}>curl --resolve candidate:port:IP https://candidate</code>. Catches ingress/CDN routing.
+                      Sends <code>curl --resolve candidate:port:IP https://candidate</code>. Catches ingress/CDN routing.
                     </div>
                   </div>
                   <Toggle
@@ -135,7 +122,7 @@ export function VhostSniSection({ data, updateField, onRun }: VhostSniSectionPro
                   <div>
                     <div className={styles.toggleLabel}>Use default wordlist</div>
                     <div className={styles.toggleDescription}>
-                      ~2,300 curated admin / dev / staging / internal / modern-stack prefixes from <code style={codeStyle}>recon/wordlists/vhost-common.txt</code>. Each prefix expands as <code style={codeStyle}>{`{prefix}.{target_apex}`}</code>.
+                      ~2,300 curated admin / dev / staging / internal / modern-stack prefixes from <code>recon/wordlists/vhost-common.txt</code>. Each prefix expands as <code>{`{prefix}.{target_apex}`}</code>.
                     </div>
                   </div>
                   <Toggle
@@ -159,7 +146,7 @@ export function VhostSniSection({ data, updateField, onRun }: VhostSniSectionPro
                   style={{ width: '100%', minHeight: '160px', fontFamily: 'monospace', fontSize: '12px' }}
                 />
                 <div className={styles.fieldHint}>
-                  Bare prefixes (<code style={codeStyle}>admin</code>) are expanded as <code style={codeStyle}>{`admin.{target_apex}`}</code>. Full hostnames (containing a dot) are used as-is. Combined with graph candidates and the default wordlist, then deduped.
+                  Bare prefixes (<code>admin</code>) are expanded as <code>{`admin.{target_apex}`}</code>. Full hostnames (containing a dot) are used as-is. Combined with graph candidates and the default wordlist, then deduped.
                 </div>
               </div>
 
@@ -175,7 +162,7 @@ export function VhostSniSection({ data, updateField, onRun }: VhostSniSectionPro
                     min={1}
                     max={30}
                   />
-                  <span className={styles.fieldHint}>curl <code style={codeStyle}>--connect-timeout</code>. Total per-request budget is 3x this.</span>
+                  <span className={styles.fieldHint}>curl <code>--connect-timeout</code>. Total per-request budget is 3x this.</span>
                 </div>
                 <div className={styles.fieldGroup}>
                   <label className={styles.fieldLabel}>Concurrency</label>
@@ -222,7 +209,7 @@ export function VhostSniSection({ data, updateField, onRun }: VhostSniSectionPro
                 <div>
                   <div className={styles.toggleLabel}>Inject discovered hidden vhosts as BaseURLs</div>
                   <div className={styles.toggleDescription}>
-                    When a hidden vhost is confirmed, create a <code style={codeStyle}>BaseURL</code> node so a follow-up partial recon (Katana, Nuclei) can scan it. Recommended.
+                    When a hidden vhost is confirmed, create a <code>BaseURL</code> node so a follow-up partial recon (Katana, Nuclei) can scan it. Recommended.
                   </div>
                 </div>
                 <Toggle
