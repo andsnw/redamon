@@ -766,6 +766,11 @@ class OsintMixin:
         domain = recon_data.get("domain", "")
         if not external_domains:
             return
+        # Each module judged "external" against the one root it scanned, so in a
+        # Domain batch a host under a SIBLING root lands here too. It is not
+        # foreign: it joins that root as a Subdomain (a sibling's apex is its
+        # Domain node already).
+        roots = attach_roots(recon_data)
 
         print(f"\n[GRAPH] External Domains: {len(external_domains)} foreign domains")
 
@@ -774,6 +779,22 @@ class OsintMixin:
             for ed in external_domains:
                 ed_domain = ed.get("domain", "")
                 if not ed_domain:
+                    continue
+                root = root_for_host(ed_domain, roots)
+                if root:
+                    if ed_domain.strip().lower() != root.strip().lower():
+                        try:
+                            session.run("""
+                                MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                                MERGE (s:Subdomain {name: $name, user_id: $uid, project_id: $pid})
+                                ON CREATE SET s.source = $source, s.discovered_at = datetime(),
+                                              s.updated_at = datetime()
+                                MERGE (d)-[:HAS_SUBDOMAIN]->(s)
+                                MERGE (s)-[:BELONGS_TO]->(d)
+                            """, domain=root, name=ed_domain.strip().lower(), uid=user_id, pid=project_id,
+                                source=(ed.get("sources") or ["external_reference"])[0])
+                        except Exception as e:
+                            logger.warning(f"Cross-root Subdomain graph error for {ed_domain}: {e}")
                     continue
                 try:
                     result = session.run("""

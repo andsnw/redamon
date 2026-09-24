@@ -143,5 +143,34 @@ class TestCreateUserInputNode(unittest.TestCase):
         self.assertEqual(_user_input_root(ROOTS, ["unrelated.example"]), "alpha.test")
 
 
+class TestEnsureRootDomains(unittest.TestCase):
+    """The full batch clears the graph once, then runs groups in order; the later
+    groups' Domain nodes are restored up front so cross-root writes can link."""
+
+    def _mixin(self):
+        from graph_db.mixins.recon.domain_mixin import DomainMixin
+        m = DomainMixin()
+        session = MagicMock()
+        session.__enter__ = MagicMock(return_value=session)
+        session.__exit__ = MagicMock(return_value=False)
+        session.run.return_value.single.return_value = {"seeded": 3}
+        m.driver = MagicMock()
+        m.driver.session.return_value = session
+        return m, session
+
+    def test_every_root_is_merged_on_the_tenant_key(self):
+        m, session = self._mixin()
+        self.assertEqual(m.ensure_root_domains(ROOTS + ["", "  "], "u1", "p1"), 3)
+        query, params = session.run.call_args.args[0], session.run.call_args.kwargs
+        self.assertIn("MERGE (d:Domain {name: name, user_id: $user_id, project_id: $project_id})", query)
+        self.assertEqual(params["names"], ROOTS)
+        self.assertEqual((params["user_id"], params["project_id"]), ("u1", "p1"))
+
+    def test_no_roots_writes_nothing(self):
+        m, session = self._mixin()
+        self.assertEqual(m.ensure_root_domains([], "u1", "p1"), 0)
+        session.run.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

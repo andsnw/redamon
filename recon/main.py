@@ -2040,6 +2040,27 @@ def _record_node_filter_metadata(stats):
         print(f"[!][NODE-FILTER] could not record the sweep in the output file: {e}")
 
 
+def _seed_batch_root_domains(groups: list) -> None:
+    """Restore every batch root's Domain node after the one-time graph clear.
+
+    Groups run in order, so without this a later group's root has no Domain node
+    while an earlier group's writers attach a host found under it
+    (all_project_roots), and that Subdomain would be left unlinked. Never raises:
+    a missing link is recoverable, a failed scan is not.
+    """
+    if not UPDATE_GRAPH_DB:
+        return
+    roots = [str(g.get('rootDomain') or '').strip() for g in groups if isinstance(g, dict)]
+    try:
+        from graph_db import Neo4jClient
+        with Neo4jClient() as graph_client:
+            if graph_client.verify_connection():
+                seeded = graph_client.ensure_root_domains(roots, USER_ID, PROJECT_ID)
+                print(f"[*][Batch] Domain nodes ready for {seeded} root(s)")
+    except Exception as e:  # noqa: BLE001 - housekeeping must not fail the scan
+        print(f"[!][Batch] Could not seed the batch's Domain nodes: {e}")
+
+
 def run_domain_batch(groups: list, start_time) -> int:
     """Walk the operator-approved domain groups, one after another.
 
@@ -2076,6 +2097,7 @@ def run_domain_batch(groups: list, start_time) -> int:
     # checks the file exists) would scan the last run's targets.
     initialize_batch_canonical(
         OUTPUT_DIR, PROJECT_ID, [str(g.get('rootDomain') or '') for g in groups])
+    _seed_batch_root_domains(groups)
     print()
 
     failed = []

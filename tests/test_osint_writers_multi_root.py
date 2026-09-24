@@ -192,6 +192,42 @@ class TestUncover(unittest.TestCase):
         self.assertEqual(w.attached(), {"shop.beta.test": "beta.test", "www.alpha.test": "alpha.test"})
 
 
+class TestExternalDomains(unittest.TestCase):
+    """Each module judged "external" against the one root it scanned, so in a batch
+    a host under a sibling root reached the aggregated external list."""
+
+    AGGREGATED = [
+        {"domain": "api.beta.test", "sources": ["js_recon"]},   # under a sibling root
+        {"domain": "gamma.test", "sources": ["http_probe"]},    # a sibling's apex
+        {"domain": "cdn.thirdparty.example", "sources": ["gau"]},
+    ]
+
+    def _write(self, recon):
+        w = _Writer()
+        w.update_graph_from_external_domains(recon, "u1", "p1")
+        return w
+
+    def test_a_sibling_roots_host_becomes_its_subdomain(self):
+        w = self._write({"domain": "alpha.test", "all_project_roots": ROOTS,
+                         "external_domains_aggregated": self.AGGREGATED})
+        self.assertEqual(w.attached().get("api.beta.test"), "beta.test")
+        merged = [p for q, p in w.session.calls if "MERGE (s:Subdomain" in q]
+        self.assertEqual(merged[0]["source"], "js_recon")
+
+    def test_only_a_foreign_host_is_an_external_domain(self):
+        w = self._write({"domain": "alpha.test", "all_project_roots": ROOTS,
+                         "external_domains_aggregated": self.AGGREGATED})
+        ext = [p["ed_domain"] for q, p in w.session.calls if "MERGE (ed:ExternalDomain" in q]
+        self.assertEqual(ext, ["cdn.thirdparty.example"])
+        self.assertNotIn("gamma.test", w.attached())   # an apex is its Domain, not a Subdomain
+
+    def test_a_single_domain_project_keeps_every_foreign_host_external(self):
+        w = self._write({"domain": "alpha.test", "external_domains_aggregated": self.AGGREGATED})
+        ext = [p["ed_domain"] for q, p in w.session.calls if "MERGE (ed:ExternalDomain" in q]
+        self.assertEqual(ext, ["api.beta.test", "gamma.test", "cdn.thirdparty.example"])
+        self.assertEqual(w.attached(), {})
+
+
 class TestFullPipelineParity(unittest.TestCase):
     """The full pipeline scans one Domain-batch group at a time: recon_data has
     `domain` = the group root and no `domains`, but carries the whole batch in
