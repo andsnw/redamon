@@ -114,8 +114,8 @@ ORACLE = {
     "KEEP nuclei high and critical": ("vuln.nuclei", lambda n: severity(n) in ("high", "critical")),
     "KEEP security checks high": ("vuln.security_check", lambda n: severity(n) in ("high", "critical")),
     "KEEP JS high confidence": ("js.finding", lambda n: text(n, "confidence") == "high"),
-    "NF12 OSV all": ("vuln.osv", lambda n: True),
-    "NF13 malicious packages all": ("malpackage", lambda n: True),
+    "NF12 OSV all": ("vuln.osv", lambda n: text(n, "advisory_id") is not None),
+    "NF13 malicious packages all": ("malpackage", lambda n: text(n, "advisory_id") is not None),
 }
 
 

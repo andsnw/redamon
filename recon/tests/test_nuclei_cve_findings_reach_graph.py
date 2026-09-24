@@ -140,6 +140,17 @@ class TestCveClassifiedNucleiFinding(unittest.TestCase):
         [props] = _vuln_props(client)
         self.assertEqual(props["cves"], [])
 
+    def test_lowercase_cve_id_list_reaches_the_graph(self):
+        # Nuclei v3's real JSONL: classification.cve-id is a LOWERCASE list. A
+        # case-sensitive "CVE-" test dropped every CVE at parse time, so the
+        # graph's has_cve / cve_year / cve_ids filters never saw a nuclei CVE.
+        parsed = parse_nuclei_finding(_raw_nuclei_line(**{"cve-id": ["cve-2021-41773"], "cvss-score": 7.5}))
+        self.assertEqual([c["id"] for c in parsed["cves"]], ["CVE-2021-41773"])
+        client = _Client()
+        client.update_graph_from_vuln_scan(_recon(parsed), "u1", "p1")
+        [props] = _vuln_props(client)
+        self.assertEqual(props["cves"], ["CVE-2021-41773"])
+
 
 class TestNucleiCveIds(unittest.TestCase):
 

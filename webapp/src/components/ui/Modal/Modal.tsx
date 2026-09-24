@@ -45,6 +45,7 @@ export function Modal({
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null)
   const previousActiveElement = useRef<HTMLElement | null>(null)
+  const pressStartedOnOverlay = useRef(false)
 
   // Handle escape key
   const handleKeyDown = useCallback(
@@ -57,10 +58,20 @@ export function Modal({
     [closeOnEscape, onClose]
   )
 
-  // Handle overlay click
+  const handleOverlayMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    pressStartedOnOverlay.current = e.target === e.currentTarget
+  }, [])
+
+  // A press that starts inside the dialog and is released over the backdrop
+  // gets its click dispatched to their common ancestor - the overlay. That
+  // happens on a text-selection drag, and on a plain click into a field when a
+  // password manager draws its icon over it. Only a press that began on the
+  // backdrop counts as "clicked outside".
   const handleOverlayClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (closeOnOverlayClick && e.target === e.currentTarget) {
+      const startedOnOverlay = pressStartedOnOverlay.current
+      pressStartedOnOverlay.current = false
+      if (closeOnOverlayClick && startedOnOverlay && e.target === e.currentTarget) {
         onClose()
       }
     },
@@ -73,8 +84,10 @@ export function Modal({
       // Store the currently focused element
       previousActiveElement.current = document.activeElement as HTMLElement
 
-      // Focus the modal
-      modalRef.current?.focus()
+      // An autoFocus field inside has already taken focus by now; keep it there.
+      if (!modalRef.current?.contains(document.activeElement)) {
+        modalRef.current?.focus()
+      }
 
       // Lock body scroll
       document.body.style.overflow = 'hidden'
@@ -101,6 +114,7 @@ export function Modal({
   const modalContent = (
     <div
       className={styles.overlay}
+      onMouseDown={handleOverlayMouseDown}
       onClick={handleOverlayClick}
       onKeyDown={handleKeyDown}
       role="presentation"
