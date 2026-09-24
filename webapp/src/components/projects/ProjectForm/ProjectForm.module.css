@@ -21,17 +21,103 @@
   background: #1a1c22;
 }
 
-:global([data-theme="light"]) .header {
-  background: #c8ccd3;
-  border-bottom-color: #cccfd6;
-}
-
 .header :global(.secondaryButton) {
   border-color: #555;
 }
 
 .header :global(.secondaryButton):hover {
   border-color: #888;
+}
+
+/* Light theme. The bar's global buttons were drawn for the dark bar: a
+   transparent outline, a green-500 label (1.4:1 on a mid-grey bar) and a
+   crimson primary ghosted to 50% when disabled (white label ~2.8:1). Here every
+   button wears one recipe so the row reads as a set, matching the ScanActions
+   buttons beside them: a fill (white, or its colour's 50 tint), a solid border
+   and 700-level ink. Disabled drops the colour for neutral grey at full
+   opacity, the graph toolbar's convention. */
+:global([data-theme="light"]) .header {
+  background: var(--bg-secondary);
+  border-bottom-color: var(--border-strong);
+}
+
+:global([data-theme="light"]) .header :global(.secondaryButton) {
+  background: var(--color-white);
+  border-color: var(--color-gray-400);
+  color: var(--color-gray-800);
+}
+
+:global([data-theme="light"]) .header :global(.secondaryButton):hover:not(:disabled) {
+  background: var(--color-gray-100);
+  border-color: var(--color-gray-600);
+  color: var(--color-gray-900);
+}
+
+:global([data-theme="light"]) .header :global(.reconStartButton) {
+  background: var(--color-green-50);
+  border-color: var(--color-green-700);
+  color: var(--color-green-700);
+}
+
+:global([data-theme="light"]) .header :global(.reconStartButton):hover:not(:disabled) {
+  background: var(--color-green-700);
+  border-color: var(--color-green-700);
+  color: var(--color-white);
+}
+
+:global([data-theme="light"]) .header :global(.reconStartButton):focus-visible {
+  outline-color: var(--color-green-700);
+}
+
+/* White on crimson-500 is 4.2:1; crimson-600 clears AA. The border matches the
+   fill so the primary is the same height as its bordered neighbours. */
+:global([data-theme="light"]) .header :global(.primaryButton) {
+  background: var(--color-crimson-600);
+  border: 1px solid var(--color-crimson-600);
+}
+
+:global([data-theme="light"]) .header :global(.primaryButton):hover:not(:disabled) {
+  background: var(--color-crimson-700);
+  border-color: var(--color-crimson-700);
+  filter: none;
+}
+
+/* One selector per rule, no comma lists: the CSS compiler emits a stray ")" on
+   the last item of a list whose items each hold two :global()s, and a browser
+   drops the whole rule over it. Hence three disabled rules, not one list. */
+:global([data-theme="light"]) .header :global(.secondaryButton):disabled {
+  opacity: 1;
+  background: var(--color-gray-100);
+  border-color: var(--color-gray-400);
+  color: var(--color-gray-500);
+}
+
+:global([data-theme="light"]) .header :global(.reconStartButton):disabled {
+  opacity: 1;
+  background: var(--color-gray-100);
+  border-color: var(--color-gray-400);
+  color: var(--color-gray-500);
+}
+
+:global([data-theme="light"]) .header :global(.primaryButton):disabled {
+  opacity: 1;
+  background: var(--color-gray-100);
+  border-color: var(--color-gray-400);
+  color: var(--color-gray-500);
+}
+
+/* The global primary paints its icon white explicitly, so it won't inherit. */
+:global([data-theme="light"]) .header :global(.primaryButton):disabled svg {
+  color: var(--color-gray-500);
+  stroke: var(--color-gray-500);
+}
+
+/* After the disabled rule on purpose, at equal specificity: a running recon
+   can also be disabled, and must keep its fill rather than grey out mid-run. */
+:global([data-theme="light"]) .header :global(.reconStartButton.reconStartButtonActive) {
+  background: var(--color-green-700);
+  border-color: var(--color-green-700);
+  color: var(--color-white);
 }
 
 .title {
