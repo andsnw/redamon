@@ -101,6 +101,20 @@ class TestSansAcrossRoots(unittest.TestCase):
         self.assertTrue(any("MERGE (c:Certificate" in q for q, _ in w.session.calls))
 
 
+class TestFullBatchGroupWrite(unittest.TestCase):
+    def test_a_full_batch_tlsx_write_does_not_orphan_a_sibling_roots_san(self):
+        """Bug: the tlsx writer took attach_roots, so a full batch group's write
+        (domain = the group root, all_project_roots = every root) created a
+        Subdomain for a SIBLING root's SAN. tlsx never links a Subdomain to its
+        Domain, so that node was an orphan - for a literal group, an unlisted host."""
+        w = _Writer()
+        recon = _recon(["alpha.test"], SANS, domain="alpha.test")
+        del recon["domains"]
+        recon["all_project_roots"] = ["alpha.test", "beta.test", "gamma.test"]
+        w.update_graph_from_tlsx(recon, "u1", "p1")
+        self.assertEqual(w.covered(), ["mail.alpha.test"])
+
+
 class TestIpModeRegression(unittest.TestCase):
     """Same nodes and edges as before the change: certificate, HAS_CERTIFICATE,
     Service enrichment, and no COVERS_HOST for any real name."""

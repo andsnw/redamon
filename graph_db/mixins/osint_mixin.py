@@ -2312,8 +2312,8 @@ class OsintMixin:
             "relationships_created": 0, "errors": [],
         }
         roots = attach_roots(recon_data)
-        # An IP or a URL under no root falls back to the first root's Domain.
-        domain = roots[0] if roots else ""
+        # An IP, or a URL under no root, belongs to the root this pass queried.
+        domain = recon_data.get("domain") or (roots[0] if roots else "")
         try:
             uncover = recon_data.get("uncover") or {}
             hosts = uncover.get("hosts") or []

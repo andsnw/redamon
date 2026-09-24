@@ -228,6 +228,19 @@ class TestExternalDomains(unittest.TestCase):
         self.assertEqual(w.attached(), {})
 
 
+class TestUncoverQueriedRoot(unittest.TestCase):
+    def test_uncover_links_ips_to_the_queried_root_not_the_first(self):
+        """Bug: an IP (and an IP-literal URL) fell back to roots[0], so the pass
+        for beta.test recorded beta's IPs as alpha.test's (Domain)-[:HAS_IP]."""
+        w = _Writer()
+        payload = {"hosts": [], "ips": ["10.0.2.9"], "urls": ["http://10.0.2.9:8080/x"]}
+        w.update_graph_from_uncover(_recon("uncover", payload, domain="beta.test"), "u1", "p1")
+        has_ip = [p["domain"] for q, p in w.session.calls if "HAS_IP" in q]
+        ip_urls = [p["domain"] for q, p in w.session.calls if "(d)-[:HAS_BASE_URL]->(u)" in q]
+        self.assertEqual(has_ip, ["beta.test"])
+        self.assertEqual(ip_urls, ["beta.test"])
+
+
 class TestFullPipelineParity(unittest.TestCase):
     """The full pipeline scans one Domain-batch group at a time: recon_data has
     `domain` = the group root and no `domains`, but carries the whole batch in

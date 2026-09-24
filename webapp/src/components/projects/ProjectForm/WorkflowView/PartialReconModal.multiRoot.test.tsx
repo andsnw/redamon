@@ -106,6 +106,17 @@ describe('what Run sends', () => {
     }))
   })
 
+  // A tool with no custom-input fields submits through a second branch of
+  // handleRun; the per-domain lookups (Urlscan, Uncover) are among them.
+  test.each(['Urlscan', 'Uncover'])('%s (no custom inputs) sends every root too', async (toolId) => {
+    const { onConfirm } = renderModal(toolId)
+    await screen.findByTestId('partial-recon-roots')
+    fireEvent.click(await runButton())
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({
+      tool_id: toolId, graph_inputs: { domains: ROOTS },
+    }))
+  })
+
   test('no roots, no run', async () => {
     graphInputs = { domain: null, domains: [], existing_subdomains_count: 0, source: 'graph' }
     renderModal('Shodan')

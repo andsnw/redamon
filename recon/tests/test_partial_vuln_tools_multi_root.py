@@ -199,3 +199,73 @@ class TestOriginDiscovery:
                 "subdomains": ["fronted.beta.test", "x.other.example"]}})
         hosts = {v.get("host") for v in captured["http_probe"]["by_url"].values()}
         assert "fronted.beta.test" in hosts and "x.other.example" not in hosts
+
+
+# --- regressions from the deep review -------------------------------------------------
+
+class _RowsSession(_Session):
+    """A session whose reads return rows chosen per query."""
+
+    def __init__(self, calls, rows_for):
+        super().__init__(calls)
+        self._rows_for = rows_for
+
+    def run(self, query, **params):
+        self.calls.append((query, params))
+        result = MagicMock()
+        rows = self._rows_for(query)
+        result.__iter__ = lambda s: iter(rows)
+        result.single.return_value = rows[0] if rows else {"matched": 1}
+        return result
+
+
+class TestOriginDiscoveryLiteralGroup:
+    def test_origin_discovery_does_not_probe_a_literal_groups_unlisted_fronted_host(self, graph, monkeypatch):
+        """Bug: the CDN-fronted host injection read every Subdomain under the run's
+        roots, so a host another writer hung under a LITERAL group was probed."""
+        calls, client = graph
+        groups = [
+            {"rootDomain": "alpha.test", "prefixes": ["*"], "batch": True},
+            {"rootDomain": "beta.test", "prefixes": ["www."], "batch": True},   # literal
+            {"rootDomain": "gamma.test", "prefixes": ["*"], "batch": True},
+        ]
+
+        def rows(query):
+            if "ci.is_cdn = true" in query:
+                return [
+                    {"root": "beta.test", "host": "cdn-x.beta.test", "favicon": None, "cdn": "c", "ip": "10.0.2.9"},
+                    {"root": "beta.test", "host": "www.beta.test", "favicon": None, "cdn": "c", "ip": "10.0.2.8"},
+                    {"root": "gamma.test", "host": "edge.gamma.test", "favicon": None, "cdn": "c", "ip": "10.0.3.9"},
+                ]
+            return []
+
+        client.driver.session.side_effect = lambda: _RowsSession(calls, rows)
+        monkeypatch.setattr(origin_enrichment, "_build_vuln_scan_data_from_graph",
+                            MagicMock(side_effect=lambda roots, *a, **kw: _empty_recon(roots)))
+        captured = {}
+        with patch("recon.main_recon_modules.origin_discovery.run_origin_discovery_enrichment",
+                   side_effect=lambda rd, settings=None: captured.update(rd) or rd):
+            origin_enrichment.run_origin_discovery({**BASE, "domain_groups": groups})
+        hosts = {v.get("host") for v in captured["http_probe"]["by_url"].values()}
+        assert "cdn-x.beta.test" not in hosts                      # unlisted in a literal group
+        assert {"www.beta.test", "edge.gamma.test"} <= hosts        # listed, and a wildcard root
+
+
+class TestNucleiBatchMarker:
+    @pytest.mark.parametrize("batch_mode", [True, False])
+    def test_nuclei_marks_a_batch_run_for_domain_level_findings(self, graph, monkeypatch, batch_mode):
+        """Bug: run_vuln_scan runs the DNS security checks once per root, but only
+        partial SecurityChecks stamped metadata.domain_batch, so a partial Nuclei
+        run wrote every root's SPF/DMARC finding into one Vulnerability node."""
+        recon = _empty_recon(ROOTS)
+        recon["http_probe"]["by_url"] = {"https://api.beta.test": {"url": "https://api.beta.test",
+                                                                   "host": "api.beta.test", "status_code": 200}}
+        monkeypatch.setattr(vulnerability_scanning, "_build_vuln_scan_data_from_graph",
+                            MagicMock(return_value=recon))
+        seen = {}
+        with patch("recon.main_recon_modules.vuln_scan.run_vuln_scan",
+                   side_effect=lambda rd, settings=None: seen.update(rd) or rd), \
+             patch("recon.main_recon_modules.add_mitre.run_mitre_enrichment",
+                   side_effect=lambda rd, settings=None: rd):
+            vulnerability_scanning.run_nuclei({**BASE, "batch_mode": batch_mode})
+        assert seen["metadata"]["domain_batch"] is batch_mode

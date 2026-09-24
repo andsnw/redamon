@@ -111,6 +111,14 @@ class TestVhostChildOf(unittest.TestCase):
         self.assertFalse(_is_child_of("api.other.test", ROOTS))
         self.assertTrue(_is_child_of("api.beta.test", "beta.test"))   # the single-root form
 
+    def test_vhost_child_check_is_case_insensitive_for_a_mixed_case_target(self):
+        """Bug: the list form stopped lowercasing the root. A project whose target
+        was stored as "Alpha.test" (the webapp keeps its case) no longer made
+        hidden vhosts under it Subdomains; they fell back to IP anchoring."""
+        self.assertTrue(_is_child_of("dev.alpha.test", "Alpha.test"))
+        self.assertTrue(_is_child_of("DEV.alpha.test.", ["Alpha.test."]))
+        self.assertFalse(_is_child_of("alpha.test", ["Alpha.test"]))
+
 
 class TestVhostWriter(unittest.TestCase):
     def _run(self, findings, roots=ROOTS):
@@ -125,6 +133,15 @@ class TestVhostWriter(unittest.TestCase):
         session = self._run([{"id": "v1", "hostname": "hidden.beta.test", "type": "vhost",
                               "ip": "10.0.2.1", "layer": "L7"}])
         self.assertEqual(session.subdomain_domain_links().get("hidden.beta.test"), "beta.test")
+
+    def test_a_mixed_case_single_target_still_owns_its_hidden_vhost(self):
+        session = _Session()
+        w = _writer(VhostSniMixin, session)
+        w.update_graph_from_vhost_sni({"domain": "Alpha.test", "vhost_sni": {
+            "findings": [{"id": "v9", "hostname": "hidden.alpha.test", "type": "vhost",
+                          "ip": "10.0.1.1", "layer": "L7"}],
+            "by_ip": {}, "discovered_baseurls": []}}, "u1", "p1")
+        self.assertEqual(session.subdomain_domain_links().get("hidden.alpha.test"), "Alpha.test")
 
     def test_an_apex_vhost_attaches_the_vuln_to_its_root(self):
         session = self._run([{"id": "v2", "hostname": "gamma.test", "type": "vhost",

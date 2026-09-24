@@ -28,6 +28,8 @@ BATCH = {
 @pytest.fixture
 def batch_settings(monkeypatch):
     monkeypatch.setattr(main, "_settings", dict(BATCH))
+    monkeypatch.setattr(main, "VERIFY_DOMAIN_OWNERSHIP", False)
+    monkeypatch.setattr(main, "_BATCH_ATTACH_ROOTS", main._eligible_batch_roots(BATCH["DOMAIN_BATCH_GROUPS"]))
 
 
 @pytest.fixture
@@ -35,8 +37,31 @@ def single_settings(monkeypatch):
     monkeypatch.setattr(main, "_settings", {"DOMAIN_BATCH_MODE": False})
 
 
-def test_batch_root_names(batch_settings):
-    assert main._batch_root_names() == ROOTS
+def test_every_scanned_root_is_attachable(batch_settings):
+    assert main._eligible_batch_roots(BATCH["DOMAIN_BATCH_GROUPS"]) == ROOTS
+
+
+def test_a_refused_root_is_not_attachable_or_seeded(monkeypatch):
+    """Bug: all_project_roots and the Domain seeding took EVERY batch root, so a
+    host found under a root the group run refuses (RoE-excluded, or failing
+    ownership) became an in-scope Subdomain instead of an ExternalDomain."""
+    settings = dict(BATCH, ROE_ENABLED=True, ROE_EXCLUDED_HOSTS=["beta.test"])
+    monkeypatch.setattr(main, "_settings", settings)
+    monkeypatch.setattr(main, "VERIFY_DOMAIN_OWNERSHIP", True)
+    monkeypatch.setattr(main, "verify_domain_ownership",
+                        lambda root, token, prefix: {"verified": root != "gamma.test"})
+    assert main._eligible_batch_roots(BATCH["DOMAIN_BATCH_GROUPS"]) == ["alpha.test"]
+
+
+def test_an_ownership_check_that_errors_fails_closed(monkeypatch):
+    monkeypatch.setattr(main, "_settings", dict(BATCH))
+    monkeypatch.setattr(main, "VERIFY_DOMAIN_OWNERSHIP", True)
+
+    def boom(*a):
+        raise OSError("dns down")
+
+    monkeypatch.setattr(main, "verify_domain_ownership", boom)
+    assert main._eligible_batch_roots(BATCH["DOMAIN_BATCH_GROUPS"]) == []
 
 
 def test_stamp_adds_all_project_roots_in_batch_mode(batch_settings):
@@ -76,7 +101,7 @@ def test_the_batch_restores_every_roots_domain_node_before_group_1(monkeypatch):
     monkeypatch.setattr(main, "UPDATE_GRAPH_DB", True)
     monkeypatch.setattr(main, "USER_ID", "u1")
     monkeypatch.setattr(main, "PROJECT_ID", "p1")
-    main._seed_batch_root_domains(BATCH["DOMAIN_BATCH_GROUPS"])
+    main._seed_batch_root_domains(ROOTS)
     client.ensure_root_domains.assert_called_once_with(ROOTS, "u1", "p1")
 
 
@@ -87,16 +112,18 @@ def test_a_seeding_failure_never_fails_the_scan(monkeypatch):
     client.ensure_root_domains.side_effect = RuntimeError("neo4j down")
     _graph_module(monkeypatch, client)
     monkeypatch.setattr(main, "UPDATE_GRAPH_DB", True)
-    main._seed_batch_root_domains(BATCH["DOMAIN_BATCH_GROUPS"])   # must not raise
+    main._seed_batch_root_domains(ROOTS)   # must not raise
 
 
 def test_seeding_happens_before_the_first_group(monkeypatch, tmp_path):
     order = []
-    monkeypatch.setattr(main, "_seed_batch_root_domains", lambda groups: order.append("seed"))
+    monkeypatch.setattr(main, "_settings", dict(BATCH))
+    monkeypatch.setattr(main, "VERIFY_DOMAIN_OWNERSHIP", False)
+    monkeypatch.setattr(main, "_seed_batch_root_domains", lambda roots: order.append(("seed", roots)))
     monkeypatch.setattr(main, "run_domain_group",
                         lambda root, prefixes, start_time=None: order.append(root) or 0)
     monkeypatch.setattr(main, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(main, "merge_batch_outputs", lambda *a, **k: None)
     from datetime import datetime
     main.run_domain_batch(BATCH["DOMAIN_BATCH_GROUPS"], start_time=datetime.now())
-    assert order == ["seed"] + ROOTS
+    assert order == [("seed", ROOTS)] + ROOTS

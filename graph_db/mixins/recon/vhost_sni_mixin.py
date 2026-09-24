@@ -441,7 +441,12 @@ def _is_child_of(hostname: str, target_domain) -> bool:
     if not hostname:
         return False
     roots = [target_domain] if isinstance(target_domain, str) else list(target_domain or [])
-    return any(root and hostname.endswith("." + root) for root in roots)
+    host = hostname.strip().strip(".").lower()
+    for root in roots:
+        root = str(root or "").strip().strip(".").lower()
+        if root and host.endswith("." + root):
+            return True
+    return False
 
 
 def _extract_hostname(url: str) -> str:

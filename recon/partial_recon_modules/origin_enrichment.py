@@ -19,16 +19,25 @@ from recon.partial_recon_modules.helpers import (
     root_for_host,
     scope_roots,
 )
-from recon.partial_recon_modules.graph_builders import _build_vuln_scan_data_from_graph
+from recon.partial_recon_modules.graph_builders import (
+    _build_vuln_scan_data_from_graph,
+    _host_allowed,
+    _root_scope,
+)
 
 
-def _inject_graph_fronted_hosts(by_url: dict, roots: list, user_id: str, project_id: str) -> None:
+def _inject_graph_fronted_hosts(by_url: dict, roots: list, user_id: str, project_id: str,
+                                domain_groups: list = None) -> None:
     """Mark CDN-fronted Subdomains from the graph as fronted http_probe entries.
 
     Fronted = the host resolves to a CDN IP (i.is_cdn) or one of its Endpoints
     carries is_cdn / a favicon hash (where httpx records the CDN classification).
+    A literal batch group contributes only the hosts it listed, as in the
+    builders: a Subdomain another writer hung under it is not probed.
     """
     from graph_db import Neo4jClient
+
+    _apex_roots, allowed = _root_scope(roots, domain_groups, include_root_domain=False)
 
     with Neo4jClient() as client:
         if not client.verify_connection():
@@ -44,7 +53,7 @@ def _inject_graph_fronted_hosts(by_url: dict, roots: list, user_id: str, project
                                WHERE ep.is_cdn = true OR ep.favicon_hash IS NOT NULL })
                 OPTIONAL MATCH (s)-[:HAS_BASE_URL|HAS_BASEURL]->(:BaseURL)-[:HAS_ENDPOINT]->(e:Endpoint)
                 OPTIONAL MATCH (s)-[:RESOLVES_TO]->(i:IP)
-                RETURN s.name AS host,
+                RETURN d.name AS root, s.name AS host,
                        head([x IN collect(DISTINCT e.favicon_hash) WHERE x IS NOT NULL]) AS favicon,
                        head([x IN collect(DISTINCT e.cdn) WHERE x IS NOT NULL]) AS cdn,
                        head(collect(DISTINCT i.address)) AS ip
@@ -54,7 +63,7 @@ def _inject_graph_fronted_hosts(by_url: dict, roots: list, user_id: str, project
             count = 0
             for record in result:
                 host = record["host"]
-                if not host:
+                if not host or not _host_allowed(record["root"], host, allowed):
                     continue
                 url = f"https://{host}"
                 entry = by_url.setdefault(url, {"url": url, "host": host})
@@ -138,7 +147,8 @@ def run_origin_discovery(config: dict) -> None:
     # the modal's fronted_count guard matches the tool's behavior. Never-raise.
     if include_graph:
         try:
-            _inject_graph_fronted_hosts(recon_data["http_probe"]["by_url"], roots, user_id, project_id)
+            _inject_graph_fronted_hosts(recon_data["http_probe"]["by_url"], roots, user_id, project_id,
+                                        domain_groups=config.get("domain_groups"))
         except Exception as e:
             print(f"[!][Partial Recon] Could not load fronted hosts from graph: {e}")
 

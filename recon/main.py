@@ -109,10 +109,37 @@ def _batch_groups() -> list:
     return groups if isinstance(groups, list) else []
 
 
-def _batch_root_names() -> list:
-    """Every root of the batch, in order, or [] outside batch mode."""
-    return [g.get("rootDomain") for g in _batch_groups()
-            if isinstance(g, dict) and g.get("rootDomain")]
+# The batch roots the graph writers may attach a host to. Fixed once per batch
+# run by run_domain_batch; empty outside batch mode.
+_BATCH_ATTACH_ROOTS: list = []
+
+
+def _eligible_batch_roots(groups: list) -> list:
+    """The batch's roots its groups will actually scan, in order.
+
+    run_domain_group refuses a root that is RoE-excluded or fails ownership
+    verification. A host found under such a root must stay an informational
+    ExternalDomain, not become an in-scope Subdomain, so the root is left out.
+    Ownership is checked the way the group checks it, failing closed.
+    """
+    excluded = _settings.get('ROE_EXCLUDED_HOSTS') if _settings.get('ROE_ENABLED') else None
+    roots = []
+    for group in groups or []:
+        root = str(group.get('rootDomain') or '').strip() if isinstance(group, dict) else ''
+        if not root or root in roots:
+            continue
+        if excluded and _is_roe_excluded(root, excluded):
+            continue
+        if VERIFY_DOMAIN_OWNERSHIP:
+            try:
+                verified = verify_domain_ownership(
+                    root, OWNERSHIP_TOKEN, OWNERSHIP_TXT_PREFIX).get("verified")
+            except Exception:  # noqa: BLE001 - an unanswered check is a failed check
+                verified = False
+            if not verified:
+                continue
+        roots.append(root)
+    return roots
 
 
 def _stamp_project_roots(recon_data: dict) -> dict:
@@ -126,10 +153,8 @@ def _stamp_project_roots(recon_data: dict) -> dict:
     which needs no cross-root attachment. It is deliberately NOT "domains", which
     would widen the per-group scan scope.
     """
-    if isinstance(recon_data, dict):
-        roots = _batch_root_names()
-        if roots:
-            recon_data["all_project_roots"] = roots
+    if isinstance(recon_data, dict) and _batch_groups() and _BATCH_ATTACH_ROOTS:
+        recon_data["all_project_roots"] = list(_BATCH_ATTACH_ROOTS)
     return recon_data
 
 
@@ -2040,17 +2065,16 @@ def _record_node_filter_metadata(stats):
         print(f"[!][NODE-FILTER] could not record the sweep in the output file: {e}")
 
 
-def _seed_batch_root_domains(groups: list) -> None:
-    """Restore every batch root's Domain node after the one-time graph clear.
+def _seed_batch_root_domains(roots: list) -> None:
+    """Restore the attachable batch roots' Domain nodes after the one-time clear.
 
     Groups run in order, so without this a later group's root has no Domain node
     while an earlier group's writers attach a host found under it
     (all_project_roots), and that Subdomain would be left unlinked. Never raises:
     a missing link is recoverable, a failed scan is not.
     """
-    if not UPDATE_GRAPH_DB:
+    if not UPDATE_GRAPH_DB or not roots:
         return
-    roots = [str(g.get('rootDomain') or '').strip() for g in groups if isinstance(g, dict)]
     try:
         from graph_db import Neo4jClient
         with Neo4jClient() as graph_client:
@@ -2097,7 +2121,9 @@ def run_domain_batch(groups: list, start_time) -> int:
     # checks the file exists) would scan the last run's targets.
     initialize_batch_canonical(
         OUTPUT_DIR, PROJECT_ID, [str(g.get('rootDomain') or '') for g in groups])
-    _seed_batch_root_domains(groups)
+    global _BATCH_ATTACH_ROOTS
+    _BATCH_ATTACH_ROOTS = _eligible_batch_roots(groups)
+    _seed_batch_root_domains(_BATCH_ATTACH_ROOTS)
     print()
 
     failed = []
