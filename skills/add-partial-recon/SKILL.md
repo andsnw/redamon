@@ -45,6 +45,22 @@ graph-sourced inputs, the modal, and the single-phase re-run.
 - **ALWAYS mirror the reference impl matching your tool's input shape**, not an
   arbitrary one: Naabu (`Subdomain` + `IP`), Masscan (`IP` only), Nmap
   (`IP` + `Port`), Katana (`URL`). The input-node shape drives the whole wiring.
+- **ALWAYS read the run's roots through `scope_roots(config)`, NEVER
+  `config["domain"]`.** A Domain-batch run covers every root in
+  `config["domains"]`; `config["domain"]` is only the first, so a tool reading it
+  silently skips the rest. [test_partial_scope_guard.py](../../recon/tests/test_partial_scope_guard.py)
+  fails the gate on a direct read. Pass `domain_groups=config.get("domain_groups")`
+  to the graph builders so each root keeps its group's scope (a literal group scans
+  only its listed hosts), validate custom hosts with `host_in_roots`, and attach
+  each host to `root_for_host(host, roots)`.
+- **ALWAYS loop an API that takes one domain per call through `run_per_root`**,
+  never a bare `for`. It fails only the root that raised or called `sys.exit`,
+  retries a rate-limited root once, and returns the `{root: status}` the run report
+  and exit code read. Mirror Urlscan (a 429 returns `STATUS_RATE_LIMITED`) or Shodan.
+- **A writer attaches a host through `attach_roots(recon_data)`**, not
+  `scope_roots`: the full pipeline scans one batch group at a time but carries
+  every root in `all_project_roots`, so a host found under another root joins
+  that root instead of becoming an `ExternalDomain`.
 
 ---
 
