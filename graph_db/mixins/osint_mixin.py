@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 
 from graph_db.cert_key import build_cert_key
 from graph_db.cpe_resolver import _is_ip_address
+from graph_db.mixins.recon.scope import attach_roots, root_for_host
 from urllib.parse import urlparse as _urlparse
 
 
@@ -76,7 +77,10 @@ class OsintMixin:
             stats["errors"].append("No shodan data found in recon_data")
             return stats
 
+        # `domain` is the root this scan looked up; a host under any of the
+        # project's roots is in scope and joins its own root.
         domain = recon_data.get("domain", "")
+        roots = attach_roots(recon_data)
 
         with self.driver.session() as session:
 
@@ -236,10 +240,9 @@ class OsintMixin:
                     if not hostname:
                         continue
                     try:
-                        # Check if hostname is in scope (belongs to target domain)
-                        is_in_scope = domain and (hostname == domain or hostname.endswith("." + domain))
+                        root = root_for_host(hostname, roots)
 
-                        if is_in_scope:
+                        if root:
                             session.run(
                                 """
                                 MERGE (s:Subdomain {name: $name, user_id: $user_id, project_id: $project_id})
@@ -258,19 +261,17 @@ class OsintMixin:
                             stats["subdomains_created"] += 1
                             stats["relationships_created"] += 1
 
-                            # Link to domain
-                            if domain:
-                                session.run(
-                                    """
-                                    MATCH (s:Subdomain {name: $name, user_id: $user_id, project_id: $project_id})
-                                    MATCH (d:Domain {name: $domain, user_id: $user_id, project_id: $project_id})
-                                    MERGE (s)-[:BELONGS_TO]->(d)
-                                    MERGE (d)-[:HAS_SUBDOMAIN]->(s)
-                                    """,
-                                    name=hostname, domain=domain,
-                                    user_id=user_id, project_id=project_id
-                                )
-                                stats["relationships_created"] += 1
+                            session.run(
+                                """
+                                MATCH (s:Subdomain {name: $name, user_id: $user_id, project_id: $project_id})
+                                MATCH (d:Domain {name: $domain, user_id: $user_id, project_id: $project_id})
+                                MERGE (s)-[:BELONGS_TO]->(d)
+                                MERGE (d)-[:HAS_SUBDOMAIN]->(s)
+                                """,
+                                name=hostname, domain=root,
+                                user_id=user_id, project_id=project_id
+                            )
+                            stats["relationships_created"] += 1
                         else:
                             # Out-of-scope hostname → ExternalDomain
                             session.run(
@@ -298,12 +299,10 @@ class OsintMixin:
                 if not sub_name:
                     continue
                 fqdn = f"{sub_name}.{domain}" if domain and not sub_name.endswith(domain) else sub_name
-
-                # Check if the FQDN is in scope
-                is_in_scope = domain and (fqdn == domain or fqdn.endswith("." + domain))
+                root = root_for_host(fqdn, roots)
 
                 try:
-                    if is_in_scope:
+                    if root:
                         session.run(
                             """
                             MERGE (s:Subdomain {name: $name, user_id: $user_id, project_id: $project_id})
@@ -314,18 +313,17 @@ class OsintMixin:
                         )
                         stats["subdomains_created"] += 1
 
-                        if domain:
-                            session.run(
-                                """
-                                MATCH (s:Subdomain {name: $name, user_id: $user_id, project_id: $project_id})
-                                MATCH (d:Domain {name: $domain, user_id: $user_id, project_id: $project_id})
-                                MERGE (s)-[:BELONGS_TO]->(d)
-                                MERGE (d)-[:HAS_SUBDOMAIN]->(s)
-                                """,
-                                name=fqdn, domain=domain,
-                                user_id=user_id, project_id=project_id
-                            )
-                            stats["relationships_created"] += 1
+                        session.run(
+                            """
+                            MATCH (s:Subdomain {name: $name, user_id: $user_id, project_id: $project_id})
+                            MATCH (d:Domain {name: $domain, user_id: $user_id, project_id: $project_id})
+                            MERGE (s)-[:BELONGS_TO]->(d)
+                            MERGE (d)-[:HAS_SUBDOMAIN]->(s)
+                            """,
+                            name=fqdn, domain=root,
+                            user_id=user_id, project_id=project_id
+                        )
+                        stats["relationships_created"] += 1
                     else:
                         # Out-of-scope → ExternalDomain
                         session.run(
@@ -483,6 +481,10 @@ class OsintMixin:
             return stats
 
         domain = recon_data.get("domain", "")
+        # `domain` is the root this pass looked up; a host under any of the run's
+        # roots is in scope and joins its own root, and no root's apex is a Subdomain.
+        roots = attach_roots(recon_data)
+        apexes = {r.lower() for r in roots}
 
         with self.driver.session() as session:
 
@@ -498,11 +500,11 @@ class OsintMixin:
                 country = entry.get("country", "")
 
                 # Create/update subdomain or external domain node
-                if subdomain and subdomain != domain and subdomain not in seen_subs:
+                if subdomain and subdomain.lower() not in apexes and subdomain not in seen_subs:
                     seen_subs.add(subdomain)
-                    is_in_scope = domain and (subdomain == domain or subdomain.endswith("." + domain))
+                    root = root_for_host(subdomain, roots)
                     try:
-                        if is_in_scope:
+                        if root:
                             session.run(
                                 """
                                 MERGE (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
@@ -513,7 +515,7 @@ class OsintMixin:
                                 MERGE (d)-[:HAS_SUBDOMAIN]->(s)
                                 MERGE (s)-[:BELONGS_TO]->(d)
                                 """,
-                                domain=domain, subdomain=subdomain,
+                                domain=root, subdomain=subdomain,
                                 uid=user_id, pid=project_id
                             )
                             stats["subdomains_created"] += 1
@@ -557,8 +559,8 @@ class OsintMixin:
                     except Exception as e:
                         stats["errors"].append(f"IP {ip}: {e}")
 
-                # Link subdomain -> IP (deduplicate the pair, skip root domain)
-                if subdomain and ip and subdomain != domain:
+                # Link subdomain -> IP (deduplicate the pair, skip any root apex)
+                if subdomain and ip and subdomain.lower() not in apexes:
                     link_key = (subdomain, ip)
                     if link_key not in seen_sub_ip_links:
                         seen_sub_ip_links.add(link_key)
@@ -764,6 +766,11 @@ class OsintMixin:
         domain = recon_data.get("domain", "")
         if not external_domains:
             return
+        # Each module judged "external" against the one root it scanned, so in a
+        # Domain batch a host under a SIBLING root lands here too. It is not
+        # foreign: it joins that root as a Subdomain (a sibling's apex is its
+        # Domain node already).
+        roots = attach_roots(recon_data)
 
         print(f"\n[GRAPH] External Domains: {len(external_domains)} foreign domains")
 
@@ -772,6 +779,22 @@ class OsintMixin:
             for ed in external_domains:
                 ed_domain = ed.get("domain", "")
                 if not ed_domain:
+                    continue
+                root = root_for_host(ed_domain, roots)
+                if root:
+                    if ed_domain.strip().lower() != root.strip().lower():
+                        try:
+                            session.run("""
+                                MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                                MERGE (s:Subdomain {name: $name, user_id: $uid, project_id: $pid})
+                                ON CREATE SET s.source = $source, s.discovered_at = datetime(),
+                                              s.updated_at = datetime()
+                                MERGE (d)-[:HAS_SUBDOMAIN]->(s)
+                                MERGE (s)-[:BELONGS_TO]->(d)
+                            """, domain=root, name=ed_domain.strip().lower(), uid=user_id, pid=project_id,
+                                source=(ed.get("sources") or ["external_reference"])[0])
+                        except Exception as e:
+                            logger.warning(f"Cross-root Subdomain graph error for {ed_domain}: {e}")
                     continue
                 try:
                     result = session.run("""
@@ -821,7 +844,7 @@ class OsintMixin:
             "certificates_merged": 0, "subdomains_merged": 0,
             "relationships_created": 0, "errors": [],
         }
-        domain = recon_data.get("domain", "") or ""
+        roots = attach_roots(recon_data)
         try:
             hosts = (recon_data.get("censys") or {}).get("hosts") or []
             if not hosts:
@@ -1006,9 +1029,8 @@ class OsintMixin:
 
                             # Reverse DNS → Subdomain nodes
                             for hostname in host.get("reverse_dns_names") or []:
-                                if not hostname or not domain:
-                                    continue
-                                if not (hostname == domain or hostname.endswith("." + domain)):
+                                root = root_for_host(hostname, roots) if hostname else None
+                                if not root:
                                     continue
                                 try:
                                     session.run(
@@ -1034,7 +1056,7 @@ class OsintMixin:
                                         MERGE (s)-[:BELONGS_TO]->(d)
                                         MERGE (d)-[:HAS_SUBDOMAIN]->(s)
                                         """,
-                                        name=hostname, domain=domain,
+                                        name=hostname, domain=root,
                                         user_id=user_id, project_id=project_id,
                                     )
                                     stats["subdomains_merged"] += 1
@@ -1057,7 +1079,7 @@ class OsintMixin:
         }
         try:
             rows = (recon_data.get("fofa") or {}).get("results") or []
-            domain = recon_data.get("domain", "") or ""
+            roots = attach_roots(recon_data)
             if not rows:
                 stats["errors"].append("No fofa results in recon_data")
             else:
@@ -1194,9 +1216,8 @@ class OsintMixin:
                             # FOFA host may carry port suffix (e.g. "sub.example.com:8080") — strip it
                             host_raw = (row.get("host") or "").strip()
                             host = host_raw.split(":")[0] if ":" in host_raw else host_raw
-                            if host and domain and host != ip and (
-                                host == domain or host.endswith("." + domain)
-                            ):
+                            root = root_for_host(host, roots) if host and host != ip else None
+                            if root:
                                 session.run(
                                     """
                                     MERGE (s:Subdomain {name: $name, user_id: $user_id, project_id: $project_id})
@@ -1221,7 +1242,7 @@ class OsintMixin:
                                     MERGE (s)-[:BELONGS_TO]->(d)
                                     MERGE (d)-[:HAS_SUBDOMAIN]->(s)
                                     """,
-                                    name=host, domain=domain, user_id=user_id, project_id=project_id,
+                                    name=host, domain=root, user_id=user_id, project_id=project_id,
                                 )
                                 stats["relationships_created"] += 1
                         except Exception as e:
@@ -1245,7 +1266,10 @@ class OsintMixin:
         try:
             otx = recon_data.get("otx") or {}
             reports = otx.get("ip_reports") or []
+            # `domain` is the root this scan looked up (external names hang off
+            # it); a name under any of the project's roots joins its own root.
             domain = recon_data.get("domain", "") or ""
+            roots = attach_roots(recon_data)
             dr = otx.get("domain_report")
             if not reports and not (dr and isinstance(dr, dict) and dr.get("domain")):
                 stats["errors"].append("No otx ip_reports or domain_report in recon_data")
@@ -1312,7 +1336,8 @@ class OsintMixin:
                             first_seen = rec.get("first") or ""
                             last_seen = rec.get("last") or ""
 
-                            if domain and (hostname == domain or hostname.endswith("." + domain)):
+                            root = root_for_host(hostname, roots)
+                            if root:
                                 # In-scope → Subdomain node
                                 try:
                                     # The edge usually exists already from DNS
@@ -1345,17 +1370,16 @@ class OsintMixin:
                                     )
                                     stats["subdomains_merged"] += 1
                                     stats["relationships_created"] += 1
-                                    if domain:
-                                        session.run(
-                                            """
-                                            MATCH (s:Subdomain {name: $name, user_id: $user_id, project_id: $project_id})
-                                            MATCH (d:Domain {name: $domain, user_id: $user_id, project_id: $project_id})
-                                            MERGE (s)-[:BELONGS_TO]->(d)
-                                            MERGE (d)-[:HAS_SUBDOMAIN]->(s)
-                                            """,
-                                            name=hostname, domain=domain, user_id=user_id, project_id=project_id,
-                                        )
-                                        stats["relationships_created"] += 1
+                                    session.run(
+                                        """
+                                        MATCH (s:Subdomain {name: $name, user_id: $user_id, project_id: $project_id})
+                                        MATCH (d:Domain {name: $domain, user_id: $user_id, project_id: $project_id})
+                                        MERGE (s)-[:BELONGS_TO]->(d)
+                                        MERGE (d)-[:HAS_SUBDOMAIN]->(s)
+                                        """,
+                                        name=hostname, domain=root, user_id=user_id, project_id=project_id,
+                                    )
+                                    stats["relationships_created"] += 1
                                 except Exception as e2:
                                     stats["errors"].append(f"OTX pdns in-scope {hostname}: {e2}")
                             elif hostname and "@" not in hostname:
@@ -1883,7 +1907,7 @@ class OsintMixin:
                  "subdomains_merged": 0, "relationships_created": 0, "errors": []}
         try:
             rows = (recon_data.get("zoomeye") or {}).get("results") or []
-            domain = recon_data.get("domain", "")
+            roots = attach_roots(recon_data)
             if not rows:
                 stats["errors"].append("No zoomeye results in recon_data")
             else:
@@ -1998,11 +2022,7 @@ class OsintMixin:
                                 hostname_val = hostname_val.strip().lower()
                                 if not hostname_val:
                                     continue
-                                is_in_scope = domain and (
-                                    hostname_val == domain
-                                    or hostname_val.endswith("." + domain)
-                                )
-                                if is_in_scope:
+                                if root_for_host(hostname_val, roots):
                                     session.run(
                                         """
                                         MERGE (s:Subdomain {name: $name, user_id: $user_id,
@@ -2291,7 +2311,9 @@ class OsintMixin:
             "urls_created": 0,
             "relationships_created": 0, "errors": [],
         }
-        domain = recon_data.get("domain", "") or ""
+        roots = attach_roots(recon_data)
+        # An IP or a URL under no root falls back to the first root's Domain.
+        domain = roots[0] if roots else ""
         try:
             uncover = recon_data.get("uncover") or {}
             hosts = uncover.get("hosts") or []
@@ -2324,7 +2346,8 @@ class OsintMixin:
                             sources=sources, total_raw=total_raw, total_deduped=total_deduped,
                         )
                         stats["subdomains_created"] += 1
-                        if domain:
+                        host_root = root_for_host(hostname, roots) or domain
+                        if host_root:
                             session.run(
                                 """
                                 MATCH (s:Subdomain {name: $name, user_id: $user_id, project_id: $project_id})
@@ -2332,7 +2355,7 @@ class OsintMixin:
                                 MERGE (s)-[:BELONGS_TO]->(d)
                                 MERGE (d)-[:HAS_SUBDOMAIN]->(s)
                                 """,
-                                name=hostname, domain=domain,
+                                name=hostname, domain=host_root,
                                 user_id=user_id, project_id=project_id,
                             )
                             stats["relationships_created"] += 2

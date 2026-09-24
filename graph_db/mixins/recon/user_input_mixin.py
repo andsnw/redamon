@@ -8,21 +8,49 @@ from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 
 from graph_db.cpe_resolver import _is_ip_address
+from graph_db.mixins.recon.scope import _normalize_host, root_for_host
+
+
+def _user_input_root(domain, values: list) -> str:
+    """The root a UserInput attaches to.
+
+    `domain` is one root, or the run's roots: then the root the first hostname
+    value sits under, else the first root (IP-only input names no host).
+    """
+    if isinstance(domain, str):
+        return domain.strip()
+    roots = [r for r in (domain or []) if isinstance(r, str) and r.strip()]
+    if not roots:
+        return ""
+    for value in values or []:
+        host = _normalize_host(str(value or ""))
+        if host and not _is_ip_address(host):
+            return root_for_host(host, roots) or roots[0]
+    return roots[0]
+
 
 class UserInputMixin:
-    def create_user_input_node(self, domain: str, user_input_data: dict, user_id: str, project_id: str) -> str:
+    def create_user_input_node(self, domain, user_input_data: dict, user_id: str, project_id: str) -> str:
         """
         Create a UserInput node for partial recon user-provided values.
 
         Args:
-            domain: Root domain to attach the UserInput to
+            domain: Root domain to attach the UserInput to, or the run's roots
+                (a list); see _user_input_root.
             user_input_data: Dict with keys: id, input_type, values, tool_id
             user_id: Tenant user ID
             project_id: Tenant project ID
 
         Returns:
             The UserInput node ID
+
+        Raises:
+            ValueError: there is no root to attach to. The MERGE below would
+                otherwise create a Domain named "".
         """
+        domain = _user_input_root(domain, user_input_data.get("values") or [])
+        if not domain:
+            raise ValueError("No root domain to attach the UserInput node to")
         node_id = user_input_data["id"]
 
         with self.driver.session() as session:

@@ -14,7 +14,12 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from recon.partial_recon_modules.graph_builders import _build_graphql_data_from_graph
-from recon.partial_recon_modules.helpers import _should_include_root_domain
+from recon.partial_recon_modules.helpers import (
+    _should_include_root_domain,
+    include_root_for,
+    partial_settings,
+    scope_roots,
+)
 
 
 def run_webcachepoison(config: dict) -> None:
@@ -26,15 +31,14 @@ def run_webcachepoison(config: dict) -> None:
       - config["include_graph_targets"]: whether to merge graph-derived targets
     """
     from recon.cache_scan import run_cache_scan
-    from recon.project_settings import get_settings
     from graph_db import Neo4jClient
 
-    domain = config["domain"]
+    roots = scope_roots(config)
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
     print("[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable so the DB toggle doesn't override an explicit partial-recon run.
     settings["WEB_CACHE_POISON_ENABLED"] = True
@@ -52,7 +56,7 @@ def run_webcachepoison(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print("[*][Partial Recon] Web Cache Poisoning Scanning")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     if user_urls:
         print(f"[+][Partial Recon] {len(user_urls)} custom URL(s) provided"
               + (f" (attach to: {url_attach_to})" if url_attach_to else " (generic UserInput)"))
@@ -61,11 +65,13 @@ def run_webcachepoison(config: dict) -> None:
     include_graph = config.get("include_graph_targets", True)
     if include_graph:
         print("[*][Partial Recon] Querying graph for targets (BaseURLs, Endpoints)...")
-        recon_data = _build_graphql_data_from_graph(domain, user_id, project_id)
+        recon_data = _build_graphql_data_from_graph(roots, user_id, project_id, settings=settings,
+                                                    domain_groups=config.get("domain_groups"))
     else:
         print("[*][Partial Recon] Skipping graph targets (user opted out)")
         recon_data = {
-            "domain": domain,
+            "domain": roots[0] if roots else "",
+            "domains": roots,
             "http_probe": {"by_url": {}},
             "resource_enum": {"endpoints": {}, "parameters": {}, "discovered_urls": []},
             "metadata": {
@@ -76,13 +82,19 @@ def run_webcachepoison(config: dict) -> None:
             },
         }
 
-    # Honor the Include Root Domain scope toggle: drop apex BaseURLs when excluded.
-    recon_data.setdefault("metadata", {})["include_root_domain"] = include_root_domain
-    apex = (domain or "").lower()
-    if not include_root_domain:
+    # Honor the Include Root Domain scope toggle: drop the BaseURLs of every
+    # apex whose scope excludes it (per root when the groups are known).
+    groups = config.get("domain_groups")
+    if groups is None:
+        excluded_apexes = set() if include_root_domain else {r.lower() for r in roots}
+    else:
+        excluded_apexes = {r.lower() for r in roots if not include_root_for(r, groups)}
+    recon_data.setdefault("metadata", {})["include_root_domain"] = (
+        bool(roots) and roots[0].lower() not in excluded_apexes)
+    if excluded_apexes:
         kept = {
             url: data for url, data in recon_data["http_probe"]["by_url"].items()
-            if (urlparse(url).hostname or "").lower() != apex
+            if (urlparse(url).hostname or "").lower() not in excluded_apexes
         }
         recon_data["http_probe"]["by_url"] = kept
 
@@ -94,7 +106,7 @@ def run_webcachepoison(config: dict) -> None:
     # Apex endpoints are filtered too when root-domain scope is off.
     by_base_url: dict = {}
     for base, eps in (recon_data.get("resource_enum", {}).get("endpoints", {}) or {}).items():
-        if not include_root_domain and (urlparse(base).hostname or "").lower() == apex:
+        if (urlparse(base).hostname or "").lower() in excluded_apexes:
             continue
         ep_map = {}
         for ep in (eps or []):
@@ -127,7 +139,7 @@ def run_webcachepoison(config: dict) -> None:
     with Neo4jClient() as graph_client:
         graph_client.update_graph_from_cache_scan(recon_data, user_id, project_id)
         if user_urls:
-            _link_user_urls(graph_client, user_urls, url_attach_to, domain, user_id, project_id)
+            _link_user_urls(graph_client, user_urls, url_attach_to, roots, user_id, project_id)
 
     summary = recon_data.get("cache_scan", {}).get("summary", {}) or {}
     print(f"\n[+][Partial Recon][CachePoison] {summary.get('total_findings', 0)} finding(s) "
@@ -135,7 +147,7 @@ def run_webcachepoison(config: dict) -> None:
           f"across {summary.get('cacheable_urls', 0)} cacheable URL(s).")
 
 
-def _link_user_urls(graph_client, user_urls, url_attach_to, domain, user_id, project_id):
+def _link_user_urls(graph_client, user_urls, url_attach_to, roots, user_id, project_id):
     """Attach user-provided URLs to an existing BaseURL or a fresh UserInput node."""
     import uuid
 
@@ -146,7 +158,7 @@ def _link_user_urls(graph_client, user_urls, url_attach_to, domain, user_id, pro
     user_input_id = f"userinput-cache-{uuid.uuid4().hex[:12]}"
     try:
         graph_client.create_user_input_node(
-            domain=domain,
+            domain=roots,
             user_input_data={
                 "id": user_input_id,
                 "input_type": "url",

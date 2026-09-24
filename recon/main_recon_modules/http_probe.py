@@ -966,7 +966,7 @@ def build_httpx_command(targets_file: str, output_file: str, settings: dict,
 # Result Parsing
 # =============================================================================
 
-def parse_httpx_output(output_file: str, root_domain: str = None, allowed_hosts: list = None, settings: dict = None) -> Dict:
+def parse_httpx_output(output_file: str, root_domain=None, allowed_hosts: list = None, settings: dict = None) -> Dict:
     """
     Parse httpx JSON Lines output into structured format.
 
@@ -1246,7 +1246,20 @@ def extract_host_from_url(url: str) -> str:
         return ""
 
 
-def is_host_in_scope(host: str, root_domain: str, allowed_hosts: list = None) -> bool:
+def httpx_scope_roots(recon_data: dict):
+    """The root(s) a probe result must fall under to be kept.
+
+    A partial run over a Domain batch carries every root it covers in
+    recon_data["domains"], and a result under any of them is in scope; anything
+    else has the one root domain.
+    """
+    roots = [r for r in (recon_data.get("domains") or []) if r]
+    if roots:
+        return roots
+    return recon_data.get("domain", "") or (recon_data.get("metadata") or {}).get("root_domain", "")
+
+
+def is_host_in_scope(host: str, root_domain, allowed_hosts: list = None) -> bool:
     """
     Check if a hostname is within the target scope.
     
@@ -1255,18 +1268,20 @@ def is_host_in_scope(host: str, root_domain: str, allowed_hosts: list = None) ->
     
     Args:
         host: The hostname to check
-        root_domain: The target root domain
+        root_domain: The target root domain, or a list of them: a partial run
+                     over a Domain batch probes several roots at once.
         allowed_hosts: List of specific allowed hostnames (from SUBDOMAIN_LIST filter).
                       If None or empty, allows any host within root_domain scope.
         
     Returns:
         True if host is in scope, False otherwise
     """
-    if not host or not root_domain:
+    roots = [root_domain] if isinstance(root_domain, str) else list(root_domain or [])
+    roots = [r.lower().strip() for r in roots if r and r.strip()]
+    if not host or not roots:
         return False
 
     host = host.lower().strip()
-    root_domain = root_domain.lower().strip()
 
     # If allowed_hosts is specified (filtered mode), check against that list first.
     # This must come before the root_domain scope check because in IP-mode the
@@ -1280,8 +1295,7 @@ def is_host_in_scope(host: str, root_domain: str, allowed_hosts: list = None) ->
         return True
 
     # Check if host is within the root domain scope
-    in_root_scope = (host == root_domain or host.endswith(f".{root_domain}"))
-    return in_root_scope
+    return any(host == root or host.endswith(f".{root}") for root in roots)
 
 
 def is_ip(value: str) -> bool:
@@ -1870,6 +1884,7 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
         # Parse results (filter URLs outside target scope)
         print(f"\n[*][httpx] Parsing results...")
         root_domain = recon_data.get("domain", "") or recon_data.get("metadata", {}).get("root_domain", "")
+        scope_roots = httpx_scope_roots(recon_data)
         
         # Get allowed hosts for filtering (from SUBDOMAIN_LIST filter)
         # In filtered mode: subdomain_filter contains the explicit list of allowed hosts
@@ -1883,7 +1898,7 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
             if allowed_hosts:
                 print(f"[*][httpx] Filtering to allowed hosts: {', '.join(allowed_hosts)}")
         
-        results = parse_httpx_output(str(httpx_output), root_domain=root_domain, allowed_hosts=allowed_hosts, settings=settings)
+        results = parse_httpx_output(str(httpx_output), root_domain=scope_roots, allowed_hosts=allowed_hosts, settings=settings)
 
         # Log if any URLs were filtered out
         filtered_count = results.get("summary", {}).get("filtered_out_of_scope", 0)

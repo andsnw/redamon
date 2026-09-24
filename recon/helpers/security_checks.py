@@ -2563,6 +2563,18 @@ def run_security_headers_checks(
 # Main Entry Point
 # =============================================================================
 
+def _dns_check_domains(recon_data: Dict[str, Any]) -> List[str]:
+    """The roots whose mail and zone records to check: recon_data["domains"], else "domain"."""
+    roots = recon_data.get("domains")
+    if not isinstance(roots, list) or not roots:
+        roots = [recon_data.get("domain", "")]
+    seen = []
+    for root in roots:
+        if isinstance(root, str) and root.strip() and root not in seen:
+            seen.append(root)
+    return seen
+
+
 def run_security_checks(
     recon_data: Dict[str, Any],
     enabled_checks: Dict[str, bool],
@@ -2755,11 +2767,10 @@ def run_security_checks(
         all_findings.extend(auth_findings)
         print(f"[+][SecurityCheck] Found {len(auth_findings)} issues")
 
-    # Run DNS Security checks
+    # Run DNS Security checks, once per root: a Domain batch run covers several,
+    # each with its own mail and zone records.
     if enabled_dns > 0:
-        # Extract domain from recon_data
-        domain = recon_data.get("domain", "")
-        if domain:
+        for domain in _dns_check_domains(recon_data):
             print(f"[*][SecurityCheck] Running DNS Security checks on {domain}...")
             dns_findings = run_dns_checks(
                 domain=domain,

@@ -109,6 +109,30 @@ def _batch_groups() -> list:
     return groups if isinstance(groups, list) else []
 
 
+def _batch_root_names() -> list:
+    """Every root of the batch, in order, or [] outside batch mode."""
+    return [g.get("rootDomain") for g in _batch_groups()
+            if isinstance(g, dict) and g.get("rootDomain")]
+
+
+def _stamp_project_roots(recon_data: dict) -> dict:
+    """Carry the whole batch's roots for the graph writers.
+
+    The pipeline scans one group at a time, so recon_data["domain"] is the group
+    root and the scan stays inside the group. The writers, though, must attach a
+    host a scan found under ANOTHER batch root to that root's Domain, not record
+    it as an ExternalDomain -- the same fix the partial path already has. They
+    read this through attach_roots(); it is absent for a single-domain project,
+    which needs no cross-root attachment. It is deliberately NOT "domains", which
+    would widen the per-group scan scope.
+    """
+    if isinstance(recon_data, dict):
+        roots = _batch_root_names()
+        if roots:
+            recon_data["all_project_roots"] = roots
+    return recon_data
+
+
 # ---------------------------------------------------------------------------
 # Background Graph DB update helper
 # ---------------------------------------------------------------------------
@@ -315,10 +339,13 @@ def should_skip_active_scans(recon_data: dict) -> tuple:
     return False, ""
 
 
-# A subdomain prefix must be a hostname label (or dot-joined labels). The
-# webapp validates this, but SUBDOMAIN_LIST crosses back in from the API with
-# only a whitespace strip, so parse_target re-checks rather than trusting it.
-_PREFIX_CHARSET = re.compile(r'^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$')
+# The per-group scope rules live in a module with no import side effects, so
+# partial recon can use them without loading this file's settings.
+from recon.helpers.batch_groups import (  # noqa: E402
+    _PREFIX_CHARSET,
+    group_discovery_enabled,
+    parse_target,
+)
 
 
 def merge_group_hosts(recon_result, target_info: dict, root_domain: str,
@@ -428,117 +455,6 @@ def merge_group_hosts(recon_result, target_info: dict, root_domain: str,
         "status_map": {s: st for s, st in status_map.items()
                        if s in set(discovered_subs)},
         "include_root": include_root,
-    }
-
-
-def group_discovery_enabled(settings: dict, batch_groups: list,
-                            target_info: dict) -> bool:
-    """May THIS target run subdomain enumeration?
-
-    The settings toggle is a run-wide scalar, so on its own it can only say
-    whether enumeration is permitted at all. In a Domain batch the answer is per
-    GROUP: a group enumerates only when the operator wrote a wildcard for it, and
-    every other group scans exactly the hostnames it was given - the contract the
-    run-wide force-off in project_settings used to enforce by itself.
-
-    Split out of run_domain_group so it can be tested as the thing the pipeline
-    actually calls, rather than re-stated in a test that would still pass if the
-    gate were deleted.
-    """
-    if not settings.get('SUBDOMAIN_DISCOVERY_ENABLED', True):
-        return False
-    if not batch_groups:
-        return True              # single-domain: the toggle is the whole answer
-    return bool(target_info.get('wildcard_mode', False))
-
-
-def parse_target(target: str, subdomain_list: list = None) -> dict:
-    """
-    Parse target domain and determine scan mode based on SUBDOMAIN_LIST.
-
-    Args:
-        target: Root domain (e.g., "example.com", "vulnweb.com")
-                TARGET_DOMAIN in params.py must always be a root domain.
-        subdomain_list: List of subdomain prefixes to filter (e.g., ["testphp.", "www."])
-                       Empty list = full discovery mode (scan all subdomains)
-                       Special prefix "." = include root domain directly (no subdomain)
-                       Special prefix "*" = enumerate this domain (full discovery)
-
-    Returns:
-        Dictionary with:
-        - target: original target (root domain)
-        - root_domain: the root domain (same as target)
-        - filtered_mode: True if real subdomain prefixes are set AND no wildcard
-        - subdomain_list: list of subdomain prefixes to scan
-        - full_subdomains: list of full subdomain names (prefix + root domain)
-        - include_root_domain: True if "." is in subdomain_list (scan root domain directly)
-        - wildcard_mode: True if "*" is in subdomain_list (enumerate the domain)
-
-    Neither sentinel is a hostname: "*" never reaches full_subdomains, and "."
-    contributes the root itself rather than a prefixed name.
-    """
-    # TARGET_DOMAIN is always the root domain (e.g., "vulnweb.com")
-    root_domain = target
-
-    # Parse subdomain list and determine scan mode
-    subdomain_list = subdomain_list or []
-    include_root_domain = False
-
-    # Build full subdomain names from prefixes
-    full_subdomains = []
-    wildcard_mode = False
-    for prefix in subdomain_list:
-        # "*" means "enumerate this domain" — run the same full discovery a
-        # single-domain project runs. Matched EXACTLY and before rstrip('.'):
-        # toStoredPrefixes() appends a trailing dot, so an operator typing "*"
-        # into the single-domain Subdomain Prefixes box produces "*.", and
-        # treating that as the sentinel would turn a scope-NARROWING field into
-        # a silent full-enumeration switch.
-        if prefix == '*':
-            wildcard_mode = True
-            continue
-        # Handle "." as special case meaning root domain itself
-        clean_prefix = prefix.rstrip('.')
-        # Anything that is not a hostname label is DROPPED, never repaired.
-        # SUBDOMAIN_LIST gets no charset check anywhere server-side (see
-        # fetch_project_settings, which only strips whitespace), so a row edited
-        # through the API or the database can put arbitrary text here — and
-        # "*." is the ordinary near-miss: it is not the "*" sentinel, so without
-        # this it would build the literal hostname "*.example.com" and carry a
-        # metacharacter into DNS, tool arguments, filenames and the graph.
-        if clean_prefix and not _PREFIX_CHARSET.match(clean_prefix):
-            print(f"[!][Pipeline] Ignoring unusable subdomain prefix: {prefix!r}")
-            continue
-        if clean_prefix == "" or prefix == ".":
-            # "." means include root domain directly (e.g., vulnweb.com)
-            include_root_domain = True
-            # Add root domain to the list
-            if root_domain not in full_subdomains:
-                full_subdomains.append(root_domain)
-        else:
-            # Normal subdomain prefix (e.g., "testphp." -> testphp.vulnweb.com)
-            full_subdomain = f"{clean_prefix}.{root_domain}"
-            if full_subdomain not in full_subdomains:
-                full_subdomains.append(full_subdomain)
-
-    # Filtered mode only when real subdomain prefixes SURVIVED (not just "."),
-    # counted from what we actually built rather than from the raw input: a
-    # prefix dropped above as unusable must not still switch the pipeline into
-    # filtered mode, or the run would scan an empty list and report success.
-    # "." alone means "include root domain" — it should NOT skip discovery.
-    real_prefix_count = len([h for h in full_subdomains if h != root_domain])
-    # A wildcard wins over explicit siblings: the group enumerates, and those
-    # siblings are seeded into the result so nothing the operator listed is lost.
-    filtered_mode = real_prefix_count > 0 and not wildcard_mode
-
-    return {
-        "target": target,
-        "root_domain": root_domain,
-        "filtered_mode": filtered_mode,
-        "subdomain_list": subdomain_list,
-        "full_subdomains": full_subdomains,
-        "include_root_domain": include_root_domain,
-        "wildcard_mode": wildcard_mode
     }
 
 
@@ -1391,6 +1307,9 @@ def run_domain_recon(target: str, bruteforce: bool = False,
             "project_id": PROJECT_ID,
             "filtered_mode": filtered_mode,
             "wildcard_mode": bool(target_info.get("wildcard_mode")),
+            # Keys a domain-level finding (SPF, DMARC...) on its root, so a
+            # batch's roots do not share one Vulnerability node (vuln_mixin).
+            "domain_batch": bool(_batch_groups()),
             "subdomain_filter": full_subdomains if filtered_mode else [],
             "anonymous_mode": False,
             "bruteforce_mode": bruteforce if not filtered_mode else False,
@@ -1402,6 +1321,9 @@ def run_domain_recon(target: str, bruteforce: bool = False,
         "subdomain_count": 0,
         "dns": {}
     }
+    # The batch's roots for the graph writers (urlscan/uncover/domain-discovery
+    # write from inside this function, before it returns), not the scan scope.
+    _stamp_project_roots(combined_result)
 
     # =====================================================================
     # GROUP 1 — Fan-Out: WHOIS + Subdomain Discovery + URLScan (parallel)
@@ -2118,6 +2040,27 @@ def _record_node_filter_metadata(stats):
         print(f"[!][NODE-FILTER] could not record the sweep in the output file: {e}")
 
 
+def _seed_batch_root_domains(groups: list) -> None:
+    """Restore every batch root's Domain node after the one-time graph clear.
+
+    Groups run in order, so without this a later group's root has no Domain node
+    while an earlier group's writers attach a host found under it
+    (all_project_roots), and that Subdomain would be left unlinked. Never raises:
+    a missing link is recoverable, a failed scan is not.
+    """
+    if not UPDATE_GRAPH_DB:
+        return
+    roots = [str(g.get('rootDomain') or '').strip() for g in groups if isinstance(g, dict)]
+    try:
+        from graph_db import Neo4jClient
+        with Neo4jClient() as graph_client:
+            if graph_client.verify_connection():
+                seeded = graph_client.ensure_root_domains(roots, USER_ID, PROJECT_ID)
+                print(f"[*][Batch] Domain nodes ready for {seeded} root(s)")
+    except Exception as e:  # noqa: BLE001 - housekeeping must not fail the scan
+        print(f"[!][Batch] Could not seed the batch's Domain nodes: {e}")
+
+
 def run_domain_batch(groups: list, start_time) -> int:
     """Walk the operator-approved domain groups, one after another.
 
@@ -2154,6 +2097,7 @@ def run_domain_batch(groups: list, start_time) -> int:
     # checks the file exists) would scan the last run's targets.
     initialize_batch_canonical(
         OUTPUT_DIR, PROJECT_ID, [str(g.get('rootDomain') or '') for g in groups])
+    _seed_batch_root_domains(groups)
     print()
 
     failed = []
@@ -2369,11 +2313,13 @@ def run_domain_group(target_domain: str, subdomain_list: list, start_time=None) 
             target_info=target_info,
             discovery_enabled=discovery_enabled
         )
+        _stamp_project_roots(domain_result)
     else:
         # Load existing recon file if domain_discovery not in modules
         if output_file.exists():
             with open(output_file, 'r') as f:
                 domain_result = json.load(f)
+            _stamp_project_roots(domain_result)
             print(f"[*][Pipeline] Loaded existing recon file: {output_file}")
 
             # RoE: filter excluded hosts from loaded recon data

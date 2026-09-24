@@ -896,6 +896,7 @@ class VulnMixin:
             # =========================================================================
             top_level_security_checks = vuln_scan_data.get("security_checks", {})
             security_findings = top_level_security_checks.get("findings", [])
+            domain_batch = bool((recon_data.get("metadata") or {}).get("domain_batch"))
 
             for finding in security_findings:
                 try:
@@ -916,7 +917,15 @@ class VulnMixin:
                     # Deterministic, tenant-scoped id: converges with
                     # origin_discovery on the same (type, url, ip/host) exposure
                     # within this tenant and survives re-runs.
-                    vuln_id = stable_vuln_id(finding_type, url, matched_ip or hostname or "", user_id, project_id)
+                    # A domain-level finding (SPF, DMARC, DNSSEC, zone transfer)
+                    # has no url, host or ip, so every root of a Domain batch
+                    # would hash to one node; a batch keys it on its domain. A
+                    # single-domain project keeps the id its fix items and mute
+                    # exemptions already reference.
+                    finding_domain = (finding.get("domain") or ""
+                                      if domain_batch and not (url or matched_ip or hostname) else "")
+                    vuln_id = stable_vuln_id(finding_type, url, matched_ip or hostname or finding_domain,
+                                             user_id, project_id)
 
                     # Create Vulnerability node
                     vuln_props = {

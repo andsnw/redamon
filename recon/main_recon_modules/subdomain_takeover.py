@@ -794,13 +794,16 @@ def _load_nuclei_jsonl(path: Path) -> list[dict]:
 def _collect_subdomains(recon_data: dict) -> list[str]:
     """
     Pull every resolvable subdomain from the DNS map. We include the root
-    domain too.
+    domain too: every root of a Domain batch run (recon_data["domains"]).
     """
     names: set[str] = set()
     dns_data = recon_data.get("dns") or {}
-    root = recon_data.get("domain") or recon_data.get("metadata", {}).get("target", "")
-    if root:
-        names.add(root.strip().lower())
+    roots = recon_data.get("domains")
+    if not isinstance(roots, list) or not roots:
+        roots = [recon_data.get("domain") or recon_data.get("metadata", {}).get("target", "")]
+    for root in roots:
+        if isinstance(root, str) and root.strip():
+            names.add(root.strip().lower())
 
     # DNS structure: dns.subdomains = { "sub.example.com": {ips: {...}, has_records: bool} }
     for name in (dns_data.get("subdomains") or {}).keys():

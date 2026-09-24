@@ -31,6 +31,10 @@ import recon.partial_recon_modules.port_scanning as _port_scanning_mod
 import recon.partial_recon_modules.http_probing as _http_probing_mod
 import recon.partial_recon_modules.osint_enrichment as _osint_enrichment_mod
 
+# main() checks each root against the project's settings before dispatching, so
+# a dispatch test needs settings in which example.com is the project's target.
+_EXAMPLE_PROJECT_SETTINGS = {"TARGET_DOMAIN": "example.com", "SUBDOMAIN_LIST": []}
+
 
 class TestLoadConfig(unittest.TestCase):
     """Tests for config loading from JSON file."""
@@ -308,7 +312,7 @@ class TestRunNaabu(unittest.TestCase):
                 records = []
                 for ip_data in _domain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query:
@@ -316,7 +320,7 @@ class TestRunNaabu(unittest.TestCase):
                 records = []
                 for ip_data in _subdomain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:
@@ -541,14 +545,14 @@ class TestBuildReconDataFromGraph(unittest.TestCase):
                 records = []
                 for d in _domain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query:
                 records = []
                 for d in _subdomain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:
@@ -681,14 +685,14 @@ class TestRunNaabuCidrExpansion(unittest.TestCase):
                 records = []
                 for d in _domain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query:
                 records = []
                 for d in _subdomain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:
@@ -885,14 +889,14 @@ class TestRunNaabuHostnameInputs(unittest.TestCase):
                 records = []
                 for d in _domain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query:
                 records = []
                 for d in _subdomain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:
@@ -1064,14 +1068,14 @@ class TestRunNaabuStructuredTargets(unittest.TestCase):
                 records = []
                 for d in _domain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query:
                 records = []
                 for d in _subdomain_ips:
                     rec = MagicMock()
-                    rec.__getitem__ = lambda self, key, data=d: data[key]
+                    rec.__getitem__ = lambda self, key, data={"root": "example.com", **d}: data[key]
                     records.append(rec)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:
@@ -1291,14 +1295,14 @@ class TestRunMasscan(unittest.TestCase):
                 records = []
                 for ip_data in _domain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query:
                 records = []
                 for ip_data in _subdomain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:
@@ -1481,7 +1485,7 @@ class TestRunNmap(unittest.TestCase):
                 records = []
                 for ip_data in _domain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query and "HAS_PORT" in query:
@@ -1489,7 +1493,7 @@ class TestRunNmap(unittest.TestCase):
                 records = []
                 for ip_data in _subdomain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "Subdomain" in query and "RETURN s LIMIT 1" in query:
@@ -1684,14 +1688,14 @@ class TestRunNmapStructuredTargets(unittest.TestCase):
                 records = []
                 for ip_data in _domain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query and "HAS_PORT" in query:
                 records = []
                 for ip_data in _subdomain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "Subdomain" in query and "RETURN s LIMIT 1" in query:
@@ -1855,18 +1859,19 @@ class TestRunHttpx(unittest.TestCase):
 
         def mock_session_run(query, **kwargs):
             result = MagicMock()
+            # The builder's queries return the root each row belongs to.
             if "RESOLVES_TO]->(i:IP)" in query and "HAS_SUBDOMAIN" not in query and "HAS_PORT" in query:
                 records = []
                 for ip_data in _domain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query and "HAS_PORT" in query:
                 records = []
                 for ip_data in _subdomain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:
@@ -4431,9 +4436,13 @@ class TestShodanMainDispatcher(unittest.TestCase):
             import importlib
             import partial_recon as pr
             importlib.reload(pr)
-            with patch.object(pr, 'run_shodan') as mock_run:
+            with patch.object(pr, 'run_shodan') as mock_run, \
+                 patch.object(pr, 'get_settings', return_value=dict(_EXAMPLE_PROJECT_SETTINGS)):
                 pr.main()
-                mock_run.assert_called_once_with(config)
+                mock_run.assert_called_once()
+                passed = mock_run.call_args[0][0]
+                self.assertEqual(passed["tool_id"], "Shodan")
+                self.assertEqual(passed["domains"], ["example.com"])
         finally:
             del os.environ["PARTIAL_RECON_CONFIG"]
             os.unlink(config_path)
@@ -4972,8 +4981,8 @@ class TestRunUrlscan(unittest.TestCase):
         self.assertIn("urlscan", recon_data)
         self.assertEqual(recon_data["urlscan"]["results_count"], 3)
 
-    def test_urlscan_graph_update_error_raises(self):
-        """URLScan re-raises graph update errors."""
+    def test_urlscan_graph_update_error_fails_the_root_without_raising(self):
+        """A graph-update error fails that root only; the per-root loop swallows it."""
         config = {"domain": "example.com"}
 
         mock_settings = MagicMock()
@@ -5009,8 +5018,8 @@ class TestRunUrlscan(unittest.TestCase):
             import importlib
             import partial_recon as pr
             importlib.reload(pr)
-            with self.assertRaises(Exception):
-                pr.run_urlscan(config)
+            statuses = pr.run_urlscan(config)
+            self.assertTrue(statuses["example.com"].startswith("failed:"))
         finally:
             for name, mod in saved.items():
                 if mod is None:
@@ -5139,8 +5148,8 @@ class TestRunUncover(unittest.TestCase):
         self.assertEqual(len(recon_data["uncover"]["hosts"]), 2)
         self.assertEqual(len(recon_data["uncover"]["ips"]), 2)
 
-    def test_uncover_graph_update_error_raises(self):
-        """Uncover re-raises graph update errors."""
+    def test_uncover_graph_update_error_fails_the_root_without_raising(self):
+        """A graph-update error fails that root only; the per-root loop swallows it."""
         mock_settings = MagicMock()
         mock_settings.return_value = {
             "UNCOVER_ENABLED": False,
@@ -5187,8 +5196,8 @@ class TestRunUncover(unittest.TestCase):
             import importlib
             import partial_recon as pr
             importlib.reload(pr)
-            with self.assertRaises(Exception):
-                pr.run_uncover({"domain": "example.com"})
+            statuses = pr.run_uncover({"domain": "example.com"})
+            self.assertTrue(statuses["example.com"].startswith("failed:"))
         finally:
             for name, mod in saved.items():
                 if mod is None:
@@ -5216,9 +5225,13 @@ class TestUncoverMainDispatcher(unittest.TestCase):
             import importlib
             import partial_recon as pr
             importlib.reload(pr)
-            with patch.object(pr, 'run_uncover') as mock_run:
+            with patch.object(pr, 'run_uncover') as mock_run, \
+                 patch.object(pr, 'get_settings', return_value=dict(_EXAMPLE_PROJECT_SETTINGS)):
                 pr.main()
-                mock_run.assert_called_once_with(config)
+                mock_run.assert_called_once()
+                passed = mock_run.call_args[0][0]
+                self.assertEqual(passed["tool_id"], "Uncover")
+                self.assertEqual(passed["domains"], ["example.com"])
         finally:
             del os.environ["PARTIAL_RECON_CONFIG"]
             os.unlink(config_path)
@@ -5502,7 +5515,8 @@ class TestRunVhostSni(unittest.TestCase):
                 import partial_recon as pr
                 importlib.reload(pr)
                 with patch.object(pr, "run_vhost_sni_partial") as mock_runner, \
-                     patch.object(pr, "_cleanup_orphan_user_inputs"):
+                     patch.object(pr, "_cleanup_orphan_user_inputs"), \
+                     patch.object(pr, "get_settings", return_value=dict(_EXAMPLE_PROJECT_SETTINGS)):
                     pr.main()
                 mock_runner.assert_called_once()
                 config_arg = mock_runner.call_args[0][0]
@@ -5522,7 +5536,8 @@ class TestRunVhostSni(unittest.TestCase):
                 import partial_recon as pr
                 importlib.reload(pr)
                 with patch.object(pr, "run_vhost_sni_partial") as mock_runner, \
-                     patch.object(pr, "_cleanup_orphan_user_inputs"):
+                     patch.object(pr, "_cleanup_orphan_user_inputs"), \
+                     patch.object(pr, "get_settings", return_value=dict(_EXAMPLE_PROJECT_SETTINGS)):
                     with self.assertRaises(SystemExit) as cm:
                         pr.main()
                     self.assertEqual(cm.exception.code, 1)

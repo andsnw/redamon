@@ -50,7 +50,7 @@ How to manage input fields from modal:
 - **Each input type gets its own textarea + validation.** Never mix input types in a single textarea. Each has its own validator, error display, and graph association logic.
 - **Validate on BOTH frontend and backend.** Frontend validates inline (regex, domain ownership, CIDR range) and disables Run on errors. Backend re-validates and skips invalid entries with log messages.
 - **User input graph strategy -- choose by type:**
-  - **Subdomain** -> always attaches to the project's Domain (only one domain per project). Create real Subdomain + IP + RESOLVES_TO nodes directly. No UserInput.
+  - **Subdomain** -> attaches to the Domain of the root it sits under (`root_for_host(sub, roots)`; a Domain-batch project has several roots). Create real Subdomain + IP + RESOLVES_TO nodes directly. No UserInput.
   - **Any other node type** (IP, URL, etc.) -> user must choose which existing node to attach to via a dropdown, OR select "Generic (UserInput)" for orphan provenance.
   - If attachment target doesn't exist at scan time, fall back to UserInput automatically.
 - **Mutual exclusion.** Only one partial recon OR full recon can run at a time per project. The orchestrator enforces this (409 Conflict).
@@ -100,8 +100,8 @@ User clicks Play on tool node (ProjectForm)
 
 **Each input type the tool accepts gets its own section in the modal.** This is the core UI pattern:
 
-### Rule: Subdomains always auto-attach to Domain
-Since there is only one Domain per project, subdomains always belong to it. No dropdown needed -- just validate that the subdomain ends with `.{projectDomain}`.
+### Rule: Subdomains auto-attach to their root's Domain
+A subdomain belongs to the root it sits under, so no dropdown is needed. A Domain-batch project has several roots: validate with `host_in_roots(entry, roots)` (frontend: under any project root) and attach with `root_for_host(entry, roots)`. Read the roots with `roots = scope_roots(config)`, never `config["domain"]` -- `recon/tests/test_partial_scope_guard.py` fails the gate on a direct read.
 
 ### Rule: All other input types need a "Associate to" dropdown
 IPs, URLs, or any other user values need explicit association. The dropdown offers:
@@ -161,15 +161,17 @@ The project's "Include Root Domain" setting (TargetSection UI) maps to whether `
 **Pattern to copy (graph-on branch):**
 ```python
 recon_data = _build_http_probe_data_from_graph(
-    domain, user_id, project_id,
+    roots, user_id, project_id,
     include_root_domain=_should_include_root_domain(settings),
+    domain_groups=config.get("domain_groups"),   # each root keeps its group's scope
 )
 ```
 
 **Pattern for the graph-off `else` branch** (when `include_graph_targets=False`):
 ```python
 recon_data = {
-    "domain": domain,
+    "domain": roots[0],
+    "domains": roots,
     "dns": {
         "domain": {"ips": {"ipv4": [], "ipv6": []}, "has_records": False},
         "subdomains": {},

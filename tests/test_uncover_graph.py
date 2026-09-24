@@ -36,6 +36,7 @@ sys.modules["graph_db.schema"] = _schema
 sys.modules["graph_db.cpe_resolver"] = _cpe
 sys.modules["graph_db.cert_key"] = _cert_key
 _base = _load("graph_db.mixins.base_mixin", "graph_db/mixins/base_mixin.py")
+_scope = _load("graph_db.mixins.recon.scope", "graph_db/mixins/recon/scope.py")
 _osint = _load("graph_db.mixins.osint_mixin", "graph_db/mixins/osint_mixin.py")
 
 

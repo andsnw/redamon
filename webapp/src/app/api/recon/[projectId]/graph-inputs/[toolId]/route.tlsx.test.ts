@@ -35,16 +35,26 @@ function call(toolId: string) {
   return GET({} as never, { params: Promise.resolve({ projectId: 'p1', toolId }) })
 }
 
+/** The tool's own count query; the route first reads the project's Domain nodes. */
+function toolCall() {
+  return mockRun.mock.calls.find(([cypher]) => !String(cypher).includes('AS hasData')) as
+    [string, Record<string, unknown>]
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   mockGuard.mockResolvedValue(null)  // access allowed
   mockFindUnique.mockResolvedValue({ userId: 'u1', targetDomain: 'acme.test' })
-  mockRun.mockResolvedValue({
-    records: [record({
-      domain: 'acme.test', subdomains: ['a.acme.test'], subCount: int(1),
-      ipCount: int(3), portCount: int(7),
-    })],
-  })
+  mockRun.mockImplementation(async (cypher: string) => (
+    cypher.includes('AS hasData')
+      ? { records: [record({ name: 'acme.test', hasData: true })] }
+      : {
+          records: [record({
+            subdomains: ['a.acme.test'], subCount: int(1),
+            ipCount: int(3), portCount: int(7),
+          })],
+        }
+  ))
 })
 
 describe('graph-inputs route — Tlsx branch', () => {
@@ -58,15 +68,16 @@ describe('graph-inputs route — Tlsx branch', () => {
 
   test('reads IPs through their open Ports, the shape tlsx actually scans', async () => {
     await call('Tlsx')
-    const [cypher] = mockRun.mock.calls[0] as [string, Record<string, unknown>]
+    const [cypher] = toolCall()
     expect(cypher).toContain('HAS_PORT')
     expect(cypher).toContain('IP')
   })
 
-  test('scopes the query to the tenant', async () => {
+  test('scopes the query to the tenant and to the project roots', async () => {
     await call('Tlsx')
-    const [, params] = mockRun.mock.calls[0] as [string, Record<string, unknown>]
-    expect(params).toEqual({ uid: 'u1', pid: 'p1' })
+    const [cypher, params] = toolCall()
+    expect(params).toEqual({ uid: 'u1', pid: 'p1', domains: ['acme.test'] })
+    expect(cypher).toContain('d.name IN $domains')
   })
 
   test('a Neo4j failure degrades to the settings fallback instead of 500', async () => {

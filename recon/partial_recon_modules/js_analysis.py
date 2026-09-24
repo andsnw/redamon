@@ -7,7 +7,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.partial_recon_modules.helpers import _is_valid_url, _scope_partial_urls
+from recon.partial_recon_modules.helpers import _is_valid_url, _scope_partial_urls, partial_settings, scope_roots
 
 
 def run_jsrecon(config: dict) -> None:
@@ -24,22 +24,21 @@ def run_jsrecon(config: dict) -> None:
     results into the graph via update_graph_from_js_recon.
     """
     from recon.main_recon_modules.js_recon import run_js_recon
-    from recon.project_settings import get_settings
 
-    domain = config["domain"]
+    roots = scope_roots(config)
 
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable JS Recon since the user explicitly chose to run it
     settings['JS_RECON_ENABLED'] = True
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] JS Recon Scanner")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Parse user targets -- JS Recon accepts URLs (same as Jsluice/Katana)
@@ -108,11 +107,12 @@ def run_jsrecon(config: dict) -> None:
 
                     result = session.run(
                         """
-                        MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                        MATCH (d:Domain {user_id: $uid, project_id: $pid})
                               -[:HAS_SUBDOMAIN]->(s:Subdomain)
+                        WHERE d.name IN $domains
                         RETURN collect(DISTINCT s.name) AS subdomains
                         """,
-                        domain=domain, uid=user_id, pid=project_id,
+                        domains=roots, uid=user_id, pid=project_id,
                     )
                     record = result.single()
                     if record:
@@ -127,7 +127,8 @@ def run_jsrecon(config: dict) -> None:
     if user_urls:
         print(f"[*][Partial Recon] Adding {len(user_urls)} user-provided URLs")
     target_urls, scope_hosts = _scope_partial_urls(
-        target_urls, user_urls, graph_subdomains, settings, domain,
+        target_urls, user_urls, graph_subdomains, settings, roots,
+        domain_groups=config.get("domain_groups"),
     )
 
     # Check for uploaded JS files (they're loaded by run_js_recon internally)
@@ -151,7 +152,8 @@ def run_jsrecon(config: dict) -> None:
     # We populate discovered_urls with all our target URLs
     # and http_probe.by_url as an empty dict (no live probe data in partial mode)
     combined_result = {
-        "domain": domain,
+        "domain": roots[0] if roots else "",
+        "domains": roots,
         "subdomains": scope_hosts,
         "dns": {
             "subdomains": [{"subdomain": s, "source": "graph"} for s in graph_subdomains],
@@ -220,7 +222,7 @@ def run_jsrecon(config: dict) -> None:
                         elif needs_user_input:
                             user_input_id = str(uuid.uuid4())
                             graph_client.create_user_input_node(
-                                domain=domain,
+                                domain=roots,
                                 user_input_data={
                                     "id": user_input_id,
                                     "input_type": "urls",

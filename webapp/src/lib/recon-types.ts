@@ -169,6 +169,8 @@ export interface PartialReconState {
   completed_at: string | null
   error: string | null
   stats: Record<string, number> | null
+  /** The project roots the orchestrator started this run over. */
+  roots?: string[]
 }
 
 export interface PartialReconListResponse {
@@ -177,7 +179,18 @@ export interface PartialReconListResponse {
 }
 
 export interface GraphInputs {
+  /** The first root in `domains`, for callers that predate multi-root runs. */
   domain: string | null
+  /** The project's current roots this tool can run over, sorted. A Domain-batch
+   *  project has several; single-domain and IP mode have one. */
+  domains?: string[]
+  /** Domain nodes still in the graph that are no longer project roots. Never scanned. */
+  stale_domains?: string[]
+  /** Roots in `domains` with no recon data in the graph yet. */
+  empty_domains?: string[]
+  /** SubdomainDiscovery only: the roots allowed to enumerate (a batch group
+   *  enumerates only when the operator wrote a wildcard for it). */
+  discovery_domains?: string[]
   existing_subdomains_count: number
   existing_subdomains?: string[]
   existing_ips_count?: number
@@ -205,12 +218,18 @@ export interface UserTargets {
 
 export interface PartialReconParams {
   tool_id: string
-  graph_inputs: Record<string, string>
+  /** `{ domains: [...] }`. A job queued before multi-root runs carries `{ domain }`. */
+  graph_inputs: Record<string, string | string[]>
   user_inputs: string[]
   user_targets?: UserTargets
   include_graph_targets?: boolean
   settings_overrides?: Record<string, unknown>
 }
+
+/** The only settings a partial run may override (the Nuclei checkboxes). The
+ *  orchestrator answers 400 to anything else. Mirrors PARTIAL_OVERRIDE_KEYS in
+ *  recon_orchestrator/batch_scope.py. */
+export const PARTIAL_RECON_OVERRIDE_KEYS = ['CVE_LOOKUP_ENABLED', 'MITRE_ENABLED', 'SECURITY_CHECK_ENABLED'] as const
 
 export const PARTIAL_RECON_SUPPORTED_TOOLS = new Set(['SubdomainDiscovery', 'Naabu', 'Masscan', 'Nmap', 'Tlsx', 'Httpx', 'Katana', 'ZapAjaxSpider', 'Hakrawler', 'Jsluice', 'Gau', 'Kiterunner', 'ParamSpider', 'Arjun', 'Ffuf', 'EndpointAiClassifier', 'AiSurfaceRecon', 'JsRecon', 'SupplyChainRecon', 'GraphqlScan', 'Nuclei', 'SubdomainTakeover', 'VhostSni', 'WebCachePoison', 'SecurityChecks', 'Shodan', 'Urlscan', 'Uncover', 'OsintEnrichment', 'OriginDiscovery'])
 

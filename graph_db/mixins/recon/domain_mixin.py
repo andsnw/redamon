@@ -10,6 +10,33 @@ from urllib.parse import urlparse, parse_qs
 from graph_db.cpe_resolver import _is_ip_address
 
 class DomainMixin:
+    def ensure_root_domains(self, roots: list, user_id: str, project_id: str) -> int:
+        """MERGE a bare Domain node for every project root; return how many exist.
+
+        A Domain batch clears the graph once and then scans one group at a time,
+        so while group 1 runs the later groups' Domain nodes do not exist yet. A
+        writer attaching a host it found under a sibling root (attach_roots)
+        links it to that root's Domain, and without the node the Subdomain is
+        left unlinked. The webapp seeds these nodes when the project is saved;
+        the clear removes them, so the pipeline restores them before group 1.
+        Only the tenant key and updated_at: the group's own domain write fills
+        in the rest.
+        """
+        names = [r.strip() for r in roots or [] if isinstance(r, str) and r.strip()]
+        if not names:
+            return 0
+        with self.driver.session() as session:
+            record = session.run(
+                """
+                UNWIND $names AS name
+                MERGE (d:Domain {name: name, user_id: $user_id, project_id: $project_id})
+                ON CREATE SET d.updated_at = datetime()
+                RETURN count(d) AS seeded
+                """,
+                names=names, user_id=user_id, project_id=project_id,
+            ).single()
+        return record["seeded"] if record else 0
+
     def update_graph_from_domain_discovery(self, recon_data: dict, user_id: str, project_id: str) -> dict:
         """
         Initialize the Neo4j graph database with reconnaissance data after domain_discovery.

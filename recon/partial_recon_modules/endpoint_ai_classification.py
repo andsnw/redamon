@@ -26,6 +26,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from recon.partial_recon_modules.helpers import partial_settings
+
 
 def run_endpoint_ai_classifier(config: dict) -> None:
     """Re-run the AI endpoint/parameter classifier over the existing graph.
@@ -37,7 +39,6 @@ def run_endpoint_ai_classifier(config: dict) -> None:
 
     Returns nothing. Prints a one-line summary to stdout.
     """
-    from recon.project_settings import get_settings
     from recon.main_recon_modules.resource_enum import _annotate_ai_endpoint_classifier
     from graph_db.neo4j_client import Neo4jClient
 
@@ -53,7 +54,7 @@ def run_endpoint_ai_classifier(config: dict) -> None:
     print(f"[*][ResourceEnum-AI] Project: {project_id}")
     print(f"{'=' * 50}\n")
 
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force the master toggle on for the partial run — the operator explicitly
     # asked for it. Sub-toggles still honour whatever the project settings say.

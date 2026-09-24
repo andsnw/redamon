@@ -41,6 +41,114 @@ def batch_guardrail_targets(project: dict) -> list[str]:
     return roots
 
 
+# ---------------------------------------------------------------------------
+# Partial recon. The orchestrator is the only authority on which roots a run
+# may touch: the client names at most a subset, never a root of its own.
+# ---------------------------------------------------------------------------
+
+# The only settings a partial run may override: the Nuclei checkboxes, the one
+# thing the modal sends. The recon modules apply every override they receive,
+# so an open dict would let a crafted request switch off ROE_ENABLED or empty
+# ROE_EXCLUDED_HOSTS. Mirrors ALLOWED_SETTINGS_OVERRIDES in recon/partial_recon.py,
+# which drops anything else again inside the container.
+PARTIAL_OVERRIDE_KEYS = frozenset({
+    'CVE_LOOKUP_ENABLED',
+    'MITRE_ENABLED',
+    'SECURITY_CHECK_ENABLED',
+})
+
+# Same ceiling as a Domain batch (MAX_BATCH_GROUPS in webapp/src/lib/domainBatch.ts).
+MAX_REQUESTED_ROOTS = 50
+
+
+class PartialScopeError(ValueError):
+    """A partial-recon start to refuse, with the HTTP status to refuse it with."""
+
+    def __init__(self, status_code: int, detail: str):
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+
+
+def _usable_root(root: str) -> bool:
+    # The charset is checked on the lowercased name but the stored spelling is
+    # kept: a single-domain target is saved trimmed, not lowercased, and the
+    # graph's Domain node carries exactly that name.
+    low = root.strip().lower()
+    return bool(low) and bool(_BATCH_ROOT_CHARSET.match(low)) and '..' not in low
+
+
+def partial_project_roots(project: dict, project_id: str) -> list[str]:
+    """Every root this project scans, re-validated. Raises PartialScopeError(400)."""
+    if project.get('ipMode', False):
+        # The name recon/main.py mints for IP mode's synthetic Domain node.
+        roots = [f"ip-targets.{project_id}"]
+    elif project.get('domainBatchMode', False):
+        roots = batch_guardrail_targets(project)
+        if not roots:
+            raise PartialScopeError(
+                400,
+                "Domain batch project has no valid domain groups. "
+                "Re-save the project's hostname list before scanning.",
+            )
+    else:
+        target = str(project.get('targetDomain') or '').strip()
+        roots = [target] if target else []
+
+    roots = [r for r in roots if _usable_root(r)]
+    if not roots:
+        raise PartialScopeError(400, "This project has no usable scan target.")
+    return roots
+
+
+def narrow_partial_roots(roots: list[str], graph_inputs: dict) -> list[str]:
+    """The project roots this run covers, narrowed by the request. Sorted.
+
+    `graph_inputs.domains` is intersected with the roots. A legacy request (a
+    job queued before multi-root partial recon) carries only `domain`, which
+    must be a current root. Neither means every root.
+    """
+    graph_inputs = graph_inputs if isinstance(graph_inputs, dict) else {}
+    by_key = {r.lower(): r for r in roots}
+
+    requested = graph_inputs.get('domains')
+    if requested is not None:
+        if (not isinstance(requested, list) or len(requested) > MAX_REQUESTED_ROOTS
+                or not all(isinstance(x, str) for x in requested)):
+            raise PartialScopeError(
+                400, f"graph_inputs.domains must be a list of at most "
+                     f"{MAX_REQUESTED_ROOTS} domain names.")
+        chosen = {by_key[x.strip().lower()] for x in requested if x.strip().lower() in by_key}
+        if not chosen:
+            raise PartialScopeError(400, "None of the requested domains is a target of this project.")
+        return sorted(chosen)
+
+    legacy = graph_inputs.get('domain')
+    if legacy:
+        if not isinstance(legacy, str) or legacy.strip().lower() not in by_key:
+            raise PartialScopeError(400, f"{legacy!r} is not a target of this project.")
+        return [by_key[legacy.strip().lower()]]
+
+    return sorted(roots)
+
+
+def validate_partial_overrides(overrides) -> dict:
+    """The settings overrides, or PartialScopeError(400) for anything not allowed."""
+    if overrides is None:
+        return {}
+    if not isinstance(overrides, dict):
+        raise PartialScopeError(400, "settings_overrides must be an object.")
+    unknown = sorted(k for k in overrides if k not in PARTIAL_OVERRIDE_KEYS)
+    if unknown:
+        raise PartialScopeError(
+            400, f"settings_overrides may only set {sorted(PARTIAL_OVERRIDE_KEYS)}; "
+                 f"refused: {unknown}")
+    not_bool = sorted(k for k, v in overrides.items() if not isinstance(v, bool))
+    if not_bool:
+        raise PartialScopeError(400, f"settings_overrides must be true/false: {not_bool}")
+    return dict(overrides)
+
+
 def guardrail_targets(project: dict) -> list[str]:
     """Every domain to hard-guardrail before starting a recon, whatever the mode.
 

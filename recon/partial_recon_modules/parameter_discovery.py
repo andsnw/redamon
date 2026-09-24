@@ -7,8 +7,20 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.partial_recon_modules.helpers import _is_valid_url, _is_valid_hostname, _should_include_root_domain
-from recon.partial_recon_modules.graph_builders import _build_http_probe_data_from_graph
+from recon.partial_recon_modules.helpers import (
+    _is_valid_hostname,
+    _is_valid_url,
+    _should_include_root_domain,
+    host_in_roots,
+    partial_settings,
+    scope_roots,
+)
+from recon.partial_recon_modules.graph_builders import (
+    _build_http_probe_data_from_graph,
+    graph_target_hosts,
+    graph_url_scope,
+    url_host,
+)
 from recon.partial_recon_modules.user_inputs import _create_user_subdomains_in_graph
 from recon.helpers import build_target_urls, extract_targets_from_recon
 from recon.helpers.auth_profile import merge_auth_headers
@@ -27,25 +39,25 @@ def run_paramspider(config: dict) -> None:
         run_paramspider_discovery,
         merge_paramspider_into_by_base_url,
     )
-    from recon.project_settings import get_settings
 
-    domain = config["domain"]
+    roots = scope_roots(config)
+    domain = roots[0] if roots else ""
 
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable ParamSpider since the user explicitly chose to run it
     settings['PARAMSPIDER_ENABLED'] = True
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] ParamSpider Passive Parameter Discovery")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
-    # Parse user targets -- ParamSpider accepts subdomains
+    # Parse user targets -- ParamSpider accepts subdomains under any root
     user_targets = config.get("user_targets") or {}
     user_subdomains = []
 
@@ -53,7 +65,7 @@ def run_paramspider(config: dict) -> None:
         for entry in user_targets.get("subdomains", []):
             entry = entry.strip().lower()
             if entry and _is_valid_hostname(entry):
-                if entry == domain or entry.endswith("." + domain):
+                if host_in_roots(entry, roots):
                     user_subdomains.append(entry)
                 else:
                     print(f"[!][Partial Recon] Skipping subdomain outside scope: {entry}")
@@ -63,37 +75,15 @@ def run_paramspider(config: dict) -> None:
     if user_subdomains:
         print(f"[+][Partial Recon] Validated {len(user_subdomains)} custom subdomains")
 
-    # Build target_domains from graph subdomains + user subdomains
+    # Build target_domains: every in-scope host across the run's roots, plus the
+    # user's subdomains. A literal batch group contributes only its listed hosts.
     include_graph = config.get("include_graph_targets", True)
-    target_domains = set()
-
-    if include_graph:
-        print(f"[*][Partial Recon] Querying graph for target subdomains...")
-        from graph_db import Neo4jClient
-        with Neo4jClient() as graph_client:
-            if graph_client.verify_connection():
-                driver = graph_client.driver
-                with driver.session() as session:
-                    result = session.run(
-                        """
-                        MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
-                              -[:HAS_SUBDOMAIN]->(s:Subdomain)
-                        RETURN collect(DISTINCT s.name) AS subdomains
-                        """,
-                        domain=domain, uid=user_id, pid=project_id,
-                    )
-                    record = result.single()
-                    if record and record["subdomains"]:
-                        target_domains.update(record["subdomains"])
-            else:
-                print("[!][Partial Recon] Neo4j not reachable, cannot fetch graph subdomains")
-    else:
+    if not include_graph:
         print(f"[*][Partial Recon] Skipping graph targets (user opted out)")
-
-    # Always include the root domain
-    target_domains.add(domain)
-
-    # Add user-provided subdomains
+    target_domains = set(graph_target_hosts(
+        user_id, project_id, roots, config.get("domain_groups"),
+        include_root_domain=_should_include_root_domain(settings), include_graph=include_graph,
+    ))
     for sub in user_subdomains:
         target_domains.add(sub)
 
@@ -115,7 +105,7 @@ def run_paramspider(config: dict) -> None:
     if not paramspider_urls:
         print("[!][Partial Recon] ParamSpider found no URLs. No archived parameters for these domains.")
         if user_subdomains:
-            _create_user_subdomains_in_graph(domain, user_subdomains, user_id, project_id)
+            _create_user_subdomains_in_graph(roots, user_subdomains, user_id, project_id)
         print(f"\n[+][Partial Recon] ParamSpider completed (no results)")
         return
 
@@ -138,6 +128,7 @@ def run_paramspider(config: dict) -> None:
     # Build resource_enum result structure (same shape as full pipeline)
     recon_data = {
         "domain": domain,
+        "domains": roots,
         "subdomains": list(target_domains),
         "resource_enum": {
             "by_base_url": by_base_url,
@@ -170,7 +161,7 @@ def run_paramspider(config: dict) -> None:
 
                 # Create Subdomain nodes for user-provided subdomains
                 if user_subdomains:
-                    _create_user_subdomains_in_graph(domain, user_subdomains, user_id, project_id)
+                    _create_user_subdomains_in_graph(roots, user_subdomains, user_id, project_id)
 
                 print(f"[+][Partial Recon] Graph updated successfully")
                 print(f"[+][Partial Recon] Stats: {json.dumps(stats, default=str)}")
@@ -199,22 +190,21 @@ def run_kiterunner(config: dict) -> None:
         merge_kiterunner_into_by_base_url,
         detect_kiterunner_methods,
     )
-    from recon.project_settings import get_settings
 
-    domain = config["domain"]
+    roots = scope_roots(config)
 
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable Kiterunner since the user explicitly chose to run it
     settings['KITERUNNER_ENABLED'] = True
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Kiterunner API Discovery (only)")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Parse user targets -- Kiterunner accepts URLs
@@ -248,13 +238,15 @@ def run_kiterunner(config: dict) -> None:
     if include_graph:
         print(f"[*][Partial Recon] Querying graph for targets (BaseURLs)...")
         recon_data = _build_http_probe_data_from_graph(
-            domain, user_id, project_id,
+            roots, user_id, project_id,
             include_root_domain=_should_include_root_domain(settings),
+            domain_groups=config.get("domain_groups"),
         )
     else:
         print(f"[*][Partial Recon] Skipping graph targets (user opted out)")
         recon_data = {
-            "domain": domain,
+            "domain": roots[0] if roots else "",
+            "domains": roots,
             "subdomains": [],
             "http_probe": {
                 "by_url": {},
@@ -453,7 +445,7 @@ def run_kiterunner(config: dict) -> None:
                         elif needs_user_input:
                             user_input_id = str(uuid.uuid4())
                             graph_client.create_user_input_node(
-                                domain=domain,
+                                domain=roots,
                                 user_input_data={
                                     "id": user_input_id,
                                     "input_type": "urls",
@@ -510,22 +502,21 @@ def run_arjun(config: dict) -> None:
         run_arjun_discovery,
         merge_arjun_into_by_base_url,
     )
-    from recon.project_settings import get_settings
 
-    domain = config["domain"]
+    roots = scope_roots(config)
 
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
     print(f"[*][Partial Recon] Loading project settings...")
-    settings = get_settings()
+    settings = partial_settings(config)
 
     # Force-enable Arjun since the user explicitly chose to run it
     settings['ARJUN_ENABLED'] = True
 
     print(f"\n{'=' * 50}")
     print(f"[*][Partial Recon] Arjun Parameter Discovery (only)")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Check binary availability
@@ -571,6 +562,8 @@ def run_arjun(config: dict) -> None:
             if graph_client.verify_connection():
                 driver = graph_client.driver
                 with driver.session() as session:
+                    keep = graph_url_scope(session, user_id, project_id, roots,
+                                           config.get("domain_groups"), apex_filter=False)
                     # Get all endpoint full URLs (baseurl + path) from the graph
                     result = session.run(
                         """
@@ -581,7 +574,7 @@ def run_arjun(config: dict) -> None:
                     )
                     for record in result:
                         url = record["url"]
-                        if url:
+                        if url and keep(url_host(url)):
                             arjun_target_urls.append(url)
 
                     # Also add BaseURLs themselves (fallback if no endpoints)
@@ -595,7 +588,9 @@ def run_arjun(config: dict) -> None:
                     for record in result:
                         url = record["url"]
                         host = record["host"] or ""
-                        if url and url not in arjun_target_urls:
+                        if not url or not keep(url_host(url, host)):
+                            continue
+                        if url not in arjun_target_urls:
                             arjun_target_urls.append(url)
                         if host:
                             target_domains.add(host)
@@ -618,9 +613,8 @@ def run_arjun(config: dict) -> None:
             if host:
                 target_domains.add(host)
 
-    # Also add domain itself to target_domains for scope filtering
-    if domain:
-        target_domains.add(domain)
+    # Also add the roots themselves to target_domains for scope filtering
+    target_domains.update(roots)
 
     if not arjun_target_urls:
         print("[!][Partial Recon] No URLs to test (graph has no BaseURLs/Endpoints and no valid user URLs provided).")
@@ -691,7 +685,8 @@ def run_arjun(config: dict) -> None:
 
     # Build recon_data for graph update (needs domain + subdomains for scope)
     recon_data = {
-        "domain": domain,
+        "domain": roots[0] if roots else "",
+        "domains": roots,
         "subdomains": [],
     }
 
@@ -705,11 +700,12 @@ def run_arjun(config: dict) -> None:
                     with driver.session() as session:
                         result = session.run(
                             """
-                            MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                            MATCH (d:Domain {user_id: $uid, project_id: $pid})
                                   -[:HAS_SUBDOMAIN]->(s:Subdomain)
+                            WHERE d.name IN $domains
                             RETURN collect(DISTINCT s.name) AS subdomains
                             """,
-                            domain=domain, uid=user_id, pid=project_id,
+                            domains=roots, uid=user_id, pid=project_id,
                         )
                         record = result.single()
                         if record:
@@ -781,7 +777,7 @@ def run_arjun(config: dict) -> None:
                         elif needs_user_input:
                             user_input_id = str(uuid.uuid4())
                             graph_client.create_user_input_node(
-                                domain=domain,
+                                domain=roots,
                                 user_input_data={
                                     "id": user_input_id,
                                     "input_type": "urls",

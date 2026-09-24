@@ -25,6 +25,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from graph_db.cert_key import build_cert_key
+from graph_db.mixins.recon.scope import attach_roots, root_for_host
 from graph_db.schema import NON_RECON_SOURCES
 
 
@@ -82,16 +83,17 @@ class TlsxMixin:
         if not by_target:
             return stats
 
-        domain = (
-            recon_data.get("domain")
-            or (recon_data.get("metadata") or {}).get("target", "")
-            or ""
-        ).strip().lower()
+        roots = attach_roots(recon_data)
+        if not roots:
+            target = ((recon_data.get("metadata") or {}).get("target") or "").strip()
+            roots = [target] if target else []
 
         def _in_scope(name: str) -> bool:
-            # Fail closed without an apex (batch mode empties it): only link a
-            # cert to a Subdomain that is genuinely in this group's scope.
-            return bool(domain) and (name == domain or name.endswith("." + domain))
+            # Fail closed without a root: only link a cert to a Subdomain that is
+            # genuinely under one of this write's roots. No ip_mode here: IP
+            # mode's synthetic root is no parent of a real SAN name, so an IP-mode
+            # scan links none, exactly as it always has.
+            return root_for_host(name, roots) is not None
 
         with self.driver.session() as session:
             for key, entry in by_target.items():

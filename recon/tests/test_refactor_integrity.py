@@ -290,12 +290,20 @@ class TestFunctionSignatures(unittest.TestCase):
             _build_http_probe_data_from_graph,
             _build_vuln_scan_data_from_graph,
         )
-        expected = ["domain", "user_id", "project_id", "include_root_domain"]
-        for fn in [_build_recon_data_from_graph, _build_port_scan_data_from_graph,
-                    _build_http_probe_data_from_graph, _build_vuln_scan_data_from_graph]:
+        # A builder that covers a Domain batch takes the run's roots and each
+        # root's group scope; include_root_domain stays for single-root callers.
+        multi_root = ["domains", "user_id", "project_id", "include_root_domain", "domain_groups"]
+        single_root = ["domain", "user_id", "project_id", "include_root_domain"]
+        expected = {
+            _build_recon_data_from_graph: multi_root,
+            _build_port_scan_data_from_graph: multi_root,
+            _build_http_probe_data_from_graph: multi_root,
+            _build_vuln_scan_data_from_graph: multi_root,
+        }
+        for fn, params_expected in expected.items():
             sig = inspect.signature(fn)
             params = list(sig.parameters.keys())
-            self.assertEqual(params, expected,
+            self.assertEqual(params, params_expected,
                              f"{fn.__name__} has wrong parameters: {params}")
 
     def test_classify_ip_signature(self):
