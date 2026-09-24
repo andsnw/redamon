@@ -12,13 +12,14 @@ import { describe, test, expect, beforeEach, vi } from 'vitest'
 const prismaMock = vi.hoisted(() => ({
   conversation: { findFirst: vi.fn() },
   triageRun: { findMany: vi.fn(), updateMany: vi.fn() },
+  nodeFilterRun: { findMany: vi.fn(), updateMany: vi.fn() },
 }))
 const fetchMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/prisma', () => ({ default: prismaMock }))
 vi.mock('@/lib/orchestrator', () => ({ orchestratorFetch: (...a: unknown[]) => fetchMock(...a) }))
 
-import { describeLiveGraphWriters, describeSecondaryScanWriters } from './graphWriters'
+import { describeLiveGraphWriters, describeScanWriters, describeSecondaryScanWriters } from './graphWriters'
 
 const okJson = (body: unknown) => ({ ok: true, json: async () => body })
 
@@ -27,6 +28,8 @@ beforeEach(() => {
   prismaMock.conversation.findFirst.mockResolvedValue(null)
   prismaMock.triageRun.findMany.mockResolvedValue([])
   prismaMock.triageRun.updateMany.mockResolvedValue({ count: 0 })
+  prismaMock.nodeFilterRun.findMany.mockResolvedValue([])
+  prismaMock.nodeFilterRun.updateMany.mockResolvedValue({ count: 0 })
   // Run-keyed endpoints answer with a run LIST; project-level ones with a status.
   fetchMock.mockImplementation(async (url: string) =>
     url.includes('/all') ? okJson({ runs: [] }) : okJson({ status: 'idle' }))
@@ -209,5 +212,35 @@ describe('describeSecondaryScanWriters', () => {
   test('FAIL CLOSED: a thrown fetch reads as busy', async () => {
     fetchMock.mockRejectedValue(new Error('ECONNREFUSED'))
     expect(await describeSecondaryScanWriters('p1')).toMatch(/could not be verified/)
+  })
+})
+
+describe('a node-filter apply is a graph writer', () => {
+  const live = () => [{ id: 'nf1', startedAt: new Date(), heartbeatAt: new Date(), target: 'current', revision: 3 }]
+
+  test('it blocks activation and Recon Delta (describeLiveGraphWriters)', async () => {
+    prismaMock.nodeFilterRun.findMany.mockResolvedValue(live())
+    expect(await describeLiveGraphWriters('p1')).toBe('mute rules are being applied to the graph')
+  })
+
+  test('it blocks scan start, Save Version and partial start (describeScanWriters), before any network call', async () => {
+    prismaMock.nodeFilterRun.findMany.mockResolvedValue(live())
+    expect(await describeScanWriters('p1')).toBe('mute rules are being applied to the graph')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test('a run whose agent died stops blocking, and is marked failed', async () => {
+    const old = new Date(Date.now() - 60 * 60 * 1000)
+    prismaMock.nodeFilterRun.findMany.mockResolvedValue([
+      { id: 'nf1', startedAt: old, heartbeatAt: old, target: 'current', revision: 3 },
+    ])
+    expect(await describeScanWriters('p1')).toBeNull()
+    expect(prismaMock.nodeFilterRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'failed', error: 'agent_lost' }) }))
+  })
+
+  test('an unreadable run state reads as busy, never as idle', async () => {
+    prismaMock.nodeFilterRun.findMany.mockRejectedValue(new Error('db down'))
+    expect(await describeScanWriters('p1')).toMatch(/mute-rule apply state could not be verified/)
   })
 })

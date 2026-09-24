@@ -101,7 +101,7 @@ describe('list_graph_views', () => {
 
 describe('run_graph_view permissions', () => {
   test('it needs graph:cypher, not merely recon:read', async () => {
-    // DEFAULT_MCP_SCOPES is ['recon:read'], so without this the default token
+    // DEFAULT_MCP_SCOPES has no graph:cypher, so without this the default token
     // could execute arbitrary stored Cypher.
     await expect(runGraphView(ctx(['recon:read']), 'p1', 'g1'))
       .rejects.toBeInstanceOf(McpScopeError)

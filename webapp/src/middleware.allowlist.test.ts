@@ -43,6 +43,27 @@ describe('internalKeyRouteAllowed — off-allowlist routes are NOT allowed', () 
   })
 })
 
+// The agent reads a node-filter run, heartbeats it and records its end with the
+// internal key. If the middleware blocked any of the three, every apply would
+// die as agent_lost while the UI waited on it.
+describe('node-filter apply runs: the three agent callbacks and nothing else', () => {
+  test.each([
+    ['GET', '/api/internal/node-filter-runs/run1', true],
+    ['POST', '/api/internal/node-filter-runs/run1/heartbeat', true],
+    ['POST', '/api/internal/node-filter-runs/run1/finish', true],
+    ['POST', '/api/internal/node-filter-runs/run1', false],
+    ['DELETE', '/api/internal/node-filter-runs/run1', false],
+    ['GET', '/api/internal/node-filter-runs/run1/heartbeat', false],
+    ['GET', '/api/internal/node-filter-runs/run1/finish', false],
+    ['POST', '/api/internal/node-filter-runs', false],
+    ['POST', '/api/internal/node-filter-runs/run1/finish/../../../users/x', false],
+  ])('%s %s → %s', (method, path, allowed) => {
+    expect(internalKeyRouteAllowed(method, path)).toBe(allowed)
+    // Scan containers hold the scanner key; a run's rules are not theirs.
+    expect(scannerKeyRouteAllowed(method, path)).toBe(false)
+  })
+})
+
 describe('scannerKeyRouteAllowed — S3/E6 scoped scanner token', () => {
   test.each([
     ['GET', '/api/users/abc/settings'],   // OSINT keys recon needs

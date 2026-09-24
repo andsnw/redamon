@@ -34,6 +34,7 @@ const h = vi.hoisted(() => ({
   txUpdateMany: vi.fn(),
   transaction: vi.fn(),
   closeSession: vi.fn(),
+  nodeFilterWriter: vi.fn(),
 }))
 
 vi.mock('@/lib/access', () => ({
@@ -45,6 +46,9 @@ vi.mock('@/lib/scanVersionAccess', () => ({
 }))
 vi.mock('@/lib/graphWriters', () => ({
   describeLiveGraphWriters: (...a: unknown[]) => h.describeWriters(...a),
+}))
+vi.mock('@/lib/nodeFilterRun', () => ({
+  describeNodeFilterWriter: (...a: unknown[]) => h.nodeFilterWriter(...a),
 }))
 vi.mock('@/lib/activationLock', () => ({
   acquireActivationLock: (...a: unknown[]) => h.acquire(...a),
@@ -91,6 +95,7 @@ beforeEach(() => {
   h.requireProjectAccess.mockResolvedValue({ project: { id: 'p1', userId: 'owner' } })
   h.requireVersion.mockResolvedValue(TARGET)
   h.describeWriters.mockResolvedValue(null)
+  h.nodeFilterWriter.mockResolvedValue(null)
   h.acquire.mockResolvedValue({ acquired: true })
   h.release.mockResolvedValue(undefined)
   h.ensureCurrent.mockResolvedValue({ id: 'v2', seq: 2, label: 'Scan 2' })
@@ -309,5 +314,19 @@ describe('failure modes', () => {
     h.restore.mockRejectedValue(new Error('apoc exploded'))
     await POST(req(), params('p1', 'v1'))
     expect(h.closeSession).toHaveBeenCalled()
+  })
+})
+
+describe('a node-filter apply that started between the writer check and the lock', () => {
+  test('is caught under the lock: nothing is frozen, and the lock is released', async () => {
+    // describeLiveGraphWriters saw an idle graph, then an apply started before
+    // the lock was taken. The freeze would capture a half-applied graph.
+    h.nodeFilterWriter.mockResolvedValue('mute rules are being applied to the graph')
+    const res = await POST(req(), params('p1', 'v1'))
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/mute rules are being applied/)
+    expect(h.capture).not.toHaveBeenCalled()
+    expect(h.clearGraph).not.toHaveBeenCalled()
+    expect(h.release).toHaveBeenCalledWith('p1')
   })
 })

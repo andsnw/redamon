@@ -52,9 +52,11 @@ graph-write rules it depends on.
   afterwards prunes the ones it did not touch - ingest-then-prune, never
   clear-then-ingest. A half-failed scan that reported nothing would otherwise
   empty the project, so the CALLER decides whether to prune and only does so
-  after an ingest that actually produced findings. Muted nodes and ones carrying
-  `triage_source = 'human'` are never deleted, only stamped `stale_since`: they
-  hold an operator's mute, verdict and the fix items written against them.
+  after an ingest that actually produced findings. Nodes an operator muted and
+  ones carrying `triage_source = 'human'` are never deleted, only stamped
+  `stale_since`: they hold an operator's mute, verdict and the fix items written
+  against them. A mute a node-filter RULE applied (`muted_by` starting `rule:`)
+  is not a person's decision and is pruned like any stale finding.
   Reference: `prune_unseen_findings` in
   [graph_db/mixins/base_mixin.py](../../graph_db/mixins/base_mixin.py), and the
   four clears that spare them.

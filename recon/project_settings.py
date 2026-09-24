@@ -2079,6 +2079,33 @@ def apply_memory_governor(settings: dict[str, Any]) -> dict[str, Any]:
     return settings
 
 
+def fetch_node_filters(project_id: str, webapp_url: str | None = None) -> dict | None:
+    """The project's node-filter rules and exemptions, read NOW.
+
+    A scan's end-of-run sweep calls this rather than using what was fetched at
+    scan start, so it never applies rules older than the operator's latest save:
+    a long partial recon must not undo an apply made while it ran.
+
+    Returns None when the project has no filters. Raises on a failed request,
+    and the caller treats that as "filter nothing", never as "no exemptions".
+    """
+    import requests
+
+    webapp_url = webapp_url or os.environ.get('WEBAPP_API_URL')
+    if not project_id or not webapp_url:
+        return None
+    url = f"{webapp_url.rstrip('/')}/api/projects/{project_id}"
+    headers = {"X-Internal-Key": (os.environ.get("SCANNER_API_KEY") or os.environ.get("INTERNAL_API_KEY", ""))}
+    response = requests.get(url, timeout=30, headers=headers)
+    response.raise_for_status()
+    node_filter = response.json().get('nodeFilter')
+    if node_filter is None:
+        return None
+    if not isinstance(node_filter, dict) or not isinstance(node_filter.get('exemptions'), list):
+        raise ValueError("the project's node filters arrived without their exemptions")
+    return node_filter
+
+
 def get_settings() -> dict[str, Any]:
     """
     Get project settings from webapp API.

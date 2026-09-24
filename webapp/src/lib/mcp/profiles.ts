@@ -16,11 +16,15 @@
  * authorization path reads this field, because a second, weaker authorization
  * path is the one genuinely dangerous thing this feature could introduce.
  *
- * Two scopes are deliberately absent from every `recommendedScopes` list:
- * `kali:exec` reaches a live target outside a scan, and `recon:overwrite`
- * destroys a graph irreversibly. Neither may arrive as a side effect of choosing
- * from a dropdown, so the profiles that want them carry them in `optInScopes`,
- * which the form renders as an UNCHECKED recommendation.
+ * `recon:overwrite` is deliberately absent from every `recommendedScopes` list:
+ * it destroys a graph irreversibly, so it may not arrive as a side effect of
+ * choosing from a dropdown. The profile that wants it carries it in
+ * `optInScopes`, which the form renders as an UNCHECKED recommendation.
+ *
+ * `kali:exec` is the opposite: every profile ticks it, so a new token can use
+ * the Kali sandbox without a hand tick. It reaches a live target outside a scan
+ * with no target check, and since the deployment switch and the project toggle
+ * both default on, unticking it is how a token is kept off the shell.
  */
 import { MCP_SCOPES, type McpScope } from '@/lib/mcpAuth'
 
@@ -69,9 +73,10 @@ export interface McpProfile {
  * Exported so the form, the generator and the test all read one list rather
  * than three copies of the same rule.
  */
-export const NEVER_AUTO_TICKED: McpScope[] = ['recon:overwrite', 'kali:exec']
+export const NEVER_AUTO_TICKED: McpScope[] = ['recon:overwrite']
 
-const READ: McpScope[] = ['recon:read']
+/** Every profile starts here: see the file header for why kali:exec is in it. */
+const BASE: McpScope[] = ['recon:read', 'kali:exec']
 
 export const PROFILES: Record<ProfileId, McpProfile> = {
   bug_bounty: {
@@ -81,11 +86,11 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'hunting bounty-eligible vulnerabilities across a broad surface, deduplicating against what ' +
       'was already reported, and ranking what is left by how exploitable it is',
-    recommendedScopes: [...READ, 'triage:read', 'graph:cypher', 'recon:scan'],
+    recommendedScopes: [...BASE, 'triage:read', 'graph:cypher', 'recon:scan'],
     // Opt-in, never recommended: opening an engagement binds the platform to a
     // target, and recording what authorized one is a durable claim. Both follow
-    // the convention kali:exec and recon:overwrite already set.
-    optInScopes: ['project:create', 'engagement:authorize', 'kali:exec'],
+    // the convention recon:overwrite already set.
+    optInScopes: ['project:create', 'engagement:authorize'],
   },
   pentest: {
     id: 'pentest',
@@ -94,8 +99,8 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'running an authorized engagement inside its rules of engagement, validating findings with ' +
       'evidence a client can act on, and never straying outside the agreed scope or window',
-    recommendedScopes: [...READ, 'triage:read', 'graph:cypher', 'recon:scan'],
-    optInScopes: ['project:create', 'engagement:authorize', 'kali:exec'],
+    recommendedScopes: [...BASE, 'triage:read', 'graph:cypher', 'recon:scan'],
+    optInScopes: ['project:create', 'engagement:authorize'],
   },
   asm: {
     id: 'asm',
@@ -104,7 +109,7 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'watching an estate over time without a human present: rescanning on a schedule, diffing ' +
       'against the last run, and reporting only what changed',
-    recommendedScopes: [...READ, 'triage:read', 'recon:scan', 'recon:queue'],
+    recommendedScopes: [...BASE, 'triage:read', 'recon:scan', 'recon:queue'],
     // Monitoring an estate over time can mean bringing a newly-discovered
     // property under watch. Recording what authorized one is not part of the
     // job, so engagement:authorize is deliberately absent.
@@ -117,7 +122,7 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'converting findings and their remediation write-ups into grouped, assignable work items ' +
       'for an issue tracker',
-    recommendedScopes: [...READ, 'triage:read'],
+    recommendedScopes: [...BASE, 'triage:read'],
     optInScopes: [],
   },
   triage: {
@@ -127,7 +132,7 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'working through a finding queue: separating real issues from noise and recording a durable ' +
       'verdict on each one',
-    recommendedScopes: [...READ, 'triage:read', 'triage:write'],
+    recommendedScopes: [...BASE, 'triage:read', 'triage:write'],
     optInScopes: [],
   },
   inventory: {
@@ -137,7 +142,7 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'enumerating the assets an organisation exposes (hosts, services, endpoints, technologies) ' +
       'for an inventory or CMDB, without reference to vulnerabilities',
-    recommendedScopes: [...READ, 'graph:cypher'],
+    recommendedScopes: [...BASE, 'graph:cypher'],
     optInScopes: [],
   },
   compliance: {
@@ -147,7 +152,7 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'producing auditable evidence of what was scanned, when, and what was found or deliberately ' +
       'suppressed',
-    recommendedScopes: [...READ, 'triage:read'],
+    recommendedScopes: [...BASE, 'triage:read'],
     optInScopes: [],
   },
   ci_gating: {
@@ -157,7 +162,7 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'deciding, unattended and in a pipeline, whether the surface has regressed badly enough to ' +
       'block a release',
-    recommendedScopes: [...READ, 'triage:read', 'recon:queue'],
+    recommendedScopes: [...BASE, 'triage:read', 'recon:queue'],
     optInScopes: [],
   },
   reporting: {
@@ -167,7 +172,7 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'summarising an attack surface at an executive level: totals, concentrations of risk, and ' +
       'how the picture is trending',
-    recommendedScopes: [...READ, 'triage:read', 'graph:cypher'],
+    recommendedScopes: [...BASE, 'triage:read', 'graph:cypher'],
     optInScopes: [],
   },
   ma_risk: {
@@ -177,7 +182,7 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'mapping an estate nobody here has seen before (an acquisition target, a supplier) and ' +
       'summarising the risk it carries',
-    recommendedScopes: [...READ, 'triage:read', 'graph:cypher', 'recon:scan'],
+    recommendedScopes: [...BASE, 'triage:read', 'graph:cypher', 'recon:scan'],
     optInScopes: [],
   },
   threat_intel: {
@@ -187,7 +192,7 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'correlating this estate\'s own findings with the wider CVE, CWE and CAPEC reference data to ' +
       'explain how an attacker would use them',
-    recommendedScopes: [...READ, 'triage:read', 'graph:cypher'],
+    recommendedScopes: [...BASE, 'triage:read', 'graph:cypher'],
     optInScopes: [],
   },
   soc: {
@@ -197,7 +202,7 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'answering point questions during an investigation: whether a host, address or service that ' +
       'just alerted belongs to the known surface, and what else lives beside it',
-    recommendedScopes: [...READ, 'graph:cypher'],
+    recommendedScopes: [...BASE, 'graph:cypher'],
     optInScopes: [],
   },
   research: {
@@ -207,15 +212,15 @@ export const PROFILES: Record<ProfileId, McpProfile> = {
     forWhat:
       'experimenting against deliberately vulnerable or owned targets: changing the pipeline\'s ' +
       'tuning, rescanning, and comparing the result',
-    recommendedScopes: [...READ, 'triage:read', 'graph:cypher', 'recon:scan', 'recon:settings'],
-    optInScopes: ['recon:overwrite', 'kali:exec'],
+    recommendedScopes: [...BASE, 'triage:read', 'graph:cypher', 'recon:scan', 'recon:settings'],
+    optInScopes: ['recon:overwrite'],
   },
   custom: {
     id: 'custom',
     label: 'Custom',
     blurb: 'No profile. Choose the permissions yourself.',
     forWhat: 'a job that none of the other profiles describes, with permissions chosen by hand',
-    recommendedScopes: [...READ],
+    recommendedScopes: [...BASE],
     optInScopes: [],
   },
 }
@@ -384,7 +389,7 @@ export const PROFILE_ONBOARDING: Record<ProfileId, ProfileOnboarding> = {
     leansOn: [
       { tool: 'list_remediations', why: 'the fixes are already written and grouped; deriving your own from raw findings duplicates that work badly' },
       { tool: 'list_findings', why: 'supplies the affected assets and the ranking that decides ticket priority' },
-      { tool: 'list_muted_findings', why: 'a muted finding is one a human already decided not to fix, so it must not become a ticket' },
+      { tool: 'list_muted_findings', why: 'a finding a person muted is one they decided not to fix, so it must not become a ticket; a rule mute is project policy, not that decision' },
     ],
     ignore: [
       'Exploitation and validation. Somebody else proves it; you schedule the fix.',
@@ -415,7 +420,7 @@ export const PROFILE_ONBOARDING: Record<ProfileId, ProfileOnboarding> = {
     ],
     leansOn: [
       { tool: 'list_findings', why: 'already ordered by triage_priority_score and sectioned into ranked, not_triaged, likely_false_positive and resolved' },
-      { tool: 'list_muted_findings', why: 'shows what a human already suppressed, and why, so your verdicts do not contradict theirs' },
+      { tool: 'list_muted_findings', why: 'shows what a person or a Mute Rule suppressed, and why, so your verdicts do not contradict theirs' },
       { tool: 'set_finding_verdict', why: 'the only durable write on this surface, and the entire point of this job' },
     ],
     ignore: [
@@ -480,7 +485,7 @@ export const PROFILE_ONBOARDING: Record<ProfileId, ProfileOnboarding> = {
     leansOn: [
       { tool: 'list_scan_versions', why: 'the audit trail: point-in-time snapshots with dates, which is what proof of coverage means' },
       { tool: 'graph_summary', why: 'demonstrates what the scan actually reached, rather than asserting coverage' },
-      { tool: 'list_muted_findings', why: 'suppression with a named person and a reason is evidence of a decision, and omitting it looks like concealment' },
+      { tool: 'list_muted_findings', why: 'suppression with a named person and a reason is evidence of a decision, a rule mute is evidence of a policy, and omitting either looks like concealment' },
       { tool: 'compare_scan_versions', why: 'shows the posture moving between two audited points rather than at one' },
     ],
     ignore: [
@@ -489,8 +494,8 @@ export const PROFILE_ONBOARDING: Record<ProfileId, ProfileOnboarding> = {
     ],
     reportAs:
       'Proof of what was scanned and when: the version list with dates, the coverage per node type, ' +
-      'the open findings, and a separate, explicit section for suppressed ones including who ' +
-      'suppressed each and why.',
+      'the open findings, and a separate, explicit section for suppressed ones: those a person ' +
+      'muted, with who and why, and those a Mute Rule muted, listed apart under the rule.',
     gotchas: [
       'Muted findings are part of the evidence, not an omission. An audit pack that hides them is worse than one that lists them with their justification.',
       'Only counts read from a settled graph are trustworthy. If the graph was being written while you read, say so rather than quoting the numbers as final.',

@@ -12,11 +12,11 @@
   padding: 6px 10px;
   font-size: 10px;
   font-weight: var(--font-semibold);
-  color: var(--text-secondary);
+  color: var(--table-header-fg);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-primary);
+  background: var(--table-header-bg);
+  border-bottom: 1px solid var(--table-header-border);
   white-space: nowrap;
   z-index: 1;
   user-select: none;
@@ -45,13 +45,19 @@
 
 .table td {
   padding: 5px 10px;
-  border-bottom: 1px solid var(--border-secondary, rgba(255,255,255,0.04));
-  color: var(--text-primary);
+  border-bottom: 1px solid var(--table-row-border);
+  color: var(--table-cell-fg);
   vertical-align: top;
 }
 
-.table tr:hover td {
-  background: var(--bg-hover, rgba(255,255,255,0.03));
+.table tbody tr:nth-child(even) {
+  background: var(--table-row-zebra-bg);
+}
+
+/* Hover paints the cell, not the row, so it has to win over the stripe the row
+   underneath it is carrying -- same specificity, so it stays below it here. */
+.table tbody tr:hover td {
+  background: var(--table-row-hover-bg);
 }
 
 .sevBadge {

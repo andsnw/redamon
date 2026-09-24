@@ -45,9 +45,13 @@ export const ALL_GRAPH_LABELS = [
  *
  * Recon Delta and Scans are not row tables over the graph: Delta compares two
  * scan versions on demand and Scans lists orchestrator jobs from Postgres.
- * Neither has "rows the user has not seen yet" to count.
+ * Neither has "rows the user has not seen yet" to count. Mute Rules is a rule
+ * editor, not a table of nodes, and Muted Nodes lists what was deliberately
+ * hidden, so a "new since you looked" count on it would advertise noise.
  */
-export const UNBADGED_TABS: readonly TableViewMode[] = ['reconDelta', 'scanSchedule', 'triage']
+export const UNBADGED_TABS: readonly TableViewMode[] = [
+  'reconDelta', 'scanSchedule', 'triage', 'nodeFilters', 'muted',
+]
 
 /**
  * The tabs that carry a badge.
@@ -64,7 +68,9 @@ export const BADGED_TABS = [
   'takeover', 'secrets', 'netInitAccess', 'graphql', 'webInitAccess', 'paramMatrix',
   'sharedInfra', 'dnsEmail', 'threatIntel', 'jsDepSignals', 'supplyChainSca',
   'dnsDrift', 'webCachePoison',
-] as const satisfies readonly Exclude<TableViewMode, 'reconDelta' | 'scanSchedule' | 'triage'>[]
+] as const satisfies readonly Exclude<
+  TableViewMode, 'reconDelta' | 'scanSchedule' | 'triage' | 'nodeFilters' | 'muted'
+>[]
 
 export type BadgedTab = (typeof BADGED_TABS)[number]
 

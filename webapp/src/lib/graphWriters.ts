@@ -11,6 +11,9 @@
  *   - a triage run               (TriageRun.status running|publishing with a
  *                                 fresh heartbeat - it reads the whole graph,
  *                                 then writes the ranking back at the end)
+ *   - a node-filter apply        (NodeFilterRun.status running with a fresh
+ *                                 heartbeat - it mutes and unmutes findings
+ *                                 across the whole graph, page by page)
  *
  * FAIL CLOSED: if the orchestrator cannot be reached we report "busy" rather than
  * assume idle, because guessing wrong here means swapping the graph under a
@@ -19,6 +22,7 @@
 import prisma from '@/lib/prisma'
 import { orchestratorFetch } from '@/lib/orchestrator'
 import { findLiveTriageRun } from '@/lib/triageRun'
+import { describeNodeFilterWriter } from '@/lib/nodeFilterRun'
 
 const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'
 
@@ -155,8 +159,15 @@ export async function describeSecondaryScanWriters(projectId: string): Promise<s
  *
  * Deliberately excludes agent sessions: an agent legitimately runs alongside a
  * scan today, and blocking one on the other would be a behavior regression.
+ *
+ * A node-filter apply IS included: it rewrites mute state across the live
+ * graph, so a snapshot taken meanwhile would capture it half-applied, and a
+ * scan started meanwhile would race it for the same findings.
  */
 export async function describeScanWriters(projectId: string): Promise<string | null> {
+  const applying = await describeNodeFilterWriter(projectId)
+  if (applying) return applying
+
   let reconStatus: string | undefined
   try {
     const res = await orchestratorFetch(`${RECON_ORCHESTRATOR_URL}/recon/${projectId}/status`, {

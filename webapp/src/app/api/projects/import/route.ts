@@ -11,6 +11,13 @@ import path from 'path'
 import { safeBasename } from '@/lib/safePath'
 import { orchestratorFetch } from '@/lib/orchestrator'
 import { envelopeForKind } from '@/lib/jobQueue'
+import { allErrors, validateNodeFilters } from '@/lib/nodeFilters/validate'
+import { coerceDoc } from '@/lib/nodeFilters/model'
+import { muteRulesFingerprint, parseLoadedPresetInput, parsePresetText } from '@/lib/nodeFilters/presets'
+import { MUTEABLE_FINDING_LABELS } from '@/lib/mcp/findingLabels'
+import { pickProjectColumns } from '@/lib/projectColumns'
+
+const MUTEABLE_LABELS = new Set<string>(MUTEABLE_FINDING_LABELS)
 
 export const maxDuration = 300
 
@@ -190,8 +197,12 @@ export async function POST(request: NextRequest) {
       roeDocumentDataBase64,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       roeEnabled: _roeEnabledLegacy,
-      ...projectFields
+      ...bundleFields
     } = projectData
+    // Columns only: the bundle is untrusted, and a relation key in it would be
+    // a nested write past that relation's own import checks (node filters
+    // arriving armed, a run that never goes stale). Export writes columns only.
+    const projectFields = pickProjectColumns(bundleFields)
 
     // Restore binary RoE document from base64 encoding
     if (roeDocumentDataBase64 && typeof roeDocumentDataBase64 === 'string') {
@@ -230,11 +241,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Create new project under the specified user
+    // The bundle's column values are not type-checked here (they never were);
+    // pickProjectColumns has already removed everything that is not a column.
     const newProject = await prisma.project.create({
-      data: {
-        ...projectFields,
-        userId,
-      },
+      data: { ...projectFields, userId } as Prisma.ProjectUncheckedCreateInput,
     })
 
     // The authorization records travel with the project. `recordedVia: import`
@@ -387,6 +397,57 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Node filters. They arrive DISARMED: an imported project must never start
+    // muting what its next scan finds before its new owner has looked at the
+    // rules. A document this install's catalog cannot read is left out rather
+    // than stored half-valid.
+    const nodeFilterFile = zip.file('node-filters/node-filters.json')
+    if (nodeFilterFile) {
+      try {
+        const nf = JSON.parse(await nodeFilterFile.async('text'))
+        const verdict = validateNodeFilters(nf?.mode, nf?.rules)
+        if (verdict.ok && allErrors(verdict).length === 0) {
+          // The archive's fingerprint is kept, not recomputed: it is what the
+          // preset loaded, so the badge still hides if the rules were edited since.
+          const loaded = nf.loadedPreset ? parseLoadedPresetInput(nf.loadedPreset) : null
+          await prisma.projectNodeFilter.create({
+            data: {
+              projectId: newProject.id, mode: nf.mode, rules: nf.rules ?? { version: 1, kinds: {} },
+              applyToScans: false, updatedBy: userId,
+              ...(loaded?.ok && loaded.value
+                ? { loadedPreset: { name: loaded.value.name, fingerprint: loaded.value.fingerprint } }
+                : {}),
+            },
+          })
+          ;(stats as Record<string, unknown>).nodeFilters = 'imported (not applied to new scans)'
+        } else {
+          ;(stats as Record<string, unknown>).nodeFilters = `skipped: ${allErrors(verdict)[0] ?? 'invalid rules'}`
+        }
+      } catch (e) {
+        console.warn('Could not import the node filters:', e)
+        ;(stats as Record<string, unknown>).nodeFilters = 'skipped: unreadable'
+      }
+    }
+    const exemptionsFile = zip.file('node-filters/node-filter-exemptions.json')
+    if (exemptionsFile) {
+      try {
+        const rows = JSON.parse(await exemptionsFile.async('text'))
+        const data = (Array.isArray(rows) ? rows : [])
+          .filter((r: { label?: unknown; nodeKey?: unknown }) =>
+            typeof r?.label === 'string' && MUTEABLE_LABELS.has(r.label) &&
+            typeof r?.nodeKey === 'string' && r.nodeKey.length > 0 && r.nodeKey.length <= 300)
+          .map((r: { label: string; nodeKey: string }) => ({
+            projectId: newProject.id, label: r.label, nodeKey: r.nodeKey, createdBy: userId,
+          }))
+        if (data.length > 0) {
+          const created = await prisma.nodeFilterExemption.createMany({ data, skipDuplicates: true })
+          ;(stats as Record<string, number>).nodeFilterExemptions = created.count
+        }
+      } catch (e) {
+        console.warn('Could not import the node-filter exemptions:', e)
+      }
+    }
+
     // Import user project presets (if present)
     const presetsFile = zip.file('presets/user_project_presets.json')
     if (presetsFile) {
@@ -399,6 +460,46 @@ export async function POST(request: NextRequest) {
         })
       }
       (stats as Record<string, number>).userPresets = presets.length
+    }
+
+    // Mute Rules presets: each is checked like a save, and one this user already
+    // has (same name, same mode and rules) is skipped, so importing the same
+    // export twice does not pile up copies.
+    const muteRulesPresetsFile = zip.file('presets/user_mute_rules_presets.json')
+    if (muteRulesPresetsFile) {
+      try {
+        const rows = JSON.parse(await muteRulesPresetsFile.async('text'))
+        const existing = await prisma.userMuteRulesPreset.findMany({
+          where: { userId }, select: { name: true, mode: true, rules: true },
+        })
+        const key = (name: string, mode: string, rules: unknown) =>
+          `${name}\u0000${muteRulesFingerprint(mode === 'allowlist' ? 'allowlist' : 'denylist', rules)}`
+        const have = new Set(existing.map(p => key(p.name, p.mode, p.rules)))
+        let imported = 0
+        let skipped = 0
+        for (const row of Array.isArray(rows) ? rows : []) {
+          const text = parsePresetText(row?.name, row?.description)
+          const verdict = validateNodeFilters(row?.mode, row?.rules)
+          if (!text.ok || !verdict.ok || allErrors(verdict).length > 0) {
+            skipped += 1
+            continue
+          }
+          const k = key(text.name, row.mode, row.rules)
+          if (have.has(k)) continue
+          have.add(k)
+          await prisma.userMuteRulesPreset.create({
+            data: {
+              userId, name: text.name, description: text.description, mode: row.mode,
+              rules: coerceDoc(row.rules) as never,
+            },
+          })
+          imported += 1
+        }
+        ;(stats as Record<string, number>).muteRulesPresets = imported
+        if (skipped > 0) (stats as Record<string, number>).muteRulesPresetsSkipped = skipped
+      } catch (e) {
+        console.warn('Could not import the Mute Rules presets:', e)
+      }
     }
 
     // Import Scan Timeline history (plan Section 9). Ids are regenerated and

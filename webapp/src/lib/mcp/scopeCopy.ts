@@ -100,7 +100,7 @@ export const MCP_SCOPE_COPY: Record<McpScope, ScopeCopy> = {
   'triage:read': {
     label: 'Read suppressed findings and remediations',
     access: 'read',
-    blurb: 'Read the findings a person muted as noise, including who muted them and why, and the remediation write-ups (their solutions, evidence summaries and PR status). Muted findings are hidden from every other permission on this surface, so this is the only way an agent can tell "nothing was found" apart from "someone suppressed it". Separate from Read recon + graph on purpose: these are not reachable any other way.',
+    blurb: 'Read the muted findings, whether a person muted them as noise or one of the project\'s Mute Rules did, including who or which rule muted them and why, and the remediation write-ups (their solutions, evidence summaries and PR status). Muted findings are hidden from every other permission on this surface, so this is the only way an agent can tell "nothing was found" apart from "someone suppressed it". Separate from Read recon + graph on purpose: these are not reachable any other way.',
   },
   'recon:queue': {
     label: 'Queue scans to run later',
@@ -110,7 +110,7 @@ export const MCP_SCOPE_COPY: Record<McpScope, ScopeCopy> = {
   'triage:write': {
     label: 'Record a verdict on a finding',
     access: 'write',
-    blurb: 'Let an agent mark a finding confirmed, likely noise, or back to unreviewed, as if you had clicked it yourself. The verdict is DURABLE: it survives re-scans and stops later AI triage runs from overruling it, and the node records that it arrived over MCP. It cannot mute or unmute anything, and nothing on this surface can undo a verdict except another verdict.',
+    blurb: 'Let an agent mark a finding confirmed, likely noise, or back to unreviewed, as if you had clicked it yourself. The verdict is DURABLE: it survives re-scans and stops later AI triage runs from overruling it, and the node records that it arrived over MCP. It cannot mute or unmute anything, so it is refused on a muted finding: on one a Mute Rule muted, a verdict would release the mute. Nothing on this surface can undo a verdict except another verdict.',
   },
   'graph:cypher': {
     label: 'Run raw Cypher',
@@ -168,9 +168,10 @@ export const MCP_SCOPE_COPY: Record<McpScope, ScopeCopy> = {
       'on its own machine, so it needs nothing installed locally. It is the SAME access the in-app ' +
       'agent has: a real shell, the sandbox\'s whole toolset, and no allowlist. Unlike the in-app ' +
       'agent there is no human clicking a confirmation, and commands are NOT checked against this ' +
-      'project\'s scope, so an agent you grant this to can reach any host the sandbox can. Tick it ' +
-      'only for an agent you would trust with a terminal on that box. It is not sufficient on its ' +
-      'own: the deployment must enable the feature and the project must opt in.',
+      'project\'s scope, so an agent you grant this to can reach any host the sandbox can. It is ' +
+      'ticked by default: untick it for any agent you would not trust with a terminal on that box. ' +
+      'It is not sufficient on its own: the deployment switch and the project\'s "Allow MCP Sandbox ' +
+      'Commands" toggle must also be on, and both are by default.',
     learnMore: [
       { text: 'What the sandbox carries', href: `${WIKI}/MCP-Server#kali_toolbox-what-the-sandbox-carries` },
       { text: 'What a shell here means', href: `${WIKI}/MCP-Server#kali_exec-a-shell-in-the-sandbox` },

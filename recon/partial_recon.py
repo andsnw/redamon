@@ -130,6 +130,42 @@ def main():
     print(f"[*][Partial Recon] Starting partial recon for tool: {tool_id}")
     print(f"[*][Partial Recon] Timestamp: {datetime.now().isoformat()}")
 
+    # Taken BEFORE the dispatch: everything this job writes is stamped later, so
+    # the end-of-job node-filter sweep reaches exactly what it wrote.
+    from graph_db.mixins.base_mixin import run_timestamp
+    started_at = run_timestamp()
+    try:
+        _dispatch(tool_id, config)
+    finally:
+        _apply_node_filters(started_at)
+
+    # Clean up orphan UserInput nodes (created but no PRODUCED children)
+    user_id = os.environ.get("USER_ID", "")
+    project_id = os.environ.get("PROJECT_ID", "")
+    if user_id and project_id:
+        _cleanup_orphan_user_inputs(user_id, project_id)
+
+
+def _apply_node_filters(started_at):
+    """Sweep node filters over what this job wrote. Never raises.
+
+    The rules are re-read now, not at job start: up to twelve partial recons
+    can run at once, and one that started before an operator's save must not
+    apply the rules that save replaced.
+    """
+    user_id = os.environ.get("USER_ID", "")
+    project_id = os.environ.get("PROJECT_ID", "")
+    if not user_id or not project_id:
+        return
+    try:
+        from recon.helpers.finding_sources import RECON_FINDING_SOURCES
+        from recon.helpers.node_filter_sweep import run_node_filter_sweep
+        run_node_filter_sweep(user_id, project_id, started_at, RECON_FINDING_SOURCES)
+    except Exception as e:  # noqa: BLE001 - a sweep must never change the job's outcome
+        print(f"[!][NODE-FILTER] sweep failed: {e}")
+
+
+def _dispatch(tool_id: str, config: dict) -> None:
     if tool_id == "SubdomainDiscovery":
         run_subdomain_discovery(config)
     elif tool_id == "Naabu":
@@ -193,12 +229,6 @@ def main():
     else:
         print(f"[!][Partial Recon] Unknown tool_id: {tool_id}")
         sys.exit(1)
-
-    # Clean up orphan UserInput nodes (created but no PRODUCED children)
-    user_id = os.environ.get("USER_ID", "")
-    project_id = os.environ.get("PROJECT_ID", "")
-    if user_id and project_id:
-        _cleanup_orphan_user_inputs(user_id, project_id)
 
 
 if __name__ == "__main__":

@@ -47,6 +47,9 @@ import { ActiveVersionOnlyNotice } from './components/VersionSwitch'
 import { VersionManager } from './components/VersionManager'
 import { ReconDeltaTable } from './components/ReconDelta'
 import { TriageTable } from './components/Triage/TriageTable'
+import { MutedNodesTable } from './components/MutedNodes/MutedNodesTable'
+import { NodeFiltersView } from './components/NodeFilters/NodeFiltersView'
+import { useNodeFilterStatus } from './hooks/useNodeFilterStatus'
 import { ScanScheduleTable } from './components/ScanSchedule'
 import { useStableGraphData } from './hooks/useStableGraphData'
 import { exportToCsv, exportToJson, exportToMarkdown } from './utils/exportCsv'
@@ -557,6 +560,14 @@ export default function GraphPage() {
   // Sheet to pre-select inside a multi-sheet table when deep-linked (?sheet=...).
   // Cleared on any manual table switch so it never overrides a later manual open.
   const [deepLinkSheet, setDeepLinkSheet] = useState<string | null>(null)
+  // Mute Rules opens at a kind (and rule) when a Muted Nodes row links to it.
+  const [nodeFilterFocus, setNodeFilterFocus] = useState<{ kind: string; ruleId?: string } | null>(null)
+  const openNodeFilterRule = useCallback((kind: string, ruleId: string) => {
+    setNodeFilterFocus({ kind, ruleId })
+    setDeepLinkSheet(null)
+    setTableViewMode('nodeFilters')
+  }, [])
+  const { status: nodeFilterStatus, refresh: refreshNodeFilterStatus } = useNodeFilterStatus(projectId, refetchGraph)
   // Unseen-row badges. The active tab is whichever table is on screen, so a tab
   // the user is reading stops counting as unseen while they read it.
   const {
@@ -1551,9 +1562,10 @@ export default function GraphPage() {
         onSelectFilter={setSelectedFilterId}
         onDeleteFilter={handleDeleteFilter}
         tableViewMode={tableViewMode}
-        onTableViewModeChange={(m) => { setDeepLinkSheet(null); setTableViewMode(m) }}
+        onTableViewModeChange={(m) => { setDeepLinkSheet(null); setNodeFilterFocus(null); setTableViewMode(m) }}
         unseenCounts={unseenCounts}
         unseenTotal={unseenTotal}
+        nodeFilterStatus={nodeFilterStatus}
         jsReconSearch={jsReconSearch}
         onJsReconSearchChange={setJsReconSearch}
         onJsReconExportCsv={jsReconData ? async () => {
@@ -1659,6 +1671,19 @@ export default function GraphPage() {
               // Recon Delta compares two stored versions, so it works regardless
               // of which version is being viewed.
               <ReconDeltaTable projectId={projectId} versions={scanVersions} isDark={isDark} />
+            ) : tableViewMode === 'nodeFilters' ? (
+              // The rules are project settings, not version state, so they are
+              // editable while a past version is viewed; the view itself refuses
+              // "apply to the current graph" then, and says why.
+              <NodeFiltersView
+                projectId={projectId}
+                isViewingPastVersion={isViewingPastVersion}
+                viewedVersionLabel={viewedVersion?.label}
+                viewedVersionId={viewedVersion?.id ?? null}
+                focus={nodeFilterFocus ?? (deepLinkSheet ? { kind: deepLinkSheet } : null)}
+                onStatusChange={refreshNodeFilterStatus}
+                onGraphChanged={refetchGraph}
+              />
             ) : isViewingPastVersion && tableViewMode !== 'nodeDetails' && tableViewMode !== 'all' ? (
               <div className={styles.pastVersionPanel}>
                 <ActiveVersionOnlyNotice
@@ -1672,7 +1697,13 @@ export default function GraphPage() {
               // sits BELOW the past-version guard: viewing an old snapshot shows
               // the same "active version only" notice the RedZone panels show,
               // rather than silently rendering current data under an old label.
-              <TriageTable projectId={projectId} />
+              <TriageTable
+                projectId={projectId}
+                onViewMuted={() => { setDeepLinkSheet(null); setTableViewMode('muted') }}
+              />
+            ) : tableViewMode === 'muted' ? (
+              // Mute state is live, like triage, so this also sits below the guard.
+              <MutedNodesTable projectId={projectId} onOpenRule={openNodeFilterRule} />
             ) : tableViewMode === 'nodeDetails' ? (
               <NodeDetailsTable
                 data={filterGraphData ?? data}

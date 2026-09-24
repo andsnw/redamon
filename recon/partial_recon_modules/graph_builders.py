@@ -732,7 +732,10 @@ def _build_graphql_data_from_graph(domain: str, user_id: str, project_id: str) -
                 MATCH (jr:JsReconFinding {user_id: $uid, project_id: $pid})
                 WHERE (jr.finding_type IN ['graphql', 'graphql_introspection']
                    OR (jr.finding_type = 'rest' AND toLower(coalesce(jr.path, '')) CONTAINS 'graphql'))
-                  AND NOT jr:Muted
+                  // An operator's mute keeps a finding out of the target list. A
+                  // node-filter RULE mute does not: it hides noise from display,
+                  // and full recon scans its in-memory results either way.
+                  AND NOT (jr:Muted AND NOT coalesce(jr.muted_by, '') STARTS WITH 'rule:')
                 RETURN jr.finding_type AS type,
                        jr.path AS path,
                        coalesce(jr.method, 'POST') AS method

@@ -11,6 +11,7 @@ An automated OSINT reconnaissance and vulnerability scanning framework combining
 - [Quick Start](#-docker-quick-start-recommended)
 - [Architecture](#-docker-in-docker-architecture)
 - [Pipeline Overview](#-scanning-pipeline-overview)
+- [How a Run Ends](#-how-a-run-ends-prune-and-mute-rules)
 - [Targeting Modes](#-targeting-modes)
 - [Scan Modules](#-scan-modules-explained)
 - [Tool Comparison](#-complete-tool-comparison)
@@ -660,6 +661,50 @@ Each parallelized tool function is thread-safe:
 
 ---
 
+## 🧹 How a Run Ends: Prune and Mute Rules
+
+Outside the modules themselves, a full run touches the project's findings in
+three places, all in `recon/main.py`:
+
+1. **Clear, at the start** (`_clear_recon_graph`). It removes the project's
+   previous recon *assets* and records the run's start time. Findings are NOT
+   cleared up front: the operator's mutes, verdicts and fix items hang off them.
+2. **Prune, after a successful run** (`_prune_recon_findings`, which calls
+   `prune_unseen_findings`). It deletes the findings from recon's own sources
+   (`RECON_FINDING_SOURCES` in `recon/helpers/finding_sources.py`) that this run
+   did not write again. A finding a person muted, or one with a human verdict,
+   is kept and stamped `stale_since` instead. A Mute Rules mute is not a
+   judgement of the finding, so it is pruned like any other. A run that failed,
+   or whose clear did not run, prunes nothing.
+3. **The Mute Rules sweep, whatever happened** (`_apply_node_filters`, in
+   `main()`'s `finally`). If the project's
+   [Mute Rules](../../redamon.wiki/Mute-Rules.md) are *active on new scans*
+   (Apply → New scans only, or Both), the run applies them once, to what it
+   wrote: findings stamped after the run started, from recon's own sources. It
+   mutes what the rules match and releases rule mutes no rule matches any more.
+   It never touches a person's mute, a guarded finding (a human verdict, a
+   confirmed or proven finding, one a `ChainFinding` CONFIRMS) or one an
+   operator unmuted (an exemption). The rules are re-read at sweep time, so a
+   save made during the scan applies. The sweep never raises and never changes
+   the exit code; its counts are written to the output file's
+   `metadata.node_filter`. It runs once per run, a Domain batch included.
+
+What follows from that:
+
+- **Some kinds are never swept by a scan.** Passive CVEs (Shodan, Netlas,
+  CriminalIP) and the supply-chain findings (OSV advisories, malicious packages)
+  come from sources outside `RECON_FINDING_SOURCES`, so only "apply to current
+  graph" reaches them. GVM findings cannot be filtered yet.
+- **A stopped scan runs neither step 2 nor step 3.** Stop sends SIGTERM and the
+  process exits without its `finally`, so what it wrote stays unfiltered until
+  the next scan or an apply.
+- **Scans and applies exclude each other.** A full scan cannot start while an
+  "apply to current graph" runs (`describeScanWriters`), and an apply to the
+  current graph cannot start while a scan runs. Arming the rules for new scans
+  is allowed at any time.
+
+---
+
 ## 🎯 Targeting Modes
 
 A project picks one of three targeting modes at creation. The mode is locked
@@ -746,6 +791,8 @@ Implementation: `_batch_groups()` / `run_domain_batch()` / `run_domain_group()` 
 ## 🎯 Partial Recon
 
 Partial Recon lets you run any single tool from the pipeline independently, without triggering a full scan. From the Workflow View or section headers, click the play button on any tool to open a modal that shows existing graph data (subdomains, IPs, ports, BaseURLs, endpoints), accepts custom targets, and launches the tool in isolation. Results are merged into the existing Neo4j graph via `MERGE` -- no duplicates. All 23 pipeline tools are supported (including `graphql_scan` -- custom URLs are validated against project scope and injected via `GRAPHQL_ENDPOINTS` -- and `vhost_sni` -- custom subdomains and IPs are validated and injected before probing). The tool runs with the project's saved settings (timeouts, wordlists, API keys). Custom inputs are validated in real time (scope checks, IP/CIDR format, port ranges). See `recon/partial_recon.py` for the implementation.
+
+A partial run applies the Mute Rules that are active on new scans to what it wrote, in a `finally` and with its own start time, exactly as a full run does ([How a Run Ends](#-how-a-run-ends-prune-and-mute-rules)). It prunes nothing. The webapp refuses to start one while an "apply to current graph" is running.
 
 > **[Wiki: Recon Pipeline Workflow -- Partial Recon](https://github.com/samugit83/redamon/wiki/Recon-Pipeline-Workflow#partial-recon)**
 

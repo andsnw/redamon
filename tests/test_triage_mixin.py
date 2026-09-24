@@ -362,8 +362,8 @@ class TestAHumanVerdictIsNeverOverwritten(unittest.TestCase):
         self.assertEqual(client.queries, [])
 
     def test_list_muted_is_unbounded_by_default(self):
-        # The Muted table in the UI counts `muted.length`, so capping it by
-        # default would silently change an operator-visible number.
+        # A caller that passes no page gets every row, as before paging existed;
+        # a silent default cap would change what an older caller reads.
         client = FakeClient(records=[])
         client.list_muted(UID, PID)
         self.assertNotIn("LIMIT", client.last)
@@ -388,7 +388,7 @@ class TestAHumanVerdictIsNeverOverwritten(unittest.TestCase):
         # verdict is not laundered as a human's - breaks four behaviours that
         # branch on this being a closed two-value set. Worst: the
         # ingest-then-prune keep predicate is
-        # `(n:Muted OR coalesce(n.triage_source,'') = 'human')`, so a third
+        # an operator mute OR `coalesce(n.triage_source,'') = 'human'`, so a third
         # value falls on the DELETE side and the next scan removes the finding
         # instead of stamping stale_since.
         client = FakeClient(records=[{"label": "Vulnerability"}])
@@ -427,6 +427,45 @@ class TestAHumanVerdictIsNeverOverwritten(unittest.TestCase):
                                  channel="x" * 200, verdict_by="y" * 500)
         self.assertEqual(len(client.params[-1]["channel"]), 32)
         self.assertEqual(len(client.params[-1]["verdict_by"]), 128)
+
+    def test_a_ui_verdict_may_still_land_on_a_muted_finding(self):
+        # The person who could unmute it is the one clicking.
+        client = FakeClient(records=[{"label": "Vulnerability"}])
+        client.set_human_verdict(UID, PID, "v1", "confirmed")
+        self.assertIs(client.params[-1]["refuse_muted"], False)
+
+    def test_a_refused_verdict_writes_nothing_and_says_why(self):
+        # A human verdict is a Mute Rules guard: on a rule-muted finding it
+        # releases the mute at the next sweep, so from a delegated caller it
+        # would be an unmute by another name.
+        client = FakeClient(records=[{"label": "Vulnerability", "refused": True}])
+        result = client.set_human_verdict(UID, PID, "v1", "confirmed",
+                                          channel="mcp", refuse_muted=True)
+        self.assertEqual(result, {"updated": False, "reason": "muted",
+                                  "label": "Vulnerability"})
+        self.assertIs(client.params[-1]["refuse_muted"], True)
+
+    def test_the_muted_check_and_the_write_are_one_statement(self):
+        # A read-then-write pair would let a mute land between the two.
+        client = FakeClient(records=[{"label": "Vulnerability", "refused": False}])
+        result = client.set_human_verdict(UID, PID, "v1", "confirmed", refuse_muted=True)
+        self.assertEqual(len(client.queries), 1)
+        query = client.last
+        self.assertIn("($refuse_muted AND n:Muted) AS refused", query)
+        self.assertLess(query.index("AS refused"), query.index("n.triage_source = 'human'"))
+        self.assertTrue(result["updated"])
+
+    def test_the_lock_is_taken_before_the_muted_label_is_read(self):
+        # Under read committed, a label read before the lock can see "not
+        # muted", wait on a mute's lock, then write onto the node that mute
+        # just committed. Proven against a real database in
+        # tests/test_verdict_channel_graph_live.py.
+        client = FakeClient(records=[{"label": "Vulnerability", "refused": False}])
+        client.set_human_verdict(UID, PID, "v1", "confirmed", refuse_muted=True)
+        query = client.last
+        lock = query.index("SET n._verdict_lock = true")
+        self.assertLess(lock, query.index("REMOVE n._verdict_lock"))
+        self.assertLess(query.index("REMOVE n._verdict_lock"), query.index("n:Muted"))
 
 
 class TestApplyTriageScores(unittest.TestCase):
@@ -614,6 +653,139 @@ class TestAFreshFindingCanReceiveAVerdict(unittest.TestCase):
         publish = "\n".join(client.queries)
         self.assertIn("coalesce(n.triage_source, '') = 'human' AS isHuman", publish)
         self.assertNotIn("\n             n.triage_source = 'human' AS isHuman", publish)
+
+
+class TestMutedNodesPaging(unittest.TestCase):
+    """Muted Nodes pages and filters the muted list instead of loading it whole.
+
+    Priority Board used to fetch every muted row on each visit, which is fine
+    for a handful of hand mutes and fails once a filter rule mutes thousands.
+    """
+
+    def test_a_page_is_skip_then_limit_with_a_stable_tiebreak(self):
+        client = FakeClient(records=[])
+        client.list_muted(UID, PID, limit=50, offset=100)
+        self.assertIn("SKIP $offset", client.last)
+        self.assertIn("LIMIT $limit", client.last)
+        self.assertLess(client.last.index("SKIP"), client.last.index("LIMIT"))
+        self.assertEqual(client.params[-1]["offset"], 100)
+        # Without a unique final key, two pages could repeat or skip a row.
+        self.assertIn("DESC, coalesce(n.id, n.finding_id)", client.last)
+
+    def test_ordering_survives_restored_string_timestamps(self):
+        # Activation and import restore muted_at as an ISO string, and Cypher
+        # sorts every string after every datetime.
+        client = FakeClient(records=[])
+        client.list_muted(UID, PID)
+        self.assertIn("datetime(toString(n.muted_at)) DESC", client.last)
+
+    def test_person_first_puts_operator_mutes_ahead_of_rule_mutes(self):
+        client = FakeClient(records=[])
+        client.list_muted(UID, PID, order="person_first", limit=2000)
+        order_by = client.last[client.last.index("ORDER BY"):]
+        self.assertIn("STARTS WITH 'rule:' THEN 1 ELSE 0 END", order_by)
+        self.assertLess(order_by.index("STARTS WITH"), order_by.index("datetime("))
+
+    def test_default_order_does_not_rank_by_who_muted(self):
+        client = FakeClient(records=[])
+        client.list_muted(UID, PID)
+        order_by = client.last[client.last.index("ORDER BY"):]
+        self.assertNotIn("STARTS WITH", order_by)
+
+    def test_rows_carry_stale_since_host_and_muted_via(self):
+        client = FakeClient(records=[])
+        client.list_muted(UID, PID)
+        for column in ("AS stale_since", "AS host", "AS muted_via", "AS muted_by"):
+            self.assertIn(column, client.last)
+
+    def test_a_label_filter_only_accepts_muteable_labels(self):
+        client = FakeClient(records=[])
+        client.list_muted(UID, PID, label="Secret")
+        self.assertIn("AND n:Secret", client.last)
+        # A label is interpolated, so anything outside the set is dropped.
+        client.list_muted(UID, PID, label="Secret) DETACH DELETE n //")
+        self.assertNotIn("DELETE", client.last)
+        client.list_muted(UID, PID, label="IP")
+        self.assertNotIn("n:IP", client.last)
+
+    def test_muted_via_splits_people_from_rules(self):
+        client = FakeClient(records=[])
+        client.list_muted(UID, PID, muted_via="person")
+        self.assertIn("AND NOT coalesce(n.muted_by, '') STARTS WITH 'rule:'", client.last)
+        client.list_muted(UID, PID, muted_via="rule")
+        self.assertIn("AND coalesce(n.muted_by, '') STARTS WITH 'rule:'", client.last)
+
+    def test_deleted_rules_are_the_rule_mutes_no_live_rule_claims(self):
+        client = FakeClient(records=[])
+        client.list_muted(UID, PID, muted_via="deleted_rule",
+                          live_rules=["rule:vuln.nuclei/abc123"])
+        self.assertIn("NOT n.muted_by IN $live_rules", client.last)
+        self.assertEqual(client.params[-1]["live_rules"], ["rule:vuln.nuclei/abc123"])
+
+    def test_search_and_rule_are_parameters_never_interpolated(self):
+        client = FakeClient(records=[])
+        client.list_muted(UID, PID, search="  AWS' OR 1=1 ", rule="rule:secret/abc123")
+        self.assertNotIn("OR 1=1", client.last)
+        self.assertEqual(client.params[-1]["search"], "aws' or 1=1")
+        self.assertEqual(client.params[-1]["rule"], "rule:secret/abc123")
+        self.assertIn("n.muted_by = $rule", client.last)
+
+    def test_the_count_filters_exactly_like_the_page(self):
+        kwargs = dict(label="Vulnerability", muted_via="rule", search="x",
+                      rule="rule:vuln.nuclei/abc123")
+        client = FakeClient(records=[{"total": 7}])
+        client.list_muted(UID, PID, limit=50, **kwargs)
+        page_where = client.last.split("RETURN")[0]
+        self.assertEqual(client.count_muted(UID, PID, **kwargs), 7)
+        count_where = client.last.split("RETURN")[0]
+        self.assertEqual(page_where.strip(), count_where.strip())
+        self.assertIn("n.user_id = $user_id", count_where)
+
+    def test_facets_group_people_into_one_bucket(self):
+        client = FakeClient(records=[
+            {"label": "Vulnerability", "rule": "rule:vuln.nuclei/abc123",
+             "reason": "Filter rule: Info", "c": 5},
+            {"label": "Vulnerability", "rule": "", "reason": "", "c": 2},
+            {"label": "Secret", "rule": "", "reason": "", "c": 1},
+        ])
+        facets = client.muted_facets(UID, PID)
+        self.assertEqual(facets["total"], 8)
+        self.assertEqual(facets["by_person"], 3)
+        self.assertEqual(facets["labels"], {"Vulnerability": 7, "Secret": 1})
+        self.assertEqual(facets["rules"], [{"muted_by": "rule:vuln.nuclei/abc123",
+                                            "count": 5, "reason": "Filter rule: Info"}])
+        self.assertIn("n.project_id = $project_id", client.last)
+
+
+class TestBatchUnmute(unittest.TestCase):
+    def test_unmutes_by_natural_key_inside_the_tenant(self):
+        client = FakeClient(records=[{"key": "v1", "label": "Vulnerability",
+                                      "muted_by": "rule:vuln.nuclei/abc123"}])
+        result = client.unmute_findings(UID, PID, ["v1", "v1", "", None])
+        self.assertEqual(client.params[-1]["keys"], ["v1"])
+        self.assertIn("(n.id IN $keys OR n.finding_id IN $keys)", client.last)
+        self.assertIn("n.user_id = $user_id AND n.project_id = $project_id", client.last)
+        self.assertIn("REMOVE n:Muted, n.muted, n.muted_at, n.muted_by, n.muted_reason",
+                      client.last)
+        self.assertNotIn("elementId", client.last)
+        self.assertEqual(result["unmuted"], 1)
+        self.assertEqual(result["items"][0]["muted_by"], "rule:vuln.nuclei/abc123")
+
+    def test_it_never_touches_the_verdict(self):
+        client = FakeClient(records=[])
+        client.unmute_findings(UID, PID, ["v1"])
+        self.assertNotIn("triage_", client.last)
+
+    def test_an_empty_batch_runs_no_query(self):
+        client = FakeClient(records=[])
+        self.assertEqual(client.unmute_findings(UID, PID, []), {"unmuted": 0, "items": []})
+        self.assertEqual(client.queries, [])
+
+    def test_the_batch_is_bounded(self):
+        from graph_db.mixins.recon.triage_mixin import MAX_UNMUTE_BATCH
+        client = FakeClient(records=[])
+        client.unmute_findings(UID, PID, [f"v{i}" for i in range(MAX_UNMUTE_BATCH + 50)])
+        self.assertEqual(len(client.params[-1]["keys"]), MAX_UNMUTE_BATCH)
 
 
 if __name__ == "__main__":

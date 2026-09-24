@@ -64,7 +64,7 @@ describe('the Triage tab can actually launch a run', () => {
   })
 
   test('page.tsx mounts the tab (so the wiring above is reachable)', () => {
-    expect(PAGE).toContain('<TriageTable projectId={projectId} />')
+    expect(PAGE).toMatch(/<TriageTable\s+projectId=\{projectId\}/)
   })
 })
 

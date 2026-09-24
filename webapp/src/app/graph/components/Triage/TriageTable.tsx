@@ -1,21 +1,22 @@
 'use client'
 
 /**
- * Finding triage: verdicts, and the mute / unmute suppression control.
+ * Finding triage: verdicts, and the mute control.
  *
- * Two tables rather than one list with a filter, because they answer different
- * questions. The Findings table is the working set an operator is triaging; the
- * Muted table is the audit trail of what they decided to stop looking at, and it
- * is the ONLY place in the product where a suppressed finding is visible at all.
+ * This is the working set an operator is triaging. What they decided to stop
+ * looking at lives in its own table, Muted Nodes (All Nodes dropdown), which is
+ * the ONLY place in the product where a suppressed finding is visible at all.
  * Everything else -- the graph, the agent, analytics, reports -- has them
- * filtered out, which is the point of the feature.
+ * filtered out, which is the point of the feature. It is paged there because a
+ * node-filter rule can mute thousands of findings, and this board used to load
+ * every muted row on each visit.
  *
  * Mute is deliberately a two-step action with a confirm: it changes what the AI
  * agent can see for the whole project, so it is not a click to make by accident.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, EyeOff, Eye, Check, X } from 'lucide-react'
+import { Loader2, EyeOff, Check, X } from 'lucide-react'
 import { useAlertModal, useToast, WikiInfoButton } from '@/components/ui'
 import { useProject } from '@/providers/ProjectProvider'
 import { useCypherFixTriageWS } from '@/hooks/useCypherFixTriageWS'
@@ -80,19 +81,6 @@ export const SECTION_BLURBS: Record<number, string> = {
     'back if a scan finds them again.',
 }
 
-export interface MutedFinding {
-  id: string
-  label: string
-  name: string
-  severity: string
-  source: string
-  muted_at: string | null
-  muted_by: string
-  muted_reason: string
-  triage_status: TriageStatus
-  triage_reason: string | null
-}
-
 export type TriageStatus = 'confirmed' | 'likely_noise' | 'unreviewed'
 
 /**
@@ -140,9 +128,29 @@ const VERDICT_LABELS: Record<string, string> = {
   not_reviewed: 'Not reviewed',
 }
 
+/** The chip's tint follows what the verdict concluded. Anything unlisted --
+ *  `not_reviewed`, or a verdict from a future model -- keeps the bare neutral
+ *  chip, which reads as "no conclusion" rather than as a conclusion we cannot
+ *  colour. A human verdict overrides all of these (see .verdictHuman). */
+const VERDICT_CLASS: Record<string, string> = {
+  real: 'verdictReal',
+  doubtful: 'verdictDoubtful',
+  unclear: 'verdictDoubtful',
+  false_positive: 'verdictDismissed',
+}
+
 interface Factor {
   value: number
   evidence: string
+}
+
+/** The count badge carries each section's colour; see the CSS module for why
+ *  it is the only element that can. Likely-false-positive keeps the neutral
+ *  default: it is the one section whose rows are claims about nothing. */
+const SECTION_COUNT_CLASS: Record<number, string> = {
+  [SECTION_RANKED]: 'countRanked',
+  [SECTION_NOT_TRIAGED]: 'countNotTriaged',
+  [SECTION_RESOLVED]: 'countResolved',
 }
 
 /** One section's title, count and blurb, on a single line.
@@ -153,11 +161,12 @@ interface Factor {
  *  because there is no toolbar to share.
  */
 function SectionHead({ sectionKey, count }: { sectionKey: number; count: number }) {
+  const tint = styles[SECTION_COUNT_CLASS[sectionKey] ?? ''] ?? ''
   return (
     <div className={styles.sectionHead}>
       <h3 className={styles.sectionHeading}>
         {SECTION_TITLES[sectionKey]}
-        <span className={styles.sectionCount}>{count}</span>
+        <span className={`${styles.sectionCount} ${tint}`}>{count}</span>
       </h3>
       <p className={styles.sectionBlurb}>{SECTION_BLURBS[sectionKey]}</p>
     </div>
@@ -227,15 +236,15 @@ function fmtWhen(iso: string | null): string {
 
 interface TriageTableProps {
   projectId: string | null
+  /** Switch the page to Muted Nodes; offered on the toast after a mute. */
+  onViewMuted?: () => void
 }
 
-export function TriageTable({ projectId }: TriageTableProps) {
+export function TriageTable({ projectId, onViewMuted }: TriageTableProps) {
   const [findings, setFindings] = useState<TriageFinding[]>([])
-  const [muted, setMuted] = useState<MutedFinding[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [showMuted, setShowMuted] = useState(false)
   /** Server-side total, which can exceed what the query returned. */
   const [total, setTotal] = useState(0)
   const [tierFilter, setTierFilter] = useState<TriageTier | 'all'>('all')
@@ -252,16 +261,11 @@ export function TriageTable({ projectId }: TriageTableProps) {
     setLoading(true)
     setError(null)
     try {
-      const [f, m] = await Promise.all([
-        fetch(`/api/triage/findings?projectId=${encodeURIComponent(projectId)}`),
-        fetch(`/api/triage/muted?projectId=${encodeURIComponent(projectId)}`),
-      ])
+      const f = await fetch(`/api/triage/findings?projectId=${encodeURIComponent(projectId)}`)
       if (!f.ok) throw new Error((await f.json().catch(() => ({}))).error || `Findings: ${f.status}`)
-      if (!m.ok) throw new Error((await m.json().catch(() => ({}))).error || `Muted: ${m.status}`)
       const findingsBody = await f.json()
       setFindings(findingsBody.findings ?? [])
       setTotal(findingsBody.total ?? (findingsBody.findings ?? []).length)
-      setMuted((await m.json()).findings ?? [])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load Priority Board data')
     } finally {
@@ -347,7 +351,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
         `Mute "${finding.name || finding.id}"?\n\n` +
           'It will be hidden from the graph, from reports, and from the AI agent, ' +
           'which will no longer be able to see or reason about it. You can restore ' +
-          'it from the Muted table at any time.',
+          'it from Muted Nodes (in the All Nodes menu) at any time.',
         'Mute finding',
         { confirmLabel: 'Mute' },
       )
@@ -373,60 +377,21 @@ export function TriageTable({ projectId }: TriageTableProps) {
         if (!res.ok || !body.muted) {
           throw new Error(body.error || 'The finding could not be muted.')
         }
-        // Move it across locally rather than refetching both tables: the graph
-        // write already succeeded, and a round trip here just makes it feel slow.
+        // Drop it locally rather than refetching: the graph write already
+        // succeeded, and a round trip here just makes it feel slow.
         setFindings(prev => prev.filter(f => f.id !== finding.id))
-        setMuted(prev => [
-          {
-            id: finding.id,
-            label: finding.label,
-            name: finding.name,
-            severity: finding.severity,
-            source: finding.source,
-            muted_at: new Date().toISOString(),
-            muted_by: 'you',
-            muted_reason: '',
-            triage_status: finding.triage_status,
-            triage_reason: finding.triage_reason,
-          },
-          ...prev,
-        ])
-        toast.success('Finding muted. It is now hidden from the agent.')
+        toast.addToast({
+          type: 'success',
+          message: 'Finding muted. It is now hidden from the agent.',
+          ...(onViewMuted ? { action: { label: 'View muted', onClick: onViewMuted } } : {}),
+        })
       } catch (e) {
         await alertError(e instanceof Error ? e.message : 'Mute failed', 'Mute finding')
       } finally {
         setBusyId(null)
       }
     },
-    [projectId, dangerConfirm, alertError, toast, load],
-  )
-
-  const unmute = useCallback(
-    async (finding: MutedFinding) => {
-      if (!projectId) return
-      setBusyId(finding.id)
-      try {
-        const res = await fetch('/api/triage/unmute', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId, nodeId: finding.id }),
-        })
-        const body = await res.json().catch(() => ({}))
-        if (!res.ok || !body.unmuted) {
-          throw new Error(body.error || 'The finding could not be restored.')
-        }
-        setMuted(prev => prev.filter(f => f.id !== finding.id))
-        // Refetch the findings side: unmute restores relationships and verdict
-        // fields this component never had, so a locally-built row would be thin.
-        void load()
-        toast.success('Finding restored.')
-      } catch (e) {
-        await alertError(e instanceof Error ? e.message : 'Unmute failed', 'Restore finding')
-      } finally {
-        setBusyId(null)
-      }
-    },
-    [projectId, alertError, toast, load],
+    [projectId, dangerConfirm, alertError, toast, load, onViewMuted],
   )
 
   /**
@@ -536,7 +501,7 @@ export function TriageTable({ projectId }: TriageTableProps) {
     return <div className={styles.empty}>Select a project to rank its findings.</div>
   }
 
-  if (loading && findings.length === 0 && muted.length === 0) {
+  if (loading && findings.length === 0) {
     return (
       <div className={styles.empty}>
         <Loader2 className={styles.spin} size={18} /> Loading findings...
@@ -591,257 +556,204 @@ export function TriageTable({ projectId }: TriageTableProps) {
             hasPreviousRun={latestRunId !== null}
             disabled={!userId || showProgress}
           />
-          <button className={styles.button} onClick={() => setShowMuted(v => !v)}>
-            {showMuted ? <Eye size={14} /> : <EyeOff size={14} />}
-            {showMuted ? 'Hide' : 'Show'} muted ({muted.length})
-          </button>
+          {onViewMuted && (
+            <button className={styles.button} onClick={onViewMuted} title="Open Muted Nodes">
+              <EyeOff size={14} /> Muted
+            </button>
+          )}
         </div>
       </div>
 
-      {backgroundRun && (
-        <div className={styles.runBanner} role="status">
-          <Loader2 className={styles.spin} size={13} />
-          <span className={styles.runBannerText}>
-            Priority Board running
-            {triage.currentPhase ? ` — ${PHASE_LABELS[triage.currentPhase] ?? triage.currentPhase}` : ''}
-            . The ranking fills in below as it goes; you can leave this page.
-          </span>
-          <button className={styles.runBannerBtn} onClick={() => setShowProgress(true)}>
-            Details
-          </button>
-          <button className={styles.runBannerBtn} onClick={triage.stopTriage}>
-            Stop
-          </button>
-        </div>
-      )}
-
-      {truncated && (
-        <div className={styles.truncationNotice} role="status">
-          Showing the {findings.length} highest-severity findings of {total}. Mute or resolve
-          some, or narrow by verdict, to see the rest.
-        </div>
-      )}
-
-      {visible.length === 0 ? (
-        <div className={styles.empty}>
-          {findings.length === 0
-            ? 'No findings in scope yet. Run a scan, then run triage to see what matters most.'
-            : 'No findings match this filter.'}
-        </div>
-      ) : (
-        sections.map((section, sectionIndex) => (
-          <div key={section.key} className={styles.section}>
-            {sectionIndex > 0 && (
-              <SectionHead sectionKey={section.key} count={section.rows.length} />
-            )}
-            <div className={styles.tableScroll}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Finding</th>
-                    <th>Type</th>
-                    <th>Score</th>
-                    <th>Verdict</th>
-                    <th>Signals</th>
-                    <th>Where</th>
-                    <th>Why</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {section.rows.map((f, i) => {
-                    const factors = parseFactors(f.triage_factors)
-                    const tier = tierOf(f)
-                    const score = f.triage_priority_score
-                    const isHuman = f.triage_source === 'human'
-                    const verdict = isHuman
-                      ? `You: ${f.triage_status === 'confirmed' ? 'Real' : 'False positive'}`
-                      : VERDICT_LABELS[f.triage_ai_verdict || ''] ?? 'Not reviewed'
-                    const stale =
-                      section.key === SECTION_RANKED &&
-                      latestRunId !== null &&
-                      Boolean(f.triage_run_id) &&
-                      f.triage_run_id !== latestRunId
-
-                    return (
-                      <tr key={f.id}>
-                        <td className={styles.rank}>{i + 1}</td>
-                        <td className={styles.name}>
-                          {f.name || f.id}
-                          {stale && (
-                            <span
-                              className={styles.staleTag}
-                              title={
-                                'Scored by an earlier run. Its facts were true ' +
-                                'on that date; re-triage to refresh it.'
-                              }
-                            >
-                              from {fmtWhen(f.triaged_at ?? null)}
-                            </span>
-                          )}
-                        </td>
-                        <td>{f.label}</td>
-                        <td className={styles.scoreCell}>
-                          {score === null || score === undefined ? (
-                            <span className={styles.confidence}>-</span>
-                          ) : (
-                            <>
-                              <span className={styles.scoreValue}>
-                                {score.toFixed(1)}
-                              </span>
-                              <span
-                                className={`${styles.tierChip} ${styles[`tier${tier}`] ?? ''}`}
-                                title={f.triage_tier_rule || ''}
-                              >
-                                {TIER_LABELS[tier]}
-                              </span>
-                              {factors ? (
-                                <span
-                                  className={styles.factorLine}
-                                  title={factorEvidence(factors)}
-                                >
-                                  {factorLine(factors)}
-                                </span>
-                              ) : (
-                                <span className={styles.factorLine}>math only</span>
-                              )}
-                            </>
-                          )}
-                        </td>
-                        <td className={styles.verdictCell}>
-                          <span
-                            className={`${styles.verdictChip} ${
-                              isHuman ? styles.verdictHuman : ''}`}
-                            title={f.triage_ai_model
-                              ? `Reviewed by ${f.triage_ai_model}`
-                              : ''}
-                          >
-                            {verdict}
-                          </span>
-                          {f.triage_ai_quote && (
-                            <span
-                              className={styles.quote}
-                              title={f.triage_ai_quote}
-                            >
-                              &ldquo;{f.triage_ai_quote}&rdquo;
-                            </span>
-                          )}
-                        </td>
-                        <td className={styles.signalsCell}>
-                          <div className={styles.signals}>
-                            {(f.triage_signals ?? []).length === 0
-                              ? <span className={styles.confidence}>-</span>
-                              : (f.triage_signals ?? []).map(sig => (
-                                  <span key={sig} className={styles.signalChip} title={sig}>
-                                    {sig.replace(/_/g, ' ')}
-                                  </span>
-                                ))}
-                          </div>
-                        </td>
-                        <td className={styles.where}>{f.host || f.location || '-'}</td>
-                        <td className={styles.reason}>
-                          {f.triage_reason || '-'}
-                          {f.triage_fix_lever && (
-                            <span className={styles.fixLever}>{f.triage_fix_lever}</span>
-                          )}
-                        </td>
-                        <td className={styles.rowActions}>
-                          <button
-                            className={styles.verdictButton}
-                            disabled={busyId === f.id}
-                            onClick={() => void setVerdict(f, 'confirmed')}
-                            title="Mark this real. Triage will not change it again."
-                          >
-                            <Check size={13} /> Real
-                          </button>
-                          <button
-                            className={styles.verdictButton}
-                            disabled={busyId === f.id}
-                            onClick={() => void setVerdict(f, 'likely_noise')}
-                            title="Mark this a false positive. It is not muted."
-                          >
-                            <X size={13} /> False
-                          </button>
-                          <button
-                            className={styles.muteButton}
-                            disabled={busyId === f.id}
-                            onClick={() => void mute(f)}
-                            title="Hide this finding from the graph, reports and the AI agent"
-                          >
-                            {busyId === f.id
-                              ? <Loader2 className={styles.spin} size={13} />
-                              : <EyeOff size={13} />}
-                            Mute
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+      <div className={styles.board}>
+        {backgroundRun && (
+          <div className={styles.runBanner} role="status">
+            <Loader2 className={styles.spin} size={13} />
+            <span className={styles.runBannerText}>
+              Priority Board running
+              {triage.currentPhase ? ` — ${PHASE_LABELS[triage.currentPhase] ?? triage.currentPhase}` : ''}
+              . The ranking fills in below as it goes; you can leave this page.
+            </span>
+            <button className={styles.runBannerBtn} onClick={() => setShowProgress(true)}>
+              Details
+            </button>
+            <button className={styles.runBannerBtn} onClick={triage.stopTriage}>
+              Stop
+            </button>
           </div>
-        ))
-      )}
+        )}
 
-      {showMuted && (
-        <div className={styles.mutedSection}>
-          <h3 className={styles.mutedHeading}>
-            Muted findings ({muted.length})
-          </h3>
-          <p className={styles.mutedNote}>
-            These are hidden from the graph, from reports and from the AI agent. This table is the
-            only place they are still visible.
-          </p>
-          {muted.length === 0 ? (
-            <div className={styles.empty}>Nothing has been muted in this project.</div>
-          ) : (
-            <div className={styles.tableScroll}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Finding</th>
-                    <th>Type</th>
-                    <th>Severity</th>
-                    <th>Muted</th>
-                    <th>By</th>
-                    <th>Reason</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {muted.map(f => (
-                    <tr key={f.id} className={styles.mutedRow}>
-                      <td className={styles.name}>{f.name || f.id}</td>
-                      <td>{f.label}</td>
-                      <td>
-                        <span className={`${styles.sev} ${styles[(f.severity || '').toLowerCase()] ?? ''}`}>
-                          {f.severity || '-'}
-                        </span>
-                      </td>
-                      <td>{fmtWhen(f.muted_at)}</td>
-                      <td>{f.muted_by || '-'}</td>
-                      <td className={styles.reason}>{f.muted_reason || f.triage_reason || '-'}</td>
-                      <td>
-                        <button
-                          className={styles.unmuteButton}
-                          disabled={busyId === f.id}
-                          onClick={() => void unmute(f)}
-                          title="Make this finding visible again everywhere"
-                        >
-                          {busyId === f.id ? <Loader2 className={styles.spin} size={13} /> : <Eye size={13} />}
-                          Restore
-                        </button>
-                      </td>
+        {truncated && (
+          <div className={styles.truncationNotice} role="status">
+            Showing the {findings.length} highest-severity findings of {total}. Mute or resolve
+            some, or narrow by verdict, to see the rest.
+          </div>
+        )}
+
+        {visible.length === 0 ? (
+          <div className={styles.empty}>
+            {findings.length === 0
+              ? 'No findings in scope yet. Run a scan, then run triage to see what matters most.'
+              : 'No findings match this filter.'}
+          </div>
+        ) : (
+          sections.map((section, sectionIndex) => (
+            <div key={section.key} className={styles.section}>
+              {sectionIndex > 0 && (
+                <SectionHead sectionKey={section.key} count={section.rows.length} />
+              )}
+              <div className={styles.tableScroll}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Finding</th>
+                      <th>Type</th>
+                      <th>Score</th>
+                      <th>Verdict</th>
+                      <th>Signals</th>
+                      <th>Where</th>
+                      <th>Why</th>
+                      <th />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {section.rows.map((f, i) => {
+                      const factors = parseFactors(f.triage_factors)
+                      const tier = tierOf(f)
+                      const score = f.triage_priority_score
+                      const isHuman = f.triage_source === 'human'
+                      const verdict = isHuman
+                        ? `You: ${f.triage_status === 'confirmed' ? 'Real' : 'False positive'}`
+                        : VERDICT_LABELS[f.triage_ai_verdict || ''] ?? 'Not reviewed'
+                      const verdictTint = isHuman
+                        ? styles.verdictHuman
+                        : styles[VERDICT_CLASS[f.triage_ai_verdict || ''] ?? ''] ?? ''
+                      const stale =
+                        section.key === SECTION_RANKED &&
+                        latestRunId !== null &&
+                        Boolean(f.triage_run_id) &&
+                        f.triage_run_id !== latestRunId
+
+                      return (
+                        <tr key={f.id}>
+                          <td className={styles.rank}>{i + 1}</td>
+                          <td className={styles.name}>
+                            {f.name || f.id}
+                            {stale && (
+                              <span
+                                className={styles.staleTag}
+                                title={
+                                  'Scored by an earlier run. Its facts were true ' +
+                                  'on that date; re-triage to refresh it.'
+                                }
+                              >
+                                from {fmtWhen(f.triaged_at ?? null)}
+                              </span>
+                            )}
+                          </td>
+                          <td>{f.label}</td>
+                          <td className={styles.scoreCell}>
+                            {score === null || score === undefined ? (
+                              <span className={styles.confidence}>-</span>
+                            ) : (
+                              <>
+                                <span className={styles.scoreValue}>
+                                  {score.toFixed(1)}
+                                </span>
+                                <span
+                                  className={`${styles.tierChip} ${styles[`tier${tier}`] ?? ''}`}
+                                  title={f.triage_tier_rule || ''}
+                                >
+                                  {TIER_LABELS[tier]}
+                                </span>
+                                {factors ? (
+                                  <span
+                                    className={styles.factorLine}
+                                    title={factorEvidence(factors)}
+                                  >
+                                    {factorLine(factors)}
+                                  </span>
+                                ) : (
+                                  <span className={styles.factorLine}>math only</span>
+                                )}
+                              </>
+                            )}
+                          </td>
+                          <td className={styles.verdictCell}>
+                            <span
+                              className={`${styles.verdictChip} ${verdictTint}`}
+                              title={f.triage_ai_model
+                                ? `Reviewed by ${f.triage_ai_model}`
+                                : ''}
+                            >
+                              {verdict}
+                            </span>
+                            {f.triage_ai_quote && (
+                              <span
+                                className={styles.quote}
+                                title={f.triage_ai_quote}
+                              >
+                                &ldquo;{f.triage_ai_quote}&rdquo;
+                              </span>
+                            )}
+                          </td>
+                          <td className={styles.signalsCell}>
+                            <div className={styles.signals}>
+                              {(f.triage_signals ?? []).length === 0
+                                ? <span className={styles.confidence}>-</span>
+                                : (f.triage_signals ?? []).map(sig => (
+                                    <span key={sig} className={styles.signalChip} title={sig}>
+                                      {sig.replace(/_/g, ' ')}
+                                    </span>
+                                  ))}
+                            </div>
+                          </td>
+                          <td className={styles.where}>{f.host || f.location || '-'}</td>
+                          <td className={styles.reason}>
+                            {f.triage_reason || '-'}
+                            {f.triage_fix_lever && (
+                              <span className={styles.fixLever}>{f.triage_fix_lever}</span>
+                            )}
+                          </td>
+                          <td className={styles.rowActions}>
+                            <button
+                              className={styles.verdictButton}
+                              disabled={busyId === f.id}
+                              onClick={() => void setVerdict(f, 'confirmed')}
+                              title="Mark this real. Triage will not change it again."
+                            >
+                              <Check size={13} /> Real
+                            </button>
+                            <button
+                              className={styles.verdictButton}
+                              disabled={busyId === f.id}
+                              onClick={() => void setVerdict(f, 'likely_noise')}
+                              title="Mark this a false positive. It is not muted."
+                            >
+                              <X size={13} /> False
+                            </button>
+                            <button
+                              className={styles.muteButton}
+                              disabled={busyId === f.id}
+                              onClick={() => void mute(f)}
+                              title="Hide this finding from the graph, reports and the AI agent"
+                            >
+                              {busyId === f.id
+                                ? <Loader2 className={styles.spin} size={13} />
+                                : <EyeOff size={13} />}
+                              Mute
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          )}
-        </div>
-      )}
+          ))
+        )}
+      </div>
 
       <TriageProgress
         isVisible={showProgress}

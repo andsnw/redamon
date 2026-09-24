@@ -448,18 +448,20 @@ def parse_nuclei_finding(finding: dict) -> dict:
     # Extract CVE IDs from various locations
     cves = []
     
-    # From classification
+    # From classification. Nuclei v3 emits cve-id as a lowercase list
+    # (["cve-2021-41773"]), so match case-insensitively and store the canonical
+    # upper-case id; a case-sensitive "CVE-" test silently dropped every CVE.
     classification = info.get("classification", {})
     if classification.get("cve-id"):
         cve_ids = classification["cve-id"]
         if isinstance(cve_ids, str):
             cve_ids = [cve_ids]
         for cve_id in cve_ids:
-            if cve_id and cve_id.startswith("CVE-"):
+            if cve_id and str(cve_id).upper().startswith("CVE-"):
                 cves.append({
-                    "id": cve_id,
+                    "id": str(cve_id).upper(),
                     "cvss": classification.get("cvss-score"),
-                    "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}"
+                    "url": f"https://nvd.nist.gov/vuln/detail/{str(cve_id).upper()}"
                 })
     
     # From CVE details
@@ -467,11 +469,12 @@ def parse_nuclei_finding(finding: dict) -> dict:
         cve_detail = classification["cve"]
         if isinstance(cve_detail, list):
             for cve_id in cve_detail:
-                if cve_id and not any(c["id"] == cve_id for c in cves):
+                cid = str(cve_id).upper() if cve_id else ""
+                if cid.startswith("CVE-") and not any(c["id"] == cid for c in cves):
                     cves.append({
-                        "id": cve_id,
+                        "id": cid,
                         "cvss": None,
-                        "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}"
+                        "url": f"https://nvd.nist.gov/vuln/detail/{cid}"
                     })
     
     # Extract tags

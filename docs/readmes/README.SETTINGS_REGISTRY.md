@@ -45,8 +45,18 @@ registry.yaml ──build──> registry.json ──> describe_recon_settings  
                                       ├──> the stealth profile
                                       ├──> the /defaults payload
                                       ├──> the queued-job fingerprint
+                                      ├──> the Mute Rules catalog check
                                       └──> the generated wiki reference
 ```
+
+The Mute Rules catalog (`graph_db/node_filters/catalog.yaml`) links each finding
+kind to the scan settings that skip the same findings before they are written
+("Cheaper at scan time", e.g. `nucleiSeverity`). Its build,
+`graph_db/node_filters/build.py`, reads `recon_settings/registry.json` and fails
+on a link naming a setting the registry does not have, or a settings-form tab
+`ProjectForm.tsx` does not have. The unit gate runs that build with `--check`,
+so renaming or removing a setting a link names fails there: update the link in
+`catalog.yaml` and rebuild it.
 
 ## The build
 

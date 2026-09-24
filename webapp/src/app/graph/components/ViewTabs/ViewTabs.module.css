@@ -1,10 +1,14 @@
+/* --bg-secondary put this a single step off the page behind it, which in the
+   light theme is #fafafa against white: the nav read as part of the content it
+   is supposed to sit above. --bg-tertiary is the first shade that separates in
+   BOTH themes, and --border-strong draws the edge the shade alone cannot. */
 .tabBar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-3);
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-strong);
   flex-shrink: 0;
   height: 32px;
 }
@@ -84,7 +88,7 @@
   align-items: center;
   position: relative;
   padding: 0 6px;
-  background: var(--bg-tertiary);
+  background: var(--bg-elevated);
   border: none;
   border-right: 1px solid var(--border-default);
   color: var(--text-tertiary);
@@ -327,7 +331,7 @@
   align-items: center;
   gap: var(--space-1);
   padding: 2px var(--space-2);
-  background: var(--bg-tertiary);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   color: var(--text-secondary);
@@ -380,7 +384,7 @@
   align-items: center;
   gap: 4px;
   padding: 2px var(--space-2);
-  background: var(--bg-tertiary);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   color: var(--text-secondary);
@@ -502,4 +506,56 @@
      dropdown instead of jittering with each label's width. */
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* -- Mute Rules tab: the armed pill -- */
+
+/* Keeps the pill on the same line as its label when the tab row scrolls. */
+.tabLabelWithPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.armedBadge {
+  composes: badge;
+  background: var(--status-info);
+  color: var(--text-on-accent);
+  flex-shrink: 0;
+}
+
+/* -- Narrow screens -- */
+
+/* The containing block for the dropdown menus when the tab row scrolls; see below. */
+.tabBar {
+  position: relative;
+}
+
+@media (max-width: 900px) {
+  .tabs {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+
+  .tab {
+    flex-shrink: 0;
+  }
+
+  /* A scrolling row clips anything positioned inside it, which would cut the
+     table and surface menus off at the header's bottom edge. With their
+     anchors static, the menus are placed against the tab bar instead, which
+     does not scroll. */
+  .tableMenuContainer,
+  .filterGroupSelect {
+    position: static;
+  }
+
+  .tableDropdownMenu {
+    max-height: 70vh;
+    overflow-y: auto;
+  }
 }

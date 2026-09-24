@@ -7308,7 +7308,7 @@
    "unit": "seconds"
   },
   "mcpKaliExecEnabled": {
-   "default": false,
+   "default": true,
    "deny_reason": "escalation",
    "form_section": "TargetSection",
    "group": "escalation",

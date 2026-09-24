@@ -60,7 +60,8 @@ const ctx = (scopes: string[] = ['recon:read']): McpContext => ({
 })
 
 const idle = () => ({
-  scans: [], agentSession: false, triageRun: false, activating: false, unknown: false,
+  scans: [], agentSession: false, triageRun: false, muteRulesApply: false, activating: false,
+  unknown: false,
 })
 
 /** A scan_versions row as the raw SQL returns it (snake_case, plus the size). */
@@ -254,6 +255,17 @@ describe('compare_scan_versions refuses rather than lying about the live graph',
 
   test('a running scan refuses', async () => {
     h.activity.mockResolvedValue({ ...idle(), scans: [{ kind: 'gvm' }] })
+    await expect(compareScanVersions(ctx(), 'p1')).rejects.toMatchObject({ code: 'busy' })
+  })
+
+  test('a Mute Rules apply refuses: a capture would catch it half-applied', async () => {
+    h.activity.mockResolvedValue({ ...idle(), muteRulesApply: true })
+    await expect(compareScanVersions(ctx(), 'p1')).rejects.toThrow(/Mute Rules are being applied/)
+  })
+
+  test('an apply starting DURING the capture is refused too', async () => {
+    let checks = 0
+    h.activity.mockImplementation(async () => (++checks === 1 ? idle() : { ...idle(), muteRulesApply: true }))
     await expect(compareScanVersions(ctx(), 'p1')).rejects.toMatchObject({ code: 'busy' })
   })
 

@@ -27,6 +27,9 @@
   --border-subtle: var(--color-gray-850);
   --border-strong: var(--color-gray-700);
 
+  /* Data tables */
+  --table-row-zebra-bg: rgba(255, 255, 255, 0.03);
+
   /* Shadows - darker for dark theme */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
   --shadow-default: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.4);

@@ -671,6 +671,8 @@ This is the most important table for day-to-day development. It tells you exactl
 | `recon_orchestrator/**/*.py` | **Nothing** — automatic | Uvicorn watches the mounted source directory |
 | `recon/**/*.py` | **Nothing** — automatic | Each recon run spawns a new container that picks up the volume-mounted code |
 | `mcp/servers/**/*.py` | `docker compose restart kali-sandbox` | MCP servers cache modules at startup |
+| `graph_db/**/*.py` | `docker compose build agent && docker compose up -d agent` (and `docker compose restart kali-sandbox` for `tenant_filter.py`) | The agent image bakes in its own copy: every agent graph read and the Mute Rules preview and apply run from it. Spawned scan containers get `graph_db` bind-mounted from the host, so scans pick a change up with no rebuild |
+| `graph_db/node_filters/catalog.yaml` | `python3 graph_db/node_filters/build.py`, then rebuild the agent | The Mute Rules catalog is compiled into `graph_db/node_filters/catalog.json` (the engine) and `webapp/src/lib/nodeFilters/catalog.json` (the page). Editing the YAML alone changes nothing, and the unit gate's `build.py --check` fails on a stale copy |
 | `webapp/package.json` (new dep) | `docker compose build webapp && docker compose up -d webapp` | New npm packages require image rebuild |
 | `agentic/requirements.txt` (new dep) | `docker compose build agent && docker compose up -d agent` | New pip packages require image rebuild |
 | `recon_orchestrator/requirements.txt` | `docker compose build recon-orchestrator && docker compose up -d recon-orchestrator` | Same |

@@ -25,6 +25,7 @@ export interface LLMNarratives {
 function esc(s: string | null | undefined): string {
   if (!s) return ''
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function sevColor(severity: string): string {
@@ -713,8 +714,14 @@ function renderScope(data: ReportData, narrative?: string): string {
       <tr><td>Base URLs</td><td>${graphOverview.endpointCoverage.baseUrls}</td></tr>
       <tr><td>Endpoints</td><td>${graphOverview.endpointCoverage.endpoints}</td></tr>
       <tr><td>Parameters</td><td>${graphOverview.endpointCoverage.parameters}</td></tr>
-      ${graphOverview.suppressedCount
-        ? `<tr><td>Suppressed as noise</td><td>${graphOverview.suppressedCount} finding(s) reviewed and excluded from this report</td></tr>`
+      ${graphOverview.suppressedByPeople
+        ? `<tr><td>Suppressed as noise</td><td>${graphOverview.suppressedByPeople} finding(s) reviewed and excluded from this report</td></tr>`
+        : ''}
+      ${graphOverview.suppressedByRules
+        ? `<tr><td>Suppressed by mute rules</td><td>${graphOverview.suppressedByRules} finding(s) excluded by rule, not reviewed one by one${
+            graphOverview.suppressedRules.length
+              ? ` (${graphOverview.suppressedRules.map(r => `${esc(r.name)}: ${r.count}`).join('; ')})`
+              : ''}</td></tr>`
         : ''}
     </tbody>
   </table>
@@ -2086,9 +2093,14 @@ body {
 .data-table td {
   padding: 7px 12px;
   border-bottom: 1px solid #f1f5f9;
+  color: #0f172a;
   vertical-align: top;
 }
-.data-table tbody tr:hover {
+.data-table tbody tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.022);
+}
+.data-table tbody tr:hover,
+.data-table tbody tr:nth-child(even):hover {
   background: #f8fafc;
 }
 
@@ -2262,6 +2274,9 @@ h3 {
   .cover { page-break-after: always; }
   .finding-card { page-break-inside: avoid; }
   .data-table tr { page-break-inside: avoid; }
+  /* The header band and the zebra stripe are the table's structure here, not
+     decoration, so they have to survive a print that drops backgrounds. */
+  .data-table th, .data-table tbody tr:nth-child(even) { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .metric-cards { page-break-inside: avoid; }
   a { color: inherit; text-decoration: none; }
   .narrative { border-left-color: #999; }

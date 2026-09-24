@@ -46,6 +46,7 @@ class _FakeTriageClient:
     def __init__(self):
         self.calls = []
         self.verdict_updates = True
+        self.verdict_muted = False
 
     def list_triage_findings(self, user_id, project_id, **kwargs):
         self.calls.append(("list_triage_findings", user_id, project_id, kwargs))
@@ -55,14 +56,31 @@ class _FakeTriageClient:
         self.calls.append(("count_triage_findings", user_id, project_id))
         return 137
 
-    def list_muted(self, user_id, project_id, limit=None):
-        self.calls.append(("list_muted", user_id, project_id, limit))
+    def list_muted(self, user_id, project_id, limit=None, **kwargs):
+        self.calls.append(("list_muted", user_id, project_id, limit, kwargs))
         return [{"id": "m1"}]
 
+    def count_muted(self, user_id, project_id, **kwargs):
+        self.calls.append(("count_muted", user_id, project_id, kwargs))
+        return 42
+
+    def muted_facets(self, user_id, project_id):
+        self.calls.append(("muted_facets", user_id, project_id))
+        return {"total": 1, "by_person": 1, "labels": {}, "rules": []}
+
+    def unmute_findings(self, user_id, project_id, keys):
+        self.calls.append(("unmute_findings", user_id, project_id, list(keys)))
+        return {"unmuted": len(keys),
+                "items": [{"key": k, "label": "Vulnerability", "muted_by": "rule:x/abc123"}
+                          for k in keys]}
+
     def set_human_verdict(self, user_id, project_id, node_id, status, reason,
-                          channel="", verdict_by=""):
+                          channel="", verdict_by="", refuse_muted=False):
         self.calls.append(
-            ("set_human_verdict", node_id, status, reason, channel, verdict_by))
+            ("set_human_verdict", node_id, status, reason, channel, verdict_by,
+             refuse_muted))
+        if self.verdict_muted and refuse_muted:
+            return {"updated": False, "reason": "muted", "label": "Vulnerability"}
         return {"updated": self.verdict_updates, "label": "Vulnerability"}
 
 
@@ -185,8 +203,8 @@ class TriageOpValidationTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_known_op_set_matches_what_the_handler_dispatches(self):
         self.assertEqual(
             api._TRIAGE_OPS,
-            frozenset({"mute", "unmute", "list_muted", "list_findings",
-                       "human_verdict", "preflight", "stop_run"}))
+            frozenset({"mute", "unmute", "unmute_many", "list_muted", "muted_facets",
+                       "list_findings", "human_verdict", "preflight", "stop_run"}))
 
     async def test_a_node_op_without_a_node_id_is_refused_before_dispatch(self):
         for op in ("mute", "unmute", "human_verdict"):
@@ -270,6 +288,24 @@ class VerdictProvenanceTests(unittest.IsolatedAsyncioTestCase):
         await api.graph_triage(self._req())
         self.assertEqual(self.events, [])
 
+    async def test_an_mcp_verdict_refuses_a_muted_finding(self):
+        # A human verdict is a Mute Rules guard, so on a rule-muted finding it
+        # would release the mute: an unmute by another name.
+        await api.graph_triage(self._req(source="mcp"))
+        self.assertIs(self._verdict_call()[6], True)
+
+    async def test_a_browser_verdict_may_land_on_a_muted_finding(self):
+        # The person clicking is the one who could unmute it anyway.
+        await api.graph_triage(self._req())
+        self.assertIs(self._verdict_call()[6], False)
+
+    async def test_a_refused_verdict_is_not_logged_as_one(self):
+        self.client.verdict_muted = True
+        resp = await api.graph_triage(self._req(source="mcp"))
+        self.assertEqual(_body(resp)["reason"], "muted")
+        self.assertFalse(_body(resp)["updated"])
+        self.assertEqual(self.events, [])
+
 
 class MutedLimitTests(unittest.IsolatedAsyncioTestCase):
     """`list_muted` is unbounded for the UI and bounded for MCP.
@@ -315,6 +351,69 @@ class MutedLimitTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_nonsense_limit_cannot_produce_an_empty_page(self):
         await api.graph_triage(self._req(limit=0))
         self.assertEqual(self._limit(), 1)
+
+
+class MutedNodesPagingTests(unittest.IsolatedAsyncioTestCase):
+    """Muted Nodes pages the muted list instead of loading every row.
+
+    The filters and the page reach the mixin untouched, and the total is
+    counted with the SAME filters, so "N of M" describes what is on screen.
+    """
+
+    def setUp(self):
+        self.client = _FakeTriageClient()
+        self._patches = [
+            mock.patch.object(api, "_triage_graph_client", lambda: self.client),
+            mock.patch.object(api, "master_key_is_weak", lambda: False),
+        ]
+        for p in self._patches:
+            p.start()
+        self.addCleanup(lambda: [p.stop() for p in self._patches])
+
+    def _call(self, name):
+        for c in self.client.calls:
+            if c[0] == name:
+                return c
+        self.fail(f"{name} was never called")
+
+    async def test_filters_and_page_reach_the_mixin(self):
+        resp = await api.graph_triage(api.GraphTriageRequest(
+            op="list_muted", user_id="u1", project_id="p1", limit=50, offset=100,
+            label="Secret", muted_via="rule", rule="rule:secret/abc123",
+            search="aws", order="person_first"))
+        body = _body(resp)
+        listed = self._call("list_muted")
+        self.assertEqual(listed[3], 50)
+        self.assertEqual(listed[4]["offset"], 100)
+        self.assertEqual(listed[4]["order"], "person_first")
+        self.assertEqual(listed[4]["label"], "Secret")
+        counted = self._call("count_muted")
+        # The same filters, minus the page: the total is of the filtered set.
+        for key in ("label", "muted_via", "rule", "search", "live_rules"):
+            self.assertEqual(counted[3][key], listed[4][key], key)
+        self.assertNotIn("offset", counted[3])
+        self.assertEqual(body["total"], 42)
+
+    async def test_a_negative_offset_is_no_offset(self):
+        await api.graph_triage(api.GraphTriageRequest(
+            op="list_muted", user_id="u1", project_id="p1", offset=-5))
+        self.assertIsNone(self._call("list_muted")[4]["offset"])
+
+    async def test_unmute_many_passes_the_keys_and_returns_what_was_unmuted(self):
+        with mock.patch("session_log.log_event") as log:
+            resp = await api.graph_triage(api.GraphTriageRequest(
+                op="unmute_many", user_id="u1", project_id="p1", keys=["v1", "v2"]))
+        body = _body(resp)
+        self.assertEqual(self._call("unmute_findings")[3], ["v1", "v2"])
+        self.assertEqual([i["key"] for i in body["items"]], ["v1", "v2"])
+        # One log line per finding actually unmuted, naming what had muted it.
+        self.assertEqual(log.call_count, 2)
+        self.assertEqual(log.call_args.kwargs["muted_by"], "rule:x/abc123")
+
+    async def test_facets(self):
+        resp = await api.graph_triage(api.GraphTriageRequest(
+            op="muted_facets", user_id="u1", project_id="p1"))
+        self.assertEqual(_body(resp)["total"], 1)
 
 
 class GateAcknowledgementTests(unittest.IsolatedAsyncioTestCase):

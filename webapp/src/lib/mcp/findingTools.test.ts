@@ -19,6 +19,7 @@ import { describe, test, expect, beforeEach, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   findProject: vi.fn(),
   triageRuns: vi.fn(),
+  nodeFilter: vi.fn(),
   fetch: vi.fn(),
 }))
 
@@ -26,6 +27,7 @@ vi.mock('@/lib/prisma', () => ({
   default: {
     project: { findUnique: (...a: unknown[]) => h.findProject(...a) },
     triageRun: { findMany: (...a: unknown[]) => h.triageRuns(...a) },
+    projectNodeFilter: { findUnique: (...a: unknown[]) => h.nodeFilter(...a) },
   },
 }))
 
@@ -67,6 +69,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', h.fetch)
   h.findProject.mockResolvedValue({ id: 'p1', userId: 'owner' })
   h.triageRuns.mockResolvedValue([])
+  h.nodeFilter.mockResolvedValue(null)
   __resetAgentVersionWarning()
 })
 
@@ -319,8 +322,8 @@ describe('list_muted_findings', () => {
     const r = await listMuted(ctx(), 'p1')
     expect(r.total).toBe(3)
     expect(r.groups).toEqual([
-      { label: 'Vulnerability', severity: 'critical', count: 2, reasons: ['accepted risk, internal only'] },
-      { label: 'Vulnerability', severity: 'low', count: 1, reasons: ['accepted risk, internal only'] },
+      { muted_via: 'person', label: 'Vulnerability', severity: 'critical', count: 2, reasons: ['accepted risk, internal only'] },
+      { muted_via: 'person', label: 'Vulnerability', severity: 'low', count: 1, reasons: ['accepted risk, internal only'] },
     ])
     expect(r).not.toHaveProperty('findings')
   })
@@ -385,6 +388,62 @@ describe('list_muted_findings', () => {
     const r = await listMuted(ctx(), 'p1')
     expect(r.total).toBe(0)
     expect(r.groups).toEqual([])
+  })
+})
+
+describe('list_muted_findings: people and filter rules', () => {
+  const ruleMuted = (over: Record<string, unknown> = {}) => muted({
+    id: 'r1', muted_by: 'rule:vuln.nuclei/k3f9a2', muted_via: 'rule',
+    muted_reason: 'Filter rule: Informational templates', severity: 'info', ...over,
+  })
+
+  test("the window is filled with a person's mutes first", async () => {
+    // A bulk rule apply must not push the mutes that ARE someone's decision
+    // out of the capped read (X11).
+    agentReturns({ findings: [], total: 0 })
+    await listMuted(ctx(), 'p1')
+    expect(JSON.parse(h.fetch.mock.calls[0][1].body).order).toBe('person_first')
+  })
+
+  test('people and rules are grouped and counted apart', async () => {
+    agentReturns({ findings: [muted(), ruleMuted(), ruleMuted({ id: 'r2' })], total: 3 })
+    const r = await listMuted(ctx(), 'p1')
+    expect(r.mutedVia).toEqual({ person: 1, rule: 2 })
+    expect(r.groups[0]).toMatchObject({ muted_via: 'rule', count: 2, reasons: ['Filter rule: Informational templates'] })
+    expect(r.groups[1]).toMatchObject({ muted_via: 'person', count: 1 })
+  })
+
+  test('a rule mute is recognised by its muted_by even from an older agent', async () => {
+    agentReturns({ findings: [muted({ muted_by: 'rule:secret/p81c0d' })] })
+    expect((await listMuted(ctx(), 'p1')).mutedVia).toEqual({ person: 0, rule: 1 })
+  })
+
+  test('rows name their rule, or say it was deleted', async () => {
+    h.nodeFilter.mockResolvedValue({ rules: { version: 1, kinds: { 'vuln.nuclei': {
+      enabled: true, action: 'mute', rules: [{ id: 'k3f9a2', name: 'Informational templates', enabled: true, all: [] }],
+    } } } })
+    agentReturns({ findings: [muted(), ruleMuted(), ruleMuted({ id: 'r3', muted_by: 'rule:vuln.nuclei/gone01' })], total: 3 })
+    const r = await listMuted(ctx(), 'p1', { detail: true })
+    expect(r.findings![0]).toMatchObject({ muted_via: 'person', rule_name: null })
+    expect(r.findings![1]).toMatchObject({ muted_via: 'rule', rule_name: 'Informational templates' })
+    expect(r.findings![1]).not.toHaveProperty('rule_deleted')
+    expect(r.findings![2]).toMatchObject({ muted_via: 'rule', rule_name: null, rule_deleted: true })
+  })
+
+  test('with the exact total, a capped read is a partial GROUPING, not a partial total', async () => {
+    agentReturns({ findings: Array.from({ length: 2000 }, (_, i) => muted({ id: `m${i}` })), total: 5000 })
+    const r = await listMuted(ctx(), 'p1')
+    expect(r.total).toBe(5000)
+    expect(r).not.toHaveProperty('totalIsPartial')
+    expect(r.groupsArePartial).toBe(true)
+    expect(r.groupsNote).toMatch(/5000 in all/)
+  })
+
+  test('the rule document failing to load still lists the mutes', async () => {
+    h.nodeFilter.mockRejectedValue(new Error('db down'))
+    agentReturns({ findings: [ruleMuted()], total: 1 })
+    const r = await listMuted(ctx(), 'p1', { detail: true })
+    expect(r.findings![0]).toMatchObject({ muted_via: 'rule', rule_name: null, rule_deleted: true })
   })
 })
 

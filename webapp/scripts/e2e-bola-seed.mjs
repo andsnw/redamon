@@ -47,6 +47,10 @@ try {
     || (await prisma.remediation.create({ data: { projectId: pb.id, title: 'e2e-bola-rem', description: 'x' } }))
   const presetB = (await prisma.userProjectPreset.findFirst({ where: { userId: b.id, name: 'e2e-bola-preset' } }))
     || (await prisma.userProjectPreset.create({ data: { userId: b.id, name: 'e2e-bola-preset', settings: {} } }))
+  const mutePresetB = (await prisma.userMuteRulesPreset.findFirst({ where: { userId: b.id, name: 'e2e-bola-mute-preset' } }))
+    || (await prisma.userMuteRulesPreset.create({
+      data: { userId: b.id, name: 'e2e-bola-mute-preset', mode: 'denylist', rules: { version: 1, kinds: {} } },
+    }))
 
   console.log(`A_ID=${a.id}`)
   console.log(`B_ID=${b.id}`)
@@ -56,6 +60,7 @@ try {
   console.log(`CONV_B_SESSION=${CONV_B_SESSION}`)
   console.log(`REM_B_ID=${remB.id}`)
   console.log(`PRESET_B_ID=${presetB.id}`)
+  console.log(`MUTE_PRESET_B_ID=${mutePresetB.id}`)
 } catch (err) {
   console.error('SEED_ERROR:', err.message)
   process.exit(1)

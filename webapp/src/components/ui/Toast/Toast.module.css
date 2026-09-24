@@ -123,3 +123,19 @@
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+.actionButton {
+  margin-top: var(--space-1);
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.actionButton:hover {
+  color: var(--accent-secondary);
+}

@@ -46,10 +46,21 @@ def cypher_blocks(src: str) -> list:
 
 class TestMutedFindingsDoNotSeedAScan(unittest.TestCase):
     def test_the_graphql_seed_query_excludes_muted_findings(self):
-        # The exact query that regressed.
+        # The exact query that regressed. An operator's mute is excluded; a
+        # node-filter rule mute is not (it only hides noise from display, and
+        # full recon scans its in-memory results regardless), so the accepted
+        # forms are the bare exclusion or the operator-only carve-out.
         block = next(b for b in cypher_blocks(source()) if "JsReconFinding" in b)
-        self.assertIn("NOT jr:Muted", block,
-                      "a suppressed JsReconFinding would be re-scanned as a target")
+        carve_out = "NOT (jr:Muted AND NOT coalesce(jr.muted_by, '') STARTS WITH 'rule:')"
+        self.assertTrue("NOT jr:Muted" in block or carve_out in block,
+                        "a suppressed JsReconFinding would be re-scanned as a target")
+
+    def test_the_carve_out_only_admits_rule_mutes(self):
+        # Guards the carve-out's direction: `STARTS WITH 'rule:'` must sit
+        # inside the NOT, or every operator mute would seed a scan again.
+        block = next(b for b in cypher_blocks(source()) if "JsReconFinding" in b)
+        if "STARTS WITH 'rule:'" in block:
+            self.assertIn("AND NOT (jr:Muted AND NOT coalesce(jr.muted_by, '') STARTS WITH 'rule:')", block)
 
     def test_the_mute_filter_did_not_break_the_finding_type_predicate(self):
         # The original WHERE was `A OR B`. Appending `AND NOT ...` without

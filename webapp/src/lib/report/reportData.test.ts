@@ -340,6 +340,12 @@ describe('every finding query in reportData excludes muted findings', () => {
     expect(SRC).toMatch(/suppressedCount,/)
   })
 
+  test('a filter rule mute is counted apart from a person\'s', () => {
+    // Only a person's mute is a judgement of that finding; a rule's is policy.
+    expect(SRC).toContain("coalesce(n.muted_by, '') STARTS WITH 'rule:' AS byRule")
+    expect(SRC).toMatch(/suppressedByPeople,\s*suppressedByRules,\s*suppressedRules,/)
+  })
+
   test('ChainFinding queries are deliberately left alone', () => {
     // EvoGraph attack-chain memory is out of triage scope and not muteable.
     const chain = cypherLiterals().filter(q => /:ChainFinding\b/.test(q))

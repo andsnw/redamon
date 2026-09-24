@@ -101,6 +101,17 @@ docker run --rm --network host --entrypoint python3 \
   -v "$PWD:/work:ro" -w /work redamon-recon:latest recon/tests/test_schema_catalog.py
 ```
 
+Mute Rules (node filters in the code) have the same split. The unit tier pins
+the rule decisions against a fake graph and a mocked Prisma; three checks need
+real services and skip in the gate. Run them after touching the engine
+(`graph_db/node_filters/`, `node_filter_mixin.py`) or `webapp/src/lib/nodeFilterRun.ts`:
+
+| Check | Needs | How to run |
+|---|---|---|
+| the sweep's real Cypher: keyset paging, the guard re-check in the mute write, tenant scoping, `updated_at` never touched (`tests/test_node_filters_graph_live.py`) | Neo4j | the command in the file's docstring (agent image, on `redamon-network`) |
+| one live apply per project, decided by Postgres's serializable transaction (`webapp/src/lib/nodeFilterRun.integration.test.ts`) | Postgres | set `DATABASE_URL`; the command is in the file's header |
+| what a real recon scan's end-of-run sweep mutes, graded by an independent oracle | the stack + the lab | [`verify_node_filters_scan.py`](../../testing/guinea_pigs/node_filters_lab/verify_node_filters_scan.py) (usage in its docstring) |
+
 A failing file is reported with the command to re-run it on its own:
 
 ```

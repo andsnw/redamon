@@ -1177,6 +1177,7 @@ sequenceDiagram
 Three details worth understanding:
 
 - **Tenant filter is mandatory and automatic.** The agent's translator LLM is *not* asked to add `WHERE user_id = ... AND project_id = ...` itself. Instead, after the LLM produces a Cypher query, `Neo4jToolManager` rewrites the query to inject the tenant filter against every matched node. Even a deliberately malicious or hallucinated query cannot leak data from another project.
+- **Muted findings are invisible.** The same rewrite (`graph_db/tenant_filter.py`) excludes every `:Muted` node, whether a person muted it or a [Mute Rule](../../redamon.wiki/Mute-Rules.md) did. So Mute Rules are how an operator takes whole classes of noise (informational templates, missing headers, ungraded advisories) out of the agent's view, and a finding they hide is one the agent cannot reason about or report. Unmuting brings it back on the next question. See the `Muted` label in [GRAPH.SCHEMA.md](GRAPH.SCHEMA.md).
 - **Self-healing on syntax errors.** If Neo4j returns a Cypher syntax error (typo, wrong relationship name, etc.), the manager retries with the error message attached as context, and the LLM re-emits a corrected query. The retry budget is `CYPHER_MAX_RETRIES` (default 3). After exhaustion the failure is surfaced to the agent so it can ask a different question.
 - **Available in every phase.** Unlike most active tools that are gated by phase (nmap is dangerous, metasploit is exploitation-only), `query_graph` is allowed in `informational`, `exploitation`, AND `post_exploitation`. Reading what's already known is always safe.
 
@@ -4182,6 +4183,11 @@ The agent's billed-LLM REST endpoints - `/llm/ffuf-extensions`, `/llm/nuclei-tag
 - **Spend cap**: a per-user rolling daily call ceiling (`LLM_GUARD_DAILY_CALL_CAP`), returning 429 when exceeded.
 
 So multi-tenant isolation is now enforced at the API layer too (auth + rate + spend), not only at the database-query level. The webapp proxies and recon planners attach the key automatically.
+
+Two agent endpoints WRITE the graph on the webapp's behalf and take the stricter `require_master_internal_auth`, which accepts the master `INTERNAL_API_KEY` only and rejects `SCANNER_API_KEY`: a compromised scan container must not be able to hide findings from the operator and the agent.
+
+- `POST /graph/node-filters/preview` counts what draft Mute Rules would do and writes nothing. It runs in the request's worker thread, at most two at once and one per project, and stops at a 20 s deadline with its counts marked partial.
+- `POST /graph/node-filters/apply` starts an "apply to current graph" in a background thread (`agentic/node_filter_runs.py`) and answers 202. It receives only a run id: it fetches the rules the webapp snapshotted into that `NodeFilterRun` over `/api/internal/node-filter-runs/[runId]`, heartbeats every 30 s, stops when the webapp says so (Stop, a project delete, a version activation) or after two failed heartbeats, and always reports how it ended to `.../finish`. Preview and apply call the same sweep (`apply_node_filters` in `graph_db/mixins/node_filter_mixin.py`), so a preview's counts are what an apply writes.
 
 ### Phase-Based Access Control
 

@@ -21,6 +21,7 @@ const h = vi.hoisted(() => ({
   findVersion: vi.fn(),
   findConversation: vi.fn(),
   liveTriageRun: vi.fn(),
+  liveNodeFilterRun: vi.fn(),
   liveGraphWriters: vi.fn(),
   findRemediations: vi.fn(),
   countRemediations: vi.fn(),
@@ -50,6 +51,7 @@ vi.mock('@/lib/prisma', () => ({
 vi.mock('@/lib/orchestrator', () => ({ orchestratorFetch: (...a: unknown[]) => h.orchestratorFetch(...a) }))
 vi.mock('@/lib/activationLock', () => ({ isActivationInProgress: (...a: unknown[]) => h.isActivating(...a) }))
 vi.mock('@/lib/triageRun', () => ({ findLiveTriageRun: (...a: unknown[]) => h.liveTriageRun(...a) }))
+vi.mock('@/lib/nodeFilterRun', () => ({ findLiveNodeFilterRun: (...a: unknown[]) => h.liveNodeFilterRun(...a) }))
 vi.mock('@/lib/graphWriters', () => ({
   describeLiveGraphWriters: (...a: unknown[]) => h.liveGraphWriters(...a),
 }))
@@ -104,6 +106,7 @@ beforeEach(() => {
   h.findManyProjects.mockResolvedValue([{ id: 'p1', name: 'Target', targetDomain: 'x.tld' }])
   h.findVersion.mockResolvedValue({ id: 'v3', seq: 3, label: 'Scan 3', createdAt: new Date() })
   h.isActivating.mockResolvedValue(false)
+  h.liveNodeFilterRun.mockResolvedValue(null)
   h.findConversation.mockResolvedValue(null)
   h.liveTriageRun.mockResolvedValue(null)
   h.liveGraphWriters.mockResolvedValue(null)
@@ -399,6 +402,14 @@ describe('graph_summary', () => {
     expect(r.warning).toBeTruthy()
   })
 
+  test('REGRESSION: a Mute Rules apply is not "stable": the counts exclude what it is muting', async () => {
+    okSummary()
+    h.liveNodeFilterRun.mockResolvedValue({ id: 'nf1', revision: 3 })
+    const r = await graphSummary(ctx(), 'p1')
+    expect(r.liveGraphState).toBe('agent_writing')
+    expect(r.warning).toMatch(/Mute Rules apply/)
+  })
+
   test('a settled graph carries no warning', async () => {
     okSummary()
     const r = await graphSummary(ctx(), 'p1')
@@ -506,6 +517,16 @@ describe('resolveLiveGraphState', () => {
   test('a live triage run is agent_writing', async () => {
     h.liveTriageRun.mockResolvedValue({ id: 'r1', status: 'running' })
     expect(await resolveLiveGraphState('p1')).toBe('agent_writing')
+  })
+
+  test('a Mute Rules apply is agent_writing: counts move while it mutes page by page', async () => {
+    h.liveNodeFilterRun.mockResolvedValue({ id: 'nf1', revision: 3 })
+    expect(await resolveLiveGraphState('p1')).toBe('agent_writing')
+  })
+
+  test('an unreadable Mute Rules apply state is unknown, never stable', async () => {
+    h.liveNodeFilterRun.mockRejectedValue(new Error('db down'))
+    expect(await resolveLiveGraphState('p1')).toBe('unknown')
   })
 
   test('a running scan outranks an agent session', async () => {
@@ -892,6 +913,13 @@ describe('get_project_activity', () => {
     expect(r.scans).toEqual([])
     expect(r.canStartFullScan).toBe(false)
     expect(r.startBlockedBecause).toMatch(/triage run/)
+  })
+
+  test('a Mute Rules apply is reported by name', async () => {
+    h.liveNodeFilterRun.mockResolvedValue({ id: 'nf1', revision: 3 })
+    const r = await getProjectActivity(ctx(), 'p1')
+    expect(r.muteRulesApply).toBe(true)
+    expect(r.liveGraphState).toBe('agent_writing')
   })
 
   test('a free project can start, and says nothing is blocking', async () => {

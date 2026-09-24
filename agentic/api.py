@@ -18,7 +18,7 @@ import os
 import re
 import shlex
 from contextlib import asynccontextmanager
-from typing import Literal, Optional
+from typing import Any, List, Literal, Optional
 
 import httpx
 import websockets
@@ -3214,8 +3214,8 @@ def _triage_graph_client():
 #: Every op this endpoint answers. Validated up front so the dispatch below can
 #: be a plain function with no early-return path back through the handler.
 _TRIAGE_OPS = frozenset({
-    "mute", "unmute", "list_muted", "list_findings",
-    "human_verdict", "preflight", "stop_run",
+    "mute", "unmute", "unmute_many", "list_muted", "muted_facets",
+    "list_findings", "human_verdict", "preflight", "stop_run",
 })
 
 #: The mixin's own ceiling on `list_triage_findings`. A caller-supplied limit is
@@ -3231,8 +3231,8 @@ class GraphTriageRequest(BaseModel):
     mixin, so a guessed id from another project matches nothing rather than
     mutating anything.
     """
-    op: str  # mute | unmute | list_muted | list_findings | human_verdict
-             # | preflight | stop_run
+    op: str  # mute | unmute | unmute_many | list_muted | muted_facets
+             # | list_findings | human_verdict | preflight | stop_run
     user_id: str
     project_id: str
     node_id: Optional[str] = None
@@ -3255,6 +3255,18 @@ class GraphTriageRequest(BaseModel):
     #: whole table internally. `total` still comes from the uncapped count, so a
     #: capped read can never pass for a complete one.
     limit: Optional[int] = None
+    #: Muted Nodes paging and filters (`list_muted`). All optional: with none of
+    #: them the op returns what it always did, plus a `total`.
+    offset: Optional[int] = None
+    label: Optional[str] = None
+    muted_via: Optional[str] = None   # person | rule | deleted_rule
+    rule: Optional[str] = None        # an exact muted_by, e.g. rule:vuln.nuclei/k3f9a2
+    search: Optional[str] = None
+    order: Optional[str] = None       # recent (default) | person_first
+    #: The rule ids that still exist, for `muted_via = deleted_rule`.
+    live_rules: Optional[List[str]] = None
+    #: `unmute_many`: the findings' natural keys (id, or finding_id).
+    keys: Optional[List[str]] = None
 
 
 @app.post("/graph/triage", tags=["Graph"], dependencies=[Depends(require_master_internal_auth)])
@@ -3306,13 +3318,25 @@ async def graph_triage(body: GraphTriageRequest):
         if body.op == "unmute":
             return client.unmute_finding(body.user_id, body.project_id, body.node_id)
         if body.op == "list_muted":
-            # Unbounded unless the caller asks for a bound. The Muted table in
-            # the UI needs every row to count them; the MCP surface cannot
-            # afford that transfer and passes a limit.
+            # Unbounded unless the caller asks for a bound. Muted Nodes pages
+            # with offset/limit and reads the size from `total`; the MCP
+            # surface passes a limit and orders person-first.
             muted_limit = (max(1, min(int(body.limit), _TRIAGE_LIST_MAX))
                            if body.limit is not None else None)
-            return {"findings": client.list_muted(
-                body.user_id, body.project_id, limit=muted_limit)}
+            filters = dict(label=body.label, muted_via=body.muted_via,
+                           rule=body.rule, search=body.search,
+                           live_rules=body.live_rules)
+            return {
+                "findings": client.list_muted(
+                    body.user_id, body.project_id, limit=muted_limit,
+                    offset=max(0, int(body.offset or 0)) or None,
+                    order=body.order, **filters),
+                "total": client.count_muted(body.user_id, body.project_id, **filters),
+            }
+        if body.op == "muted_facets":
+            return client.muted_facets(body.user_id, body.project_id)
+        if body.op == "unmute_many":
+            return client.unmute_findings(body.user_id, body.project_id, body.keys or [])
         if body.op == "list_findings":
             # `total` is what stops the table lying: the query is capped, so
             # without it the operator reads a truncated list as complete. It
@@ -3327,11 +3351,15 @@ async def graph_triage(body: GraphTriageRequest):
                 "total": client.count_triage_findings(body.user_id, body.project_id),
             }
         if body.op == "human_verdict":
+            # Keyed on the channel, not a flag, so no MCP caller can forget it:
+            # on a rule-muted finding a verdict releases the mute, and an
+            # unattended token may not unmute.
             return client.set_human_verdict(
                 body.user_id, body.project_id, body.node_id,
                 body.status or "", body.reason or "",
                 channel=body.source or "app",
-                verdict_by=body.verdict_by or body.user_id)
+                verdict_by=body.verdict_by or body.user_id,
+                refuse_muted=body.source == "mcp")
         if body.op == "preflight":
             return client.triage_preflight(body.user_id, body.project_id)
         # stop_run. Project delete calls this before deleting (X12). A run that
@@ -3374,6 +3402,12 @@ async def graph_triage(body: GraphTriageRequest):
     # Who suppressed what, and when. The node itself carries muted_by/muted_at;
     # this is the time-ordered half. log_event never raises, so auditability
     # cannot turn a successful mute into a 500.
+    if body.op == "unmute_many" and isinstance(result, dict):
+        from session_log import log_event
+        for item in result.get("items") or []:
+            log_event("finding_unmuted", user_id=body.user_id,
+                      project_id=body.project_id, node_id=item.get("key"),
+                      label=item.get("label"), muted_by=item.get("muted_by"))
     if body.op in ("mute", "unmute", "human_verdict"):
         from session_log import log_event
         # The three ops write durable operator decisions. mute/unmute report
@@ -3391,6 +3425,9 @@ async def graph_triage(body: GraphTriageRequest):
                 **({"status": body.status or "",
                     "channel": body.source or "app"} if body.op == "human_verdict" else {}),
             )
+        elif result.get("reason") == "muted":
+            logger.info("graph/triage human_verdict refused on a muted finding: "
+                        "node_id=%s project=%s", body.node_id, body.project_id)
         else:
             # Matched nothing: a stale node id (version-activate recreates
             # nodes), an asset id, or another tenant's. The caller gets a
@@ -3401,6 +3438,79 @@ async def graph_triage(body: GraphTriageRequest):
                 body.op, body.node_id, body.user_id, body.project_id)
 
     return JSONResponse(content=result)
+
+
+class NodeFilterPreviewRequest(BaseModel):
+    """Webapp -> agent: count what draft node-filter rules would do.
+
+    The tenant is resolved by the webapp route (strict owner check) before the
+    call. The rules are re-validated here by the engine; nothing is written.
+    """
+    user_id: str
+    project_id: str
+    mode: str
+    rules: Optional[Any] = None
+    #: [label, key] pairs from Postgres: nodes an operator unmuted.
+    exemptions: Optional[List[List[str]]] = None
+    kinds: Optional[List[str]] = None
+
+
+@app.post("/graph/node-filters/preview", tags=["Graph"],
+          dependencies=[Depends(require_master_internal_auth)])
+def node_filters_preview(body: NodeFilterPreviewRequest):
+    """A dry run of the one sweep that applies node filters.
+
+    A plain `def`, so FastAPI runs it in its worker pool and the paged graph
+    reads never block the event loop. One preview per project and two in total
+    (429 otherwise), and a 20 s deadline after which the counts come back
+    marked `partial`.
+    """
+    if master_key_is_weak():
+        return JSONResponse(status_code=503, content={
+            "error": "INTERNAL_API_KEY is not configured; mute rules are disabled."})
+    if not body.user_id or not body.project_id:
+        return JSONResponse(status_code=400, content={"error": "missing tenant identity"})
+    from node_filter_runs import PreviewBusy, preview
+    try:
+        stats = preview(_triage_graph_client(), body.user_id, body.project_id, body.mode,
+                        body.rules, exemptions=body.exemptions or [], kinds=body.kinds or None)
+    except PreviewBusy as e:
+        return JSONResponse(status_code=429, content={"error": str(e)})
+    except Exception as e:
+        logger.error(f"node-filter preview failed: {e}")
+        return JSONResponse(status_code=500, content={"error": "the preview failed"})
+    return JSONResponse(content=stats)
+
+
+class NodeFilterApplyRequest(BaseModel):
+    """Webapp -> agent: apply one NodeFilterRun. The id is ALL it carries.
+
+    The rules, mode, tenant and exemptions are read back from the run row over
+    the master-key internal route, so a forged body cannot choose what is muted.
+    """
+    run_id: str
+
+
+@app.post("/graph/node-filters/apply", tags=["Graph"],
+          dependencies=[Depends(require_master_internal_auth)])
+async def node_filters_apply(body: NodeFilterApplyRequest):
+    """Start an apply in a background thread and answer 202 at once.
+
+    An apply can take minutes on a large graph; the webapp's call must not wait
+    for it, and the event loop must not run it. Progress and the outcome reach
+    the webapp through the run's heartbeat and finish routes.
+    """
+    if master_key_is_weak():
+        return JSONResponse(status_code=503, content={
+            "error": "INTERNAL_API_KEY is not configured; mute rules are disabled."})
+    run_id = (body.run_id or "").strip()
+    if not run_id or len(run_id) > 64 or not re.fullmatch(r"[A-Za-z0-9_-]+", run_id):
+        return JSONResponse(status_code=400, content={"error": "invalid run id"})
+    from node_filter_runs import start_apply
+    from session_log import log_event
+    if not start_apply(run_id, _triage_graph_client, log_event=log_event):
+        return JSONResponse(status_code=409, content={"error": "this run is already being applied"})
+    return JSONResponse(status_code=202, content={"accepted": True, "run_id": run_id})
 
 
 class GraphExecRequest(BaseModel):
@@ -4107,7 +4217,7 @@ async def kali_exec(body: KaliExecRequest):
     The confirmation gate cannot apply here because there is no human, so what
     carries the weight instead is who is allowed to reach this endpoint at all:
 
-        1. MCP_KALI_EXEC_ENABLED     operator, per deployment, default off
+        1. MCP_KALI_EXEC_ENABLED     operator, per deployment, default on
         2. the `kali:exec` scope     user, password-confirmed at mint time
         3. project.mcpKaliExecEnabled a human in the project form, per
            engagement, and DENIED to update_recon_settings so a token can never

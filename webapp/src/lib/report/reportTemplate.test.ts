@@ -523,7 +523,51 @@ describe('Dynamic TOC Numbering', () => {
   })
 })
 
+describe('Suppressed findings: people and rules are reported apart', () => {
+  function withSuppressed(people: number, rules: number, ruleNames: { name: string; count: number }[] = []) {
+    const data = makeReportData()
+    ;(data.graphOverview as any).suppressedCount = people + rules
+    ;(data.graphOverview as any).suppressedByPeople = people
+    ;(data.graphOverview as any).suppressedByRules = rules
+    ;(data.graphOverview as any).suppressedRules = ruleNames
+    return generateReportHtml(data, null)
+  }
+
+  test('two rows: a person reviewed the first, a rule excluded the second', () => {
+    const html = withSuppressed(3, 1284, [{ name: 'Informational templates', count: 1284 }])
+    expect(html).toContain('<tr><td>Suppressed as noise</td><td>3 finding(s) reviewed and excluded from this report</td></tr>')
+    expect(html).toContain('Suppressed by mute rules')
+    expect(html).toContain('1284 finding(s) excluded by rule, not reviewed one by one (Informational templates: 1284)')
+  })
+
+  test('rule mutes are never called reviewed', () => {
+    const html = withSuppressed(0, 50)
+    expect(html).not.toContain('Suppressed as noise')
+    expect(html).toContain('50 finding(s) excluded by rule')
+  })
+
+  test('nothing suppressed, no rows', () => {
+    const html = withSuppressed(0, 0)
+    expect(html).not.toContain('Suppressed as noise')
+    expect(html).not.toContain('Suppressed by mute rules')
+  })
+
+  test('a rule name is escaped, apostrophe included', () => {
+    const html = withSuppressed(0, 1, [{ name: `<img src=x onerror=alert(1)> it's`, count: 1 }])
+    expect(html).not.toContain('<img src=x onerror=alert(1)>')
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt; it&#39;s: 1')
+  })
+})
+
 describe('HTML Escaping / XSS Prevention', () => {
+  test('an apostrophe is escaped, so a single-quoted attribute cannot be closed', () => {
+    const data = makeReportData()
+    ;(data.project as any).name = "a' onmouseover='alert(1)"
+    const html = generateReportHtml(data, null)
+    expect(html).not.toContain("a' onmouseover='alert(1)")
+    expect(html).toContain('a&#39; onmouseover=&#39;alert(1)')
+  })
+
   test('XSS in project name is escaped', () => {
     const data = makeReportData()
     ;(data.project as any).name = '<script>alert("xss")</script>'

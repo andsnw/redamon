@@ -448,6 +448,9 @@ Webapp server-side routes under `webapp/src/app/api/` (all behind `middleware.ts
 | Reports / analytics | `/api/reports/*`, `/api/analytics/redzone/*`, `/api/projects/[id]/reports` | JWT |
 | **File uploads** | `/api/projects/[id]/wordlists` (≤50 MB `.txt`), `/api/nuclei-templates` (≤1 MB `.yaml`), `/api/js-recon/[projectId]/upload` (≤10 MB), `/api/roe/parse` (≤20 MB PDF/DOCX → LLM) | JWT; extension allowlist + `path.basename` sanitization |
 | Projects | `/api/projects/*` (CRUD, import/export, presets) | JWT |
+| Triage and Mute Rules | `/api/triage/{findings,verdict,mute,unmute,muted,preflight}`, `/api/projects/[id]/node-filters/{,preview,apply,disarm,exemptions,status,runs/[runId]}` | JWT; strict owner check (`requireProjectOwner`: 404, not relaxed by `ACCESS_ENFORCE=0`), because these decide what the operator and the agent can see; every mutation with a body is JSON-only (415); Mute Rules changes and unmutes are audited with the real actor (a person's mute and a UI verdict are not) |
+| User presets | `/api/presets/*` (recon), `/api/mute-rule-presets/*` (Mute Rules) | JWT; scoped to the effective user; another user's preset answers 404 |
+| Internal check-ins | `/api/internal/triage-runs/*`, `/api/internal/node-filter-runs/[runId]{,/heartbeat,/finish}` | `X-Internal-Key` + route allowlist; each route re-checks `isInternalRequest`, and the run id, never the body, decides the project |
 
 **Agent service (`agentic/api.py`) endpoints**, reachable on `:8090`. As of wave 2 all four `/ws/*` paths require a signed ws-ticket + a server-side same-origin check (fail-closed when `AGENT_WS_TICKET_SECRET` is unset), and `/graph/exec` + `/emergency-stop-all` require `require_internal_auth`; the remaining REST helpers still derive user/project identity from the request body. In the local posture the whole surface is LAN-reachable. In the public posture nginx exposes **only** the four `/ws/*` paths (all ticket + origin gated); every REST route below is never proxied and stays loopback-only:
 - `WS /ws/agent` (session init), `WS /ws/kali-terminal` (PTY proxy)
@@ -456,6 +459,7 @@ Webapp server-side routes under `webapp/src/app/api/` (all behind `middleware.ts
 - `POST /roe/parse`, `POST /api/report/summarize`, `POST /guardrail/check-target`
 - `POST /llm/{ffuf-extensions,nuclei-tags,waf-classify,nuclei-fp-filter,takeover-classify}`
 - `GET /health`, `GET /defaults`, `POST /models`, `/workspace/*`, `/sessions/*`
+- `POST /graph/node-filters/preview`, `POST /graph/node-filters/apply` (Mute Rules): `require_master_internal_auth`, the master key only, never `SCANNER_API_KEY`, because apply MUTES findings. Apply takes only a run id and fetches the rules snapshotted into that run from the webapp, never from the request; preview writes nothing.
 
 **Orchestrator service (`recon_orchestrator/api.py`)** — loopback `:8010`, every route except `/health` requires `X-Orchestrator-Key`:
 - `POST /recon/{project_id}/{start,stop,pause,resume}`, `GET .../status,logs`, `/recon/{project_id}/partial`

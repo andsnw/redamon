@@ -34,6 +34,13 @@ describe('buildLabelCountQuery', () => {
     expect(q.cypher).toContain('coalesce(n.updated_at, n.last_seen, n.created_at, n.first_seen)')
   })
 
+  test('muted and resolved findings are not counted, as the tables do not show them', () => {
+    const q = buildLabelCountQuery(['Vulnerability', 'Domain'])!
+    for (const branch of q.cypher.split('UNION ALL')) {
+      expect(branch).toContain("WHERE NONE(l IN labels(n) WHERE l = 'Muted') AND n.stale_since IS NULL")
+    }
+  })
+
   test('the watermark travels as a parameter, never inlined', () => {
     const q = buildLabelCountQuery(['Domain'])!
     expect(q.cypher).toContain('datetime($since)')

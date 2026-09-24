@@ -254,6 +254,20 @@
   color: #ef4444;
 }
 
+/* Node filters: what the end-of-scan sweep muted, per kind and rule. */
+.logNodeFilter {
+  margin: 2px 0;
+  background: rgba(59, 130, 246, 0.08);
+  border-left: 3px solid rgba(59, 130, 246, 0.6);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding-left: calc(var(--space-2) - 3px);
+  font-weight: 500;
+}
+.logNodeFilterProblem {
+  background: rgba(245, 158, 11, 0.1);
+  border-left-color: rgba(245, 158, 11, 0.7);
+}
+
 /* Scroll to bottom button */
 .scrollToBottom {
   position: absolute;

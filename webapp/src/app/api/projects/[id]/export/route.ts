@@ -88,10 +88,27 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       orderBy: { recordedAt: 'asc' },
     })
 
+    // 2c'. Node filters: the rules and the operator's exemptions. Run history
+    // stays behind; it describes this install's graph, not the project.
+    const nodeFilter = await prisma.projectNodeFilter.findUnique({
+      where: { projectId: id },
+      select: { mode: true, rules: true, revision: true, loadedPreset: true },
+    })
+    const nodeFilterExemptions = await prisma.nodeFilterExemption.findMany({
+      where: { projectId: id },
+      select: { label: true, nodeKey: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    })
+
     // 2d. Fetch user project presets
     const userPresets = await prisma.userProjectPreset.findMany({
       where: { userId: project.userId },
       orderBy: { createdAt: 'asc' },
+    })
+    const muteRulesPresets = await prisma.userMuteRulesPreset.findMany({
+      where: { userId: project.userId },
+      orderBy: { createdAt: 'asc' },
+      select: { name: true, description: true, mode: true, rules: true },
     })
 
     // 3. Export Neo4j data
@@ -162,6 +179,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         neo4jNodes: neo4jNodes.length,
         neo4jRelationships: neo4jRelationships.length,
         userPresets: userPresets.length,
+        muteRulesPresets: muteRulesPresets.length,
         scanVersions: scanVersions.length,
         scanJobs: scanJobs.length,
         scanSchedules: scanSchedules.length,
@@ -281,9 +299,25 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     archive.append(Buffer.from(JSON.stringify(neo4jNodes, null, 2)), { name: 'neo4j/nodes.json' })
     archive.append(Buffer.from(JSON.stringify(neo4jRelationships, null, 2)), { name: 'neo4j/relationships.json' })
 
+    if (nodeFilter) {
+      archive.append(Buffer.from(JSON.stringify(nodeFilter, null, 2)), { name: 'node-filters/node-filters.json' })
+    }
+    if (nodeFilterExemptions.length > 0) {
+      archive.append(
+        Buffer.from(JSON.stringify(nodeFilterExemptions, null, 2)),
+        { name: 'node-filters/node-filter-exemptions.json' },
+      )
+    }
+
     // Append user project presets
     if (userPresets.length > 0) {
       archive.append(Buffer.from(JSON.stringify(userPresets, null, 2)), { name: 'presets/user_project_presets.json' })
+    }
+    if (muteRulesPresets.length > 0) {
+      archive.append(
+        Buffer.from(JSON.stringify(muteRulesPresets, null, 2)),
+        { name: 'presets/user_mute_rules_presets.json' },
+      )
     }
 
     // Append artifact files from disk

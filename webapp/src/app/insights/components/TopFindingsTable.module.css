@@ -16,28 +16,33 @@
   padding: var(--space-1-5) var(--space-2);
   font-size: 10px;
   font-weight: var(--font-semibold);
-  color: var(--text-tertiary);
+  color: var(--table-header-fg);
   text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--table-header-border);
   position: sticky;
   top: 0;
-  background: var(--bg-secondary);
+  background: var(--table-header-bg);
   z-index: 1;
 }
 
 .table td {
   padding: var(--space-1-5) var(--space-2);
-  color: var(--text-secondary);
-  border-bottom: 1px solid var(--border-subtle);
+  color: var(--table-cell-fg);
+  border-bottom: 1px solid var(--table-row-border);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 200px;
 }
 
-.table tbody tr:hover {
-  background: var(--bg-tertiary);
+.table tbody tr:nth-child(even) {
+  background: var(--table-row-zebra-bg);
+}
+
+.table tbody tr:hover,
+.table tbody tr:nth-child(even):hover {
+  background: var(--table-row-hover-bg);
 }
 
 .sevBadge {
@@ -52,7 +57,7 @@
 
 .titleCell {
   font-weight: var(--font-medium);
-  color: var(--text-primary);
+  color: var(--table-cell-fg);
   max-width: 250px;
 }
 

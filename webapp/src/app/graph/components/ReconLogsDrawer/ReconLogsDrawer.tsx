@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { X, Terminal, CheckCircle, AlertCircle, Pause, Play, Trash2, Square, Loader2, Download } from 'lucide-react'
 import type { ReconLogEvent, ReconStatus } from '@/lib/recon-types'
 import styles from './ReconLogsDrawer.module.css'
+import { nodeFilterLineKind } from './nodeFilterLog'
 
 interface ReconLogsDrawerProps {
   isOpen: boolean
@@ -175,6 +176,13 @@ export function ReconLogsDrawer({
   // Render those red so the user plainly sees when/what was capped.
   const isResourceCapLine = (logText: string) => logText.includes('[RESOURCE-CAP]')
 
+  const nodeFilterClass = (logText: string) => {
+    const kind = nodeFilterLineKind(logText)
+    if (kind === 'summary') return ` ${styles.logNodeFilter}`
+    if (kind === 'problem') return ` ${styles.logNodeFilter} ${styles.logNodeFilterProblem}`
+    return ''
+  }
+
   return (
     <div className={`${styles.drawer} ${isOpen ? styles.drawerOpen : ''}`}>
       {/* Header */}
@@ -256,7 +264,7 @@ export function ReconLogsDrawer({
                 key={index}
                 className={`${styles.logLine} ${getLogClassName(log.level)}${
                   isTargetsLine(log.log) ? ` ${styles.logTargets}` : ''
-                }${isResourceCapLine(log.log) ? ` ${styles.logResourceCap}` : ''}`}
+                }${isResourceCapLine(log.log) ? ` ${styles.logResourceCap}` : ''}${nodeFilterClass(log.log)}`}
               >
                 <span className={styles.logTimestamp}>
                   {new Date(log.timestamp).toLocaleTimeString()}

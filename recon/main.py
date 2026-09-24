@@ -2015,14 +2015,7 @@ def run_domain_recon(target: str, bruteforce: bool = False,
     return combined_result
 
 
-#: The recon pipeline's own finding sources. A prune only ever touches these,
-#: so a recon run can never remove a GVM, GitHub-hunt or supply-chain finding.
-RECON_FINDING_SOURCES = (
-    "nuclei", "security_check", "js_recon", "jsluice", "takeover_scan",
-    "cache_poisoning", "graphql_scan", "graphql_cop", "ai_surface_recon",
-    "vhost_sni_enum", "origin_discovery", "nmap_nse", "resource_enum",
-    "http_probe", "vuln_scan", "wcvs",
-)
+from recon.helpers.finding_sources import RECON_FINDING_SOURCES  # noqa: E402
 
 #: When this run started. Everything it writes gets a later `updated_at`, so the
 #: prune at the end can tell "still reported" from "gone".
@@ -2066,9 +2059,10 @@ def _prune_recon_findings():
     scan that failed halfway reported nothing, and pruning on that would delete
     the project's entire finding set.
 
-    Muted and human-judged findings are kept and stamped stale rather than
-    deleted, so an operator can see that a scanner stopped reporting something
-    they had already suppressed.
+    Findings an operator muted and human-judged ones are kept and stamped stale
+    rather than deleted, so an operator can see that a scanner stopped
+    reporting something they had already suppressed. A node-filter rule's mute
+    is not an operator's decision, so those are pruned like any other.
     """
     if not UPDATE_GRAPH_DB or not _RUN_STARTED_AT:
         return
@@ -2083,6 +2077,45 @@ def _prune_recon_findings():
         # Never fail a completed scan over housekeeping: a finding that should
         # have been pruned is visible and wrong, which beats losing the run.
         print(f"[!][graph-db] Could not prune stale findings: {e}\n")
+
+
+def _apply_node_filters():
+    """Apply the project's node filters to what this run wrote. ONCE per run.
+
+    Called from main()'s `finally`, never per group: a Domain batch would
+    otherwise sweep N times, and a group that returned early would skip it.
+    The rules are re-read here, at sweep time, not taken from scan start, so
+    the sweep applies the operator's latest save.
+
+    Housekeeping: `run_node_filter_sweep` never raises, so the job's exit code
+    is whatever the pipeline returned. With no run timestamp (the clear never
+    ran) there is no scope, and no sweep.
+    """
+    if not UPDATE_GRAPH_DB:
+        return
+    try:
+        from recon.helpers.node_filter_sweep import run_node_filter_sweep
+        stats = run_node_filter_sweep(USER_ID, PROJECT_ID, _RUN_STARTED_AT, RECON_FINDING_SOURCES)
+    except Exception as e:  # noqa: BLE001 - a sweep must never change the job's outcome
+        print(f"[!][NODE-FILTER] sweep failed: {e}")
+        stats = {"error": str(e)[:500]}
+    _record_node_filter_metadata(stats)
+
+
+def _record_node_filter_metadata(stats):
+    """Best-effort: the sweep's counts, or its error, into the run's output metadata."""
+    if not stats or stats.get("skipped"):
+        return
+    try:
+        from helpers.output_paths import canonical_output_file
+        path = canonical_output_file(OUTPUT_DIR, PROJECT_ID)
+        if not path.exists():
+            return
+        data = json.loads(path.read_text())
+        data.setdefault("metadata", {})["node_filter"] = stats
+        path.write_text(json.dumps(data, indent=2, default=str))
+    except Exception as e:  # noqa: BLE001 - metadata is a nicety, never a failure
+        print(f"[!][NODE-FILTER] could not record the sweep in the output file: {e}")
 
 
 def run_domain_batch(groups: list, start_time) -> int:
@@ -2165,6 +2198,18 @@ def run_domain_batch(groups: list, start_time) -> int:
 
 
 def main():
+    """Run the pipeline, then sweep node filters over what it wrote, whatever happened.
+
+    The sweep sits in a `finally` so an early return or an exception still
+    applies the rules to the findings the run managed to write.
+    """
+    try:
+        return _run_pipeline()
+    finally:
+        _apply_node_filters()
+
+
+def _run_pipeline():
     """
     Main entry point - runs the complete recon pipeline.
 

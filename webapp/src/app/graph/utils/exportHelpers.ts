@@ -74,6 +74,33 @@ export function escapeMarkdownCell(s: string): string {
 
 const CSV_BINARY_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g
 
+/**
+ * Neutralise a spreadsheet formula. A cell starting with `=`, `+`, `-`, `@`, a
+ * tab or a CR is evaluated by Excel and LibreOffice when the CSV is opened, and
+ * scanner-controlled text (finding names, hosts, URLs) reaches these cells, so a
+ * target could plant `=HYPERLINK(...)` in a report. A leading `'` makes the
+ * spreadsheet show the text instead. Ported from the traffic export's `csvCell`.
+ */
+export function guardFormula(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
+}
+
+/** `escapeCsvCell` with the formula guard, for exports that carry scanner text. */
+export function escapeCsvCellGuarded(value: unknown): string {
+  const flat = guardFormula(flattenCellValue(value).replace(CSV_BINARY_CHARS, ''))
+  if (/[",\r\n]/.test(flat)) return `"${flat.replace(/"/g, '""')}"`
+  return flat
+}
+
+/** `toCsv` with every cell, headers included, through `guardFormula`. */
+export function toGuardedCsv(headers: string[], rows: Array<Record<string, unknown>>): string {
+  const lines: string[] = [headers.map(h => escapeCsvCellGuarded(h)).join(',')]
+  for (const row of rows) {
+    lines.push(headers.map(h => escapeCsvCellGuarded(row[h])).join(','))
+  }
+  return '\uFEFF' + lines.join('\r\n') + '\r\n'
+}
+
 export function escapeCsvCell(value: unknown): string {
   const flat = flattenCellValue(value).replace(CSV_BINARY_CHARS, '')
   if (/[",\r\n]/.test(flat)) return `"${flat.replace(/"/g, '""')}"`

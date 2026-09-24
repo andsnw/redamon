@@ -39,7 +39,7 @@ set of recon tuning settings, and query the attack-surface graph.
 | `kali_output` | That command's output, paged from a byte cursor. | `kali:exec` |
 | `kali_cancel` | Stop a command it started. | `kali:exec` |
 | `list_findings` | Every finding, ranked when a triage run has produced a ranking and honest about it when not. | `recon:read` |
-| `list_muted_findings` | The findings a person suppressed. Hidden from every other tool here. | `triage:read` |
+| `list_muted_findings` | The muted findings, whether a person muted them or a Mute Rule did (`muted_via`, and the rule's name). Hidden from every other tool here. | `triage:read` |
 | `list_remediations` | What to fix, with CVSS, CVE/CWE/CAPEC, exploit and KEV flags. | `triage:read` |
 | `get_project_activity` | Every scan in flight on this project, plus whether a start would be refused. | `recon:read` |
 | `list_scan_versions` | Saved graph versions, with `pinned` and `hasSnapshot`. | `recon:read` |
@@ -54,20 +54,22 @@ set of recon tuning settings, and query the attack-surface graph.
 | `queue_recon` | Queue a full recon for when the host has room. | `recon:queue` |
 | `cancel_queued_scan` | Cancel a queued job, reading the update count so a lost race is not reported as success. | `recon:queue` |
 | `get_scan_status` | The other six scanners' state, masked exactly as `get_recon_status` is. | `recon:read` |
-| `set_finding_verdict` | Record a durable triage verdict. Refused while a triage run could re-file it. | `triage:write` |
+| `set_finding_verdict` | Record a durable triage verdict. Refused while a triage run could re-file it, and on a muted finding. | `triage:write` |
 
 **Deliberately not exposed:** the agent chat, a shell, partial recon, project
 create/delete/import, secrets and LLM keys, target and scope fields, Rules of
 Engagement, guardrails, **starting** a GVM / TruffleHog / supply-chain / AI
-attack-surface scan, captured HTTP traffic, version activation or deletion, and
-any graph **write**.
+attack-surface scan, captured HTTP traffic, version activation or deletion,
+Mute Rules (the rules, their presets, applying or arming them), and any graph
+**write**.
 
 Note the distinction the reads above draw: their FINDINGS are readable (a
 finding is a finding whichever scanner wrote it), while **starting** those scans
 is not. Muting and unmuting are not exposed either, in either direction: mute is
 the one action that makes a finding invisible to every other read here, and
 unmute reverses a human's suppression decision, which is exactly the power the
-architecture withholds from the model-driven path.
+architecture withholds from the model-driven path. Mute Rules are withheld for
+the same reason: a rule is a bulk mute.
 
 `kali_toolbox` serves the `kali_shell` `TOOL_REGISTRY` description verbatim -
 the same bytes the in-app agent is prompted with. One source, no second copy: a
@@ -111,9 +113,13 @@ each owned by a different decision-maker, and all three must be on:
 
 | # | Switch | Who sets it | Default |
 | --- | --- | --- | --- |
-| 1 | `MCP_KALI_EXEC_ENABLED` | operator, per deployment | **off** |
-| 2 | the `kali:exec` scope | user, password-confirmed at mint | **off** |
-| 3 | `project.mcpKaliExecEnabled` | a human in the project form | **off** |
+| 1 | `MCP_KALI_EXEC_ENABLED` | operator, per deployment | **on** |
+| 2 | the `kali:exec` scope | user, password-confirmed at mint | **ticked** (every profile) |
+| 3 | `project.mcpKaliExecEnabled` | a human in the project form | **on** (new projects) |
+
+All three default on, so the sandbox works out of the box. Each can still be
+turned off on its own, and the one decided per token is switch 2: unticking
+`kali:exec` at mint is how a token is kept off the shell.
 
 Switch 3 is `mcp: never` in the settings registry with the reason `escalation`,
 so `update_recon_settings` cannot turn it on: a token can never grant itself
@@ -173,7 +179,7 @@ and a value set only in `.env` would be silently inert.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `MCP_SERVER_ENABLED` | `false` | The master switch. |
-| `MCP_KALI_EXEC_ENABLED` | `false` | `kali_exec` / `kali_output` / `kali_cancel`. Independent of the master switch on purpose. |
+| `MCP_KALI_EXEC_ENABLED` | `true` | `kali_exec` / `kali_output` / `kali_cancel`. Independent of the master switch on purpose; `false` withdraws the sandbox from every token. |
 | `MCP_RATE_EXEC_PER_MIN` | `20` | `kali_exec` calls per token per minute. Polling uses the read bucket. |
 | `MCP_TOKEN_RETENTION_DAYS` | `90` | How long revoked/expired token rows are kept before pruning. |
 | `MCP_RATE_READ_PER_MIN` | `120` | Cheap reads per token per minute. |
@@ -219,7 +225,19 @@ Agent-side bounds (the agent **does** have an `env_file`, so `.env` reaches it):
   the finding prune-eligible on the next scan, let a later AI run overwrite the
   verdict, stop `likely_noise` producing a false-positive state, and render as
   "Not reviewed". The channel is recorded on `triage_verdict_channel` instead,
-  and the actor on `triage_verdict_by`. It can never mute or unmute.
+  and the actor on `triage_verdict_by`. It never mutes or unmutes, directly or
+  indirectly, which is why **it is refused on a muted finding**.
+  `triage_source = 'human'` is a Mute Rules guard: rules never mute a finding a
+  person judged, so a verdict on a rule-muted finding (any status, `likely_noise`
+  and `unreviewed` included) would release the mute at the next "apply to
+  current graph", or the next scan that finds it again. That is an unmute by
+  another name. The agent keys the refusal on the MCP channel (`source: "mcp"`
+  sets `refuse_muted` on `set_human_verdict`). The check runs in the same Cypher
+  statement as the write, AFTER taking the node's write lock: under read
+  committed, a label read before the lock can see "not muted", wait on a
+  mute's lock, and then write onto the node that mute just committed. The
+  refusal covers a person's mute as well, and nothing is written. A verdict from
+  the app is unaffected: the person clicking could unmute the finding anyway.
 - **`recon:queue` is separate from `recon:scan`**, because a queued job
   dispatches LATER. `JobQueue` carries no token id and revoking a token writes
   only `revokedAt`, so work queued by a credential OUTLIVES that credential;
@@ -227,9 +245,9 @@ Agent-side bounds (the agent **does** have an `env_file`, so `.env` reaches it):
   column means a queued job appears in the operator's own queue attributed to
   them, with nothing marking it as an agent's.
 - **`triage:read` is separate from `recon:read` on purpose**, and it is the one
-  read permission that is not ticked by default. It unlocks the findings a
-  person deliberately suppressed (with who muted them and why) and the
-  remediation write-ups. Neither was reachable by any route before, so folding
+  read permission that is not ticked by default. It unlocks the muted findings,
+  whether a person suppressed them or a Mute Rule did (with who or which rule
+  muted them, and why), and the remediation write-ups. Neither was reachable by any route before, so folding
   them into `recon:read` would have changed what every already-minted token can
   read, with no operator action and no visible change to its permission chips.
 - **Expiry** defaults to 90 days. It is re-checked on *every call*, so expiry and
@@ -292,33 +310,35 @@ That read selects `{ profile: true }` and nothing else, and any failure falls
 back to `custom`: failing to personalise a paragraph must never fail a
 connection.
 
-**Profile → recommended scopes.** Every profile starts from `recon:read`, and
-seven of the thirteen grant no write of any kind.
+**Profile → recommended scopes.** Every profile starts from `recon:read` and
+`kali:exec` (the `exec` column below), and seven of the thirteen grant no recon
+or finding write.
 
 | Profile | Recommended | Opt-in (never auto-ticked) |
 | --- | --- | --- |
-| `bug_bounty` | read, scan, triage:read, cypher | `kali:exec` |
-| `pentest` | read, scan, triage:read, cypher | `kali:exec` |
-| `asm` | read, scan, queue, triage:read | - |
-| `vuln_mgmt` | read, triage:read | - |
-| `triage` | read, triage:read, **triage:write** | - |
-| `inventory` | read, cypher | - |
-| `compliance` | read, triage:read | - |
-| `ci_gating` | read, queue, triage:read | - |
-| `reporting` | read, triage:read, cypher | - |
-| `ma_risk` | read, scan, triage:read, cypher | - |
-| `threat_intel` | read, triage:read, cypher | - |
-| `soc` | read, cypher | - |
-| `research` | read, scan, **settings**, triage:read, cypher | `recon:overwrite`, `kali:exec` |
-| `custom` | read | - |
+| `bug_bounty` | read, exec, scan, triage:read, cypher | `project:create`, `engagement:authorize` |
+| `pentest` | read, exec, scan, triage:read, cypher | `project:create`, `engagement:authorize` |
+| `asm` | read, exec, scan, queue, triage:read | `project:create` |
+| `vuln_mgmt` | read, exec, triage:read | - |
+| `triage` | read, exec, triage:read, **triage:write** | - |
+| `inventory` | read, exec, cypher | - |
+| `compliance` | read, exec, triage:read | - |
+| `ci_gating` | read, exec, queue, triage:read | - |
+| `reporting` | read, exec, triage:read, cypher | - |
+| `ma_risk` | read, exec, scan, triage:read, cypher | - |
+| `threat_intel` | read, exec, triage:read, cypher | - |
+| `soc` | read, exec, cypher | - |
+| `research` | read, exec, scan, **settings**, triage:read, cypher | `recon:overwrite` |
+| `custom` | read, exec | - |
 
 The rules behind it, each asserted in `profiles.test.ts`:
 
-1. **`kali:exec` and `recon:overwrite` are in NO profile's `recommendedScopes`.**
-   They may appear only in `optInScopes`, which the form renders unchecked behind
-   a danger callout. This is the most important assertion in the feature:
-   command execution at a live target and irreversible graph destruction must
-   not arrive as a side effect of a dropdown.
+1. **`recon:overwrite` is in NO profile's `recommendedScopes`.** It may appear
+   only in `optInScopes`, which the form renders unchecked behind a danger
+   callout: irreversible graph destruction must not arrive as a side effect of a
+   dropdown. **`kali:exec` is the opposite, in EVERY profile's
+   `recommendedScopes`** and in `DEFAULT_MCP_SCOPES`, which must equal what
+   `custom` recommends so an untouched form never reads as hand-edited.
 2. **`triage:write` and `recon:settings` each go to exactly one profile.**
 3. **Unattended profiles prefer `recon:queue`.** `asm` and `ci_gating` run with
    nobody watching, where a direct start just fails on a busy project.
@@ -631,9 +651,9 @@ Two consequences worth stating rather than leaving to inference:
   (`169.254.169.254`), which on AWS returns the instance role's credentials.
   Nothing on this path refuses it.
 - **Scope is the operator's judgement, not the code's.** The containment for
-  `kali:exec` is entirely in who gets the scope: it is off by default, needs
-  `MCP_KALI_EXEC_ENABLED` on the deployment AND a per-project opt-in, and every
-  call is audited. With no refusal path left, **the audit row is the only record
+  `kali:exec` is entirely in who keeps the scope: it is ticked by default, also
+  needs `MCP_KALI_EXEC_ENABLED` on the deployment AND the per-project toggle
+  (both on by default), and every call is audited. With no refusal path left, **the audit row is the only record
   of what an agent did with the shell**, which makes it more load-bearing than
   when a guard existed.
 

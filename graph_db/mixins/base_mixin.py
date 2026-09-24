@@ -188,10 +188,14 @@ class BaseMixin:
         so "not seen in this run" is just "older than the run started".
 
         TWO RULES THAT MAKE IT SAFE
-        1. A finding a PERSON touched is never deleted. Muted and human-judged
-           findings are kept and stamped `stale_since` instead, so the board can
-           show them as resolved and an operator can see that the scanner
-           stopped reporting something they had suppressed.
+        1. A finding a PERSON touched is never deleted. Findings an operator
+           muted and human-judged findings are kept and stamped `stale_since`
+           instead, so the board can show them as resolved and an operator can
+           see that the scanner stopped reporting something they had suppressed.
+           A mute a node-filter RULE applied (`muted_by` starting `rule:`) is not
+           a person's decision about that finding, so it is pruned like any
+           other stale finding; the operator's exemptions live in Postgres and
+           need no node to survive.
         2. CALL THIS ONLY AFTER A SUCCESSFUL INGEST. A scan that failed halfway
            reported nothing, and pruning on that would delete the entire
            project's findings. The caller owns that decision; this method
@@ -208,7 +212,8 @@ class BaseMixin:
           AND coalesce(n.source, '') IN $sources
           AND (n.updated_at IS NULL OR n.updated_at < datetime($since))
         WITH n,
-             (n:Muted OR coalesce(n.triage_source, '') = 'human') AS keep
+             ((n:Muted AND NOT coalesce(n.muted_by, '') STARTS WITH 'rule:')
+              OR coalesce(n.triage_source, '') = 'human') AS keep
         // Kept: stamped rather than deleted, so it shows as resolved and the
         // person who judged it can see what happened to it.
         FOREACH (_ IN CASE WHEN keep THEN [1] ELSE [] END |

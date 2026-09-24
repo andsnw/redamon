@@ -261,7 +261,7 @@ function renderAuthentication(): string {
     '',
     '1. Open **Global Settings → MCP Server → New token**.',
     `2. Name it after the agent that will hold it, and pick an expiry: ${presets.join(', ')}, or none. The default is ${MCP_DEFAULT_EXPIRY_DAYS} days.`,
-    `3. Tick the [permissions](#permissions) it needs. Only ${DEFAULT_MCP_SCOPES.map(s => `\`${s}\``).join(', ')} is ticked by default.`,
+    `3. Tick the [permissions](#permissions) it needs. Only ${DEFAULT_MCP_SCOPES.map(s => `\`${s}\``).join(' and ')} ${DEFAULT_MCP_SCOPES.length === 1 ? 'is' : 'are'} ticked by default.`,
     '4. Confirm your password, then copy the token.',
     '',
     `The token is shown **once**. It starts with \`${MCP_TOKEN_PREFIX}\`, and RedAmon stores only a SHA-256 hash of it, so a lost token cannot be shown again, only replaced. Treat it like a password: anyone holding it can do everything its permissions allow.`,

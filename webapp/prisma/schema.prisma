@@ -28,6 +28,7 @@ model User {
   attackSkills  UserAttackSkill[]
   chatSkills      UserChatSkill[]
   projectPresets  UserProjectPreset[]
+  muteRulesPresets UserMuteRulesPreset[]
   tradecraftResources UserTradecraftResource[]
   mcpTokens       McpAccessToken[]
   settings        UserSettings?
@@ -1076,11 +1077,13 @@ model Project {
   agentBruteforceSpeed                  Int      @default(5) @map("agent_bruteforce_speed")
   agentGuardrailEnabled                 Boolean  @default(true) @map("agent_guardrail_enabled")
 
-  // Per-project opt-in for kali_exec over the INBOUND MCP server. Default false,
-  // and denied to update_recon_settings by name: a token that could set this
-  // would be granting itself the one capability on that surface which reaches a
-  // live target outside a scan. Only a human in the project form turns it on.
-  mcpKaliExecEnabled                    Boolean  @default(false) @map("mcp_kali_exec_enabled")
+  // Per-project switch for kali_exec over the INBOUND MCP server. On for new
+  // projects so the sandbox works without a detour to the form; the token's
+  // kali:exec permission still decides who may use it. Denied to
+  // update_recon_settings by name: a token that could set this would be granting
+  // itself the one capability on that surface which reaches a live target
+  // outside a scan. Only a human in the project form changes it.
+  mcpKaliExecEnabled                    Boolean  @default(true) @map("mcp_kali_exec_enabled")
 
   // Fireteam (multi-agent) Settings
   fireteamEnabled                       Boolean  @default(true)            @map("fireteam_enabled")
@@ -1384,6 +1387,12 @@ model Project {
   // whole row back, so any run field living here would be overwritten by a
   // browser tab that opened before the run started (X6).
   triageRuns                        TriageRun[]
+  // Node filters: relations, never Project columns, for the same reason as
+  // triageRuns. A column would be clobbered by the settings form's whole-row
+  // PUT and reset by presets.
+  nodeFilter                        ProjectNodeFilter?
+  nodeFilterRuns                    NodeFilterRun[]
+  nodeFilterExemptions              NodeFilterExemption[]
 
   @@map("projects")
 }
@@ -2104,6 +2113,76 @@ model TriageRun {
   @@map("triage_runs")
 }
 
+// ========== NODE FILTERS ==========
+// Rule-based mutes: an operator writes rules per node kind and they add the
+// existing `:Muted` label to matching findings, stamped `muted_by = 'rule:...'`.
+// The rules and the exemptions live here rather than on the graph, because a
+// graph property is deleted by the prune, the recon asset clear, version
+// activation and import, and these rows survive all four.
+
+model ProjectNodeFilter {
+  projectId    String   @id @map("project_id")
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// denylist | allowlist
+  mode         String   @default("denylist")
+  /// Armed: every new full or partial recon applies the rules to what it writes.
+  applyToScans Boolean  @default(false) @map("apply_to_scans")
+  rules        Json     @default("{\"version\":1,\"kinds\":{}}")
+  /// Bumped on every save; the stale-write check and "changed since last apply".
+  revision     Int      @default(0)
+  /// { name, fingerprint } of the preset last loaded; the header badges its name while the rules still hash to it
+  loadedPreset Json?    @map("loaded_preset")
+  updatedBy    String?  @map("updated_by")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("project_node_filters")
+}
+
+/// One "apply to current graph". A live row is a graph writer (lib/graphWriters.ts).
+model NodeFilterRun {
+  id              String    @id @default(cuid())
+  projectId       String    @map("project_id")
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actorUserId     String    @map("actor_user_id")
+  realActorUserId String?   @map("real_actor_user_id")
+  /// running | completed | failed | stopped
+  status          String    @default("running")
+  /// current | both
+  target          String
+  versionId       String    @map("version_id")
+  /// The rules revision this run applies.
+  revision        Int
+  /// Snapshot of the rules at start: the agent applies exactly this, never a request body.
+  rules           Json
+  mode            String
+  /// Counts only: muted, unmuted, guarded, exempt, per kind and rule.
+  stats           Json?
+  error           String?
+  startedAt       DateTime  @default(now()) @map("started_at")
+  heartbeatAt     DateTime  @default(now()) @map("heartbeat_at")
+  finishedAt      DateTime? @map("finished_at")
+
+  @@index([projectId, status])
+  @@map("node_filter_runs")
+}
+
+/// A node an operator unmuted: no rule may mute it again until the exemption is cleared.
+model NodeFilterExemption {
+  id              String   @id @default(cuid())
+  projectId       String   @map("project_id")
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// The functional label, one of the muteable finding labels.
+  label           String
+  /// The natural key: id, or finding_id for MalPackageFinding.
+  nodeKey         String   @map("node_key")
+  createdBy       String   @map("created_by")
+  realActorUserId String?  @map("real_actor_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([projectId, label, nodeKey])
+  @@map("node_filter_exemptions")
+}
+
 model Report {
   id            String   @id @default(cuid())
   projectId     String   @map("project_id")
@@ -2176,6 +2255,23 @@ model UserProjectPreset {
 
   @@index([userId])
   @@map("user_project_presets")
+}
+
+/// A user's saved Mute Rules configuration, loadable into any project they own.
+model UserMuteRulesPreset {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String   @default("") @db.Text
+  /// denylist | allowlist
+  mode        String   @default("denylist")
+  rules       Json
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("user_mute_rules_presets")
 }
 
 model UserTradecraftResource {

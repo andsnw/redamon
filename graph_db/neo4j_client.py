@@ -8,6 +8,7 @@ Usage:
 
 All methods are provided by the mixin classes combined via multiple inheritance.
 MRO: BaseMixin → ReconMixin → GvmMixin → SecretMixin → OsintMixin → GraphQLMixin → CacheMixin
+     → SupplyChainMixin → NodeFilterMixin
 """
 
 from graph_db.mixins.base_mixin import BaseMixin
@@ -18,9 +19,11 @@ from graph_db.mixins.osint_mixin import OsintMixin
 from graph_db.mixins.graphql_mixin import GraphQLMixin
 from graph_db.mixins.cache_mixin import CacheMixin
 from graph_db.mixins.supply_chain_mixin import SupplyChainMixin
+from graph_db.mixins.node_filter_mixin import NodeFilterMixin
 
 
-class Neo4jClient(BaseMixin, ReconMixin, GvmMixin, SecretMixin, OsintMixin, GraphQLMixin, CacheMixin, SupplyChainMixin):
+class Neo4jClient(BaseMixin, ReconMixin, GvmMixin, SecretMixin, OsintMixin, GraphQLMixin, CacheMixin,
+                  SupplyChainMixin, NodeFilterMixin):
     """
     Public Neo4j client for RedAmon. All methods provided by mixins.
 
@@ -31,5 +34,6 @@ class Neo4jClient(BaseMixin, ReconMixin, GvmMixin, SecretMixin, OsintMixin, Grap
     OSINT enrichment (Shodan, Censys, FOFA, OTX, etc.): OsintMixin
     GraphQL security scanning integration: GraphQLMixin
     Web cache poisoning scanning integration: CacheMixin
+    Rule-based mutes (node filters): NodeFilterMixin
     """
     pass

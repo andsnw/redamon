@@ -175,8 +175,20 @@
 
 .findings { margin-top: 8px; }
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.table th, .table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(128,128,128,0.15); }
-.table th { font-weight: 600; opacity: 0.7; font-size: 12px; }
+.table th, .table td { text-align: left; padding: 8px 10px; }
+.table th {
+  background: var(--table-header-bg);
+  color: var(--table-header-fg);
+  border-bottom: 1px solid var(--table-header-border);
+  font-weight: var(--font-semibold);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.table td { border-bottom: 1px solid var(--table-row-border); color: var(--table-cell-fg); }
+.table tbody tr:nth-child(even) { background: var(--table-row-zebra-bg); }
+.table tbody tr:hover,
+.table tbody tr:nth-child(even):hover { background: var(--table-row-hover-bg); }
 .tgt { font-family: monospace; font-size: 12px; }
 .ev { font-family: monospace; font-size: 11px; opacity: 0.7; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sevDot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }

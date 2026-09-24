@@ -80,6 +80,13 @@ check "A deletes B's preset by id -> blocked"        404 "$(code "$TMP/a.jar" DE
 # A's preset list must exclude B's preset
 PLIST="$(body "$TMP/a.jar" /api/presets)"
 if echo "$PLIST" | grep -q "$PRESET_B_ID"; then bad "A's preset list LEAKS B's preset"; else ok "A's preset list excludes B's preset"; fi
+# Mute Rules presets: a user's own, 404 to anyone else exactly like a missing id
+check "A reads B's mute-rules preset -> blocked"     404 "$(code "$TMP/a.jar" GET "/api/mute-rule-presets/$MUTE_PRESET_B_ID")"
+check "A renames B's mute-rules preset -> blocked"   404 "$(code "$TMP/a.jar" PATCH "/api/mute-rule-presets/$MUTE_PRESET_B_ID" '{"name":"taken"}')"
+check "A deletes B's mute-rules preset -> blocked"   404 "$(code "$TMP/a.jar" DELETE "/api/mute-rule-presets/$MUTE_PRESET_B_ID")"
+MPLIST="$(body "$TMP/a.jar" /api/mute-rule-presets)"
+if echo "$MPLIST" | grep -q "$MUTE_PRESET_B_ID"; then bad "A's mute-rules preset list LEAKS B's preset"; else ok "A's mute-rules preset list excludes B's preset"; fi
+check "B reads OWN mute-rules preset (the 404s are real)" 200 "$(code "$TMP/b.jar" GET "/api/mute-rule-presets/$MUTE_PRESET_B_ID")"
 
 echo "== A5 resources (scan / analytics / workspace / user-scoped) =="
 check "A starts a scan on B's project -> blocked"   404 "$(code "$TMP/a.jar" POST "/api/recon/$PB_ID/start")"

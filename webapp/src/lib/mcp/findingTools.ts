@@ -23,6 +23,7 @@ import { assertMcpProjectAccess } from '@/lib/mcpAuth'
 import { McpToolError } from '@/lib/mcp/errors'
 import { listMutedFindings, listTriageFindings, type TriageFinding } from '@/lib/mcp/triageGraph'
 import { enforceRate, type McpContext } from '@/lib/mcp/tools'
+import { coerceDoc, describeMutedBy, isRuleMute } from '@/lib/nodeFilters/model'
 
 export const FINDINGS_DEFAULT_LIMIT = 25
 export const FINDINGS_MAX_LIMIT = 100
@@ -226,11 +227,23 @@ export async function listFindings(
 // --- the suppressed half --------------------------------------------------------
 
 interface MutedGroup {
+  /** A person's mute is a judgement of the finding; a rule's is project policy. */
+  muted_via: 'person' | 'rule'
   label: string
   severity: string
   count: number
-  /** Distinct human reasons, capped: the point is why, not who said it how often. */
+  /** Distinct reasons, capped: the point is why, not who said it how often. */
   reasons: string[]
+}
+
+async function loadRuleDoc(projectId: string) {
+  try {
+    const row = await prisma.projectNodeFilter.findUnique({ where: { projectId }, select: { rules: true } })
+    return coerceDoc(row?.rules)
+  } catch {
+    // Rule names are an annotation; the mutes themselves are still reported.
+    return coerceDoc(null)
+  }
 }
 
 /**
@@ -257,18 +270,30 @@ export async function listMuted(
   enforceRate(ctx, 'read')
   await assertMcpProjectAccess(ctx.token.userId, projectId)
 
-  const all = await listMutedFindings(ctx.token.userId, projectId, MUTED_FETCH_CEILING)
-  // A full window means there may be more suppressed findings than this. Saying
-  // "42 muted" when there are 4000 is the same false negative as reporting a
-  // clean project, one level in.
-  const partialTotal = all.length >= MUTED_FETCH_CEILING
+  const { findings: all, total: exactTotal } =
+    await listMutedFindings(ctx.token.userId, projectId, MUTED_FETCH_CEILING)
+  const doc = await loadRuleDoc(projectId)
+  // With the agent's uncapped count the total is exact; without it (an older
+  // agent), a full window can only say "at least". Saying "42 muted" when
+  // there are 4000 is the same false negative as reporting a clean project,
+  // one level in.
+  const windowFull = all.length >= MUTED_FETCH_CEILING
+  const total = typeof exactTotal === 'number' ? exactTotal : all.length
+  const floorOnly = typeof exactTotal !== 'number' && windowFull
+  const groupsPartial = typeof exactTotal === 'number' && exactTotal > all.length
+
+  const via = (f: TriageFinding): 'person' | 'rule' =>
+    (f as { muted_via?: string }).muted_via === 'rule' || isRuleMute(String(f.muted_by ?? '')) ? 'rule' : 'person'
 
   const groups = new Map<string, MutedGroup>()
+  const byVia = { person: 0, rule: 0 }
   for (const f of all) {
+    const v = via(f)
+    byVia[v] += 1
     const label = String(f.label ?? 'unknown')
     const severity = String(f.severity ?? 'unknown')
-    const key = `${label}|${severity}`
-    const g = groups.get(key) ?? { label, severity, count: 0, reasons: [] }
+    const key = `${v}|${label}|${severity}`
+    const g = groups.get(key) ?? { muted_via: v, label, severity, count: 0, reasons: [] }
     g.count += 1
     const reason = String(f.muted_reason ?? '').trim()
     if (reason && !g.reasons.includes(reason) && g.reasons.length < 5) g.reasons.push(reason)
@@ -277,33 +302,47 @@ export async function listMuted(
 
   return {
     projectId,
-    total: all.length,
-    ...(partialTotal
+    total,
+    ...(floorOnly
       ? {
           totalIsPartial: true,
           scannedWindow: MUTED_FETCH_CEILING,
           totalNote:
-            `This project has at least ${MUTED_FETCH_CEILING} suppressed findings and only the ` +
-            `most recently muted ${MUTED_FETCH_CEILING} were read. "total" is AT LEAST this ` +
+            `This project has at least ${MUTED_FETCH_CEILING} suppressed findings and only ` +
+            `${MUTED_FETCH_CEILING} were read, a person's mutes first. "total" is AT LEAST this ` +
             `many, not exactly this many.`,
         }
       : {}),
+    ...(groupsPartial
+      ? {
+          groupsArePartial: true,
+          scannedWindow: MUTED_FETCH_CEILING,
+          groupsNote:
+            `The groups describe the ${all.length} suppressed findings read, every mute a person ` +
+            `made first; the project has ${total} in all, the rest muted by Mute Rules.`,
+        }
+      : {}),
+    mutedVia: byVia,
     groups: [...groups.values()].sort((a, b) => b.count - a.count),
-    // Rows only on request, and capped whatever happens: `list_muted` applies
-    // no limit of its own, so an unbounded project would otherwise ship every
-    // suppressed finding in full on every call.
+    // Rows only on request, and capped whatever happens.
     ...(args.detail === true
       ? {
-          findings: all.slice(0, MUTED_MAX_ROWS).map(f => ({
-            id: f.id,
-            label: f.label,
-            name: f.name,
-            severity: f.severity,
-            source: f.source,
-            muted_at: f.muted_at,
-            muted_by: f.muted_by,
-            muted_reason: f.muted_reason,
-          })),
+          findings: all.slice(0, MUTED_MAX_ROWS).map(f => {
+            const state = describeMutedBy(doc, String(f.muted_by ?? ''))
+            return {
+              id: f.id,
+              label: f.label,
+              name: f.name,
+              severity: f.severity,
+              source: f.source,
+              muted_at: f.muted_at,
+              muted_by: f.muted_by,
+              muted_via: via(f),
+              rule_name: state.via === 'rule' ? state.ruleName : null,
+              ...(state.via === 'rule' && state.deleted ? { rule_deleted: true } : {}),
+              muted_reason: f.muted_reason,
+            }
+          }),
           returned: Math.min(all.length, MUTED_MAX_ROWS),
           ...(all.length > MUTED_MAX_ROWS ? { truncated: true } : {}),
         }
