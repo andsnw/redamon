@@ -66,7 +66,7 @@ that toggles it, use `project-settings-cascade`.
   runs once and needs no cache.
 - **ALWAYS put the toggle in two places bound to the same field**
   `data.{tool}Ai{Feature}`: the master AI-in-Pipeline panel
-  ([TargetSection.tsx:362](../../webapp/src/components/projects/ProjectForm/sections/TargetSection.tsx#L362))
+  ([TargetSection.tsx:695](../../webapp/src/components/projects/ProjectForm/sections/TargetSection.tsx#L695))
   and the tool's own section (e.g.
   [NucleiSection.tsx](../../webapp/src/components/projects/ProjectForm/sections/NucleiSection.tsx)).
   Read AND write the same field; **no copy-on-flip** (they stay in sync because
