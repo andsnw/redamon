@@ -12,14 +12,19 @@ import os
 import sys
 import uuid
 
-from recon.partial_recon_modules.helpers import _classify_ip, _is_ip_or_cidr, _should_include_root_domain, partial_settings
+from recon.partial_recon_modules.helpers import (
+    _is_ip_or_cidr,
+    _should_include_root_domain,
+    partial_settings,
+    scope_roots,
+)
 from recon.partial_recon_modules.graph_builders import _build_port_scan_data_from_graph
 
 
 def run_tlsx(config: dict) -> None:
     from recon.main_recon_modules.tls_scan import run_tlsx_enrichment
 
-    domain = config["domain"]
+    roots = scope_roots(config)
     user_id = os.environ.get("USER_ID", "")
     project_id = os.environ.get("PROJECT_ID", "")
 
@@ -29,7 +34,7 @@ def run_tlsx(config: dict) -> None:
 
     print(f"\n{'=' * 50}")
     print("[*][Partial Recon] tlsx TLS Certificate Grab")
-    print(f"[*][Partial Recon] Domain: {domain}")
+    print(f"[*][Partial Recon] Roots: {', '.join(roots)}")
     print(f"{'=' * 50}\n")
 
     # Parse user targets (IPs + ports), same shape Nmap accepts.
@@ -61,12 +66,14 @@ def run_tlsx(config: dict) -> None:
     if include_graph:
         print("[*][Partial Recon] Querying graph for targets (IPs, ports, subdomains)...")
         recon_data = _build_port_scan_data_from_graph(
-            domain, user_id, project_id,
+            roots, user_id, project_id,
             include_root_domain=_should_include_root_domain(settings),
+            domain_groups=config.get("domain_groups"),
         )
     else:
         recon_data = {
-            "domain": domain,
+            "domain": roots[0] if roots else "",
+            "domains": roots,
             "port_scan": {"by_ip": {}, "by_host": {}, "ip_to_hostnames": {},
                           "all_ports": [], "scan_metadata": {}, "summary": {}},
             "dns": {"domain": {"ips": {"ipv4": [], "ipv6": []}, "has_records": False},
@@ -139,7 +146,7 @@ def run_tlsx(config: dict) -> None:
                     # and writes a UserInput with values=[] and tool_id='',
                     # silently losing the operator's manually-entered IPs.
                     graph_client.create_user_input_node(
-                        domain=domain,
+                        domain=roots,
                         user_input_data={
                             "id": str(uuid.uuid4()),
                             "input_type": "ips",

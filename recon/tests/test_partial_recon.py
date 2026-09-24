@@ -312,7 +312,7 @@ class TestRunNaabu(unittest.TestCase):
                 records = []
                 for ip_data in _domain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query:
@@ -320,7 +320,7 @@ class TestRunNaabu(unittest.TestCase):
                 records = []
                 for ip_data in _subdomain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:
@@ -1295,14 +1295,14 @@ class TestRunMasscan(unittest.TestCase):
                 records = []
                 for ip_data in _domain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query:
                 records = []
                 for ip_data in _subdomain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:
@@ -1485,7 +1485,7 @@ class TestRunNmap(unittest.TestCase):
                 records = []
                 for ip_data in _domain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query and "HAS_PORT" in query:
@@ -1493,7 +1493,7 @@ class TestRunNmap(unittest.TestCase):
                 records = []
                 for ip_data in _subdomain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "Subdomain" in query and "RETURN s LIMIT 1" in query:
@@ -1688,14 +1688,14 @@ class TestRunNmapStructuredTargets(unittest.TestCase):
                 records = []
                 for ip_data in _domain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query and "HAS_PORT" in query:
                 records = []
                 for ip_data in _subdomain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "Subdomain" in query and "RETURN s LIMIT 1" in query:
@@ -1859,18 +1859,19 @@ class TestRunHttpx(unittest.TestCase):
 
         def mock_session_run(query, **kwargs):
             result = MagicMock()
+            # The builder's queries return the root each row belongs to.
             if "RESOLVES_TO]->(i:IP)" in query and "HAS_SUBDOMAIN" not in query and "HAS_PORT" in query:
                 records = []
                 for ip_data in _domain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             elif "HAS_SUBDOMAIN" in query and "RESOLVES_TO" in query and "HAS_PORT" in query:
                 records = []
                 for ip_data in _subdomain_ips:
                     record = MagicMock()
-                    record.__getitem__ = lambda self, key, d=ip_data: d[key]
+                    record.__getitem__ = lambda self, key, d={"root": "example.com", **ip_data}: d[key]
                     records.append(record)
                 result.__iter__ = lambda self, r=records: iter(r)
             else:

@@ -5,7 +5,39 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from recon.partial_recon_modules.helpers import _classify_ip
+from recon.partial_recon_modules.helpers import _classify_ip, allowed_hosts_for, include_root_for
+
+
+def _as_roots(domains) -> list:
+    """A builder's roots: a list, or one root from a caller not yet migrated."""
+    if isinstance(domains, str):
+        return [domains] if domains else []
+    return [d for d in (domains or []) if isinstance(d, str) and d]
+
+
+def _root_scope(roots: list, domain_groups, include_root_domain: bool):
+    """Which roots' apexes are targets, and each literal root's allowed hosts.
+
+    With domain_groups (the scope partial_recon.main built from settings), each
+    root follows its own group. Without them, a caller not yet migrated gets
+    the single include_root_domain flag and no host narrowing, as before.
+    Returns (apex_roots, {root: allowed_host_set}).
+    """
+    if domain_groups is None:
+        return (list(roots) if include_root_domain else []), {}
+    apex_roots = [r for r in roots if include_root_for(r, domain_groups)]
+    allowed = {}
+    for root in roots:
+        hosts = allowed_hosts_for(root, domain_groups)
+        if hosts is not None:
+            allowed[root] = hosts
+    return apex_roots, allowed
+
+
+def _host_allowed(root: str, host: str, allowed: dict) -> bool:
+    """A literal batch group scans exactly its listed hosts; anything else passes."""
+    hosts = allowed.get(root)
+    return hosts is None or (host or "").strip().lower() in hosts
 
 
 def _build_recon_data_from_graph(domain: str, user_id: str, project_id: str,
@@ -85,8 +117,9 @@ def _build_recon_data_from_graph(domain: str, user_id: str, project_id: str,
     return recon_data
 
 
-def _build_port_scan_data_from_graph(domain: str, user_id: str, project_id: str,
-                                     include_root_domain: bool = False) -> dict:
+def _build_port_scan_data_from_graph(domains, user_id: str, project_id: str,
+                                     include_root_domain: bool = False,
+                                     domain_groups: list = None) -> dict:
     """
     Query Neo4j to build the recon_data dict that run_nmap_scan expects.
 
@@ -94,15 +127,23 @@ def _build_port_scan_data_from_graph(domain: str, user_id: str, project_id: str,
     ip_to_hostnames structures matching what build_nmap_targets() consumes.
     Also populates a 'dns' section for user-IP linking logic.
 
-    Honors include_root_domain (default False): the apex Domain query is
-    skipped entirely so apex IPs/ports never enter port_scan.by_ip, and
-    metadata.include_root_domain is stamped on recon_data so the apex
-    hostname is excluded by extract_targets_from_recon.
+    `domains` is the run's roots (or one root from a caller not yet migrated).
+    Each root's apex is a target only when its group includes it, and a literal
+    batch group loads only its listed hosts, not every Subdomain a writer has
+    since hung under the root (certificate SANs, urlscan). The first root's apex
+    fills dns.domain; another root's apex is recorded as a host under
+    dns.subdomains, the one place extract_targets_from_recon reads a second
+    apex from. metadata.include_root_domain describes the first root.
     """
     from graph_db import Neo4jClient
 
+    roots = _as_roots(domains)
+    apex_roots, allowed = _root_scope(roots, domain_groups, include_root_domain)
+    primary = roots[0] if roots else ""
+
     recon_data = {
-        "domain": domain,
+        "domain": primary,
+        "domains": roots,
         "port_scan": {
             "by_ip": {},
             "by_host": {},
@@ -115,10 +156,68 @@ def _build_port_scan_data_from_graph(domain: str, user_id: str, project_id: str,
             "domain": {"ips": {"ipv4": [], "ipv6": []}, "has_records": False},
             "subdomains": {},
         },
-        "metadata": {"include_root_domain": include_root_domain},
+        "metadata": {"include_root_domain": primary in apex_roots},
     }
 
     all_ports_set = set()
+
+    def _add_host(host: str, ip_addr: str, port_numbers: list, port_details: list) -> None:
+        """Record one host -> IP -> ports row in by_ip, by_host and ip_to_hostnames."""
+        if ip_addr not in recon_data["port_scan"]["by_ip"]:
+            recon_data["port_scan"]["by_ip"][ip_addr] = {
+                "ip": ip_addr,
+                "hostnames": [host],
+                "ports": list(port_numbers),
+                "port_details": list(port_details),
+            }
+        else:
+            existing = recon_data["port_scan"]["by_ip"][ip_addr]
+            if host not in existing["hostnames"]:
+                existing["hostnames"].append(host)
+            for pnum in port_numbers:
+                if pnum not in existing["ports"]:
+                    existing["ports"].append(pnum)
+            for pd in port_details:
+                if not any(epd["port"] == pd["port"] for epd in existing["port_details"]):
+                    existing["port_details"].append(pd)
+
+        if host not in recon_data["port_scan"]["by_host"]:
+            recon_data["port_scan"]["by_host"][host] = {
+                "host": host,
+                "ip": ip_addr,
+                "ports": list(port_numbers),
+                "port_details": list(port_details),
+            }
+        else:
+            existing = recon_data["port_scan"]["by_host"][host]
+            for pnum in port_numbers:
+                if pnum not in existing["ports"]:
+                    existing["ports"].append(pnum)
+            for pd in port_details:
+                if not any(epd["port"] == pd["port"] for epd in existing["port_details"]):
+                    existing["port_details"].append(pd)
+
+        recon_data["port_scan"]["ip_to_hostnames"].setdefault(ip_addr, [])
+        if host not in recon_data["port_scan"]["ip_to_hostnames"][ip_addr]:
+            recon_data["port_scan"]["ip_to_hostnames"][ip_addr].append(host)
+
+    def _ports(ports_data) -> tuple:
+        # OPTIONAL MATCH yields one null-port map when an IP has no ports.
+        numbers, details = [], []
+        for p in ports_data:
+            if p["number"] is not None:
+                pnum = int(p["number"])
+                numbers.append(pnum)
+                all_ports_set.add(pnum)
+                details.append({"port": pnum, "protocol": p["protocol"] or "tcp", "service": ""})
+        return numbers, details
+
+    def _dns_entry(host: str) -> dict:
+        return recon_data["dns"]["subdomains"].setdefault(
+            host, {"ips": {"ipv4": [], "ipv6": []}, "has_records": True})
+
+    if not roots:
+        return recon_data
 
     with Neo4jClient() as graph_client:
         if not graph_client.verify_connection():
@@ -127,163 +226,57 @@ def _build_port_scan_data_from_graph(domain: str, user_id: str, project_id: str,
 
         driver = graph_client.driver
         with driver.session() as session:
-            # Query domain -> IP -> Port relationships (only when apex is in scope)
+            # Apex Domain -> IP -> Port, only for the roots whose scope includes it.
             apex_records = []
-            if include_root_domain:
+            if apex_roots:
                 apex_records = list(session.run(
                     """
-                    MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
-                          -[:RESOLVES_TO]->(i:IP)
+                    MATCH (d:Domain {user_id: $uid, project_id: $pid})-[:RESOLVES_TO]->(i:IP)
+                    WHERE d.name IN $apex_roots
                     OPTIONAL MATCH (i)-[:HAS_PORT]->(p:Port)
-                    RETURN i.address AS ip, i.version AS version,
+                    RETURN d.name AS root, i.address AS ip, i.version AS version,
                            collect(DISTINCT {number: p.number, protocol: p.protocol}) AS ports
                     """,
-                    domain=domain, uid=user_id, pid=project_id,
+                    apex_roots=apex_roots, uid=user_id, pid=project_id,
                 ))
             for record in apex_records:
+                root = record["root"]
                 ip_addr = record["ip"]
-                ip_version = record["version"]
-                ports_data = record["ports"]
-
-                # Populate dns section
-                bucket = _classify_ip(ip_addr, ip_version)
-                if ip_addr not in recon_data["dns"]["domain"]["ips"][bucket]:
-                    recon_data["dns"]["domain"]["ips"][bucket].append(ip_addr)
-                    recon_data["dns"]["domain"]["has_records"] = True
-
-                # Filter out null ports (from OPTIONAL MATCH when no ports exist)
-                port_numbers = []
-                port_details = []
-                for p in ports_data:
-                    if p["number"] is not None:
-                        pnum = int(p["number"])
-                        port_numbers.append(pnum)
-                        all_ports_set.add(pnum)
-                        port_details.append({
-                            "port": pnum,
-                            "protocol": p["protocol"] or "tcp",
-                            "service": "",
-                        })
-
-                if ip_addr not in recon_data["port_scan"]["by_ip"]:
-                    recon_data["port_scan"]["by_ip"][ip_addr] = {
-                        "ip": ip_addr,
-                        "hostnames": [domain],
-                        "ports": port_numbers,
-                        "port_details": port_details,
-                    }
+                bucket = _classify_ip(ip_addr, record["version"])
+                if root == primary:
+                    if ip_addr not in recon_data["dns"]["domain"]["ips"][bucket]:
+                        recon_data["dns"]["domain"]["ips"][bucket].append(ip_addr)
+                        recon_data["dns"]["domain"]["has_records"] = True
                 else:
-                    existing = recon_data["port_scan"]["by_ip"][ip_addr]
-                    for pnum in port_numbers:
-                        if pnum not in existing["ports"]:
-                            existing["ports"].append(pnum)
-                    for pd in port_details:
-                        if not any(epd["port"] == pd["port"] for epd in existing["port_details"]):
-                            existing["port_details"].append(pd)
+                    ips = _dns_entry(root)["ips"][bucket]
+                    if ip_addr not in ips:
+                        ips.append(ip_addr)
+                port_numbers, port_details = _ports(record["ports"])
+                _add_host(root, ip_addr, port_numbers, port_details)
 
-                recon_data["port_scan"]["ip_to_hostnames"].setdefault(ip_addr, [])
-                if domain not in recon_data["port_scan"]["ip_to_hostnames"][ip_addr]:
-                    recon_data["port_scan"]["ip_to_hostnames"][ip_addr].append(domain)
-
-                # Populate by_host for domain IPs (build_nmap_targets reads by_host too)
-                if domain not in recon_data["port_scan"]["by_host"]:
-                    recon_data["port_scan"]["by_host"][domain] = {
-                        "host": domain,
-                        "ip": ip_addr,
-                        "ports": list(port_numbers),
-                        "port_details": list(port_details),
-                    }
-                else:
-                    existing = recon_data["port_scan"]["by_host"][domain]
-                    for pnum in port_numbers:
-                        if pnum not in existing["ports"]:
-                            existing["ports"].append(pnum)
-                    for pd in port_details:
-                        if not any(epd["port"] == pd["port"] for epd in existing["port_details"]):
-                            existing["port_details"].append(pd)
-
-            # Query subdomain -> IP -> Port relationships
+            # Subdomain -> IP -> Port relationships
             result = session.run(
                 """
-                MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                MATCH (d:Domain {user_id: $uid, project_id: $pid})
                       -[:HAS_SUBDOMAIN]->(s:Subdomain)-[:RESOLVES_TO]->(i:IP)
+                WHERE d.name IN $domains
                 OPTIONAL MATCH (i)-[:HAS_PORT]->(p:Port)
-                RETURN s.name AS subdomain, i.address AS ip, i.version AS version,
+                RETURN d.name AS root, s.name AS subdomain, i.address AS ip, i.version AS version,
                        collect(DISTINCT {number: p.number, protocol: p.protocol}) AS ports
                 """,
-                domain=domain, uid=user_id, pid=project_id,
+                domains=roots, uid=user_id, pid=project_id,
             )
             for record in result:
                 subdomain = record["subdomain"]
+                if not _host_allowed(record["root"], subdomain, allowed):
+                    continue
                 ip_addr = record["ip"]
-                ip_version = record["version"]
-                ports_data = record["ports"]
-
-                # Populate dns section
-                bucket = _classify_ip(ip_addr, ip_version)
-                if subdomain not in recon_data["dns"]["subdomains"]:
-                    recon_data["dns"]["subdomains"][subdomain] = {
-                        "ips": {"ipv4": [], "ipv6": []},
-                        "has_records": True,
-                    }
-                sub_ips = recon_data["dns"]["subdomains"][subdomain]["ips"]
+                bucket = _classify_ip(ip_addr, record["version"])
+                sub_ips = _dns_entry(subdomain)["ips"]
                 if ip_addr not in sub_ips[bucket]:
                     sub_ips[bucket].append(ip_addr)
-
-                # Filter out null ports
-                port_numbers = []
-                port_details = []
-                for p in ports_data:
-                    if p["number"] is not None:
-                        pnum = int(p["number"])
-                        port_numbers.append(pnum)
-                        all_ports_set.add(pnum)
-                        port_details.append({
-                            "port": pnum,
-                            "protocol": p["protocol"] or "tcp",
-                            "service": "",
-                        })
-
-                # Populate by_ip
-                if ip_addr not in recon_data["port_scan"]["by_ip"]:
-                    recon_data["port_scan"]["by_ip"][ip_addr] = {
-                        "ip": ip_addr,
-                        "hostnames": [subdomain],
-                        "ports": port_numbers,
-                        "port_details": port_details,
-                    }
-                else:
-                    existing = recon_data["port_scan"]["by_ip"][ip_addr]
-                    if subdomain not in existing["hostnames"]:
-                        existing["hostnames"].append(subdomain)
-                    for pnum in port_numbers:
-                        if pnum not in existing["ports"]:
-                            existing["ports"].append(pnum)
-                    for pd in port_details:
-                        if not any(epd["port"] == pd["port"] for epd in existing["port_details"]):
-                            existing["port_details"].append(pd)
-
-                # Populate by_host
-                if subdomain not in recon_data["port_scan"]["by_host"]:
-                    recon_data["port_scan"]["by_host"][subdomain] = {
-                        "host": subdomain,
-                        "ip": ip_addr,
-                        "ports": port_numbers,
-                        "port_details": port_details,
-                    }
-                else:
-                    existing = recon_data["port_scan"]["by_host"][subdomain]
-                    for pnum in port_numbers:
-                        if pnum not in existing["ports"]:
-                            existing["ports"].append(pnum)
-                    for pd in port_details:
-                        if not any(epd["port"] == pd["port"] for epd in existing["port_details"]):
-                            existing["port_details"].append(pd)
-
-                # Populate ip_to_hostnames
-                recon_data["port_scan"]["ip_to_hostnames"].setdefault(ip_addr, [])
-                if subdomain not in recon_data["port_scan"]["ip_to_hostnames"][ip_addr]:
-                    recon_data["port_scan"]["ip_to_hostnames"][ip_addr].append(subdomain)
+                port_numbers, port_details = _ports(record["ports"])
+                _add_host(subdomain, ip_addr, port_numbers, port_details)
 
     recon_data["port_scan"]["all_ports"] = sorted(all_ports_set)
     return recon_data

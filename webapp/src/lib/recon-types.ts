@@ -232,7 +232,9 @@ export interface PartialReconParams {
  * one, so no intermediate state claims roots a tool never scans. Mirrors
  * _MULTI_ROOT_TOOLS in recon/partial_recon.py.
  */
-export const MULTI_ROOT_PARTIAL_TOOLS: ReadonlySet<string> = new Set<string>([])
+export const MULTI_ROOT_PARTIAL_TOOLS: ReadonlySet<string> = new Set<string>([
+  'Tlsx',
+])
 
 /** The only settings a partial run may override (the Nuclei checkboxes). The
  *  orchestrator answers 400 to anything else. Mirrors PARTIAL_OVERRIDE_KEYS in

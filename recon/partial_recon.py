@@ -117,7 +117,9 @@ ALLOWED_SETTINGS_OVERRIDES = frozenset({
 # config["domain"] only, so it is narrowed to one root here and the report says
 # so, rather than claiming roots it never touched. Mirrors
 # MULTI_ROOT_PARTIAL_TOOLS in webapp/src/lib/recon-types.ts.
-_MULTI_ROOT_TOOLS = frozenset()
+_MULTI_ROOT_TOOLS = frozenset({
+    "Tlsx",
+})
 
 
 def load_config() -> dict:
