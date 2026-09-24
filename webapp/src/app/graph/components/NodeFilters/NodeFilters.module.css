@@ -1,4 +1,4 @@
-/* Node Filters. Anchored like the other table views: the graph page's .content
+/* Mute Rules. Anchored like the other table views: the graph page's .content
    is position:relative, so fill it with inset:0 and scroll inside. */
 .wrap {
   position: absolute;
@@ -137,7 +137,12 @@
   color: var(--text-on-accent);
 }
 
+/* inline-flex because the global reset makes an <svg> display:block, which put
+   the "+" of "+ condition" on a line of its own. */
 .linkButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   padding: 0;
   border: none;
   background: none;
@@ -311,6 +316,12 @@
   gap: 6px;
   flex-wrap: wrap;
   color: var(--text-secondary);
+}
+
+/* Same reset trap as .linkButton: keeps the "kept by guards" info icon on its line. */
+.counts svg {
+  display: inline-block;
+  vertical-align: -1px;
 }
 
 .countStrong {

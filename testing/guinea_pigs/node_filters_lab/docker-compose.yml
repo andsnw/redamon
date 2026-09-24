@@ -1,4 +1,4 @@
-# RedAmon Node Filters scan-time guinea pig
+# RedAmon Mute Rules scan-time guinea pig
 #
 # Bring up:   docker compose up -d --build
 # Bring down: docker compose down

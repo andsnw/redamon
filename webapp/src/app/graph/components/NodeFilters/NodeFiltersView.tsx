@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Node Filters: rules, per node kind, that mute findings project-wide.
+ * Mute Rules: rules, per node kind, that mute findings project-wide.
  *
  * Muting here is the existing `:Muted` label, so a filtered finding disappears
  * from the graph, the agent, analytics and reports exactly as a hand-muted one
@@ -74,12 +74,12 @@ export function NodeFiltersView({
     const totals = run.stats?.totals ?? {}
     if (run.status === 'completed') {
       toast.success(
-        `Filters applied: muted ${(totals.muted ?? 0).toLocaleString()}, ` +
+        `Rules applied: muted ${(totals.muted ?? 0).toLocaleString()}, ` +
         `unmuted ${(totals.unmuted ?? 0).toLocaleString()}.`,
-        'Node filters',
+        'Mute rules',
       )
     } else {
-      toast.error(`The apply ${run.status}${run.error ? `: ${run.error}` : '.'}`, 'Node filters')
+      toast.error(`The apply ${run.status}${run.error ? `: ${run.error}` : '.'}`, 'Mute rules')
     }
     void nf.load(true)
     preview.retry()
@@ -120,7 +120,7 @@ export function NodeFiltersView({
   const save = useCallback(async () => {
     const revision = await handleSaveResult(await nf.save())
     if (revision !== null) {
-      toast.success('Rules saved.', 'Node filters')
+      toast.success('Rules saved.', 'Mute rules')
       onStatusChange?.()
     }
   }, [nf, handleSaveResult, toast, onStatusChange])
@@ -129,7 +129,7 @@ export function NodeFiltersView({
     if (mode === 'allowlist' && saved?.applyToScans) {
       const ok = await confirm(
         'In allowlist mode every finding of an active kind that NO rule keeps is muted. ' +
-        'These filters are active on new scans, so once you save, the next scan mutes by the new mode.',
+        'These rules are active on new scans, so once you save, the next scan mutes by the new mode.',
         'Switch to allowlist?',
         { confirmLabel: 'Switch' },
       )
@@ -147,12 +147,12 @@ export function NodeFiltersView({
       const versionId = viewedVersionId !== undefined ? viewedVersionId : saved.activeVersion?.id ?? null
       const result = await run.apply(target, revision, versionId)
       setApplyOpen(false)
-      if (result.runId) toast.info('Applying the filters to the current graph…', 'Node filters')
-      else toast.success('Active on new scans.', 'Node filters')
+      if (result.runId) toast.info('Applying the rules to the current graph…', 'Mute rules')
+      else toast.success('Active on new scans.', 'Mute rules')
       await nf.load(true)
       onStatusChange?.()
     } catch (e) {
-      await alertError(e instanceof Error ? e.message : 'Apply failed', 'Apply node filters')
+      await alertError(e instanceof Error ? e.message : 'Apply failed', 'Apply mute rules')
     }
   }, [saved, nf, handleSaveResult, run, toast, alertError, onStatusChange, viewedVersionId])
 
@@ -164,11 +164,11 @@ export function NodeFiltersView({
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Turn off failed (${res.status})`)
-      toast.success('New scans no longer apply the filters. Nothing already muted changed.', 'Node filters')
+      toast.success('New scans no longer apply the rules. Nothing already muted changed.', 'Mute rules')
       await nf.load(true)
       onStatusChange?.()
     } catch (e) {
-      await alertError(e instanceof Error ? e.message : 'Turn off failed', 'Node filters')
+      await alertError(e instanceof Error ? e.message : 'Turn off failed', 'Mute rules')
     } finally {
       setBusyAction(false)
     }
@@ -187,19 +187,19 @@ export function NodeFiltersView({
       `/api/projects/${encodeURIComponent(projectId)}/node-filters/exemptions?label=${encodeURIComponent(label)}`,
       { method: 'DELETE' })
     if (!res.ok) {
-      await alertError('The exemptions could not be cleared.', 'Node filters')
+      await alertError('The exemptions could not be cleared.', 'Mute rules')
       return
     }
     const { cleared } = await res.json()
-    toast.success(`Cleared ${cleared} exemption${cleared === 1 ? '' : 's'}.`, 'Node filters')
+    toast.success(`Cleared ${cleared} exemption${cleared === 1 ? '' : 's'}.`, 'Mute rules')
     await nf.load(true)
     preview.retry()
   }, [projectId, confirm, alertError, toast, nf, preview])
 
-  if (!projectId) return <div className={styles.empty}>Select a project to filter its nodes.</div>
+  if (!projectId) return <div className={styles.empty}>Select a project to edit its mute rules.</div>
 
   if (nf.error?.status === 404) {
-    return <div className={styles.empty}>Node filters are not available for this project.</div>
+    return <div className={styles.empty}>Mute rules are not available for this project.</div>
   }
   if (nf.error && !saved) {
     return (

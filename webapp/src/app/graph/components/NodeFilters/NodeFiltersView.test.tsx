@@ -1,5 +1,5 @@
 /**
- * The Node Filters page: its states, the armed status, saving (and a save that
+ * The Mute Rules page: its states, the armed status, saving (and a save that
  * lost a race), and the live preview.
  *
  * Run: npx vitest run src/app/graph/components/NodeFilters/NodeFiltersView.test.tsx
@@ -81,7 +81,7 @@ describe('NodeFiltersView', () => {
   test('a project the caller does not own shows nothing to edit', async () => {
     fetchMock.mockImplementation(() => reply({ error: 'Not found' }, 404))
     view()
-    expect(await screen.findByText('Node filters are not available for this project.')).toBeInTheDocument()
+    expect(await screen.findByText('Mute rules are not available for this project.')).toBeInTheDocument()
   })
 
   test('shows the armed state and turns it off', async () => {
@@ -111,7 +111,7 @@ describe('NodeFiltersView', () => {
     fireEvent.click(screen.getByLabelText('Filter Nuclei'))
     expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Save'))
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Rules saved.', 'Node filters'))
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Rules saved.', 'Mute rules'))
     const put = fetchMock.mock.calls.find(c => c[1]?.method === 'PUT')!
     const body = JSON.parse(put[1].body)
     expect(body.revision).toBe(3)

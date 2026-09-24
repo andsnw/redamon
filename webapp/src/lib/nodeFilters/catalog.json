@@ -2007,22 +2007,15 @@
     },
     {
       "label": "UserInput",
-      "reason": "What an operator typed in; it is the input",
-      "not a result.": null
+      "reason": "What an operator typed in; it is the input, not a result."
     },
     {
       "label": "AttackChain",
-      "reason": "The agent's own history (AttackChain",
-      "ChainStep": null,
-      "ChainFinding": null,
-      "ChainDecision": null,
-      "ChainFailure).": null
+      "reason": "The agent's own history (AttackChain, ChainStep, ChainFinding, ChainDecision, ChainFailure)."
     },
     {
       "label": "GithubHunt",
-      "reason": "The GitHub hunt's scan structure (GithubHunt",
-      "GithubRepository": null,
-      "GithubPath).": null
+      "reason": "The GitHub hunt's scan structure (GithubHunt, GithubRepository, GithubPath)."
     },
     {
       "label": "MultiscannerScan",

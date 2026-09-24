@@ -1,5 +1,5 @@
 /**
- * The Node Filters tab (with its armed pill) and Muted Nodes in the table menu.
+ * The Mute Rules tab (with its armed pill) and Muted Nodes in the table menu.
  *
  * Run: npx vitest run src/app/graph/components/ViewTabs/ViewTabs.nodeFilters.test.tsx
  */
@@ -22,10 +22,10 @@ function tabs(props: Partial<Parameters<typeof ViewTabs>[0]> = {}) {
   return { onViewChange, onTableViewModeChange }
 }
 
-describe('the Node Filters tab', () => {
-  test('opens the node filters table view', () => {
+describe('the Mute Rules tab', () => {
+  test('opens the mute rules table view', () => {
     const { onViewChange, onTableViewModeChange } = tabs()
-    fireEvent.click(screen.getByText('Node Filters'))
+    fireEvent.click(screen.getByText('Mute Rules'))
     expect(onTableViewModeChange).toHaveBeenCalledWith('nodeFilters')
     expect(onViewChange).toHaveBeenCalledWith('table')
   })
@@ -48,7 +48,7 @@ describe('the Node Filters tab', () => {
     tabs({ tableViewMode: 'nodeFilters' })
     const selected = screen.getAllByRole('tab').filter(t => t.getAttribute('aria-selected') === 'true')
     expect(selected).toHaveLength(1)
-    expect(selected[0].textContent).toContain('Node Filters')
+    expect(selected[0].textContent).toContain('Mute Rules')
     expect(dropdownMode('nodeFilters')).toBe('all')
   })
 })

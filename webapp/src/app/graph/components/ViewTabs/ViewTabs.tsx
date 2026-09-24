@@ -60,7 +60,7 @@ const TABLE_MODE_LABELS: Record<TableViewMode, string> = {
   reconDelta: 'Recon Delta',
   scanSchedule: 'Scans',
   triage: 'Priority Board',
-  nodeFilters: 'Node Filters',
+  nodeFilters: 'Mute Rules',
   muted: 'Muted Nodes',
 }
 
@@ -133,7 +133,7 @@ export interface TunnelStatus {
   chisel: TunnelInfo
 }
 
-/** What the Node Filters tab needs to badge itself; see `/api/projects/[id]/node-filters/status`. */
+/** What the Mute Rules tab needs to badge itself; see `/api/projects/[id]/node-filters/status`. */
 export interface NodeFilterStatus {
   armed: boolean
   mode: 'denylist' | 'allowlist'
@@ -143,7 +143,7 @@ export interface NodeFilterStatus {
 }
 
 /**
- * The pill on the Node Filters tab while the rules are armed for new scans.
+ * The pill on the Mute Rules tab while the rules are armed for new scans.
  * Deliberately not the red unseen-badge colour: it is a standing state, not
  * something new to look at.
  */
@@ -196,7 +196,7 @@ interface ViewTabsProps {
   unseenCounts?: Partial<Record<TableViewMode, number>>
   /** Sum of the above, badged on the table tab itself. */
   unseenTotal?: number
-  /** Node Filters armed state, for the pill on its tab. */
+  /** Mute Rules armed state, for the pill on its tab. */
   nodeFilterStatus?: NodeFilterStatus | null
   // JS Recon table controls
   jsReconSearch?: string
@@ -429,7 +429,7 @@ export const ViewTabs = memo(function ViewTabs({
         >
           <SlidersHorizontal size={14} />
           <span className={styles.tabLabelWithPill}>
-            Node Filters
+            Mute Rules
             <ArmedBadge status={nodeFilterStatus} />
           </span>
         </button>

@@ -220,12 +220,12 @@ describe('a node-filter apply is a graph writer', () => {
 
   test('it blocks activation and Recon Delta (describeLiveGraphWriters)', async () => {
     prismaMock.nodeFilterRun.findMany.mockResolvedValue(live())
-    expect(await describeLiveGraphWriters('p1')).toBe('node filters are being applied to the graph')
+    expect(await describeLiveGraphWriters('p1')).toBe('mute rules are being applied to the graph')
   })
 
   test('it blocks scan start, Save Version and partial start (describeScanWriters), before any network call', async () => {
     prismaMock.nodeFilterRun.findMany.mockResolvedValue(live())
-    expect(await describeScanWriters('p1')).toBe('node filters are being applied to the graph')
+    expect(await describeScanWriters('p1')).toBe('mute rules are being applied to the graph')
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -241,6 +241,6 @@ describe('a node-filter apply is a graph writer', () => {
 
   test('an unreadable run state reads as busy, never as idle', async () => {
     prismaMock.nodeFilterRun.findMany.mockRejectedValue(new Error('db down'))
-    expect(await describeScanWriters('p1')).toMatch(/node-filter apply state could not be verified/)
+    expect(await describeScanWriters('p1')).toMatch(/mute-rule apply state could not be verified/)
   })
 })

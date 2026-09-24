@@ -718,7 +718,7 @@ function renderScope(data: ReportData, narrative?: string): string {
         ? `<tr><td>Suppressed as noise</td><td>${graphOverview.suppressedByPeople} finding(s) reviewed and excluded from this report</td></tr>`
         : ''}
       ${graphOverview.suppressedByRules
-        ? `<tr><td>Suppressed by project filter rules</td><td>${graphOverview.suppressedByRules} finding(s) excluded by rule, not reviewed one by one${
+        ? `<tr><td>Suppressed by mute rules</td><td>${graphOverview.suppressedByRules} finding(s) excluded by rule, not reviewed one by one${
             graphOverview.suppressedRules.length
               ? ` (${graphOverview.suppressedRules.map(r => `${esc(r.name)}: ${r.count}`).join('; ')})`
               : ''}</td></tr>`

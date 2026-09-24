@@ -136,11 +136,11 @@ describe('partial recon start', () => {
     expect(h.orchestratorFetch).toHaveBeenCalled()
   })
 
-  test('refused while node filters are being applied to the graph', async () => {
-    h.nodeFilterWriter.mockResolvedValueOnce('node filters are being applied to the graph')
+  test('refused while mute rules are being applied to the graph', async () => {
+    h.nodeFilterWriter.mockResolvedValueOnce('mute rules are being applied to the graph')
     const res = await startPartial(partialReq(), params)
     expect(res.status).toBe(409)
-    expect((await res.json()).error).toMatch(/node filters are being applied/)
+    expect((await res.json()).error).toMatch(/mute rules are being applied/)
     expect(h.orchestratorFetch).not.toHaveBeenCalled()
   })
 })

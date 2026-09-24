@@ -25,7 +25,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // start while a version activation is swapping it.
     const activating = await assertGraphNotActivating(projectId)
     if (activating) return activating
-    // Nor while node filters are being applied: the apply and the scan would
+    // Nor while mute rules are being applied: the apply and the scan would
     // race for the same findings' mute state.
     const applying = await describeNodeFilterWriter(projectId)
     if (applying) {

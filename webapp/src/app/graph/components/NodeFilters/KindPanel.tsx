@@ -75,7 +75,7 @@ export function KindPanel({
   const missing = Object.entries(preview?.missing ?? {}).filter(([, n]) => n > 0)
 
   return (
-    <section className={styles.panel} aria-label={`${kind.label} filters`}>
+    <section className={styles.panel} aria-label={`${kind.label} rules`}>
       <div className={styles.panelHead}>
         <h3 className={styles.panelTitle}>{kind.label}</h3>
         <span className={styles.behaviour}>MUTE</span>

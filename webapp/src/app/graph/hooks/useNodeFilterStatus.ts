@@ -1,11 +1,11 @@
 'use client'
 
 /**
- * The Node Filters tab's armed badge, and the page's watch on a running apply.
+ * The Mute Rules tab's armed badge, and the page's watch on a running apply.
  *
  * Fetched on load and when the project changes, and refreshed by the page after
  * a save, an apply or a disarm. While an apply runs it is polled, because the
- * Node Filters view that started the apply unmounts when the operator switches
+ * Mute Rules view that started the apply unmounts when the operator switches
  * tab, and something must still notice the end and refetch the graph.
  * A failed fetch shows no badge rather than a stale one.
  */

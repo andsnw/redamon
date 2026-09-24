@@ -71,7 +71,7 @@ export function useNodeFilters(projectId: string | null) {
       const body = await res.json().catch(() => ({}))
       if (stale()) return
       if (!res.ok) {
-        setError({ status: res.status, message: body.error || `Node filters: ${res.status}` })
+        setError({ status: res.status, message: body.error || `Mute rules: ${res.status}` })
         return
       }
       setError(null)
@@ -81,7 +81,7 @@ export function useNodeFilters(projectId: string | null) {
         setDraft(body.rules ?? EMPTY_NODE_FILTER_DOC)
       }
     } catch (e) {
-      if (!stale()) setError({ status: 0, message: e instanceof Error ? e.message : 'Could not load the node filters' })
+      if (!stale()) setError({ status: 0, message: e instanceof Error ? e.message : 'Could not load the mute rules' })
     } finally {
       if (!stale()) setLoading(false)
     }

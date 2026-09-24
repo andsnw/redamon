@@ -17,7 +17,7 @@ import { invalidateCache } from '@/app/api/graph/cache'
  *
  * Every unmuted finding also gets a NodeFilterExemption, whether a person or a
  * rule had muted it, so an operator's unmute sticks: no filter rule mutes that
- * node again until the exemption is cleared from the Node Filters page. The
+ * node again until the exemption is cleared from the Mute Rules page. The
  * exemption is a Postgres row rather than a graph property because the prune,
  * the recon asset clear, version activation and import would each delete a
  * property.
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     // visible, which is what the operator asked for. What is lost is only the
     // guarantee that a rule will not mute it again, so the caller is told.
     console.error('[unmute] could not record node-filter exemptions:', e)
-    exemptionError = 'Unmuted, but the filter exemption was not saved: a filter rule may mute it again.'
+    exemptionError = 'Unmuted, but the exemption was not saved: a mute rule may mute it again.'
   }
 
   if (items.length > 0) {

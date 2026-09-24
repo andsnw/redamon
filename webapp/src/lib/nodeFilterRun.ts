@@ -78,16 +78,16 @@ export async function findLiveNodeFilterRun(projectId: string): Promise<LiveNode
  */
 export async function describeNodeFilterWriter(projectId: string): Promise<string | null> {
   try {
-    return (await findLiveNodeFilterRun(projectId)) ? 'node filters are being applied to the graph' : null
+    return (await findLiveNodeFilterRun(projectId)) ? 'mute rules are being applied to the graph' : null
   } catch (err) {
     console.error('[graphWriters] node-filter run check failed (treating as busy):', err)
-    return 'the node-filter apply state could not be verified'
+    return 'the mute-rule apply state could not be verified'
   }
 }
 
 export class RunAlreadyLiveError extends Error {
   constructor(public runId: string) {
-    super('node filters are already being applied to this project')
+    super('mute rules are already being applied to this project')
   }
 }
 

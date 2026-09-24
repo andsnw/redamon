@@ -508,7 +508,7 @@
   flex-shrink: 0;
 }
 
-/* -- Node Filters tab: the armed pill -- */
+/* -- Mute Rules tab: the armed pill -- */
 
 /* Keeps the pill on the same line as its label when the tab row scrolls. */
 .tabLabelWithPill {

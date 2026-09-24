@@ -321,10 +321,10 @@ describe('a node-filter apply that started between the writer check and the lock
   test('is caught under the lock: nothing is frozen, and the lock is released', async () => {
     // describeLiveGraphWriters saw an idle graph, then an apply started before
     // the lock was taken. The freeze would capture a half-applied graph.
-    h.nodeFilterWriter.mockResolvedValue('node filters are being applied to the graph')
+    h.nodeFilterWriter.mockResolvedValue('mute rules are being applied to the graph')
     const res = await POST(req(), params('p1', 'v1'))
     expect(res.status).toBe(409)
-    expect((await res.json()).error).toMatch(/node filters are being applied/)
+    expect((await res.json()).error).toMatch(/mute rules are being applied/)
     expect(h.capture).not.toHaveBeenCalled()
     expect(h.clearGraph).not.toHaveBeenCalled()
     expect(h.release).toHaveBeenCalledWith('p1')

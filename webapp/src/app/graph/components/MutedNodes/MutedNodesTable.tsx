@@ -9,7 +9,7 @@
  * thousands of findings in one apply.
  *
  * Unmuting always records an exemption, so no filter rule mutes that node
- * again; undoing a whole rule is done on the Node Filters page instead.
+ * again; undoing a whole rule is done on the Mute Rules page instead.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -35,7 +35,7 @@ function fmtWhen(iso: string | null): string {
 
 interface MutedNodesTableProps {
   projectId: string | null
-  /** Open the Node Filters page at a rule. */
+  /** Open the Mute Rules page at a rule. */
   onOpenRule?: (kind: string, ruleId: string) => void
 }
 
@@ -369,7 +369,7 @@ export function MutedNodesTable({ projectId, onOpenRule }: MutedNodesTableProps)
                         <button
                           className={styles.ruleLink}
                           onClick={() => onOpenRule(row.rule_kind!, row.rule_id!)}
-                          title="Open this rule in Node Filters"
+                          title="Open this rule in Mute Rules"
                         >
                           {mutedByText(row, userId)}
                         </button>

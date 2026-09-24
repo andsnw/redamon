@@ -226,6 +226,13 @@ def check(cat: dict, declared_props, normalizers: dict, *, registry_keys=None,
                            **(cat.get("asset_sources") or {})}.items():
         if not str(reason or "").strip():
             errors.append(f"source {source!r} is listed without a reason")
+    # An unquoted comma inside a YAML flow mapping ends the reason there and
+    # turns the rest into stray null-valued keys, so the Locked panel shows a
+    # truncated sentence without any parse error.
+    for entry in cat.get("locked") or []:
+        if set(entry) != {"label", "reason"} or not str(entry.get("reason") or "").strip():
+            errors.append(f"locked entry {entry.get('label')!r} must be exactly a label and a "
+                          "reason; quote a reason that contains a comma")
     return errors
 
 

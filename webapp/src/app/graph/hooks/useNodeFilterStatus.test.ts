@@ -1,7 +1,7 @@
 /**
  * The page-level node-filter status: the tab badge, and noticing an apply end.
  *
- * The Node Filters view polls its own run, but it unmounts when the operator
+ * The Mute Rules view polls its own run, but it unmounts when the operator
  * switches tab. The page's hook is what keeps watching, so the graph is
  * refetched when an apply finishes wherever the operator is.
  *

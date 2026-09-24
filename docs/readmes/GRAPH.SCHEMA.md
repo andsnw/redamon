@@ -193,8 +193,8 @@ findings hanging off it.
 ### Who muted it: a person, or a node-filter rule
 
 `muted_by` holds the user id of the person who muted the finding, or
-`rule:<kind>/<rule id>` when a [Node Filters](../../redamon.wiki/Node-Filters.md)
-rule did (`rule:<kind>/allowlist` in allowlist mode), with `muted_reason` set to
+`rule:<kind>/<rule id>` when a [mute rule](../../redamon.wiki/Mute-Rules.md)
+did (`rule:<kind>/allowlist` in allowlist mode), with `muted_reason` set to
 `Filter rule: <name>`. The two differ in what they mean and in how they are kept:
 
 - The one sweep that applies rules (`apply_node_filters` in

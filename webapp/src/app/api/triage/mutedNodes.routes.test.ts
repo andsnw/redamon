@@ -219,10 +219,10 @@ describe('POST /api/triage/unmute', () => {
     // A running apply holds the exemptions it read at its start. A node
     // unmuted now, before the sweep reaches its page, would be muted again by
     // that sweep, silently undoing what the operator just did.
-    mockNodeFilterWriter.mockResolvedValue('node filters are being applied to the graph')
+    mockNodeFilterWriter.mockResolvedValue('mute rules are being applied to the graph')
     const res = await postUnmute(post(URL, { projectId: PROJECT, keys: ['v1'] }))
     expect(res.status).toBe(409)
-    expect((await res.json()).error).toMatch(/node filters are being applied/)
+    expect((await res.json()).error).toMatch(/mute rules are being applied/)
     expect(mockNodeFilterWriter).toHaveBeenCalledWith(PROJECT)
     expect(mockAgentFetch).not.toHaveBeenCalled()
     expect(mockExemptionUpsert).not.toHaveBeenCalled()

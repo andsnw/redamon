@@ -1,7 +1,7 @@
 /**
  * GET /api/projects/[id]/node-filters/runs/[runId] — one apply's progress and result.
  *
- * Polled by the Node Filters page while an apply runs. Scoped to the project:
+ * Polled by the Mute Rules page while an apply runs. Scoped to the project:
  * a run id from another project is a 404 like any other miss.
  */
 import { NextRequest, NextResponse } from 'next/server'

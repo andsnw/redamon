@@ -3460,7 +3460,7 @@ def node_filters_preview(body: NodeFilterPreviewRequest):
     """
     if master_key_is_weak():
         return JSONResponse(status_code=503, content={
-            "error": "INTERNAL_API_KEY is not configured; node filters are disabled."})
+            "error": "INTERNAL_API_KEY is not configured; mute rules are disabled."})
     if not body.user_id or not body.project_id:
         return JSONResponse(status_code=400, content={"error": "missing tenant identity"})
     from node_filter_runs import PreviewBusy, preview
@@ -3495,7 +3495,7 @@ async def node_filters_apply(body: NodeFilterApplyRequest):
     """
     if master_key_is_weak():
         return JSONResponse(status_code=503, content={
-            "error": "INTERNAL_API_KEY is not configured; node filters are disabled."})
+            "error": "INTERNAL_API_KEY is not configured; mute rules are disabled."})
     run_id = (body.run_id or "").strip()
     if not run_id or len(run_id) > 64 or not re.fullmatch(r"[A-Za-z0-9_-]+", run_id):
         return JSONResponse(status_code=400, content={"error": "invalid run id"})

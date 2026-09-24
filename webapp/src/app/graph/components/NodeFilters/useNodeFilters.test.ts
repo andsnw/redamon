@@ -1,7 +1,7 @@
 /**
  * useNodeFilters across a project switch.
  *
- * The page keeps the Node Filters view mounted when the project changes, so a
+ * The page keeps the Mute Rules view mounted when the project changes, so a
  * slow answer for the previous project can arrive after the new one's. Landing
  * it would show project A's rules under project B, and Save would then write
  * A's rules into B.

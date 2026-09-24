@@ -536,7 +536,7 @@ describe('Suppressed findings: people and rules are reported apart', () => {
   test('two rows: a person reviewed the first, a rule excluded the second', () => {
     const html = withSuppressed(3, 1284, [{ name: 'Informational templates', count: 1284 }])
     expect(html).toContain('<tr><td>Suppressed as noise</td><td>3 finding(s) reviewed and excluded from this report</td></tr>')
-    expect(html).toContain('Suppressed by project filter rules')
+    expect(html).toContain('Suppressed by mute rules')
     expect(html).toContain('1284 finding(s) excluded by rule, not reviewed one by one (Informational templates: 1284)')
   })
 
@@ -549,7 +549,7 @@ describe('Suppressed findings: people and rules are reported apart', () => {
   test('nothing suppressed, no rows', () => {
     const html = withSuppressed(0, 0)
     expect(html).not.toContain('Suppressed as noise')
-    expect(html).not.toContain('Suppressed by project filter rules')
+    expect(html).not.toContain('Suppressed by mute rules')
   })
 
   test('a rule name is escaped, apostrophe included', () => {

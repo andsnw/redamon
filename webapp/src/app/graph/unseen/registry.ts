@@ -45,7 +45,7 @@ export const ALL_GRAPH_LABELS = [
  *
  * Recon Delta and Scans are not row tables over the graph: Delta compares two
  * scan versions on demand and Scans lists orchestrator jobs from Postgres.
- * Neither has "rows the user has not seen yet" to count. Node Filters is a rule
+ * Neither has "rows the user has not seen yet" to count. Mute Rules is a rule
  * editor, not a table of nodes, and Muted Nodes lists what was deliberately
  * hidden, so a "new since you looked" count on it would advertise noise.
  */

@@ -125,11 +125,11 @@ describe('MutedNodesTable', () => {
   test('an unmute whose exemption was not saved warns', async () => {
     fetchMock.mockImplementation((_url: string, init?: RequestInit) =>
       init?.method === 'POST'
-        ? reply({ unmuted: 1, items: [{ key: 'v1' }], exempted: 0, exemptionError: 'a filter rule may mute it again' })
+        ? reply({ unmuted: 1, items: [{ key: 'v1' }], exempted: 0, exemptionError: 'a mute rule may mute it again' })
         : reply({ total: 1, findings: [row()] }))
     render(<MutedNodesTable projectId="p1" />)
     fireEvent.click((await screen.findAllByText('Unmute'))[0])
-    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith('a filter rule may mute it again'))
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith('a mute rule may mute it again'))
   })
 
   test('unmute_empties_last_page: unmuting every row on the last page steps back to one with rows', async () => {

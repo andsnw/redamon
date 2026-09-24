@@ -560,7 +560,7 @@ export default function GraphPage() {
   // Sheet to pre-select inside a multi-sheet table when deep-linked (?sheet=...).
   // Cleared on any manual table switch so it never overrides a later manual open.
   const [deepLinkSheet, setDeepLinkSheet] = useState<string | null>(null)
-  // Node Filters opens at a kind (and rule) when a Muted Nodes row links to it.
+  // Mute Rules opens at a kind (and rule) when a Muted Nodes row links to it.
   const [nodeFilterFocus, setNodeFilterFocus] = useState<{ kind: string; ruleId?: string } | null>(null)
   const openNodeFilterRule = useCallback((kind: string, ruleId: string) => {
     setNodeFilterFocus({ kind, ruleId })

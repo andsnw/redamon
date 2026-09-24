@@ -56,7 +56,7 @@ export function currentGraphBlocker(opts: {
 }): string | null {
   if (opts.isViewingPastVersion) {
     return `You are viewing ${opts.viewedVersionLabel ?? 'a saved snapshot'}, a saved snapshot. ` +
-      'Filters change the live graph only; switch back to the active version, or choose New scans only.'
+      'Mute rules change the live graph only; switch back to the active version, or choose New scans only.'
   }
   if (opts.readiness?.busy) {
     return `${opts.readiness.busy[0].toUpperCase()}${opts.readiness.busy.slice(1)}; ` +
@@ -150,7 +150,7 @@ export function ApplyModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Apply node filters"
+      title="Apply mute rules"
       size="default"
       footer={
         <div className={styles.modalFoot}>

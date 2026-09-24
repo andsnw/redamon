@@ -1,5 +1,5 @@
 /**
- * The Node Filters routes: who may call them, and what each refuses.
+ * The Mute Rules routes: who may call them, and what each refuses.
  *
  * These rules decide what the AI agent can see for a whole project, so every
  * route is held to the triage routes' standard: strict owner check (404, never

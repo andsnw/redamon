@@ -1,5 +1,5 @@
 /**
- * GET /api/projects/[id]/node-filters/status — what the Node Filters tab badges.
+ * GET /api/projects/[id]/node-filters/status — what the Mute Rules tab badges.
  *
  * { armed, mode, activeRules, activeKinds, runningApply }. Fetched on load, after
  * Save and Apply, and when the project changes.

@@ -538,9 +538,9 @@ locked:
   - { label: CVE, reason: Shared reference data for every project; filter the findings that link to it instead. }
   - { label: MitreData, reason: Shared reference data for every project. }
   - { label: Capec, reason: Shared reference data for every project. }
-  - { label: UserInput, reason: What an operator typed in; it is the input, not a result. }
-  - { label: AttackChain, reason: The agent's own history (AttackChain, ChainStep, ChainFinding, ChainDecision, ChainFailure). }
-  - { label: GithubHunt, reason: The GitHub hunt's scan structure (GithubHunt, GithubRepository, GithubPath). }
+  - { label: UserInput, reason: "What an operator typed in; it is the input, not a result." }
+  - { label: AttackChain, reason: "The agent's own history (AttackChain, ChainStep, ChainFinding, ChainDecision, ChainFailure)." }
+  - { label: GithubHunt, reason: "The GitHub hunt's scan structure (GithubHunt, GithubRepository, GithubPath)." }
   - { label: MultiscannerScan, reason: The secret multiscanner's scan structure and scanned assets. }
   - { label: SbomDocument, reason: The uploaded SBOM itself. }
   - { label: ExploitGvm, reason: A confirmed exploitation; it must stay visible. }
