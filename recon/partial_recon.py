@@ -113,19 +113,6 @@ ALLOWED_SETTINGS_OVERRIDES = frozenset({
     "SECURITY_CHECK_ENABLED",
 })
 
-# Tools already taught to cover several roots. Every other tool still scans
-# config["domain"] only, so it is narrowed to one root here and the report says
-# so, rather than claiming roots it never touched. Mirrors
-# MULTI_ROOT_PARTIAL_TOOLS in webapp/src/lib/recon-types.ts.
-_MULTI_ROOT_TOOLS = frozenset({
-    "Tlsx",
-    "Nmap", "Httpx", "Naabu", "Masscan", "Shodan", "OsintEnrichment",
-    "Katana", "Hakrawler", "ZapAjaxSpider", "Ffuf", "Jsluice", "Kiterunner", "Arjun",
-    "JsRecon", "SupplyChainRecon", "EndpointAiClassifier", "GraphqlScan",
-    "WebCachePoison", "AiSurfaceRecon",
-    "Nuclei", "SecurityChecks", "SubdomainTakeover", "VhostSni", "OriginDiscovery",
-    "SubdomainDiscovery", "Urlscan", "Uncover", "Gau", "ParamSpider",
-})
 
 
 def load_config() -> dict:
@@ -189,10 +176,10 @@ def _refusal_reason(root: str, settings: dict, project_roots: list):
     return None
 
 
-def _prepare_scope(config: dict, settings: dict, project_id: str, tool_id: str):
-    """Refuse roots, narrow unmigrated tools, and write the scope the modules read.
+def _prepare_scope(config: dict, settings: dict, project_id: str):
+    """Refuse roots and write the scope the modules read.
 
-    Returns (refused, not_scanned): {root: reason} for the report.
+    Returns {root: reason} for each refused root, for the report.
     """
     project_roots = settings_project_roots(settings, project_id)
     refused, kept = {}, []
@@ -204,12 +191,6 @@ def _prepare_scope(config: dict, settings: dict, project_id: str, tool_id: str):
         else:
             kept.append(root)
 
-    not_scanned = {}
-    if tool_id not in _MULTI_ROOT_TOOLS and len(kept) > 1:
-        for root in kept[1:]:
-            not_scanned[root] = "not scanned: this tool covers one root per run"
-        kept = kept[:1]
-
     config["domains"] = kept
     config["domain"] = kept[0] if kept else ""
     config["domain_groups"] = partial_domain_groups(settings, kept)
@@ -217,7 +198,7 @@ def _prepare_scope(config: dict, settings: dict, project_id: str, tool_id: str):
     config["batch_mode"] = bool(settings.get("DOMAIN_BATCH_MODE"))
     config["settings_overrides"] = _allowlist_overrides(config.get("settings_overrides"))
     config["_settings"] = settings
-    return refused, not_scanned
+    return refused
 
 
 def _run_tool(tool_id: str, config: dict):
@@ -276,7 +257,7 @@ def main():
               f"Refusing to scan.")
         sys.exit(1)
 
-    refused, not_scanned = _prepare_scope(config, settings, project_id, tool_id)
+    refused = _prepare_scope(config, settings, project_id)
     if not scope_roots(config):
         print_run_report(tool_id, {}, refused)
         sys.exit(1)
@@ -295,7 +276,7 @@ def main():
     if completed and user_id and project_id:
         _cleanup_orphan_user_inputs(user_id, project_id)
 
-    print_run_report(tool_id, {**statuses, **not_scanned}, refused)
+    print_run_report(tool_id, statuses, refused)
     exit_code = run_exit_code(statuses)
     if exit_code:
         sys.exit(exit_code)

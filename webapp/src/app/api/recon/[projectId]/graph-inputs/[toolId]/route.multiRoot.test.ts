@@ -7,13 +7,11 @@
  * route now takes the roots from the project row, returns them as `domains`
  * (with `stale_domains` for Domain nodes the project dropped and
  * `empty_domains` for roots with no recon data), and counts only over those
- * roots. A tool not yet able to cover several roots is offered just the first.
+ * roots. Every supported tool is offered every current root.
  *
  * Fixture roots are alpha.test / beta.test / gamma.test only.
  */
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-
-const { multiRoot } = vi.hoisted(() => ({ multiRoot: new Set<string>() }))
 
 const mockGuard = vi.fn()
 const mockFindUnique = vi.fn()
@@ -23,10 +21,6 @@ vi.mock('@/lib/access', () => ({ guardProject: (...a: unknown[]) => mockGuard(..
 vi.mock('@/lib/prisma', () => ({ default: { project: { findUnique: (...a: unknown[]) => mockFindUnique(...a) } } }))
 vi.mock('@/app/api/graph/neo4j', () => ({
   getGraphSession: () => ({ run: (...a: unknown[]) => mockRun(...a), close: vi.fn() }),
-}))
-vi.mock('@/lib/recon-types', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/recon-types')>()),
-  MULTI_ROOT_PARTIAL_TOOLS: multiRoot,
 }))
 
 import { GET } from './route'
@@ -59,7 +53,6 @@ function toolCall() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  multiRoot.clear()
   mockGuard.mockResolvedValue(null)
   mockFindUnique.mockResolvedValue(BATCH)
   graphDomains = [
@@ -77,43 +70,33 @@ beforeEach(() => {
 
 describe('roots come from the project, not from the graph', () => {
   test('a multi-root tool is offered every current root, sorted', async () => {
-    multiRoot.add('Tlsx')
     const body = await (await call('Tlsx')).json()
     expect(body.domains).toEqual(['alpha.test', 'beta.test', 'gamma.test'])
     expect(body.domain).toBe('alpha.test')
   })
 
   test('a Domain node the project dropped is stale and is not counted', async () => {
-    multiRoot.add('Tlsx')
     const body = await (await call('Tlsx')).json()
     expect(body.stale_domains).toEqual(['old.test'])
     expect(toolCall()?.[1].domains).toEqual(['alpha.test', 'beta.test', 'gamma.test'])
   })
 
   test('a root without recon data is reported empty', async () => {
-    multiRoot.add('Tlsx')
     const body = await (await call('Tlsx')).json()
     expect(body.empty_domains).toEqual(['gamma.test'])
   })
 
   test('a root with no Domain node yet is still offered, as empty', async () => {
-    multiRoot.add('Tlsx')
     graphDomains = [{ name: 'alpha.test', hasData: true }]
     const body = await (await call('Tlsx')).json()
     expect(body.domains).toEqual(['alpha.test', 'beta.test', 'gamma.test'])
     expect(body.empty_domains).toEqual(['beta.test', 'gamma.test'])
   })
 
-  test('a tool not yet multi-root is offered only the first root, and counts only it', async () => {
-    const body = await (await call('Tlsx')).json()
-    expect(body.domains).toEqual(['alpha.test'])
-    expect(toolCall()?.[1].domains).toEqual(['alpha.test'])
-  })
 })
 
 describe('single-domain and IP mode', () => {
   test('a single project keeps its target as stored', async () => {
-    multiRoot.add('Naabu')
     mockFindUnique.mockResolvedValue({ userId: 'u1', targetDomain: 'Alpha.test', ipMode: false })
     graphDomains = [{ name: 'Alpha.test', hasData: true }]
     const body = await (await call('Naabu')).json()
@@ -140,7 +123,6 @@ describe('single-domain and IP mode', () => {
 
 describe('failure and SubdomainDiscovery', () => {
   test('a Neo4j failure still returns the roots, with zero counts', async () => {
-    multiRoot.add('Naabu')
     mockRun.mockRejectedValue(new Error('neo4j down'))
     const res = await call('Naabu')
     expect(res.status).toBe(200)
@@ -151,7 +133,6 @@ describe('failure and SubdomainDiscovery', () => {
   })
 
   test('SubdomainDiscovery says which roots may enumerate (wildcard groups only)', async () => {
-    multiRoot.add('SubdomainDiscovery')
     const body = await (await call('SubdomainDiscovery')).json()
     expect(body.discovery_domains).toEqual(['beta.test', 'gamma.test'])
   })
@@ -159,7 +140,6 @@ describe('failure and SubdomainDiscovery', () => {
 
 describe('vuln tools count only the run roots', () => {
   test.each(['Nuclei', 'SecurityChecks'])('%s skips BaseURLs under a Domain the run does not cover', async (toolId) => {
-    multiRoot.add(toolId)
     await call(toolId)
     const cypher = toolCall()?.[0] ?? ''
     expect(cypher).toMatch(/MATCH \(b:BaseURL \{user_id: \$uid, project_id: \$pid\}\)\s+WHERE NOT EXISTS/)
@@ -167,13 +147,11 @@ describe('vuln tools count only the run roots', () => {
   })
 
   test('Nuclei skips Endpoints under a Domain the run does not cover', async () => {
-    multiRoot.add('Nuclei')
     await call('Nuclei')
     expect(toolCall()?.[0]).toMatch(/MATCH \(e:Endpoint \{user_id: \$uid, project_id: \$pid\}\)\s+WHERE NOT EXISTS/)
   })
 
   test('OriginDiscovery counts fronted hosts under the run roots only', async () => {
-    multiRoot.add('OriginDiscovery')
     await call('OriginDiscovery')
     const cypher = toolCall()?.[0] ?? ''
     expect(cypher).toContain('(fd:Domain {user_id: $uid, project_id: $pid})-[:HAS_SUBDOMAIN]->(fs:Subdomain)')
@@ -183,12 +161,14 @@ describe('vuln tools count only the run roots', () => {
 })
 
 describe.each([...PARTIAL_RECON_SUPPORTED_TOOLS])('every supported tool: %s', (toolId) => {
-  test('has a graph branch that returns the roots', async () => {
+  test('has a graph branch that returns and counts every current root', async () => {
     const body = await (await call(toolId)).json()
     expect(body.source).toBe('graph')
-    expect(body.domains).toEqual(['alpha.test'])
+    expect(body.domains).toEqual(['alpha.test', 'beta.test', 'gamma.test'])
     expect(body.stale_domains).toEqual(['old.test'])
-    expect(toolCall()?.[1]).toMatchObject({ uid: 'u1', pid: 'p1', domains: ['alpha.test'] })
+    expect(toolCall()?.[1]).toMatchObject({
+      uid: 'u1', pid: 'p1', domains: ['alpha.test', 'beta.test', 'gamma.test'],
+    })
   })
 
   test('never groups on the Domain node', async () => {

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { guardProject } from '@/lib/access'
 import prisma from '@/lib/prisma'
 import { getGraphSession } from '@/app/api/graph/neo4j'
-import { MULTI_ROOT_PARTIAL_TOOLS } from '@/lib/recon-types'
 import {
   discoveryDomains,
   partialScopeFields,
@@ -347,7 +346,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const scope = resolveProjectRoots(project, projectId)
-    const multiRoot = MULTI_ROOT_PARTIAL_TOOLS.has(toolId)
     const tool = TOOL_QUERIES[toolId]
     const withDiscovery = (fields: ReturnType<typeof partialScopeFields>) =>
       toolId === 'SubdomainDiscovery'
@@ -363,7 +361,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           const graph: GraphDomainRow[] = domainRows.records
             .map((r: Neo4jRecord) => ({ name: String(r.get('name') ?? ''), hasData: r.get('hasData') === true }))
             .filter((row: GraphDomainRow) => row.name)
-          const fields = partialScopeFields(scope, graph, multiRoot)
+          const fields = partialScopeFields(scope, graph)
 
           const result = await session.run(tool.cypher, { uid, pid: projectId, domains: fields.domains })
           return NextResponse.json({
@@ -382,7 +380,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Fallback: the project's own roots with zero counts. The orchestrator
     // re-derives the scope anyway, so offering the roots here is safe.
     return NextResponse.json({
-      ...withDiscovery(partialScopeFields(scope, null, multiRoot)),
+      ...withDiscovery(partialScopeFields(scope, null)),
       ...ZERO_COUNTS,
       source: 'settings',
     })

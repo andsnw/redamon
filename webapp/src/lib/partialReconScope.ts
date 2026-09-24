@@ -88,7 +88,6 @@ const byName = (a: string, b: string) => a.localeCompare(b)
 export function partialScopeFields(
   scope: ProjectRoots,
   graph: GraphDomainRow[] | null,
-  multiRoot: boolean,
 ): PartialScopeFields {
   const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
   const inGraph = (root: string) => (graph ?? []).some(row => same(row.name, root))
@@ -99,7 +98,7 @@ export function partialScopeFields(
   if (scope.mode === 'ip' && graph) current = current.filter(inGraph)
   current.sort(byName)
 
-  const domains = multiRoot ? current : current.slice(0, 1)
+  const domains = current
   const stale = (graph ?? [])
     .map(row => row.name)
     .filter(name => !scope.roots.some(root => same(root, name)))

@@ -43,6 +43,17 @@ BATCH_GROUPS = [
     {"rootDomain": "beta.test", "prefixes": ["*"]},
     {"rootDomain": "gamma.test", "prefixes": ["*", "."]},
 ]
+
+
+def _dispatched_tools() -> set:
+    """Every tool the real dispatcher routes, read from its source so the
+    'every tool gets every root' check follows the tools actually shipped."""
+    import re
+    return set(re.findall(r'tool_id == "([A-Za-z]+)"',
+                          (PROJECT_ROOT / "recon" / "partial_recon.py").read_text()))
+
+
+PARTIAL_TOOLS = _dispatched_tools()
 BATCH_SETTINGS = {
     "DOMAIN_BATCH_MODE": True, "DOMAIN_BATCH_GROUPS": BATCH_GROUPS,
     "TARGET_DOMAIN": "", "SUBDOMAIN_LIST": [], "IP_MODE": False,
@@ -391,8 +402,6 @@ class TestReportAndExitCode:
         assert "alpha.test: failed: SystemExit" in capsys.readouterr().out
 
     def test_a_loop_tools_statuses_decide_the_exit_code(self, pr, monkeypatch, capsys):
-        from recon import partial_recon as module
-        monkeypatch.setattr(module, "_MULTI_ROOT_TOOLS", frozenset({"Urlscan"}))
         statuses = {"alpha.test": "failed: HTTPError", "beta.test": STATUS_NO_RESULTS}
         code, sweeps, _ = _run_main(pr, monkeypatch, {
             "tool_id": "Urlscan", "domains": ["alpha.test", "beta.test"]}, BATCH_SETTINGS,
@@ -402,28 +411,21 @@ class TestReportAndExitCode:
         assert "alpha.test: failed: HTTPError" in out and "beta.test: no_results" in out
 
     def test_every_loop_root_failing_exits_1(self, pr, monkeypatch):
-        from recon import partial_recon as module
-        monkeypatch.setattr(module, "_MULTI_ROOT_TOOLS", frozenset({"Urlscan"}))
         code, sweeps, _ = _run_main(pr, monkeypatch, {
             "tool_id": "Urlscan", "domains": ["alpha.test", "beta.test"]}, BATCH_SETTINGS,
             dispatch=lambda cfg: {"alpha.test": STATUS_RATE_LIMITED, "beta.test": "failed: X"})
         assert code == 1 and len(sweeps) == 1
 
-    def test_a_tool_not_yet_multi_root_is_narrowed_and_says_so(self, pr, monkeypatch, capsys):
-        from recon import partial_recon as module
-        monkeypatch.setattr(module, "_MULTI_ROOT_TOOLS", frozenset())
+    @pytest.mark.parametrize("tool_id", sorted(PARTIAL_TOOLS))
+    def test_every_tool_is_handed_every_root(self, pr, monkeypatch, capsys, tool_id):
+        # No tool is narrowed to one root any more: each receives the whole run.
         code, _, dispatched = _run_main(pr, monkeypatch, {
-            "tool_id": "Katana", "domains": ["alpha.test", "beta.test"]}, BATCH_SETTINGS)
+            "tool_id": tool_id, "domains": ["alpha.test", "beta.test"]}, BATCH_SETTINGS)
         assert code == 0
-        assert dispatched[0]["domains"] == ["alpha.test"]
-        assert dispatched[0]["domain"] == "alpha.test"
-        out = capsys.readouterr().out
-        assert "Roots scanned (1): alpha.test" in out
-        assert "beta.test: not scanned" in out
+        assert dispatched[0]["domains"] == ["alpha.test", "beta.test"]
+        assert "not scanned" not in capsys.readouterr().out
 
     def test_the_config_carries_the_scope_the_modules_read(self, pr, monkeypatch):
-        from recon import partial_recon as module
-        monkeypatch.setattr(module, "_MULTI_ROOT_TOOLS", frozenset({"Tlsx"}))
         _, _, dispatched = _run_main(pr, monkeypatch, {
             "tool_id": "Tlsx", "domains": ["alpha.test", "beta.test"]}, BATCH_SETTINGS)
         cfg = dispatched[0]
@@ -477,10 +479,6 @@ class TestMirrorsStayInSync:
         match = re.search(name + r"\b[^=]*=[^\[]*\[([^\]]*)\]", self.TS.read_text())
         assert match, f"{name} not found in recon-types.ts"
         return {x.strip().strip("'\"") for x in match.group(1).split(",") if x.strip()}
-
-    def test_multi_root_tools(self):
-        from recon import partial_recon as module
-        assert self._ts_list("MULTI_ROOT_PARTIAL_TOOLS") == set(module._MULTI_ROOT_TOOLS)
 
     def test_override_keys(self):
         from recon import partial_recon as module

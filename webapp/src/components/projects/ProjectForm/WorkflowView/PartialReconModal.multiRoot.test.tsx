@@ -14,11 +14,6 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 
-const { multiRoot } = vi.hoisted(() => ({ multiRoot: new Set<string>() }))
-vi.mock('@/lib/recon-types', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/recon-types')>()),
-  MULTI_ROOT_PARTIAL_TOOLS: multiRoot,
-}))
 vi.mock('@/providers/ProjectProvider', async orig => ({
   ...(await orig<typeof import('@/providers/ProjectProvider')>()),
   useProject: () => ({ userId: 'u1' }),
@@ -67,7 +62,6 @@ async function runButton() {
 
 afterEach(cleanup)
 beforeEach(() => {
-  multiRoot.clear()
   graphInputs = {
     domain: 'alpha.test', domains: ROOTS, stale_domains: [], empty_domains: [],
     existing_subdomains: ['www.alpha.test', 'api.beta.test'], existing_subdomains_count: 2,
@@ -121,8 +115,7 @@ describe('what Run sends', () => {
 })
 
 describe('the fetch-error fallback still shows the roots', () => {
-  test('a multi-root tool falls back to every root the form holds', async () => {
-    multiRoot.add('Tlsx')
+  test('a fetch error falls back to every root the form holds', async () => {
     graphInputs = 'error'
     const { onConfirm } = renderModal('Tlsx')
     const summary = await screen.findByTestId('partial-recon-roots')
@@ -131,11 +124,11 @@ describe('the fetch-error fallback still shows the roots', () => {
     expect(onConfirm.mock.calls[0][0].graph_inputs).toEqual({ domains: ROOTS })
   })
 
-  test('a tool not yet multi-root falls back to the first root only', async () => {
+  test('the fallback sorts the form roots', async () => {
     graphInputs = 'error'
     renderModal('Tlsx', vi.fn(), ['gamma.test', 'alpha.test'])
     const summary = await screen.findByTestId('partial-recon-roots')
-    expect(summary.textContent).toBe('alpha.test')
+    expect(summary.textContent).toContain('alpha.test, gamma.test')
   })
 })
 

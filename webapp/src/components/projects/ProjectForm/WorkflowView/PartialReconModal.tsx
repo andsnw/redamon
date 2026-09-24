@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Play, Loader2, ArrowRight, Upload, FileText, Trash2, Info } from 'lucide-react'
 import { Modal, Tooltip, WikiInfoButton } from '@/components/ui'
-import { MULTI_ROOT_PARTIAL_TOOLS } from '@/lib/recon-types'
 import { underAnyRoot } from '@/lib/partialReconScope'
 import type { GraphInputs, PartialReconParams, UserTargets } from '@/lib/recon-types'
 import { SECTION_INPUT_MAP, SECTION_NODE_MAP, SECTION_ENRICH_MAP } from '../nodeMapping'
@@ -417,9 +416,8 @@ export function PartialReconModal({
     // Without the route, offer the roots the form holds; the orchestrator
     // re-derives them from the saved project either way.
     const formRoots = formRootsKey ? formRootsKey.split(',').sort() : []
-    const offered = MULTI_ROOT_PARTIAL_TOOLS.has(toolId) ? formRoots : formRoots.slice(0, 1)
     const fallback: GraphInputs = {
-      domain: offered[0] || null, domains: offered, stale_domains: [], empty_domains: [],
+      domain: formRoots[0] || null, domains: formRoots, stale_domains: [], empty_domains: [],
       existing_subdomains_count: 0, existing_ips_count: 0, existing_ports_count: 0, source: 'settings',
     }
     fetch(`/api/recon/${projectId}/graph-inputs/${toolId}`)

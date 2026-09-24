@@ -226,22 +226,6 @@ export interface PartialReconParams {
   settings_overrides?: Record<string, unknown>
 }
 
-/**
- * Tools already taught to cover every project root in one run. The graph-inputs
- * route offers any other tool only the first root, and the modal sends only that
- * one, so no intermediate state claims roots a tool never scans. Mirrors
- * _MULTI_ROOT_TOOLS in recon/partial_recon.py.
- */
-export const MULTI_ROOT_PARTIAL_TOOLS: ReadonlySet<string> = new Set<string>([
-  'Tlsx',
-  'Nmap', 'Httpx', 'Naabu', 'Masscan', 'Shodan', 'OsintEnrichment',
-  'Katana', 'Hakrawler', 'ZapAjaxSpider', 'Ffuf', 'Jsluice', 'Kiterunner', 'Arjun',
-  'JsRecon', 'SupplyChainRecon', 'EndpointAiClassifier', 'GraphqlScan',
-  'WebCachePoison', 'AiSurfaceRecon',
-  'Nuclei', 'SecurityChecks', 'SubdomainTakeover', 'VhostSni', 'OriginDiscovery',
-  'SubdomainDiscovery', 'Urlscan', 'Uncover', 'Gau', 'ParamSpider',
-])
-
 /** The only settings a partial run may override (the Nuclei checkboxes). The
  *  orchestrator answers 400 to anything else. Mirrors PARTIAL_OVERRIDE_KEYS in
  *  recon_orchestrator/batch_scope.py. */
