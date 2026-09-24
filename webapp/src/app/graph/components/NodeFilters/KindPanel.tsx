@@ -110,7 +110,7 @@ export function KindPanel({
             )}
             {preview.exempt > 0 && <span>· {preview.exempt.toLocaleString()} exempt</span>}
             {preview.to_unmute > 0 && <span>· unmutes {preview.to_unmute.toLocaleString()}</span>}
-            {previewState === 'busy' && <span>· updating…</span>}
+            {(previewState === 'busy' || previewState === 'updating') && <span>· updating…</span>}
           </>
         ) : (
           <span>No preview yet.</span>

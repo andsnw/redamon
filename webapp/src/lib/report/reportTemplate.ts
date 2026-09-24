@@ -2093,9 +2093,14 @@ body {
 .data-table td {
   padding: 7px 12px;
   border-bottom: 1px solid #f1f5f9;
+  color: #0f172a;
   vertical-align: top;
 }
-.data-table tbody tr:hover {
+.data-table tbody tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.022);
+}
+.data-table tbody tr:hover,
+.data-table tbody tr:nth-child(even):hover {
   background: #f8fafc;
 }
 
@@ -2269,6 +2274,9 @@ h3 {
   .cover { page-break-after: always; }
   .finding-card { page-break-inside: avoid; }
   .data-table tr { page-break-inside: avoid; }
+  /* The header band and the zebra stripe are the table's structure here, not
+     decoration, so they have to survive a print that drops backgrounds. */
+  .data-table th, .data-table tbody tr:nth-child(even) { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .metric-cards { page-break-inside: avoid; }
   a { color: inherit; text-decoration: none; }
   .narrative { border-left-color: #999; }

@@ -485,7 +485,7 @@ class TestNormalizers(unittest.TestCase):
 
     def test_cve_ids_from_every_writer_shape(self):
         cases = {
-            "nuclei maps": ({"cves": [{"id": "CVE-2021-44228", "cvss": 10}]}, ["CVE-2021-44228"]),
+            "nuclei list": ({"cves": ["CVE-2021-44228"]}, ["CVE-2021-44228"]),
             "gvm list": ({"cve_ids": ["cve-2020-1234"]}, ["CVE-2020-1234"]),
             "nmap string": ({"cve_id": "CVE-2019-0708"}, ["CVE-2019-0708"]),
             "osv aliases": ({"aliases": ["GHSA-xxxx", "CVE-2022-0001"]}, ["CVE-2022-0001"]),

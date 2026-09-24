@@ -384,17 +384,30 @@
 .table th {
   text-align: left;
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--border-default);
-  color: var(--text-secondary);
-  font-weight: var(--font-medium);
+  background: var(--table-header-bg);
+  border-bottom: 1px solid var(--table-header-border);
+  color: var(--table-header-fg);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   white-space: nowrap;
 }
 
 .table td {
   padding: var(--space-3);
-  border-bottom: 1px solid var(--border-subtle, var(--border-default));
+  border-bottom: 1px solid var(--table-row-border);
+  color: var(--table-cell-fg);
   vertical-align: middle;
   white-space: nowrap;
+}
+
+.table tbody tr:nth-child(even) {
+  background: var(--table-row-zebra-bg);
+}
+
+.table tbody tr:hover,
+.table tbody tr:nth-child(even):hover {
+  background: var(--table-row-hover-bg);
 }
 
 .cellTitle { font-weight: var(--font-medium); color: var(--text-primary); }

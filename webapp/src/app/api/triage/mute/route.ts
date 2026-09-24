@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireProjectOwner, callGraphTriage } from '@/lib/triageClient'
 import { readJsonBody } from '@/lib/jsonBody'
+import { invalidateCache } from '@/app/api/graph/cache'
 
 /**
  * POST /api/triage/mute - suppress one finding as noise.
@@ -33,9 +34,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'nodeId is required' }, { status: 400 })
   }
 
-  return callGraphTriage('mute', caller, {
+  const res = await callGraphTriage('mute', caller, {
     node_id: nodeId,
     reason: typeof reason === 'string' ? reason.slice(0, 500) : '',
     muted_by: caller.userId,
   })
+  // The Graph Map serves a cached copy for up to 10 s; a muted finding must
+  // leave it now, not then.
+  if (res.ok) invalidateCache(caller.projectId)
+  return res
 }

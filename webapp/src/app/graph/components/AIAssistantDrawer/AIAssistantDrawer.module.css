@@ -1029,18 +1029,19 @@
 .messageText th,
 .messageText td {
   padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--table-border);
   text-align: left;
   white-space: nowrap;
 }
 
 .messageText th {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--table-header-bg);
+  color: var(--table-header-fg);
   font-weight: var(--font-semibold);
 }
 
-.messageText tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.02);
+.messageText tbody tr:nth-child(even) {
+  background: var(--table-row-zebra-bg);
 }
 
 /* Syntax Highlighter container styling */

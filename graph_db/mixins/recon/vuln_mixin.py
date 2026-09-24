@@ -31,6 +31,23 @@ def stable_vuln_id(finding_type: str, url: str, ip_or_host: str = "",
     return hashlib.sha1(unique_key.encode("utf-8", "replace")).hexdigest()[:12]
 
 
+def nuclei_cve_ids(cves) -> list:
+    """The CVE ids of a parsed nuclei finding, as the `cves` property stores them.
+
+    parse_nuclei_finding hands `cves` over as {id, cvss, url} maps, and Neo4j
+    stores only primitives and arrays of them: a single map fails the whole
+    Vulnerability write, and the per-finding `except` turns that into a silently
+    missing finding. Only the id is kept; the score is already `cvss_score` and
+    the url is built from the id.
+    """
+    ids = []
+    for cve in cves or []:
+        cve_id = cve.get("id") if isinstance(cve, dict) else cve
+        if isinstance(cve_id, str) and cve_id and cve_id not in ids:
+            ids.append(cve_id)
+    return ids
+
+
 class VulnMixin:
     def _find_cwes_with_capec(self, cwe_node: dict, results: list):
         """
@@ -424,7 +441,7 @@ class VulnMixin:
 
                             # Classification
                             "cwe_ids": finding.get("cwe_id", []),
-                            "cves": finding.get("cves", []),
+                            "cves": nuclei_cve_ids(finding.get("cves")),
                             "cvss_score": finding.get("cvss_score"),
                             "cvss_metrics": finding.get("cvss_metrics"),
 

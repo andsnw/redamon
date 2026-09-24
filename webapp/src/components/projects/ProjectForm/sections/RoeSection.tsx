@@ -517,7 +517,7 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
 
         {proposal && proposal.changes.length > 0 && (
           <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+            <table className={styles.previewTable} style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
               <thead>
                 <tr style={{ textAlign: 'left' }}>
                   <th style={{ padding: '4px 8px' }}>Setting</th>
@@ -528,11 +528,11 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
               </thead>
               <tbody>
                 {proposal.changes.map(c => (
-                  <tr key={c.key} style={{ borderTop: '1px solid var(--color-border, #333)' }}>
+                  <tr key={c.key}>
                     <td style={{ padding: '4px 8px', fontFamily: 'monospace' }} title={c.meaning}>{c.key}</td>
-                    <td style={{ padding: '4px 8px', opacity: 0.7 }}>{preview(c.before)}</td>
+                    <td className={styles.previewTableMuted} style={{ padding: '4px 8px' }}>{preview(c.before)}</td>
                     <td style={{ padding: '4px 8px', fontWeight: 600 }}>{preview(c.after)}</td>
-                    <td style={{ padding: '4px 8px', opacity: 0.7 }}>{c.section ?? '—'}</td>
+                    <td className={styles.previewTableMuted} style={{ padding: '4px 8px' }}>{c.section ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>

@@ -39,7 +39,8 @@ export interface PreviewResult {
   validation?: string[]
 }
 
-export type PreviewState = 'idle' | 'loading' | 'ready' | 'busy' | 'unavailable'
+/** `updating`: the counts on screen are for rules that have since changed. */
+export type PreviewState = 'idle' | 'loading' | 'ready' | 'updating' | 'busy' | 'unavailable'
 
 export const PREVIEW_DEBOUNCE_MS = 600
 const BUSY_RETRY_MS = 1500
@@ -69,11 +70,14 @@ export function usePreview(projectId: string | null, mode: NodeFilterMode, rules
 
   useEffect(() => {
     if (!projectId || !enabled) return
+    // At once, not after the debounce: from this moment the counts on screen
+    // describe rules the operator has already changed.
+    setState(prev => (prev === 'ready' ? 'updating' : prev))
     const timer = setTimeout(async () => {
       abortRef.current?.abort()
       const controller = new AbortController()
       abortRef.current = controller
-      setState(prev => (prev === 'ready' || prev === 'busy' ? prev : 'loading'))
+      setState(prev => (prev === 'ready' || prev === 'updating' || prev === 'busy' ? prev : 'loading'))
       try {
         const { status, body } = await fetchPreview(projectId, mode, rules, { signal: controller.signal })
         if (controller.signal.aborted) return

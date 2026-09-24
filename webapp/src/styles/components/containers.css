@@ -155,7 +155,8 @@
 
 /* =============================================================================
    TABLE
-   Data table styles
+   Data table styles. Colours come from the --table-* tokens in
+   tokens/semantic.css, shared with every CSS-module table in the app.
    ============================================================================= */
 
 .table {
@@ -165,25 +166,32 @@
 }
 
 .tableHeader {
-  background: var(--bg-tertiary);
+  background: var(--table-header-bg);
 }
 
 .tableHeaderCell {
   padding: var(--space-2) var(--space-3);
   text-align: left;
   font-weight: var(--font-semibold);
-  color: var(--text-secondary);
-  border-bottom: 1px solid var(--border-default);
+  color: var(--table-header-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--table-header-border);
   white-space: nowrap;
 }
 
 .tableRow {
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--table-row-border);
   transition: var(--transition-all);
 }
 
-.tableRow:hover {
-  background: var(--bg-hover);
+.tableRow:nth-child(even) {
+  background: var(--table-row-zebra-bg);
+}
+
+.tableRow:hover,
+.tableRow:nth-child(even):hover {
+  background: var(--table-row-hover-bg);
 }
 
 .tableRow:last-child {
@@ -192,7 +200,7 @@
 
 .tableCell {
   padding: var(--space-2) var(--space-3);
-  color: var(--text-primary);
+  color: var(--table-cell-fg);
   vertical-align: middle;
 }
 

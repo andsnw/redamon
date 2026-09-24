@@ -636,3 +636,130 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME
+   Every action button above is drawn in a 500-level status colour, chosen to
+   glow on the near-black dark bar. Over the light toolbar (gray-100) those
+   same colours read 2.0:1 (green), 2.0:1 (amber) and 3.3:1 (blue) -- the label
+   is barely ink and the 1px border all but vanishes. Light mode needs the
+   700-level shade, and the filled/hover state needs that 700 behind white:
+   white on green-500 is 2.3:1, on green-700 it is 5.0:1.
+
+   Disabled drops the colour entirely rather than ghosting it at 40% -- a 40%
+   amber on gray-100 is 1.5:1, while neutral grey keeps the icon and label
+   readable and still reads unmistakably as off.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:global([data-theme='light']) .reconButton {
+  background: var(--color-green-50);
+  border-color: var(--color-green-700);
+  color: var(--color-green-700);
+}
+
+:global([data-theme='light']) .reconButton:hover:not(:disabled),
+:global([data-theme='light']) .reconButtonActive {
+  background: var(--color-green-700);
+  border-color: var(--color-green-700);
+  color: var(--color-white);
+}
+
+:global([data-theme='light']) .gvmButton {
+  background: var(--color-amber-50);
+  border-color: var(--color-amber-700);
+  color: var(--color-amber-700);
+}
+
+:global([data-theme='light']) .gvmButton:hover:not(:disabled),
+:global([data-theme='light']) .gvmButtonActive {
+  background: var(--color-amber-700);
+  border-color: var(--color-amber-700);
+  color: var(--color-white);
+}
+
+:global([data-theme='light']) .githubHuntButton {
+  background: var(--color-blue-50);
+  border-color: var(--color-blue-700);
+  color: var(--color-blue-700);
+}
+
+:global([data-theme='light']) .githubHuntButton:hover:not(:disabled),
+:global([data-theme='light']) .githubHuntButtonActive {
+  background: var(--color-blue-700);
+  border-color: var(--color-blue-700);
+  color: var(--color-white);
+}
+
+:global([data-theme='light']) .pauseButton {
+  border-color: var(--color-amber-700);
+  color: var(--color-amber-700);
+}
+
+:global([data-theme='light']) .pauseButton:hover:not(:disabled) {
+  background: var(--color-amber-700);
+  color: var(--color-white);
+}
+
+:global([data-theme='light']) .stopButton {
+  border-color: var(--color-red-700);
+  color: var(--color-red-700);
+}
+
+:global([data-theme='light']) .stopButton:hover:not(:disabled) {
+  background: var(--color-red-700);
+  color: var(--color-white);
+}
+
+:global([data-theme='light']) .logsButtonActive {
+  background: var(--color-blue-700);
+  border-color: var(--color-blue-700);
+  color: var(--color-white);
+}
+
+:global([data-theme='light']) .downloadButton {
+  border-color: var(--color-gray-400);
+  color: var(--color-gray-600);
+}
+
+:global([data-theme='light']) .emergencyPauseButton {
+  background: var(--color-red-50);
+  border-color: var(--color-amber-700);
+  color: var(--color-red-700);
+}
+
+:global([data-theme='light']) .emergencyPauseButton:hover:not(:disabled),
+:global([data-theme='light']) .emergencyPauseButtonActive {
+  background: var(--color-red-700);
+  border-color: var(--color-red-700);
+  color: var(--color-white);
+}
+
+/* crimson-500 behind white is 4.2:1; crimson-600 clears AA at 5.0:1. */
+:global([data-theme='light']) .aiButton,
+:global([data-theme='light']) .aiButtonActive {
+  background: var(--color-crimson-600);
+  border-color: var(--color-crimson-600);
+}
+
+:global([data-theme='light']) .aiButton:hover,
+:global([data-theme='light']) .aiButtonActive:hover {
+  background: var(--color-crimson-700);
+  border-color: var(--color-crimson-700);
+}
+
+/* Guarded on the Active class: a running scan is disabled AND filled, and must
+   keep its colour rather than grey out mid-run. */
+:global([data-theme='light']) .gvmButton:disabled:not(.gvmButtonActive),
+:global([data-theme='light']) .githubHuntButton:disabled:not(.githubHuntButtonActive),
+:global([data-theme='light']) .emergencyPauseButton:disabled {
+  opacity: 1;
+  background: var(--color-gray-100);
+  border-color: var(--color-gray-400);
+  color: var(--color-gray-500);
+}
+
+:global([data-theme='light']) .downloadButton:disabled {
+  opacity: 1;
+  border-color: var(--color-gray-300);
+  color: var(--color-gray-400);
+}

@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { isInternalRequest } from '@/lib/session'
 import { writeAudit } from '@/lib/audit'
+import { invalidateCache } from '@/app/api/graph/cache'
 
 const FINAL = new Set(['completed', 'failed', 'stopped'])
 
@@ -41,6 +42,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     where: { id: runId, status: 'running' },
     data: { status, error, finishedAt: new Date(), ...(stats ? { stats } : {}) },
   })
+  // Whatever the verdict, the run may have muted or unmuted findings: the
+  // Graph Map's cached copy of this project is stale either way.
+  invalidateCache(run.projectId)
 
   await writeAudit({
     actorId: run.realActorUserId ?? run.actorUserId,

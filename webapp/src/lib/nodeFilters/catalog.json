@@ -698,7 +698,7 @@
         }
       ],
       "notes": [
-        "The security check and origin discovery write the same node. Its `source` is whichever wrote it first, and only origin discovery sets the match scores, so a rule on them never matches a bypass the security check alone found."
+        "The security check and origin discovery write the same node. Its `source` is `security_check` whenever the security check found it, whichever ran first, so `origin_discovery` means origin discovery alone found it. Only origin discovery sets the match scores, so a rule on them never matches a bypass the security check alone found."
       ]
     },
     "vuln.nmap_nse": {
@@ -1883,7 +1883,7 @@
         }
       ],
       "notes": [
-        "`jsluice` covers both JS Recon's jsluice pass and the resource-enum secret pass, which write the same source. Only JS Recon records a key category, confidence and validation."
+        "`jsluice` secrets come from resource enumeration's jsluice pass; everything JS Recon finds is `js_recon`. Only JS Recon records a key category, confidence, detection method and validation."
       ]
     },
     "malpackage": {

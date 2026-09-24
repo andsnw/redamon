@@ -105,9 +105,9 @@
 /* Table */
 .tableWrap {
   overflow-x: auto;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--table-border);
   border-radius: var(--radius-md);
-  background: var(--bg-secondary);
+  background: var(--table-surface);
 }
 
 .table {
@@ -119,11 +119,13 @@
 .table th {
   text-align: left;
   padding: 10px 12px;
-  color: var(--text-tertiary);
+  background: var(--table-header-bg);
+  color: var(--table-header-fg);
   font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
-  border-bottom: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--table-header-border);
   white-space: nowrap;
   user-select: none;
 }
@@ -133,19 +135,25 @@
 
 .table td {
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border-default);
-  color: var(--text-secondary);
+  border-bottom: 1px solid var(--table-row-border);
+  color: var(--table-cell-fg);
   white-space: nowrap;
 }
 
+.table tbody tr:nth-child(even) {
+  background: var(--table-row-zebra-bg);
+}
+
 .row { cursor: pointer; }
-.row:hover { background: var(--bg-hover); }
+/* Out-ranks the zebra stripe above, which a bare .row:hover would lose to. */
+.table tbody tr.row:hover,
+.table tbody tr.row:nth-child(even):hover { background: var(--table-row-hover-bg); }
 
 .pathCell {
   max-width: 360px;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--text-primary);
+  color: var(--table-cell-fg);
 }
 
 .mono { font-family: var(--font-mono, monospace); }

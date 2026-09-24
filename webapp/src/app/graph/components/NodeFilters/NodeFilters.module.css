@@ -188,11 +188,16 @@
   min-height: 0;
 }
 
+/* The rail sits on the page background like the panel beside it. --bg-secondary
+   is only #fafafa against white in the light theme; --bg-tertiary is the first
+   shade that separates in both themes, and still leaves --bg-hover (the
+   selected kind) a step further. */
 .rail {
   width: 230px;
   flex-shrink: 0;
   overflow-y: auto;
-  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-tertiary);
+  border-right: 1px solid var(--border-strong);
   padding: var(--space-2) 0;
 }
 

@@ -42,6 +42,7 @@ vi.mock('@/lib/audit', () => ({ writeAudit: (e: unknown) => mockAudit(e) }))
 const mockNodeFilterWriter = vi.fn()
 vi.mock('@/lib/nodeFilterRun', () => ({ describeNodeFilterWriter: (...a: unknown[]) => mockNodeFilterWriter(...a) }))
 
+import { getCached, setCached } from '@/app/api/graph/cache'
 import { GET as getMuted } from './muted/route'
 import { POST as postUnmute } from './unmute/route'
 import { POST as postMute } from './mute/route'
@@ -196,6 +197,22 @@ describe('POST /api/triage/unmute', () => {
       projectId: PROJECT, label: 'MalPackageFinding', nodeKey: 'f9',
       createdBy: OWNER, realActorUserId: 'admin-bob',
     })
+  })
+
+  test('graph_cache_after_unmute: an unmute or a mute drops the project\'s cached graph', async () => {
+    // The Graph Map is served from a 10 s cache: without this an unmuted
+    // finding stayed missing from it, and a muted one stayed visible.
+    mockAgentFetch.mockImplementation(() => Promise.resolve(agentReply({
+      unmuted: 1, items: [{ key: 'v1', label: 'Vulnerability', muted_by: OWNER }],
+    })))
+    setCached(PROJECT, { nodes: [{ id: 'n1' }], links: [] })
+    await postUnmute(post(URL, { projectId: PROJECT, keys: ['v1'] }))
+    expect(getCached(PROJECT)).toBeNull()
+
+    mockAgentFetch.mockImplementation(() => Promise.resolve(agentReply({ muted: true })))
+    setCached(PROJECT, { nodes: [{ id: 'n1' }], links: [] })
+    await postMute(post('http://x/api/triage/mute', { projectId: PROJECT, nodeId: 'v1', reason: 'noise' }))
+    expect(getCached(PROJECT)).toBeNull()
   })
 
   test('unmute_during_live_apply: refused while an apply run is live, before the graph is touched', async () => {

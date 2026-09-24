@@ -34,6 +34,7 @@ vi.mock('@/lib/prisma', () => ({
 vi.mock('@/lib/activationLock', () => ({ isActivationInProgress: (...a: unknown[]) => h.activating(...a) }))
 vi.mock('@/lib/audit', () => ({ writeAudit: (e: unknown) => h.audit(e) }))
 
+import { getCached, setCached } from '@/app/api/graph/cache'
 import { GET } from './[runId]/route'
 import { POST as heartbeat } from './[runId]/heartbeat/route'
 import { POST as finish } from './[runId]/finish/route'
@@ -167,6 +168,14 @@ describe('finish', () => {
     h.runUpdateMany.mockResolvedValue({ count: 0 })
     await finish(req(MASTER, { status: 'completed', stats: { totals: { muted: 3 } } }), params)
     expect(h.audit.mock.calls[0][0].after).toMatchObject({ status: 'completed', recorded: false })
+  })
+
+  test('graph_cache_after_apply: a finished apply drops the project\'s cached graph', async () => {
+    // The Graph Map is served from a 10 s cache; without this the page refetched
+    // after an apply and kept showing the findings the apply had just muted.
+    setCached('p1', { nodes: [{ id: 'n1' }], links: [] })
+    await finish(req(MASTER, { status: 'completed', stats: { totals: { muted: 1 } } }), params)
+    expect(getCached('p1')).toBeNull()
   })
 
   test('an unknown status is recorded as failed', async () => {

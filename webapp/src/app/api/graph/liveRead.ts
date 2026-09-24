@@ -36,8 +36,10 @@ export async function reconcileOrphanChains(
 
     // NOTE: when liveSessionIds is empty, `NOT chain_id IN []` is true for every
     // chain node, so all chains for the project are purged - correct, since no
-    // live conversation means every chain is an orphan. Nodes with a null
-    // chain_id evaluate to null (not true) and are left untouched.
+    // live conversation means every chain is an orphan. A node without a
+    // chain_id goes too (`null IN []` is false), but survives a non-empty list
+    // (`null IN [...]` is null). The agent always writes chain_id, so only a
+    // chain node made by hand can tell the two apart.
     const res = await session.run(
       `MATCH (n)
        WHERE n.project_id = $projectId

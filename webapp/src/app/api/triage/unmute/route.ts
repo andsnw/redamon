@@ -4,6 +4,7 @@ import { writeAudit } from '@/lib/audit'
 import { readJsonBody } from '@/lib/jsonBody'
 import { requireProjectOwner, graphTriage, realActorUserId } from '@/lib/triageClient'
 import { describeNodeFilterWriter } from '@/lib/nodeFilterRun'
+import { invalidateCache } from '@/app/api/graph/cache'
 
 /**
  * POST /api/triage/unmute - restore suppressed findings.
@@ -55,6 +56,7 @@ export async function POST(request: NextRequest) {
 
   const result = await graphTriage('unmute_many', caller, { keys: [...new Set(wanted)] })
   if (result.status !== 200) return NextResponse.json(result.body, { status: result.status })
+  invalidateCache(caller.projectId)
 
   const items = (Array.isArray(result.body.items) ? result.body.items : []) as {
     key: string; label: string; muted_by: string

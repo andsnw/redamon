@@ -1660,3 +1660,38 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Preview tables ────────────────────────────────────────────────────────
+   The batch-domain preview and the RoE proposal diff. Colour only: both tables
+   set their own padding and type scale inline so they sit at the form's size,
+   not the data tables', but the header band, the ink and the zebra stripe are
+   the shared --table-* skin the rest of the app uses.
+
+   `styles.previewTable` was already referenced by TargetSection with nothing
+   behind it, so the preview rendered unstyled. */
+.previewTable th {
+  background: var(--table-header-bg);
+  color: var(--table-header-fg);
+  border-bottom: 1px solid var(--table-header-border);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.previewTable td {
+  border-bottom: 1px solid var(--table-row-border);
+  color: var(--table-cell-fg);
+}
+
+.previewTable tbody tr:nth-child(even) {
+  background: var(--table-row-zebra-bg);
+}
+
+.previewTable tbody tr:hover,
+.previewTable tbody tr:nth-child(even):hover {
+  background: var(--table-row-hover-bg);
+}
+
+.previewTableMuted {
+  color: var(--table-cell-fg-muted);
+}

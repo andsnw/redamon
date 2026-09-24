@@ -56,8 +56,9 @@
 .tableWrap {
   max-height: 55vh;
   overflow: auto;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--table-border);
   border-radius: var(--radius-default);
+  background: var(--table-surface);
 }
 
 .table {
@@ -71,24 +72,36 @@
   top: 0;
   z-index: 1;
   padding: var(--space-2);
-  background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-default);
+  background: var(--table-header-bg);
+  border-bottom: 1px solid var(--table-header-border);
   text-align: left;
   font-size: 10px;
+  font-weight: var(--font-semibold);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-tertiary);
+  color: var(--table-header-fg);
   white-space: nowrap;
 }
 
 .table td {
   padding: var(--space-2);
-  border-bottom: 1px solid var(--border-subtle, var(--border-default));
-  color: var(--text-primary);
+  border-bottom: 1px solid var(--table-row-border);
+  color: var(--table-cell-fg);
   vertical-align: middle;
 }
 
-.rowViewing {
+.table tbody tr:nth-child(even) {
+  background: var(--table-row-zebra-bg);
+}
+
+.table tbody tr:hover,
+.table tbody tr:nth-child(even):hover {
+  background: var(--table-row-hover-bg);
+}
+
+/* The row being viewed must out-rank the zebra stripe above. */
+.table tbody tr.rowViewing,
+.table tbody tr.rowViewing:nth-child(even) {
   background: var(--bg-hover);
 }
 
@@ -212,16 +225,27 @@
   z-index: 2;
   width: 1%;
   white-space: nowrap;
-  background: var(--drawer-bg);
-  border-left: 1px solid var(--border-default);
+  background: var(--table-surface);
+  border-left: 1px solid var(--table-border);
+}
+
+/* The pinned column is opaque -- rows scroll underneath it -- so the zebra
+   stripe cannot show through from the row. It repaints it as a wash over its
+   own background instead. */
+.table tbody tr:nth-child(even) .actionsCol {
+  background-image: linear-gradient(var(--table-row-zebra-bg), var(--table-row-zebra-bg));
+}
+
+.table tbody tr:hover .actionsCol {
+  background: var(--table-row-hover-bg);
 }
 
 .table th.actionsCol {
   z-index: 3;
-  background: var(--bg-tertiary);
+  background: var(--table-header-bg);
 }
 
-.rowViewing .actionsCol {
+.table tbody tr.rowViewing .actionsCol {
   background: var(--bg-hover);
 }
 

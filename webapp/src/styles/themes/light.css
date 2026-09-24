@@ -26,6 +26,9 @@
   --border-subtle: var(--color-gray-100);
   --border-strong: var(--color-gray-300);
 
+  /* Data tables: a black wash reads as a stripe on white, a white one vanishes */
+  --table-row-zebra-bg: rgba(0, 0, 0, 0.022);
+
   /* Shadows - lighter, more visible for light theme */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-default: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
@@ -86,6 +89,9 @@
     --border-default: var(--color-gray-200);
     --border-subtle: var(--color-gray-100);
     --border-strong: var(--color-gray-300);
+
+    /* Data tables */
+    --table-row-zebra-bg: rgba(0, 0, 0, 0.022);
 
     /* Shadows */
     --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);

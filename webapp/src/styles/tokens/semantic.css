@@ -141,6 +141,29 @@
   --graph-selection-ring: var(--color-green-500);
 
   /* ═══════════════════════════════════════════════════════════════════════════
+     DATA TABLES
+     The one place a data table's colours are decided. Every table in the app --
+     Priority Board, All Nodes, the Red Zone set, the settings lists -- paints
+     from these and nothing else, so the whole product reads as one table.
+     Geometry (padding, font size, widths) stays with each table; only colour,
+     border and ink are shared.
+     ═══════════════════════════════════════════════════════════════════════════ */
+  --table-surface: var(--bg-primary);            /* sheet the rows sit on */
+  --table-border: var(--border-default);         /* outer frame of the scroller */
+  --table-header-bg: var(--bg-tertiary);
+  --table-header-fg: var(--text-secondary);
+  --table-header-border: var(--border-default);  /* under the header row */
+  --table-cell-fg: var(--text-primary);
+  --table-cell-fg-muted: var(--text-secondary);  /* supporting columns */
+  --table-row-border: var(--border-subtle);      /* between rows */
+  --table-row-hover-bg: var(--bg-hover);
+
+  /* The zebra is a wash ON TOP of whichever surface the row sits on, not a
+     colour of its own, so it is the one value that cannot derive from a
+     semantic token: white at 3% over near-black, black at 2.2% over white. */
+  --table-row-zebra-bg: rgba(255, 255, 255, 0.03);
+
+  /* ═══════════════════════════════════════════════════════════════════════════
      INTERACTIVE ELEMENTS
      ═══════════════════════════════════════════════════════════════════════════ */
   --toggle-bg: var(--color-gray-700);

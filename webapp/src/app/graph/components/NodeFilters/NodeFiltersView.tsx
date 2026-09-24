@@ -240,6 +240,27 @@ export function NodeFiltersView({
           <span className={styles.label}>Mode</span>
           <ModeToggle mode={nf.draftMode} onChange={m => void changeMode(m)} disabled={run.running} />
           <span className={styles.spacer} />
+          {nf.dirty && <span className={styles.dirty}>Unsaved changes</span>}
+          {nf.dirty && (
+            <button type="button" className={styles.button} onClick={nf.discard} disabled={nf.saving}>Discard</button>
+          )}
+          <button
+            type="button"
+            className={styles.button}
+            onClick={() => void save()}
+            disabled={!nf.dirty || nf.saving || run.running || nf.errors.length > 0}
+            title={nf.errors.length ? 'Fix the rules marked in red first' : undefined}
+          >
+            {nf.saving && <Loader2 size={12} className={styles.spin} />} Save
+          </button>
+          <button
+            type="button"
+            className={`${styles.button} ${styles.primary}`}
+            onClick={() => setApplyOpen(true)}
+            disabled={run.running || nf.saving || nf.errors.length > 0}
+          >
+            Apply…
+          </button>
           <WikiInfoButton target="NodeFilters" />
         </div>
         <div className={styles.headerRow}>
@@ -271,37 +292,17 @@ export function NodeFiltersView({
             )}
           </div>
         )}
-        <div className={styles.headerRow}>
-          {preview.state === 'unavailable' && (
-            <span className={styles.changedNote}>
-              Preview unavailable: {preview.message}{' '}
-              <button type="button" className={styles.linkButton} onClick={preview.retry}>Retry</button>
-            </span>
-          )}
-          {preview.result?.partial && <span className={styles.lastApply}>Counts are partial (≥): the graph is large.</span>}
-          <span className={styles.spacer} />
-          {nf.dirty && <span className={styles.dirty}>Unsaved changes</span>}
-          {nf.dirty && (
-            <button type="button" className={styles.button} onClick={nf.discard} disabled={nf.saving}>Discard</button>
-          )}
-          <button
-            type="button"
-            className={styles.button}
-            onClick={() => void save()}
-            disabled={!nf.dirty || nf.saving || run.running || nf.errors.length > 0}
-            title={nf.errors.length ? 'Fix the rules marked in red first' : undefined}
-          >
-            {nf.saving && <Loader2 size={12} className={styles.spin} />} Save
-          </button>
-          <button
-            type="button"
-            className={`${styles.button} ${styles.primary}`}
-            onClick={() => setApplyOpen(true)}
-            disabled={run.running || nf.saving || nf.errors.length > 0}
-          >
-            Apply…
-          </button>
-        </div>
+        {(preview.state === 'unavailable' || preview.result?.partial) && (
+          <div className={styles.headerRow}>
+            {preview.state === 'unavailable' && (
+              <span className={styles.changedNote}>
+                Preview unavailable: {preview.message}{' '}
+                <button type="button" className={styles.linkButton} onClick={preview.retry}>Retry</button>
+              </span>
+            )}
+            {preview.result?.partial && <span className={styles.lastApply}>Counts are partial (≥): the graph is large.</span>}
+          </div>
+        )}
         {run.running && (
           <div className={styles.progress} role="status">
             <Loader2 size={13} className={styles.spin} />

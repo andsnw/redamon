@@ -52,9 +52,6 @@ def _cve_strings(props: dict):
         if isinstance(items, str):
             items = [items]
         for item in items or []:
-            # Nuclei hands `cves` over as {id, cvss, url} maps.
-            if isinstance(item, dict):
-                item = item.get("id")
             if item:
                 yield str(item)
     if props.get("cve_id"):

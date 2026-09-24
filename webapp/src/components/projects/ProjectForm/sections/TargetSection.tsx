@@ -472,9 +472,9 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
 
               {batchResult && batchResult.groups.length > 0 && (
                 <div style={{ overflowX: 'auto', marginTop: 'var(--space-3)' }}>
-                  <table className={styles.previewTable ?? undefined} style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <table className={styles.previewTable} style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                     <thead>
-                      <tr style={{ textAlign: 'left', color: 'var(--text-tertiary, #6b7280)' }}>
+                      <tr style={{ textAlign: 'left' }}>
                         <th style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>#</th>
                         <th style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>Domain</th>
                         <th style={{ padding: '6px 8px' }}>Hosts</th>
@@ -483,10 +483,10 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                     </thead>
                     <tbody>
                       {batchResult.groups.map((g, i) => (
-                        <tr key={g.rootDomain} style={{ borderTop: '1px solid var(--border-subtle, #333)' }}>
-                          <td style={{ padding: '6px 8px', color: 'var(--text-tertiary, #6b7280)' }}>{i + 1}</td>
+                        <tr key={g.rootDomain}>
+                          <td className={styles.previewTableMuted} style={{ padding: '6px 8px' }}>{i + 1}</td>
                           <td style={{ padding: '6px 8px', fontWeight: 600, whiteSpace: 'nowrap' }}>{g.rootDomain}</td>
-                          <td style={{ padding: '6px 8px', color: 'var(--text-secondary, #9ca3af)' }}>
+                          <td className={styles.previewTableMuted} style={{ padding: '6px 8px' }}>
                             {g.wildcard && (
                               <span style={{
                                 display: 'inline-block', marginRight: '6px', padding: '1px 6px',
