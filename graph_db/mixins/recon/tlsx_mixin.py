@@ -25,7 +25,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from graph_db.cert_key import build_cert_key
-from graph_db.mixins.recon.scope import root_for_host, scope_roots
+from graph_db.mixins.recon.scope import attach_roots, root_for_host
 from graph_db.schema import NON_RECON_SOURCES
 
 
@@ -83,7 +83,7 @@ class TlsxMixin:
         if not by_target:
             return stats
 
-        roots = scope_roots(recon_data)
+        roots = attach_roots(recon_data)
         if not roots:
             target = ((recon_data.get("metadata") or {}).get("target") or "").strip()
             roots = [target] if target else []

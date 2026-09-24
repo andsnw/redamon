@@ -38,7 +38,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from graph_db.mixins.recon.scope import root_for_host, scope_roots
+from graph_db.mixins.recon.scope import attach_roots, root_for_host
 
 
 class TakeoverMixin:
@@ -63,7 +63,7 @@ class TakeoverMixin:
         # The write may cover several roots (a batch partial run, or the full
         # pipeline's per-group write); a finding attaches to the root its host
         # sits under.
-        roots = scope_roots(recon_data)
+        roots = attach_roots(recon_data)
         if not roots:
             target = (recon_data.get("metadata", {}).get("target") or "").strip()
             roots = [target] if target else []

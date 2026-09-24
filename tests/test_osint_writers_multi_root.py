@@ -192,5 +192,31 @@ class TestUncover(unittest.TestCase):
         self.assertEqual(w.attached(), {"shop.beta.test": "beta.test", "www.alpha.test": "alpha.test"})
 
 
+class TestFullPipelineParity(unittest.TestCase):
+    """The full pipeline scans one Domain-batch group at a time: recon_data has
+    `domain` = the group root and no `domains`, but carries the whole batch in
+    `all_project_roots` for the writers. A host a group's scan finds under another
+    root then becomes that root's Subdomain, exactly as the partial path does."""
+
+    PAYLOAD = {
+        "hosts": [],
+        "reverse_dns": {"10.0.2.9": ["mail.beta.test", "cdn.thirdparty.example"]},
+    }
+
+    def test_a_group_scan_attaches_a_cross_root_host_to_its_root(self):
+        w = _Writer()
+        recon = {"domain": "alpha.test", "all_project_roots": ROOTS, "shodan": self.PAYLOAD}
+        w.update_graph_from_shodan(recon, "u1", "p1")
+        self.assertEqual(w.attached().get("mail.beta.test"), "beta.test")
+        self.assertNotIn("mail.beta.test", w.externals())
+
+    def test_without_the_field_the_group_only_knows_its_own_root(self):
+        # A single-domain project (no batch): a foreign host is external, as before.
+        w = _Writer()
+        recon = {"domain": "alpha.test", "shodan": self.PAYLOAD}
+        w.update_graph_from_shodan(recon, "u1", "p1")
+        self.assertIn("mail.beta.test", w.externals())
+
+
 if __name__ == "__main__":
     unittest.main()

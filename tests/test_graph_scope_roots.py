@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _REPO)
 
-from graph_db.mixins.recon.scope import root_for_host, roots_are_ip_mode, scope_roots  # noqa: E402
+from graph_db.mixins.recon.scope import attach_roots, root_for_host, roots_are_ip_mode, scope_roots  # noqa: E402
 from graph_db.mixins.recon.user_input_mixin import UserInputMixin, _user_input_root  # noqa: E402
 
 ROOTS = ["alpha.test", "beta.test", "gamma.test"]
@@ -38,6 +38,27 @@ class TestScopeRoots(unittest.TestCase):
     def test_empty(self):
         self.assertEqual(scope_roots({"domain": ""}), [])
         self.assertEqual(scope_roots({}), [])
+
+
+class TestAttachRoots(unittest.TestCase):
+    """The writer attachment set: every project root, so the full pipeline (which
+    scans one group at a time) still attaches a cross-root host to its own root."""
+
+    def test_all_project_roots_wins_over_the_group_scan_scope(self):
+        # The full pipeline: domain is the group root, domains is unset, and the
+        # whole batch travels in all_project_roots for the writers only.
+        recon = {"domain": "alpha.test", "all_project_roots": ROOTS}
+        self.assertEqual(attach_roots(recon), ROOTS)
+        self.assertEqual(scope_roots(recon), ["alpha.test"])   # scan stays in the group
+
+    def test_falls_back_to_the_scan_scope_when_absent(self):
+        # A partial run, or a single-domain project: no separate attachment set.
+        self.assertEqual(attach_roots({"domains": ROOTS}), ROOTS)
+        self.assertEqual(attach_roots({"domain": "alpha.test"}), ["alpha.test"])
+
+    def test_blank_entries_are_ignored(self):
+        self.assertEqual(attach_roots({"domain": "alpha.test", "all_project_roots": ["", " "]}),
+                         ["alpha.test"])
 
 
 class TestRootForHost(unittest.TestCase):

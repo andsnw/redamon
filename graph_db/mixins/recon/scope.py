@@ -64,7 +64,13 @@ def host_in_scope(value: str, scope: set) -> bool:
 # ---------------------------------------------------------------------------
 
 def scope_roots(recon_data: dict) -> list:
-    """recon_data["domains"], else the single recon_data["domain"]."""
+    """The roots this run SCANS: recon_data["domains"], else the single "domain".
+
+    A partial run scans every root in "domains". The full pipeline runs one
+    Domain-batch group at a time, so "domains" is unset there and this is the
+    group's own root -- the scan (DNS security checks, takeover targets, the
+    vuln-scan host scope) stays inside the group, as before.
+    """
     roots = recon_data.get("domains")
     if isinstance(roots, list):
         cleaned = [r for r in roots if isinstance(r, str) and r.strip()]
@@ -72,6 +78,23 @@ def scope_roots(recon_data: dict) -> list:
             return cleaned
     domain = recon_data.get("domain")
     return [domain] if isinstance(domain, str) and domain.strip() else []
+
+
+def attach_roots(recon_data: dict) -> list:
+    """The roots a WRITER may attach a discovered host to.
+
+    Every project root, so a host a scan found under another root of the batch
+    becomes that root's Subdomain rather than an ExternalDomain. The full
+    pipeline runs a group at a time but carries all the batch's roots in
+    "all_project_roots" for exactly this. A partial run, and a single-domain
+    project, have no such key, so this is the run's own scan scope.
+    """
+    roots = recon_data.get("all_project_roots")
+    if isinstance(roots, list):
+        cleaned = [r for r in roots if isinstance(r, str) and r.strip()]
+        if cleaned:
+            return cleaned
+    return scope_roots(recon_data)
 
 
 def root_for_host(value: str, roots: list, ip_mode: bool = False):

@@ -109,6 +109,30 @@ def _batch_groups() -> list:
     return groups if isinstance(groups, list) else []
 
 
+def _batch_root_names() -> list:
+    """Every root of the batch, in order, or [] outside batch mode."""
+    return [g.get("rootDomain") for g in _batch_groups()
+            if isinstance(g, dict) and g.get("rootDomain")]
+
+
+def _stamp_project_roots(recon_data: dict) -> dict:
+    """Carry the whole batch's roots for the graph writers.
+
+    The pipeline scans one group at a time, so recon_data["domain"] is the group
+    root and the scan stays inside the group. The writers, though, must attach a
+    host a scan found under ANOTHER batch root to that root's Domain, not record
+    it as an ExternalDomain -- the same fix the partial path already has. They
+    read this through attach_roots(); it is absent for a single-domain project,
+    which needs no cross-root attachment. It is deliberately NOT "domains", which
+    would widen the per-group scan scope.
+    """
+    if isinstance(recon_data, dict):
+        roots = _batch_root_names()
+        if roots:
+            recon_data["all_project_roots"] = roots
+    return recon_data
+
+
 # ---------------------------------------------------------------------------
 # Background Graph DB update helper
 # ---------------------------------------------------------------------------
@@ -1297,6 +1321,9 @@ def run_domain_recon(target: str, bruteforce: bool = False,
         "subdomain_count": 0,
         "dns": {}
     }
+    # The batch's roots for the graph writers (urlscan/uncover/domain-discovery
+    # write from inside this function, before it returns), not the scan scope.
+    _stamp_project_roots(combined_result)
 
     # =====================================================================
     # GROUP 1 — Fan-Out: WHOIS + Subdomain Discovery + URLScan (parallel)
@@ -2264,11 +2291,13 @@ def run_domain_group(target_domain: str, subdomain_list: list, start_time=None) 
             target_info=target_info,
             discovery_enabled=discovery_enabled
         )
+        _stamp_project_roots(domain_result)
     else:
         # Load existing recon file if domain_discovery not in modules
         if output_file.exists():
             with open(output_file, 'r') as f:
                 domain_result = json.load(f)
+            _stamp_project_roots(domain_result)
             print(f"[*][Pipeline] Loaded existing recon file: {output_file}")
 
             # RoE: filter excluded hosts from loaded recon data

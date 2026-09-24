@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 
 from graph_db.cert_key import build_cert_key
 from graph_db.cpe_resolver import _is_ip_address
-from graph_db.mixins.recon.scope import root_for_host, scope_roots
+from graph_db.mixins.recon.scope import attach_roots, root_for_host
 from urllib.parse import urlparse as _urlparse
 
 
@@ -80,7 +80,7 @@ class OsintMixin:
         # `domain` is the root this scan looked up; a host under any of the
         # project's roots is in scope and joins its own root.
         domain = recon_data.get("domain", "")
-        roots = scope_roots(recon_data)
+        roots = attach_roots(recon_data)
 
         with self.driver.session() as session:
 
@@ -483,7 +483,7 @@ class OsintMixin:
         domain = recon_data.get("domain", "")
         # `domain` is the root this pass looked up; a host under any of the run's
         # roots is in scope and joins its own root, and no root's apex is a Subdomain.
-        roots = scope_roots(recon_data)
+        roots = attach_roots(recon_data)
         apexes = {r.lower() for r in roots}
 
         with self.driver.session() as session:
@@ -823,7 +823,7 @@ class OsintMixin:
             "certificates_merged": 0, "subdomains_merged": 0,
             "relationships_created": 0, "errors": [],
         }
-        roots = scope_roots(recon_data)
+        roots = attach_roots(recon_data)
         try:
             hosts = (recon_data.get("censys") or {}).get("hosts") or []
             if not hosts:
@@ -1058,7 +1058,7 @@ class OsintMixin:
         }
         try:
             rows = (recon_data.get("fofa") or {}).get("results") or []
-            roots = scope_roots(recon_data)
+            roots = attach_roots(recon_data)
             if not rows:
                 stats["errors"].append("No fofa results in recon_data")
             else:
@@ -1248,7 +1248,7 @@ class OsintMixin:
             # `domain` is the root this scan looked up (external names hang off
             # it); a name under any of the project's roots joins its own root.
             domain = recon_data.get("domain", "") or ""
-            roots = scope_roots(recon_data)
+            roots = attach_roots(recon_data)
             dr = otx.get("domain_report")
             if not reports and not (dr and isinstance(dr, dict) and dr.get("domain")):
                 stats["errors"].append("No otx ip_reports or domain_report in recon_data")
@@ -1886,7 +1886,7 @@ class OsintMixin:
                  "subdomains_merged": 0, "relationships_created": 0, "errors": []}
         try:
             rows = (recon_data.get("zoomeye") or {}).get("results") or []
-            roots = scope_roots(recon_data)
+            roots = attach_roots(recon_data)
             if not rows:
                 stats["errors"].append("No zoomeye results in recon_data")
             else:
@@ -2290,7 +2290,7 @@ class OsintMixin:
             "urls_created": 0,
             "relationships_created": 0, "errors": [],
         }
-        roots = scope_roots(recon_data)
+        roots = attach_roots(recon_data)
         # An IP or a URL under no root falls back to the first root's Domain.
         domain = roots[0] if roots else ""
         try:
