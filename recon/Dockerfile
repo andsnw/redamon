@@ -139,6 +139,16 @@ RUN git config --system http.version HTTP/1.1 && \
     pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r /app/recon/requirements.txt
 
+# Patch an upstream arjun typo (arjun 2.2.7, __main__.py): on an unhealthy URL
+# (HTTP 400/413/418/429/503) it prints `request.status_code`, but `request` is
+# the request DICT, not the response, so it raises AttributeError instead of the
+# warning. `response_1` is the actual response and is in scope on that line. The
+# crash is caught per-target (params are still found), but it fouls every scan's
+# log against a 4xx/429 host. Guarded by test_arjun_upstream_patch.py.
+RUN f="$(python -c 'import arjun,os;print(os.path.join(os.path.dirname(arjun.__file__),"__main__.py"))')" && \
+    sed -i "s/% (bad, request.status_code))/% (bad, response_1.status_code))/" "$f" && \
+    ! grep -q "% (bad, request.status_code))" "$f"
+
 # Copy Go binaries from build stages
 COPY --from=jsluice-builder /go/bin/jsluice /usr/local/bin/jsluice
 COPY --from=ffuf-builder /go/bin/ffuf /usr/local/bin/ffuf
