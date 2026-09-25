@@ -68,6 +68,7 @@ import type { ScanMode } from '@/hooks/useReconStatus'
 import { OtherScansModal } from './components/OtherScansModal/OtherScansModal'
 import { parseScanModal } from '@/lib/scanModalLink'
 import { useAlertModal, useToast } from '@/components/ui'
+import { useNavigationGuard } from '@/context/NavigationGuardContext'
 import styles from './page.module.css'
 import { deriveRoeEnabled } from '@/lib/engagement'
 
@@ -568,6 +569,27 @@ export default function GraphPage() {
     setTableViewMode('nodeFilters')
   }, [])
   const { status: nodeFilterStatus, refresh: refreshNodeFilterStatus } = useNodeFilterStatus(projectId, refetchGraph)
+
+  // A tab switch unmounts the view being left, so a dirty form in it (Mute
+  // Rules) asks before its edits go, the way the header links do. Only a switch
+  // that actually leaves asks: a tab click fires the table-mode and the view
+  // change together, and the half that stays put must not prompt again.
+  const navGuard = useNavigationGuard()
+  const guardedSwitch = useCallback((leaving: boolean, apply: () => void) => {
+    if (!leaving || !navGuard?.hasGuards()) { apply(); return }
+    void navGuard.confirmAllGuards().then(ok => { if (ok) apply() })
+  }, [navGuard])
+  const changeView = useCallback((view: ViewMode) => {
+    guardedSwitch(view !== activeView, () => setActiveView(view))
+  }, [guardedSwitch, activeView])
+  const changeTableViewMode = useCallback((mode: TableViewMode) => {
+    guardedSwitch(activeView === 'table' && mode !== tableViewMode, () => {
+      setDeepLinkSheet(null)
+      setNodeFilterFocus(null)
+      setTableViewMode(mode)
+    })
+  }, [guardedSwitch, activeView, tableViewMode])
+
   // Unseen-row badges. The active tab is whichever table is on screen, so a tab
   // the user is reading stops counting as unseen while they read it.
   const {
@@ -1546,7 +1568,7 @@ export default function GraphPage() {
 
       <ViewTabs
         activeView={activeView}
-        onViewChange={setActiveView}
+        onViewChange={changeView}
         globalFilter={globalFilter}
         onGlobalFilterChange={setGlobalFilter}
         onExport={handleExportCsv}
@@ -1562,7 +1584,7 @@ export default function GraphPage() {
         onSelectFilter={setSelectedFilterId}
         onDeleteFilter={handleDeleteFilter}
         tableViewMode={tableViewMode}
-        onTableViewModeChange={(m) => { setDeepLinkSheet(null); setNodeFilterFocus(null); setTableViewMode(m) }}
+        onTableViewModeChange={changeTableViewMode}
         unseenCounts={unseenCounts}
         unseenTotal={unseenTotal}
         nodeFilterStatus={nodeFilterStatus}

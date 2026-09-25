@@ -29,6 +29,7 @@ vi.mock('@/components/ui', () => ({
 }))
 
 import { NodeFiltersView } from './NodeFiltersView'
+import { NavigationGuardProvider, useNavigationGuard } from '@/context/NavigationGuardContext'
 
 const RULE = { id: 'k3f9a2', name: 'Informational templates', enabled: true,
                all: [{ field: 'severity', op: 'in', value: ['info'] }] }
@@ -137,6 +138,32 @@ describe('NodeFiltersView', () => {
     const body = JSON.parse(put[1].body)
     expect(body.revision).toBe(3)
     expect(body.rules.kinds['vuln.nuclei'].enabled).toBe(false)
+  })
+
+  test('unsaved edits ask before leaving, with the discard prompt the other forms use', async () => {
+    let guard: ReturnType<typeof useNavigationGuard> = null
+    const Probe = () => { guard = useNavigationGuard(); return null }
+    render(
+      <NavigationGuardProvider>
+        <Probe />
+        <NodeFiltersView projectId="p1" isViewingPastVersion={false} />
+      </NavigationGuardProvider>,
+    )
+    await screen.findByText('Save')
+    expect(guard!.hasGuards()).toBe(false)
+
+    fireEvent.click(screen.getByLabelText('Filter Nuclei'))
+    await waitFor(() => expect(guard!.hasGuards()).toBe(true))
+    const unload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(unload)
+    expect(unload.defaultPrevented).toBe(true)
+    confirm.mockResolvedValueOnce(false)
+    expect(await guard!.confirmAllGuards()).toBe(false)
+    expect(confirm).toHaveBeenCalledWith('You have unsaved changes. Discard them and leave?', 'Discard changes?')
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Discard'))
+    await waitFor(() => expect(guard!.hasGuards()).toBe(false))
   })
 
   test('a save that lost a race offers Overwrite, which forces it', async () => {

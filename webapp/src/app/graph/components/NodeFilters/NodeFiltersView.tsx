@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, Loader2, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { useAlertModal, useToast, WikiInfoButton } from '@/components/ui'
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { NODE_FILTER_CATALOG, enabledKinds } from '@/lib/nodeFilters/catalog'
 import type { NodeFilterDoc, NodeFilterMode } from '@/lib/nodeFilters/model'
 import type { MuteRulesPresetSummary } from '@/lib/nodeFilters/presets'
@@ -65,6 +66,9 @@ export function NodeFiltersView({
   const catalog = NODE_FILTER_CATALOG
   const kinds = useMemo(() => enabledKinds(catalog), [catalog])
   const nf = useNodeFilters(projectId)
+  // The draft lives only in this view, so leaving it (a header link, a refresh,
+  // or a graph-page tab, which unmounts it) would drop the edits unasked.
+  useUnsavedChangesGuard(nf.dirty)
   const { confirm, alertError, alertWarning } = useAlertModal()
   const toast = useToast()
   const [selected, setSelected] = useState<string>(focus?.kind ?? kinds[0]?.id ?? LOCKED_ID)
