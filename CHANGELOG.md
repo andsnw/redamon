@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.19.0] - 2026-09-25
+
+### Added
+
+- **Mute Rules: mute noisy findings by rule.** Rules match on a finding's kind and fields, in denylist mode (mute what a rule matches) or allowlist mode (mute what no rule keeps). They run when you click Apply or on every scan. They never mute a finding a human has judged or one that is confirmed or has proof, and unmuting a finding exempts it from the rules for good. A new **Muted Nodes** view replaces the Priority Board's muted section, with paging, filters by person or rule, and batch unmute.
+- **Mute Rules presets.** You can save, load and manage a rule set. It belongs to your account, so you can load it into any of your projects, and a badge shows while the rules still match the loaded preset. Project export/import carries the rules (switched off on import), the exemptions and the presets.
+- **Partial recon covers every root of a Domain-batch project.** Every partial tool now scans all of the batch's root domains in one run. Before, it scanned one root, chosen arbitrarily. The roots come from the saved project, never from the request. Roots excluded by the RoE or failing ownership verification are refused, each group keeps its literal or wildcard scope, and the run report lists the outcome for each root.
+
+### Changed
+
+- **MCP sandbox commands are on by default.** `MCP_KALI_EXEC_ENABLED` now defaults to `true`, and the `kali:exec` permission is ticked by default when minting a token. The MCP server itself is still off until enabled. To keep a token off the shell, untick `kali:exec`. To withdraw the sandbox from every token, set the variable to `false`.
+- **An MCP verdict cannot unmute a finding.** `set_finding_verdict` refuses a muted finding, because a human verdict would release a rule mute at the next sweep. The MCP surface also reports a running Mute Rules apply as a graph writer.
+- **In a full batch scan, a host found under another root of the same batch** is recorded as that root's Subdomain, no longer as an ExternalDomain.
+- **The project settings form looks the same across all 34 Recon Pipeline sections**, and every text element passes 4.5:1 contrast in both themes. The Priority Board and the light-theme settings header bar have been restyled to match.
+
+### Fixed
+
+- **Nuclei CVE findings lost their CVEs, or never reached the graph.** Nuclei v3 emits `cve-id` in lowercase, which the parser dropped. The writer also passed Neo4j CVE maps it refused, which silently dropped every CVE-classified finding.
+- **Domain-level findings in a Domain batch no longer merge.** SPF, DMARC, DNSSEC and zone-transfer findings from every root used to collapse into one Vulnerability node. Each root now gets its own.
+- **In a full batch scan, Subdomains attached to a later group's root were left unlinked**, because that root's Domain node did not exist yet. Every root's Domain node is now restored before the first group runs.
+- **arjun no longer crashes on 4xx/429 hosts.** An upstream typo in arjun 2.2.7 raised `AttributeError` instead of printing its warning. The recon image patches it and fails the build if the typo comes back.
+
 ## [6.18.0] - 2026-09-23
 
 ### Added
